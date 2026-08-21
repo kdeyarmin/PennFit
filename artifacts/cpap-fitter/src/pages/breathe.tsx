@@ -934,172 +934,47 @@ function SignupSection() {
   );
 }
 
-/* ───────────────────── Explore the platform (deep-dive index) ─────────────
-   The top nav is deliberately short (6 links), so the long-form deep-dive
-   pages would otherwise only be reachable from the footer. This homepage
-   index grid surfaces all of them from the main funnel — one card per pillar,
-   a one-line "what you'll find," each linking the dedicated page. Reuses the
-   .bx-cap card (the class is element-agnostic, so a <Link> picks up the same
-   styling + hover); the only new rule is the small .bx-cap-more arrow
-   affordance in breathe.css. */
-const EXPLORE: {
-  icon: React.ReactNode;
-  title: string;
-  blurb: string;
-  href: string;
-  gold?: boolean;
-}[] = [
-  {
-    icon: <RefreshCw size={20} />,
-    title: "Resupply engine",
-    gold: true,
-    blurb:
-      "The multi-channel cadence that turns due dates into reorders — text, email, chat, and AI calls that escalate until a patient responds.",
-    href: "/breathe/resupply-engine",
-  },
-  {
-    icon: <ScanFace size={20} />,
-    title: "Clinical mask fitting",
-    gold: true,
-    blurb:
-      "The fitting moment, built like a clinical instrument — safety as a hard filter, millimetre size bands, and an image that never leaves the patient's phone.",
-    href: "/breathe/mask-fitting",
-  },
-  {
-    icon: <PhoneCall size={20} />,
-    title: "AI voice agent",
-    blurb:
-      "A 24/7 voice agent that places and answers resupply calls — with audit-grade transcripts and a post-call summary on every one.",
-    href: "/breathe/ai-voice",
-  },
-  {
-    icon: <MessageSquare size={20} />,
-    title: "Patient communications",
-    blurb:
-      "One inbox for SMS, MMS, email, and fax — with AI drafting, triage, and high-confidence auto-replies that give your team hours back.",
-    href: "/breathe/communications",
-  },
-  {
-    icon: <CircleDollarSign size={20} />,
-    title: "Revenue cycle",
-    gold: true,
-    blurb:
-      "Eligibility to ERA in one flow: claim scrubbing, auto-posting, ranked denials, patient-pay plans, and payer profitability.",
-    href: "/breathe/get-paid",
-  },
-  {
-    icon: <Stethoscope size={20} />,
-    title: "Clinical & therapy",
-    blurb:
-      "Catch patients slipping off therapy before they quit — adherence cohorts, alerts, coaching plans, and recall tracking.",
-    href: "/breathe/clinical",
-  },
-  {
-    icon: <LineChart size={20} />,
-    title: "Analytics & insight",
-    blurb:
-      "The owner's cockpit: revenue, margin, funnel, LTV/CAC, and KPI alerts that page you before a number slips.",
-    href: "/breathe/analytics",
-  },
-  {
-    icon: <Users size={20} />,
-    title: "Patient experience",
-    blurb:
-      "What your patients actually get — a branded storefront, virtual fitter, self-service portal, and AI help that keeps them on therapy.",
-    href: "/breathe/patient-experience",
-  },
-  {
-    icon: <ShieldCheck size={20} />,
-    title: "Compliance & audits",
-    blurb:
-      "Payer, therapy, and business safeguards built in — plus a one-step ADR packet for when the auditor asks.",
-    href: "/breathe/compliance",
-  },
-  {
-    icon: <Network size={20} />,
-    title: "Multi-location",
-    blurb:
-      "Run every branch on one platform — each its own record with its own NPI, a live rollup, and in-store pickup.",
-    href: "/breathe/multi-location",
-  },
-];
-
-function ExploreDeepDives() {
-  return (
-    <section className="bx-section" id="explore">
-      <div className="bx-shell">
-        <div className="bx-section-head center bx-reveal">
-          <span className="bx-eyebrow">
-            <Waypoints size={13} /> Go deeper
-          </span>
-          <h2 className="bx-h2">
-            Explore the platform, <em>one pillar at a time</em>
-          </h2>
-          <p className="bx-lede">
-            This page is the overview. Each pillar has its own deep dive — how
-            it actually works, everything it includes, and the outcome it
-            drives. Pick a thread and follow it all the way down.
-          </p>
-        </div>
-        <div className="bx-caps">
-          {EXPLORE.map((c) => (
-            <Link
-              className={`bx-cap bx-reveal${c.gold ? " gold" : ""}`}
-              href={c.href}
-              key={c.href}
-              style={{ textDecoration: "none", color: "inherit" }}
-            >
-              <div className="bx-cap-head">
-                <span className="bx-cap-ic">{c.icon}</span>
-                <div>
-                  <h3>{c.title}</h3>
-                  <p className="bx-cap-summary">{c.blurb}</p>
-                </div>
-              </div>
-              <span className="bx-cap-more">
-                Explore <ArrowRight size={15} />
-              </span>
-            </Link>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
 /* Landing — the elevator pitch: hero, integrations, what it replaces, CTA. */
 export function BreatheHome() {
   useDocumentTitle(
-    "Breathe — All-in-One CPAP & DME Software by CareMetric.ai",
-    "Breathe is the all-in-one platform for CPAP & DME providers: automate resupply reordering, scrub claims clean before they're filed, pull in therapy compliance from ResMed, Philips & 3B, and e-sign documentation — so you capture more revenue, cut denials, and keep patients on therapy.",
+    "Breathe — Clinical Mask Fitting & All-in-One CPAP/DME Software",
+    "Breathe runs the whole CPAP business on one patient record. It starts with the clinical mask fitter — the patient is measured on their own phone in about two minutes and the image never leaves the device — then automates resupply, scrubs claims before they're filed, and pulls live therapy data from ResMed, Philips & 3B.",
     { schema: "Article" },
   );
   return (
     <BreatheShell>
       <Hero />
-      {/* Show the actual product on the landing page — not just the product
-          tour. The hero sells the outcome; this proves the product is real
-          with REAL captured screens of the live console (competitors all lead
-          with product UI; we used to lead with an abstract graphic). */}
-      <LiveConsole />
       <IntegrationsStrip />
-      <Pillars />
-      {/* The home page is deliberately short and focused on WHY Breathe is
-          different: the proprietary resupply engine, the in-house (not
-          bolted-on) architecture, and "one login instead of seven". The
-          deeper detail — the full lifecycle, the capability grid, the unified
-          therapy fleet, and the audience breakdown — lives on the Product,
-          Compare, and Integrations pages so this page stays scannable. */}
-      <ResupplyEngine />
-      <RevenueRecovery />
-      <AiWorkforce />
-      <BuiltInHouse />
+      {/* Plain-language explainer first: the audit found the page assumed the
+          reader already knew what a virtual fitting is. */}
+      <HowItWorks />
+      {/* The flagship band. The fitter carries the clinical-rigour argument
+          that a point-solution competitor cannot make, so it sits above the
+          platform tour rather than inside it. */}
+      <FitterBand />
       <Replaces />
-      <Outcomes />
-      <ExploreDeepDives />
+      {/* The home page stays scannable: each pillar links to its own deep
+          dive rather than inlining the lifecycle, capability grid, therapy
+          fleet, and audience breakdown that live on Product/Compare/
+          Integrations. */}
+      <PlatformDeepDives />
+      {/* Proof the product is real — captured screens of the live console,
+          not a rendering. */}
+      <LiveConsole />
+      <Comparison limit={10} />
       <PricingHome />
+      {/* Kept from the previous home page: the founding-partner offer (rate
+          locked for the life of the account, roadmap input, hands-on
+          migration) is a distinct commercial programme that lives nowhere
+          else on the site, so it survives the redesign. */}
       <FoundingPartner />
-      <ClosingCta />
+      <TrustHome />
+      <FaqHome />
+      <ClosingCta
+        title="See a fitting run end to end, on sample data"
+        lede="The demo is the real console with demo data behind it: open a fitting, watch the masks get filtered out, print the report. No call, no credit card, nothing to install."
+        note="If you'd rather start small, take the fitter on its own for $119/mo, month to month — nothing to migrate and nothing to unplug."
+      />
     </BreatheShell>
   );
 }
@@ -1279,50 +1154,357 @@ export function BreatheSecurity() {
 }
 
 /* ───────────────────────── Nav ───────────────────────── */
-const NAV_LINKS: { href: string; label: string }[] = [
-  { href: "/breathe/product", label: "Platform" },
-  { href: "/breathe/integrations", label: "Integrations" },
-  { href: "/breathe/why", label: "Why Breathe" },
-  { href: "/breathe/compare", label: "Compare" },
-  { href: "/breathe/case-studies", label: "Case studies" },
-  { href: "/breathe/pricing", label: "Pricing" },
+/*
+ * Header navigation — four mega-menus plus Pricing.
+ *
+ * The old header carried six flat links and left 20 of the 26 marketing
+ * routes reachable only from the footer. Grouping them into Platform /
+ * Mask fitter / Why Breathe / Trust puts every deep dive one hover away
+ * without making the bar longer. `Mask fitter` is deliberately gold and
+ * second: it is the flagship differentiator, not one capability among
+ * fourteen (see docs/marketing/marketing-page-audit-2026-08-18.md).
+ */
+type NavItem = { href: string; label: string; note: string; gold?: boolean };
+
+const NAV_PLATFORM: NavItem[] = [
+  {
+    href: "/breathe#how",
+    label: "How it works",
+    note: "A fitting, start to finish, in three steps",
+  },
+  {
+    href: "/breathe/product",
+    label: "Product tour",
+    note: "The whole DME lifecycle, end to end",
+  },
+  {
+    href: "/breathe/features",
+    label: "All features",
+    note: "Every capability, grouped by job",
+  },
+  {
+    href: "/breathe/mask-fitting",
+    label: "Clinical mask fitting",
+    note: "Six-tier engine · on-device measurement",
+    gold: true,
+  },
+  {
+    href: "/breathe/resupply-engine",
+    label: "Resupply engine",
+    note: "Text, email, chat and AI calls that escalate",
+  },
+  {
+    href: "/breathe/ai-voice",
+    label: "AI voice agent",
+    note: "24/7 calls placed and answered",
+  },
+  {
+    href: "/breathe/communications",
+    label: "Patient communications",
+    note: "SMS, MMS, email and fax in one inbox",
+  },
+  {
+    href: "/breathe/get-paid",
+    label: "Revenue cycle",
+    note: "Eligibility to ERA in one flow",
+  },
+  {
+    href: "/breathe/clinical",
+    label: "Clinical & therapy",
+    note: "Adherence cohorts, alerts, coaching",
+  },
+  {
+    href: "/breathe/analytics",
+    label: "Analytics & insight",
+    note: "Margin, funnel, LTV/CAC, KPI alerts",
+  },
+  {
+    href: "/breathe/patient-experience",
+    label: "Patient experience",
+    note: "Storefront, fitter, portal, AI help",
+  },
+  {
+    href: "/breathe/compliance",
+    label: "Compliance & audits",
+    note: "One-step ADR packet when asked",
+  },
+  {
+    href: "/breathe/multi-location",
+    label: "Multi-location",
+    note: "Every branch, its own NPI, one rollup",
+  },
+  {
+    href: "/breathe/integrations",
+    label: "Integrations",
+    note: "AirView, Care Orchestrator, Office Ally",
+  },
 ];
 
-// The full set of marketing pages — used by the footer so ROI, Security,
-// Features, and the deep-dive solution pages (AI voice, revenue cycle,
-// patient experience) stay reachable + crawlable even though they're kept
-// out of the (deliberately short) top nav.
-const FOOTER_LINKS: { href: string; label: string }[] = [
-  { href: "/breathe/product", label: "Platform" },
-  { href: "/breathe/integrations", label: "Integrations" },
-  { href: "/breathe/why", label: "Why Breathe" },
-  { href: "/breathe/compare", label: "Compare" },
-  { href: "/breathe/features", label: "Features" },
-  { href: "/breathe/resupply-engine", label: "Resupply engine" },
-  { href: "/breathe/mask-fitting", label: "Mask fitting" },
-  { href: "/breathe/switch/sleepglad", label: "SleepGlad vs. Breathe" },
-  { href: "/breathe/ai-voice", label: "AI voice agent" },
-  { href: "/breathe/communications", label: "Communications" },
-  { href: "/breathe/get-paid", label: "Get paid" },
-  { href: "/breathe/clinical", label: "Clinical & therapy" },
-  { href: "/breathe/patient-experience", label: "Patient experience" },
-  { href: "/breathe/analytics", label: "Analytics" },
-  { href: "/breathe/roi", label: "ROI" },
-  { href: "/breathe/pricing", label: "Pricing" },
-  { href: "/breathe/security", label: "Security" },
-  { href: "/breathe/compliance", label: "Compliance" },
-  { href: "/breathe/multi-location", label: "Multi-location" },
-  { href: "/breathe/case-studies", label: "Case studies" },
-  { href: "/breathe/faq", label: "FAQ" },
+const NAV_FITTER: NavItem[] = [
+  {
+    href: "/breathe/mask-fitting",
+    label: "Clinical mask fitting",
+    note: "The flagship deep dive",
+    gold: true,
+  },
+  {
+    href: "/breathe/switch/sleepglad",
+    label: "SleepGlad vs. Breathe",
+    note: "Head to head with a stand-alone fitter",
+  },
+  {
+    href: "/breathe/mask-fitting",
+    label: "Provider referral portal",
+    note: "Batch-signed scripts, fitting attached",
+  },
+  {
+    href: "/breathe/patient-experience",
+    label: "What the patient sees",
+    note: "Their measurement against the band",
+  },
+  {
+    href: "/breathe/pricing",
+    label: "Fitter-only plan · $119/mo",
+    note: "Run the fitter without the platform",
+  },
 ];
+
+const NAV_WHY: NavItem[] = [
+  {
+    href: "/breathe/why",
+    label: "Why Breathe",
+    note: "The design decisions behind the platform",
+  },
+  {
+    href: "/breathe/compare",
+    label: "Compare platforms",
+    note: "Row by row against the incumbents",
+  },
+  {
+    href: "/breathe/switch/brightree",
+    label: "Switch from Brightree",
+    note: "What migration actually involves",
+  },
+  {
+    href: "/breathe/switch/bonafide",
+    label: "Switch from Bonafide",
+    note: "Data, timelines, parallel running",
+  },
+  {
+    href: "/breathe/switch/nikohealth",
+    label: "Switch from NikoHealth",
+    note: "What carries over and what doesn't",
+  },
+  {
+    href: "/breathe/case-studies",
+    label: "Case studies",
+    note: "Worked scenarios with the math shown",
+  },
+  {
+    href: "/breathe/roi",
+    label: "ROI calculator",
+    note: "Size it on your own numbers",
+  },
+];
+
+const NAV_TRUST: NavItem[] = [
+  {
+    href: "/breathe/security",
+    label: "Security",
+    note: "Posture, access control, PHI minimization",
+  },
+  {
+    href: "/breathe/compliance",
+    label: "Compliance & audits",
+    note: "Payer, therapy and business safeguards",
+  },
+  {
+    href: "/breathe/multi-location",
+    label: "Multi-location",
+    note: "Branch isolation and rollup reporting",
+  },
+  {
+    href: "/breathe/faq",
+    label: "FAQ",
+    note: "Including six answers on mask fitting",
+  },
+];
+
+type MenuKey = "platform" | "fitter" | "why" | "trust";
+
+const NAV_MENUS: {
+  key: MenuKey;
+  label: string;
+  items: NavItem[];
+  width: "wide" | "mid" | "narrow";
+  gold?: boolean;
+}[] = [
+  { key: "platform", label: "Platform", items: NAV_PLATFORM, width: "wide" },
+  {
+    key: "fitter",
+    label: "Mask fitter",
+    items: NAV_FITTER,
+    width: "mid",
+    gold: true,
+  },
+  { key: "why", label: "Why Breathe", items: NAV_WHY, width: "mid" },
+  { key: "trust", label: "Trust", items: NAV_TRUST, width: "narrow" },
+];
+
+// The mobile panel is the same sitemap, flattened into labelled groups —
+// the fitter first, mirroring the header's ordering.
+const MOBILE_GROUPS: { title: string; links: NavItem[] }[] = [
+  { title: "Mask fitter", links: NAV_FITTER },
+  { title: "Platform", links: NAV_PLATFORM },
+  { title: "Why Breathe", links: NAV_WHY },
+  {
+    title: "Pricing & trust",
+    links: [
+      {
+        href: "/breathe/pricing",
+        label: "Pricing",
+        note: "Plans, add-ons and migration",
+      },
+      ...NAV_TRUST,
+    ],
+  },
+];
+
+// The full set of marketing pages, grouped for the footer sitemap so every
+// deep dive stays reachable + crawlable from any page on the surface.
+const FOOTER_COLS: {
+  title: string;
+  links: { href: string; label: string }[];
+}[] = [
+  {
+    title: "Platform",
+    links: [
+      { href: "/breathe/product", label: "Product tour" },
+      { href: "/breathe/features", label: "All features" },
+      { href: "/breathe/resupply-engine", label: "Resupply engine" },
+      { href: "/breathe/ai-voice", label: "AI voice agent" },
+      { href: "/breathe/communications", label: "Patient communications" },
+      { href: "/breathe/get-paid", label: "Revenue cycle" },
+      { href: "/breathe/clinical", label: "Clinical & therapy" },
+      { href: "/breathe/analytics", label: "Analytics" },
+      { href: "/breathe/integrations", label: "Integrations" },
+    ],
+  },
+  {
+    title: "Mask fitter",
+    links: [
+      { href: "/breathe/mask-fitting", label: "Clinical mask fitting" },
+      { href: "/breathe/switch/sleepglad", label: "SleepGlad vs. Breathe" },
+      { href: "/breathe/patient-experience", label: "Patient experience" },
+      { href: "/breathe/pricing", label: "Fitter-only plan" },
+    ],
+  },
+  {
+    title: "Why Breathe",
+    links: [
+      { href: "/breathe/why", label: "Why Breathe" },
+      { href: "/breathe/compare", label: "Compare platforms" },
+      { href: "/breathe/switch/brightree", label: "Switch from Brightree" },
+      { href: "/breathe/switch/bonafide", label: "Switch from Bonafide" },
+      { href: "/breathe/switch/nikohealth", label: "Switch from NikoHealth" },
+      { href: "/breathe/case-studies", label: "Case studies" },
+      { href: "/breathe/roi", label: "ROI calculator" },
+    ],
+  },
+  {
+    title: "Pricing & trust",
+    links: [
+      { href: "/breathe/pricing", label: "Pricing" },
+      { href: "/breathe/security", label: "Security" },
+      { href: "/breathe/compliance", label: "Compliance & audits" },
+      { href: "/breathe/multi-location", label: "Multi-location" },
+      { href: "/breathe/faq", label: "FAQ" },
+      { href: "/breathe/signup", label: "Create account" },
+      { href: "/admin/sign-in", label: "Sign in" },
+    ],
+  },
+];
+
+function NavMega({
+  menu,
+  open,
+  onOpen,
+  onClose,
+  onNavigate,
+}: {
+  menu: (typeof NAV_MENUS)[number];
+  open: boolean;
+  onOpen: () => void;
+  onClose: () => void;
+  onNavigate: () => void;
+}) {
+  return (
+    <div
+      className="bx-nav-mega"
+      onMouseEnter={onOpen}
+      onMouseLeave={onClose}
+      // Escape closes from anywhere inside the menu, and blurring out of
+      // the subtree closes it for keyboard users (hover alone would trap
+      // the panel open once tabbed into).
+      onKeyDown={(e) => {
+        if (e.key === "Escape") onClose();
+      }}
+    >
+      <button
+        type="button"
+        className={"bx-nav-mega-btn" + (menu.gold ? " gold" : "")}
+        aria-expanded={open}
+        aria-haspopup="true"
+        onClick={() => (open ? onClose() : onOpen())}
+      >
+        {menu.label}
+        <span className="bx-nav-mega-caret" aria-hidden="true">
+          ▾
+        </span>
+      </button>
+      {open ? (
+        <div
+          className={
+            "bx-nav-mega-panel " +
+            (menu.width === "wide"
+              ? "wide"
+              : menu.width === "narrow"
+                ? "narrow"
+                : "") +
+            (menu.gold ? " gold" : "")
+          }
+        >
+          <div className="bx-nav-mega-inner">
+            {menu.items.map((l) => (
+              <Link
+                className="bx-nav-mega-link"
+                href={l.href}
+                key={`${menu.key}-${l.label}`}
+                onClick={onNavigate}
+              >
+                <span className={"bx-nav-mega-label" + (l.gold ? " gold" : "")}>
+                  {l.label}
+                </span>
+                <span className="bx-nav-mega-note">{l.note}</span>
+              </Link>
+            ))}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 function Nav() {
   const [loc] = useLocation();
   const [open, setOpen] = useState(false);
+  const [menu, setMenu] = useState<MenuKey | null>(null);
   const { open: openDemoGate } = useDemoGate();
-  // Close the mobile menu on any route change so it never lingers open.
+  // Close both the mobile sheet and any open mega-menu on route change so
+  // neither lingers over the new page.
   useEffect(() => {
     setOpen(false);
+    setMenu(null);
   }, [loc]);
   return (
     <nav className="bx-nav">
@@ -1335,15 +1517,19 @@ function Nav() {
           </span>
         </Link>
         <div className="bx-nav-links">
-          {NAV_LINKS.map((l) => (
-            <Link
-              className={"bx-nav-anchor" + (loc === l.href ? " is-active" : "")}
-              href={l.href}
-              key={l.href}
-            >
-              {l.label}
-            </Link>
+          {NAV_MENUS.map((m) => (
+            <NavMega
+              key={m.key}
+              menu={m}
+              open={menu === m.key}
+              onOpen={() => setMenu(m.key)}
+              onClose={() => setMenu(null)}
+              onNavigate={() => setMenu(null)}
+            />
           ))}
+          <Link className="bx-nav-plain" href="/breathe/pricing">
+            Pricing
+          </Link>
           {/*
             Sign in lives in the top nav, not buried in the footer. Everyone
             who already HAS an account (tenant admins and platform
@@ -1386,45 +1572,52 @@ function Nav() {
       </div>
       {open ? (
         <div className="bx-nav-mobile" id="bx-nav-mobile">
-          <div className="bx-shell bx-nav-mobile-inner">
-            {NAV_LINKS.map((l) => (
+          <div className="bx-shell bx-nav-mob">
+            {MOBILE_GROUPS.map((g) => (
+              <div key={g.title}>
+                <span className="bx-nav-mob-title">{g.title}</span>
+                <div className="bx-nav-mob-list">
+                  {g.links.map((l) => (
+                    <Link
+                      key={`${g.title}-${l.label}`}
+                      href={l.href}
+                      className="bx-nav-mob-link"
+                      onClick={() => setOpen(false)}
+                    >
+                      {l.label}
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            ))}
+            <div className="bx-nav-mob-ctas">
               <Link
-                key={l.href}
-                href={l.href}
-                className={
-                  "bx-nav-mobile-link" + (loc === l.href ? " is-active" : "")
-                }
+                href="/admin/sign-in"
+                className="bx-btn bx-btn-ghost"
+                onClick={() => setOpen(false)}
+                data-testid="breathe-nav-mobile-sign-in"
+              >
+                <LogIn size={16} aria-hidden="true" />
+                Sign in
+              </Link>
+              <Link
+                href="/breathe/signup"
+                className="bx-btn bx-btn-ghost"
                 onClick={() => setOpen(false)}
               >
-                {l.label}
+                Create account
               </Link>
-            ))}
-            <Link
-              href="/admin/sign-in"
-              className="bx-btn bx-btn-ghost bx-nav-mobile-demo"
-              onClick={() => setOpen(false)}
-              data-testid="breathe-nav-mobile-sign-in"
-            >
-              <LogIn size={16} aria-hidden="true" />
-              Sign in
-            </Link>
-            <button
-              type="button"
-              className="bx-btn bx-btn-primary bx-nav-mobile-demo"
-              onClick={() => {
-                setOpen(false);
-                openDemoGate("breathe-nav");
-              }}
-            >
-              Start free demo
-            </button>
-            <Link
-              href="/breathe/signup"
-              className="bx-btn bx-btn-ghost bx-nav-mobile-demo"
-              onClick={() => setOpen(false)}
-            >
-              Create account
-            </Link>
+              <button
+                type="button"
+                className="bx-btn bx-btn-primary"
+                onClick={() => {
+                  setOpen(false);
+                  openDemoGate("breathe-nav");
+                }}
+              >
+                Start free demo
+              </button>
+            </div>
           </div>
         </div>
       ) : null}
@@ -1434,46 +1627,59 @@ function Nav() {
 
 /* ───────────────────────── Hero ───────────────────────── */
 function Hero() {
-  const { open: openDemoGate, openContact } = useDemoGate();
-  const onMove = (e: React.MouseEvent<HTMLElement>) => {
-    if (prefersReducedMotion()) return;
-    const r = e.currentTarget.getBoundingClientRect();
-    const px = ((e.clientX - r.left) / r.width - 0.5) * 2;
-    const py = ((e.clientY - r.top) / r.height - 0.5) * 2;
-    e.currentTarget.style.setProperty("--px", px.toFixed(3));
-    e.currentTarget.style.setProperty("--py", py.toFixed(3));
-  };
-  const onLeave = (e: React.MouseEvent<HTMLElement>) => {
-    e.currentTarget.style.setProperty("--px", "0");
-    e.currentTarget.style.setProperty("--py", "0");
-  };
+  const { open: openDemoGate } = useDemoGate();
   return (
-    <header
-      className="bx-section bx-hero"
-      id="top"
-      onMouseMove={onMove}
-      onMouseLeave={onLeave}
-    >
+    <header className="bx-section bx-hero" id="top">
       <div className="bx-shell">
         <div className="bx-hero-grid">
           <div className="bx-hero-copy">
-            <span className="bx-eyebrow bx-reveal in">
-              <span className="bx-dot" />
-              All-in-one software for CPAP &amp; DME
-            </span>
             <h1 className="bx-h1 bx-reveal in">
-              Capture every resupply.
+              Fit every patient.
               <br />
-              <span className="grad-em">Get paid the first time.</span>
+              <span className="grad-em">Capture every resupply.</span>
             </h1>
             <p className="bx-hero-sub bx-reveal in">
-              Breathe is the all-in-one platform for CPAP &amp; DME providers.
-              It automates the resupply reordering that eats your staff&apos;s
-              day, scrubs every claim clean before it&apos;s filed, and pulls
-              live compliance data straight from ResMed, Philips &amp; 3B — so
-              you book more orders, deny fewer claims, and keep patients on
-              therapy.
+              Breathe runs the whole CPAP business on one patient record: mask
+              fitting, resupply, billing, and live therapy data from ResMed,
+              Philips &amp; 3B.
             </p>
+            <p className="bx-hero-sub bx-reveal in">
+              It starts with the job that costs your staff the most time.
+              Instead of an appointment and a drawer of sample cushions, the
+              patient is fitted for a mask on their own phone — in about two
+              minutes, from your lobby or their kitchen.
+            </p>
+            <div className="bx-hero-props-wrap bx-reveal in">
+              <span className="bx-hero-kicker">
+                Starting with the virtual mask fitter
+              </span>
+              <div className="bx-hero-props">
+                <div className="bx-hero-prop">
+                  <b>Minutes, not an appointment</b>
+                  <span>
+                    The patient scans on their own phone — at your counter or at
+                    home. Nobody on your team stands at a mirror trying masks,
+                    and the finished fitting lands in your worklist.
+                  </span>
+                </div>
+                <div className="bx-hero-prop">
+                  <b>No sample masks binned</b>
+                  <span>
+                    Every trial cushion you open is inventory you can never
+                    bill. The engine picks from the formulary you actually stock
+                    before anything comes off the shelf.
+                  </span>
+                </div>
+                <div className="bx-hero-prop">
+                  <b>A mask they keep wearing</b>
+                  <span>
+                    Patients see their own millimetres inside the documented
+                    size range, so the first mask is the right one — fewer
+                    exchanges, fewer refit calls, better adherence.
+                  </span>
+                </div>
+              </div>
+            </div>
             <div className="bx-hero-cta bx-reveal in">
               <button
                 type="button"
@@ -1491,51 +1697,67 @@ function Hero() {
               Live demo on sample data · No call · No credit card
             </div>
             <p className="bx-hero-talk bx-reveal in">
-              Switching from Brightree, Bonafide, or NikoHealth?{" "}
+              New to virtual fitting?{" "}
+              <a className="bx-linkbtn" href="#how">
+                See how a fitting works ↓
+              </a>{" "}
+              · Switching from Brightree, Bonafide, or NikoHealth?{" "}
               <Link className="bx-linkbtn" href="/breathe/compare">
-                See the side-by-side →
+                Side-by-side →
               </Link>
-            </p>
-            <p className="bx-hero-talk bx-reveal in">
-              Questions, or need a hand getting set up?{" "}
-              <button
-                type="button"
-                className="bx-linkbtn"
-                onClick={() => openContact("breathe-hero")}
-              >
-                Contact support →
-              </button>
             </p>
           </div>
 
-          <div className="bx-orb-wrap bx-reveal in">
-            <div className="bx-orb-aura" aria-hidden="true" />
-            <div className="bx-orb">
-              <div className="bx-orb-ring r3" />
-              <div className="bx-orb-ring r2" />
-              <div className="bx-orb-ring" />
-              <div className="bx-orb-core">
-                <img className="bx-orb-logo" src={LOGO} alt="CareMetric AI" />
-              </div>
-              <div className="bx-orb-chip c1">
-                <span className="ico">
-                  <Mic size={15} />
+          {/*
+            The hero's product shot is the fitter's own results diagram — the
+            patient's measured millimetres plotted inside each mask's
+            documented size band. It is the one screen that carries the whole
+            clinical argument, so it leads rather than an abstract graphic.
+          */}
+          <div className="bx-fitcard bx-reveal in">
+            <div className="bx-fitcard-head">
+              <span className="bx-fitcard-live">
+                <i aria-hidden="true" />
+                Clinical mask fitter
+              </span>
+              <span className="bx-fitcard-meta">measured on device</span>
+            </div>
+            <div className="bx-fitcard-shot">
+              <img
+                src="/breathe/screens/fitter-range-diagram.png"
+                alt="Fit diagram from a patient's results page: nose width, nose to chin and mouth width, each plotted as a marker inside the mask's documented millimetre range."
+                width={1581}
+                height={471}
+              />
+            </div>
+            <div className="bx-fitcard-rows">
+              <div className="bx-fitcard-row">
+                <span className="bx-fitcard-tier">TIER 1</span>
+                <span className="bx-fitcard-what">Safety screen</span>
+                <span className="bx-fitcard-val">
+                  6 masks removed, not down-ranked
                 </span>
-                AI voice agent · live
               </div>
-              <div className="bx-orb-chip c2">
-                <span className="ico">
-                  <Receipt size={15} />
+              <div className="bx-fitcard-row">
+                <span className="bx-fitcard-tier">TIER 2</span>
+                <span className="bx-fitcard-what">Therapy compatibility</span>
+                <span className="bx-fitcard-val">
+                  2 removed on pressure range
                 </span>
-                Claim auto-submitted
               </div>
-              <div className="bx-orb-chip c3">
-                <span className="ico gold">
-                  <RefreshCw size={15} />
+              <div className="bx-fitcard-row result">
+                <span className="bx-fitcard-tier">RESULT</span>
+                <span className="bx-fitcard-what">
+                  Nasal mask · Medium cushion
                 </span>
-                Resupply reorder placed
+                <span className="bx-fitcard-val">confidence: high</span>
               </div>
             </div>
+            <p className="bx-fitcard-note">
+              The photo never left the phone. A handful of millimetres came
+              back, and the report names every mask that was ruled out and the
+              rule that ruled it out.
+            </p>
           </div>
         </div>
 
@@ -1624,87 +1846,678 @@ function IntegrationsStrip() {
   );
 }
 
-/* ───────────────────────── Value pillars ───────────────────────── */
-/*
- * The home page's concrete "what it does, and what it's worth" band — placed
- * directly under the hero so a DME owner sees the four revenue/operational
- * wins (resupply, billing, compliance, documentation) before scrolling into
- * the deeper story. Each pillar pairs an outcome metric with the mechanism
- * behind it; the numbers mirror the benchmark-sourced figures in <Outcomes/>
- * lower on the page and are framed as industry ranges, not guarantees.
+/* ═══════════════════ Home: "A fitting, start to finish" ═══════════════════
+ *
+ * The launch-clarity band. The audit found the site assumed the reader
+ * already knew what a virtual fitting *is* — this answers that in three
+ * steps before the deep clinical argument starts.
  */
-const PILLARS: {
-  icon: React.ReactNode;
-  metric: string;
-  metricSub: string;
-  title: string;
-  body: string;
-  gold?: boolean;
-}[] = [
+const HOW_STEPS: { n: string; title: string; body: string }[] = [
   {
-    icon: <RefreshCw size={22} />,
-    metric: "2.5×",
-    metricSub: "more resupply orders",
-    title: "CPAP resupply that runs itself",
-    body: "Eligibility-aware reminders go out by text, email, and voice on the right 90-day cadence — and a 24/7 AI agent books the reorders behind them, even after hours. Your team works the exceptions instead of the phone tree, and no replacement window slips.",
+    n: "01",
+    title: "You start a fitting",
+    body: "One click from the patient's record. Text or email them a link, or turn your screen around and let them scan a QR code while they're standing at your counter.",
   },
   {
-    icon: <Receipt size={22} />,
-    metric: "94%",
-    metricSub: "first-pass clean claims",
-    title: "Claims that get paid the first time",
-    gold: true,
-    body: "AI scrubs every 837P before it leaves the building — eligibility, modifiers, documentation — then auto-submits and posts the ERA back automatically. Most DME denials are preventable rework at ~$118 each; Breathe catches them before the claim is ever filed.",
+    n: "02",
+    title: "Their phone measures their face",
+    body: "The patient follows a short on-screen guide and answers a few safety and comfort questions. About two minutes. The photo never leaves their phone — only the measurements come back.",
   },
   {
-    icon: <Stethoscope size={22} />,
-    metric: "85%",
-    metricSub: "therapy compliance",
-    title: "Higher compliance, better outcomes",
-    body: "Live adherence from ResMed, Philips, and 3B is pulled in nightly and ranked, so at-risk patients surface before they quit. Hit the Medicare 4-hour rule, document the 90-day window automatically, and keep every compliant patient supplied.",
-  },
-  {
-    icon: <ClipboardSignature size={22} />,
-    metric: "Minutes",
-    metricSub: "to a signed order",
-    title: "Documents signed, not stalled",
-    body: "Written orders, CMNs, prior auths, and proof of delivery draft from the patient's own data and route for e-signature in a tap — signed and on file before delivery. Missing documentation is the #1 reason DME claims stall; Breathe closes that gap before it costs you.",
+    n: "03",
+    title: "You get a mask, a size, and the reasoning",
+    body: "The fitting lands in your worklist: the recommended mask from your own catalog, the cushion size, the alternatives, and every mask that was ruled out with the rule that ruled it out.",
   },
 ];
 
-function Pillars() {
+function HowItWorks() {
   return (
-    <section className="bx-section" id="what-it-does">
+    <section className="bx-section" id="how">
+      <div className="bx-shell">
+        <div className="bx-section-head bx-reveal">
+          <span className="bx-eyebrow">
+            <Workflow size={13} /> How it works
+          </span>
+          <h2 className="bx-h2">A fitting, start to finish</h2>
+          <p className="bx-lede">
+            Fitting a mask today means booking the patient in, putting a staff
+            member at a mirror with them, and opening sample cushions you can
+            never bill for. Here is the same job with the patient&apos;s own
+            phone doing the measuring.
+          </p>
+        </div>
+        <div className="bx-steps">
+          {HOW_STEPS.map((s) => (
+            <article className="bx-step bx-reveal" key={s.n}>
+              <span className="bx-step-n">{s.n}</span>
+              <h3>{s.title}</h3>
+              <p>{s.body}</p>
+            </article>
+          ))}
+        </div>
+        <p className="bx-fit-lede" style={{ marginTop: 22 }}>
+          No app to install, no hardware to buy, nothing for the patient to sign
+          up for. It runs in the browser on the phone they already own — and the
+          finished fitting is on the same record your billing and resupply run
+          from.
+        </p>
+      </div>
+    </section>
+  );
+}
+
+/* ═══════════════════════ Home: the mask-fitter band ═══════════════════════
+ *
+ * The flagship. Until the Aug-2026 pass the fitter was one card in the
+ * feature grid, sold as a labour saver — which is exactly the pitch a
+ * point-solution competitor makes. This band makes the clinical-rigour
+ * argument instead: safety as a hard filter, on-device imaging, and a
+ * report that names what was ruled out. The deep detail (magnetic
+ * screening, versioned rules, confidence gating, referral portal,
+ * outcomes) stays on /breathe/mask-fitting so the home page still scans.
+ */
+const FIT_ENTRY: {
+  tag: string;
+  gold?: boolean;
+  mint?: boolean;
+  title: string;
+  summary: string;
+  points: string[];
+}[] = [
+  {
+    tag: "At your counter",
+    gold: true,
+    title: "Hand over a QR code",
+    summary: "The patient is standing right there. Don't send them home first.",
+    points: [
+      "Staff open a fitting and hand over a QR code on screen — nothing is sent",
+      "No email address, no mobile number, no waiting for a text to land",
+      "The link is short-lived by design because it lives on a screen in a semi-public room",
+      "Finishes on the patient's own phone, in your lobby, before they leave",
+    ],
+  },
+  {
+    tag: "At home",
+    title: "Text or email a link",
+    summary:
+      "The fitting comes back to your worklist while they sit on their own sofa.",
+    points: [
+      "Works on any phone browser — no app to download, no account to create",
+      "The patient scans, answers a short comfort questionnaire, and is done",
+      "Results land in your fitter worklist with the mask, the size and the reasoning",
+      "New leads and referrals can be fitted before they are ever a patient",
+    ],
+  },
+  {
+    tag: "Already on service",
+    mint: true,
+    title: "Re-fit the roster you have",
+    summary:
+      "The mask that fit at setup is not always the mask that fits at month nine.",
+    points: [
+      "A daily scan finds patients who reported a leaking or uncomfortable fit",
+      "It also finds patients still on a mask the manufacturer discontinued",
+      "Each one is offered a fresh fitting — capped at one message per quarter",
+      "Turns your existing roster into resupply revenue instead of churn",
+    ],
+  },
+];
+
+const FIT_TIERS: { n: string; name: string; how: string; hard?: boolean }[] = [
+  {
+    n: "TIER 1",
+    name: "Safety",
+    how: "Implants, contraindications, household risk",
+    hard: true,
+  },
+  {
+    n: "TIER 2",
+    name: "Therapy compatibility",
+    how: "Pressure range, therapy mode, service line",
+    hard: true,
+  },
+  {
+    n: "TIER 3",
+    name: "Facial fit",
+    how: "The patient's millimetres against each size's published band",
+  },
+  {
+    n: "TIER 4",
+    name: "Patient characteristics",
+    how: "Sleep position, mouth breathing, claustrophobia, facial hair, glasses",
+  },
+  {
+    n: "TIER 5",
+    name: "Your formulary",
+    how: "Contract, payer, location and therapy mode — bounded, ranking only",
+  },
+  {
+    n: "TIER 6",
+    name: "Inventory & supply",
+    how: "What you can actually ship this week — bounded, ranking only",
+  },
+];
+
+const FIT_THEIRS: string[] = [
+  "The patient's photo is uploaded to a vendor's cloud",
+  "It is processed there, then deleted — you are trusting the deletion",
+  "The image crosses a network you do not control on the way",
+  "Your privacy story depends on a third party's retention policy",
+];
+
+const FIT_OURS: { label: string; note: string }[] = [
+  {
+    label: "The camera never leaves the phone",
+    note: "Facial landmark detection runs in the patient's own browser",
+  },
+  {
+    label: "Numbers are all that travel",
+    note: "A handful of millimetre measurements — no image, no frames, no video",
+  },
+  {
+    label: "Nothing image-derived is ever logged",
+    note: "A platform-level rule, enforced in the codebase, not a setting",
+  },
+  {
+    label: "No app, no account, no upload",
+    note: "The patient opens a link and it works on the phone they own",
+  },
+];
+
+const FIT_STOPS: { title: string; body: string }[] = [
+  {
+    title: "The image never leaves the phone",
+    body: "Cloud fitters upload the photo and delete it afterwards. We never receive it, which is a different promise.",
+  },
+  {
+    title: "Safety is a filter, not a penalty",
+    body: "A contraindicated mask is removed, and the household is screened for magnetic implants, not just the patient.",
+  },
+  {
+    title: "A size the patient can check",
+    body: "Per-size millimetre bands, cushion and frame resolved separately, drawn against their own measurement.",
+  },
+  {
+    title: "A report naming what was ruled out",
+    body: "Every exclusion, the rule version that caused it, and your own outcomes dashboard behind it.",
+  },
+];
+
+const FIT_PLAN_POINTS: string[] = [
+  "On-device AI facial measurement — the image never leaves the phone",
+  "Text, email, or hand over a QR code at your counter",
+  "Safety & therapy compatibility screened as hard filters, not score penalties",
+  "Your own mask catalog, formulary, safety questions and fit reports",
+  "25 completed fittings/month, then $2 each",
+];
+
+const FIT_ACTIVATION: string[] = [
+  "You are never fielding somebody else's estimate as your clinical output",
+  "Sign off only the models you stock — you do not clear a catalog you don't dispense",
+  "Batch sign-off for a whole model's size run, and the evidence prints on every fit report",
+  "Flip the switches yourself in the console — no deploy, no ticket, no waiting on us",
+];
+
+function FitterBand() {
+  return (
+    <section className="bx-section bx-fitband" id="fitter">
+      <div className="bx-shell">
+        <div className="bx-section-head center bx-reveal">
+          <span className="bx-eyebrow gold">
+            <ScanFace size={13} /> Virtual mask fitting
+          </span>
+          <h2 className="bx-h2">
+            The mask fitter a clinician would <em>put their name on.</em>
+          </h2>
+          <p className="bx-lede">
+            Anyone can text a patient a link and return a mask name. The hard
+            part is the awkward cases — the pacemaker, the dark kitchen, the
+            size nobody signed off, the payer that excludes the model you were
+            about to send. This is a fitting engine built for those, and it
+            happens to be the fastest one your staff will ever run.
+          </p>
+          <div className="bx-cta-row">
+            <Link className="bx-btn bx-btn-gold" href="/breathe/mask-fitting">
+              Explore the fitter <ArrowRight size={17} />
+            </Link>
+            <Link
+              className="bx-btn bx-btn-ghost"
+              href="/breathe/switch/sleepglad"
+            >
+              Compare with a stand-alone fitter
+            </Link>
+          </div>
+        </div>
+
+        {/* Entry points — the thing a link-only fitter cannot do. */}
+        <div className="bx-fit-sub bx-reveal">
+          <h3 className="bx-fit-h3">
+            A fitting starts wherever the patient actually is
+          </h3>
+          <p className="bx-fit-lede">
+            Most fitting tools do exactly one thing: text a link and wait. That
+            misses the patient at your counter and every patient already on
+            service. Breathe opens a fitting from all three — and they all land
+            in the same worklist, on the same record.
+          </p>
+          <div className="bx-fit-entry">
+            {FIT_ENTRY.map((c) => (
+              <article className="bx-entry bx-reveal" key={c.tag}>
+                <span
+                  className="bx-entry-tag"
+                  style={{
+                    color: c.gold
+                      ? "var(--bx-gold-soft)"
+                      : c.mint
+                        ? "var(--bx-mint)"
+                        : "var(--bx-cyan)",
+                  }}
+                >
+                  {c.tag}
+                </span>
+                <h4>{c.title}</h4>
+                <p className="bx-entry-sum">{c.summary}</p>
+                <ul className="bx-ticks">
+                  {c.points.map((p) => (
+                    <li key={p}>{p}</li>
+                  ))}
+                </ul>
+              </article>
+            ))}
+          </div>
+        </div>
+
+        {/* The six-tier ladder — the structural claim we own. */}
+        <div className="bx-tiers-grid">
+          <div className="bx-reveal">
+            <h3 className="bx-fit-h3">
+              Six tiers — and the first two cannot be outvoted
+            </h3>
+            <p className="bx-fit-lede">
+              Most recommendation engines are one big score: every factor
+              becomes points, and enough points anywhere can outweigh a warning.
+              Ours doesn&apos;t work that way. Safety and therapy compatibility
+              are filters, not points — a mask that fails either is removed from
+              the list entirely. No margin, no stock level, and no formulary
+              preference can score its way past a contraindication, because by
+              the time those tiers run the unsafe masks are already gone.
+            </p>
+            <p className="bx-tier-note">
+              The confidence number your patient sees is computed from{" "}
+              <b>clinical terms only</b>. Formulary preference, stock levels,
+              margin, and outcome tuning are excluded from it by construction —
+              they can re-order two near-equal masks, and that is all.
+            </p>
+            <p className="bx-fit-lede" style={{ marginTop: 14 }}>
+              The patient sees their own measurement plotted against the size
+              range the manufacturer documents for that mask — a fit you can
+              check, not a score you have to trust.
+            </p>
+          </div>
+          <div className="bx-tiers bx-reveal">
+            <span className="bx-tiers-cap">
+              Every mask in your catalog enters here
+            </span>
+            {FIT_TIERS.map((t) => (
+              <div key={t.n}>
+                <div className={"bx-tier" + (t.hard ? " hard" : "")}>
+                  <span className="bx-tier-n">{t.n}</span>
+                  <span className="bx-tier-txt">
+                    <b>{t.name}</b>
+                    <i>{t.how}</i>
+                  </span>
+                </div>
+                {t.hard ? (
+                  <span className="bx-tier-fail">
+                    — fails → removed from consideration
+                  </span>
+                ) : null}
+              </div>
+            ))}
+            <span className="bx-tiers-out">
+              A recommendation, its alternatives, and what was ruled out
+            </span>
+          </div>
+        </div>
+
+        {/* On-device imaging — "deleted" vs "never received". */}
+        <div className="bx-fit-sub bx-reveal">
+          <h3 className="bx-fit-h3">
+            &ldquo;We delete the photo&rdquo; and &ldquo;we never received the
+            photo&rdquo; are not the same promise
+          </h3>
+          <p className="bx-fit-lede">
+            Every remote fitting tool has to answer one question from a patient
+            and a very different one from your compliance officer: where does
+            the face picture go? Most answer &ldquo;to our cloud, and then we
+            delete it.&rdquo; We answer &ldquo;nowhere.&rdquo;
+          </p>
+          <div className="bx-privacy">
+            <article className="bx-privacy-card">
+              <span className="bx-privacy-tag">Upload-and-discard fitting</span>
+              <h4>The image leaves the patient&apos;s phone</h4>
+              <ul className="bx-dashes">
+                {FIT_THEIRS.map((t) => (
+                  <li key={t}>{t}</li>
+                ))}
+              </ul>
+            </article>
+            <span className="bx-privacy-vs">vs</span>
+            <article className="bx-privacy-card ours">
+              <span className="bx-privacy-tag">Breathe</span>
+              <h4>The image never leaves the patient&apos;s phone</h4>
+              <ul className="bx-pairs">
+                {FIT_OURS.map((o) => (
+                  <li key={o.label}>
+                    <b>{o.label}</b>
+                    <i>{o.note}</i>
+                  </li>
+                ))}
+              </ul>
+            </article>
+          </div>
+          <p className="bx-fit-lede" style={{ marginTop: 16 }}>
+            It is also the easiest privacy conversation your staff will ever
+            have with a nervous patient:{" "}
+            <i>&ldquo;the picture stays on your phone.&rdquo;</i>{" "}
+            <Link className="bx-linkbtn" href="/breathe/security">
+              See the full security posture →
+            </Link>
+          </p>
+          <p className="bx-fit-lede" style={{ marginTop: 10 }}>
+            The rest of the clinical detail — magnetic-implant screening,
+            versioned safety rules, confidence gating, the fit report, the
+            referral portal and the outcomes dashboard — is on the{" "}
+            <Link className="bx-linkbtn gold" href="/breathe/mask-fitting">
+              mask-fitting deep dive →
+            </Link>
+          </p>
+        </div>
+
+        {/* Against the one competitor that attacks this differentiator. */}
+        <div className="bx-fit-sub bx-reveal">
+          <h3 className="bx-fit-h3">Against a stand-alone AI mask fitter</h3>
+          <p className="bx-fit-lede">
+            The best-known one is SleepGlad, now the AI-fitting layer inside VGM
+            Total Sleep Services. It is a good product and it does the fitting
+            moment well — remote scan, manufacturer-agnostic recommendation,
+            your own formulary. On that much we are a tie. The difference is
+            everything underneath: what happens on the awkward cases, what you
+            can prove afterwards, and whether the fitting is a tool you bought
+            or a step in the business you already run.
+          </p>
+          <div className="bx-standalone">
+            <span className="bx-chiprow-label">
+              Where a stand-alone fitter stops
+            </span>
+            <div className="bx-standalone-grid">
+              {FIT_STOPS.map((s) => (
+                <div className="bx-hero-prop" key={s.title}>
+                  <b>{s.title}</b>
+                  <span>{s.body}</span>
+                </div>
+              ))}
+            </div>
+            <div className="bx-standalone-foot">
+              <Link className="bx-linkbtn" href="/breathe/mask-fitting#vs">
+                See the full 20-row comparison →
+              </Link>
+              <Link className="bx-linkbtn" href="/breathe/switch/sleepglad">
+                Running SleepGlad today? →
+              </Link>
+            </div>
+          </div>
+          <p className="bx-outcome-source" style={{ marginTop: 14 }}>
+            Comparison reflects publicly described capabilities as of 2026 and
+            is provided for illustration. SleepGlad and VGM are trademarks of
+            their respective owners and are named here only to identify the
+            products compared.
+          </p>
+        </div>
+
+        {/* Buy it on its own — and the honest note about turning it on. */}
+        <div className="bx-fitplan-grid">
+          <div className="bx-fitplan bx-reveal">
+            <span
+              className="bx-chiprow-label"
+              style={{ color: "var(--bx-gold-soft)" }}
+            >
+              Buy the fitter on its own
+            </span>
+            <div className="bx-fitplan-amt">
+              <b>$119</b>
+              <span>/mo · Virtual Mask Fitter</span>
+            </div>
+            <p className="bx-fitplan-fine">
+              <s>$149</s> founder rate, locked 12 months · no setup fee · 25
+              fittings/mo, then $2 each
+            </p>
+            <p
+              className="bx-fit-lede"
+              style={{ marginTop: 16, color: "var(--bx-text-dim)" }}
+            >
+              The clinical fitter on its own — text a link, or hand over a QR
+              code at your counter, and get a mask, a size, and the reasoning
+              back. Nobody on your team runs a fitting, and no sample masks get
+              opened just to be thrown away.
+            </p>
+            <ul className="bx-ticks gold" style={{ marginTop: 18 }}>
+              {FIT_PLAN_POINTS.map((t) => (
+                <li key={t}>{t}</li>
+              ))}
+            </ul>
+            <div className="bx-cta-row" style={{ marginTop: 24 }}>
+              <Link className="bx-btn bx-btn-gold" href="/breathe/signup">
+                Start with the fitter <ArrowRight size={16} />
+              </Link>
+              <Link className="bx-btn bx-btn-ghost" href="/breathe/pricing">
+                Full pricing
+              </Link>
+            </div>
+          </div>
+          <div className="bx-fitnote bx-reveal">
+            <span
+              className="bx-chiprow-label"
+              style={{ color: "var(--bx-cyan)" }}
+            >
+              One honest note about turning it on
+            </span>
+            <p
+              className="bx-fit-lede"
+              style={{ marginTop: 14, color: "var(--bx-text-dim)" }}
+            >
+              The clinical engine ships switched off, and that is deliberate. A
+              size band is a clinical number, so before the engine goes live
+              your respiratory therapist signs off the bands for the models{" "}
+              <em>you actually dispense</em> — against the manufacturer&apos;s
+              own fitting documentation, which the console links for you — and
+              every sign-off records what it was checked against. It is a short
+              session per model, not a project.
+            </p>
+            <ul className="bx-ticks" style={{ marginTop: 18 }}>
+              {FIT_ACTIVATION.map((t) => (
+                <li key={t}>{t}</li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ═════════════════ Home: platform deep-dive index ═════════════════════════ */
+const DEEP_DIVES: {
+  title: string;
+  href: string;
+  blurb: string;
+  gold?: boolean;
+}[] = [
+  {
+    title: "Clinical mask fitting",
+    href: "/breathe/mask-fitting",
+    gold: true,
+    blurb:
+      "The fitting moment, built like a clinical instrument — safety as a hard filter, millimetre size bands, and an image that never leaves the patient's phone.",
+  },
+  {
+    title: "Resupply engine",
+    href: "/breathe/resupply-engine",
+    gold: true,
+    blurb:
+      "The multi-channel cadence that turns due dates into reorders — text, email, chat, and AI calls that escalate until a patient responds.",
+  },
+  {
+    title: "Revenue cycle",
+    href: "/breathe/get-paid",
+    gold: true,
+    blurb:
+      "Eligibility to ERA in one flow: claim scrubbing, auto-posting, ranked denials, patient-pay plans, and payer profitability.",
+  },
+  {
+    title: "AI voice agent",
+    href: "/breathe/ai-voice",
+    blurb:
+      "A 24/7 voice agent that places and answers resupply calls — with audit-grade transcripts and a post-call summary on every one.",
+  },
+  {
+    title: "Patient communications",
+    href: "/breathe/communications",
+    blurb:
+      "One inbox for SMS, MMS, email, and fax — with AI drafting, triage, and high-confidence auto-replies that give your team hours back.",
+  },
+  {
+    title: "Clinical & therapy",
+    href: "/breathe/clinical",
+    blurb:
+      "Catch patients slipping off therapy before they quit — adherence cohorts, alerts, coaching plans, and recall tracking.",
+  },
+  {
+    title: "Analytics & insight",
+    href: "/breathe/analytics",
+    blurb:
+      "The owner's cockpit: revenue, margin, funnel, LTV/CAC, and KPI alerts that page you before a number slips.",
+  },
+  {
+    title: "Patient experience",
+    href: "/breathe/patient-experience",
+    blurb:
+      "What your patients actually get — a branded storefront, virtual fitter, self-service portal, and AI help that keeps them on therapy.",
+  },
+  {
+    title: "Compliance & audits",
+    href: "/breathe/compliance",
+    blurb:
+      "Payer, therapy, and business safeguards built in — plus a one-step ADR packet for when the auditor asks.",
+  },
+  {
+    title: "Multi-location",
+    href: "/breathe/multi-location",
+    blurb:
+      "Run every branch on one platform — each its own record with its own NPI, a live rollup, and in-store pickup.",
+  },
+];
+
+const ALSO_INCLUDED: string[] = [
+  "Branded storefront & shop",
+  "Documents & e-sign",
+  "Built-in telehealth",
+  "AI referral intake from faxes",
+  "Referral & provider portal",
+  "Automation rules & module toggles",
+];
+
+function PlatformDeepDives() {
+  return (
+    <section className="bx-section" id="platform">
       <div className="bx-shell">
         <div className="bx-section-head center bx-reveal">
           <span className="bx-eyebrow">
-            <Sparkles size={13} /> What Breathe does
+            <Waypoints size={13} /> Go deeper
           </span>
           <h2 className="bx-h2">
-            The work that runs a CPAP business — automated
+            Explore the platform, <em>one pillar at a time</em>
           </h2>
           <p className="bx-lede">
-            From the 90-day reorder reminder to the paid claim, Breathe handles
-            the repetitive, revenue-critical work end to end — so you grow
-            resupply, deny fewer claims, and keep patients on therapy without
-            adding staff.
+            Each pillar has its own deep dive — how it actually works,
+            everything it includes, and the outcome it drives. Pick a thread and
+            follow it all the way down, or read{" "}
+            <Link className="bx-linkbtn" href="/breathe/features">
+              every capability in one list →
+            </Link>
           </p>
         </div>
-        <div className="bx-pillars">
-          {PILLARS.map((p) => (
-            <article
-              className={`bx-pillar bx-reveal${p.gold ? " gold" : ""}`}
+        <div className="bx-deepgrid">
+          {DEEP_DIVES.map((p) => (
+            <Link
+              className={"bx-deep bx-reveal" + (p.gold ? " gold" : "")}
+              href={p.href}
               key={p.title}
             >
-              <div className="bx-pillar-top">
-                <span className="bx-pillar-ic">{p.icon}</span>
-                <span className="bx-pillar-metric">
-                  <b>{p.metric}</b>
-                  <small>{p.metricSub}</small>
-                </span>
-              </div>
-              <h3 className="bx-pillar-title">{p.title}</h3>
-              <p className="bx-pillar-body">{p.body}</p>
+              <h3>{p.title}</h3>
+              <p>{p.blurb}</p>
+              <span className="bx-deep-go">Explore →</span>
+            </Link>
+          ))}
+        </div>
+        <div className="bx-chiprow bx-reveal">
+          <span className="bx-chiprow-label">Also in every plan</span>
+          <div className="bx-chips">
+            {ALSO_INCLUDED.map((c) => (
+              <span className="bx-chip" key={c}>
+                {c}
+              </span>
+            ))}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ═════════════════ Home: trust, and the questions buyers ask ══════════════ */
+const HOME_TRUST: { title: string; body: string }[] = [
+  {
+    title: "On-device patient imaging",
+    body: "Camera frames for mask fitting never leave the browser — only numeric measurements are transmitted. Nothing image-derived is ever logged.",
+  },
+  {
+    title: "HIPAA-eligible infrastructure",
+    body: "Every AI and communications vendor we use is HIPAA-eligible, and patient data is handled with SOC 2-level security practices.",
+  },
+  {
+    title: "Access limited to what each person needs",
+    body: "Granular, permission-gated admin roles mean each teammate sees only what their job requires — enforced everywhere.",
+  },
+];
+
+function TrustHome() {
+  return (
+    <section className="bx-section" id="trust">
+      <div className="bx-shell">
+        <div className="bx-section-head bx-reveal">
+          <span className="bx-eyebrow mint">
+            <ShieldCheck size={13} /> Trust &amp; security
+          </span>
+          <h2 className="bx-h2">Built for a compliance review, not a demo</h2>
+          <p className="bx-lede">
+            The privacy story is architectural: patient camera frames never
+            reach a server, and nothing image-derived is written to a log
+            anywhere in the platform.{" "}
+            <Link className="bx-linkbtn" href="/breathe/security">
+              Security posture →
+            </Link>{" "}
+            ·{" "}
+            <Link className="bx-linkbtn" href="/breathe/compliance">
+              Compliance &amp; audits →
+            </Link>
+          </p>
+        </div>
+        <div className="bx-sec-grid">
+          {HOME_TRUST.map((s) => (
+            <article className="bx-sec-card bx-reveal" key={s.title}>
+              <h3>{s.title}</h3>
+              <p>{s.body}</p>
             </article>
           ))}
         </div>
@@ -1713,102 +2526,62 @@ function Pillars() {
   );
 }
 
-/* ─────────────────── Proprietary resupply engine ─────────────────── */
-/*
- * The revenue centerpiece: a dedicated band that explains HOW Breathe grows
- * resupply — the proprietary, behavioral-science-based reasoning engine that
- * gets patients to reorder across text, email, and an AI phone call with
- * almost no staff time. Placed right under the value pillars because, for a
- * DME, this is the single clearest line from "software" to "more revenue".
- * Reuses the existing .bx-pillar grid so it needs no new CSS.
- */
-const ENGINE_STEPS: {
-  icon: React.ReactNode;
-  metric: string;
-  metricSub: string;
-  title: string;
-  body: string;
-  gold?: boolean;
-}[] = [
+const HOME_FAQ: { q: string; a: string }[] = [
   {
-    icon: <BrainCircuit size={22} />,
-    metric: "AI",
-    metricSub: "reasoning",
-    title: "It reasons — it doesn't just remind",
-    body: "Grounded in the behavioral science of timing, habit, and friction, the engine reasons about each patient: who's due, the right moment to reach them, the right channel, and how gently or firmly to ask. Every patient gets the nudge most likely to turn into an order — not a generic blast.",
-    gold: true,
+    q: "Do patients need an app to be fitted?",
+    a: "No. The fitting runs in the phone's browser from a link you text, email, or hand over as a QR code at your counter. No download, no account.",
   },
   {
-    icon: <Waypoints size={22} />,
-    metric: "3",
-    metricSub: "channels, escalating",
-    title: "Text → email → AI phone call",
-    body: "A friendly text first, then a follow-up email, then — if they still haven't ordered — a natural-sounding AI voice call that talks them through it. Each touch is worded with a little more urgency, and an unanswered call retries before anyone on your team is ever involved.",
+    q: "Where does the face photo go?",
+    a: "Nowhere. Facial landmark detection runs on the patient's device and only millimetre measurements are transmitted. Nothing image-derived is written to a log anywhere in the platform.",
   },
   {
-    icon: <Zap size={22} />,
-    metric: "1-tap",
-    metricSub: "to reorder",
-    title: "Reordering takes one tap",
-    body: "Reply YES to a text, tap a secure link in the email, or just say “yes” on the call. No login, no forms, no portal — the order ships to the address on file. Making it effortless is the whole point: the easier it is to say yes, the more patients do.",
+    q: "What accuracy do you publish?",
+    a: "We don't publish an accuracy percentage, because we could not defend somebody else's benchmark. We ship the fitter-outcomes dashboard instead, so you measure refit rate, overrides and scan quality on your own patients.",
   },
   {
-    icon: <TrendingUp size={22} />,
-    metric: "~0",
-    metricSub: "human touch",
-    title: "Recurring revenue, on autopilot",
-    body: "Every refill window that would have quietly slipped becomes a placed order — captured automatically, around the clock. Your team only ever sees the rare exception, so resupply revenue grows without adding headcount or hours on the phone.",
+    q: "Can we buy the fitter without the platform?",
+    a: "Yes — $119/mo standalone, including the catalog, formulary, safety questions, fit reports and the clinical console. It is also included in every platform plan.",
+  },
+  {
+    q: "Will it work with our billing system?",
+    a: "Claims submit through Office Ally, or download as an 837P for any clearinghouse. Eligibility runs 270/271, and ERAs auto-post back.",
+  },
+  {
+    q: "How long does implementation take?",
+    a: "Day one for the storefront and fitter. The clinical fitting engine ships switched off until your RT signs off the size bands for the models you dispense — a short session per model.",
+  },
+  {
+    q: "You're new. Why take the risk?",
+    a: "Start small and keep the exit open. The fitter runs on its own for $119/mo, month to month, no setup fee — so you can put it in front of real patients without touching your billing system. The demo is the live console on sample data, and your own RT signs off the clinical numbers before the engine goes live.",
   },
 ];
 
-function ResupplyEngine() {
+function FaqHome() {
   return (
-    <section className="bx-section" id="resupply-engine">
+    <section className="bx-section" id="faq">
       <div className="bx-shell">
-        <div className="bx-section-head center bx-reveal">
+        <div className="bx-section-head bx-reveal">
           <span className="bx-eyebrow">
-            <Sparkles size={13} /> The resupply engine
+            <MessageSquare size={13} /> Questions buyers ask
           </span>
-          <h2 className="bx-h2">
-            A proprietary engine that turns refills into revenue
-          </h2>
+          <h2 className="bx-h2">The short answers</h2>
           <p className="bx-lede">
-            Breathe's resupply engine is a proprietary, behavioral-science-based
-            reasoning system that gets patients to reorder their supplies from
-            you — automatically. It reads each patient's eligibility and reorder
-            window, then reasons about the message, the channel, and the moment
-            most likely to land: a text, a follow-up email, and a natural AI
-            phone call when it helps. Every touch is one tap from a placed
-            order, and the rare exception is the only thing your team ever
-            touches. It's exactly how resupply revenue grows — with almost no
-            human in the loop.
+            The long ones — including six on mask fitting alone — are on the{" "}
+            <Link className="bx-linkbtn" href="/breathe/faq">
+              FAQ page
+            </Link>
+            .
           </p>
         </div>
-        <div className="bx-pillars">
-          {ENGINE_STEPS.map((p) => (
-            <article
-              className={`bx-pillar bx-reveal${p.gold ? " gold" : ""}`}
-              key={p.title}
-            >
-              <div className="bx-pillar-top">
-                <span className="bx-pillar-ic">{p.icon}</span>
-                <span className="bx-pillar-metric">
-                  <b>{p.metric}</b>
-                  <small>{p.metricSub}</small>
-                </span>
-              </div>
-              <h3 className="bx-pillar-title">{p.title}</h3>
-              <p className="bx-pillar-body">{p.body}</p>
-            </article>
+        <div className="bx-faqgrid">
+          {HOME_FAQ.map((f) => (
+            <div className="bx-faqcard bx-reveal" key={f.q}>
+              <h3>{f.q}</h3>
+              <p>{f.a}</p>
+            </div>
           ))}
         </div>
-        <p className="bx-stats-note bx-reveal">
-          Resupply is the most predictable recurring revenue in DME — the engine
-          is built to capture as much of it as your eligibility allows.{" "}
-          <Link href="/breathe/resupply-engine">
-            See how the resupply engine works →
-          </Link>
-        </p>
       </div>
     </section>
   );
@@ -1905,100 +2678,6 @@ function RevenueRecovery() {
           timely-filing alerts, patient payment plans &amp; collections, and
           payer-profitability — the full revenue cycle on one record.{" "}
           <Link href="/breathe/get-paid">See how you get paid →</Link>
-        </p>
-      </div>
-    </section>
-  );
-}
-
-/* ─────────────────── AI workforce (the labor story, quantified) ─────────────────── */
-/*
- * The "less labor" half of the ICP promise — and the only half the site used
- * to leave un-quantified. The voice agent was the only AI sold on the home
- * page; the chatbot, email auto-reply, and admin copilot (the rest of the
- * "staff you don't hire") were invisible. This band names the whole AI
- * workforce and ties it to hours-per-teammate. Reuses .bx-pillar — no new CSS.
- */
-const WORKFORCE: {
-  icon: React.ReactNode;
-  metric: string;
-  metricSub: string;
-  title: string;
-  body: string;
-  gold?: boolean;
-}[] = [
-  {
-    icon: <Mic size={22} />,
-    metric: "24 / 7",
-    metricSub: "calls, answered & placed",
-    title: "An AI voice agent on your own number",
-    gold: true,
-    body: "It answers inbound patient calls and places outbound resupply and follow-up calls on your practice's own line — after hours and on weekends — then writes a summary, flags sentiment, and hands off to a human only when it should.",
-  },
-  {
-    icon: <MessageSquare size={22} />,
-    metric: "Tickets ↓",
-    metricSub: "deflected & converted",
-    title: "A chatbot that answers and sells",
-    body: "Grounded in your products and policies, the storefront assistant answers patient questions and steers shoppers to orders — without a CSR watching a chat queue all day.",
-  },
-  {
-    icon: <Mail size={22} />,
-    metric: "Inbox",
-    metricSub: "triaged automatically",
-    title: "Email replies that write themselves",
-    body: "Routine patient emails get a high-confidence answer automatically; anything order-, account-, or clinically-specific routes straight to a person. Your team stops triaging and starts resolving.",
-  },
-  {
-    icon: <Bot size={22} />,
-    metric: "Onboard",
-    metricSub: "in days, not weeks",
-    title: "A copilot for your staff",
-    body: "An in-app assistant answers “how do I…” on every admin screen, so new coordinators ramp without shadowing a veteran — and your best people stop being the help desk.",
-  },
-];
-
-function AiWorkforce() {
-  return (
-    <section className="bx-section" id="ai-workforce">
-      <div className="bx-shell">
-        <div className="bx-section-head center bx-reveal">
-          <span className="bx-eyebrow">
-            <Sparkles size={13} /> The AI workforce
-          </span>
-          <h2 className="bx-h2">The staff you don&apos;t have to hire</h2>
-          <p className="bx-lede">
-            Breathe&apos;s AI handles the routine calls, chats, emails, and
-            questions that fill your team&apos;s day — the repetitive contact
-            that eats 9+ hours per teammate every week. Grow your panel without
-            growing payroll.
-          </p>
-        </div>
-        <div className="bx-pillars">
-          {WORKFORCE.map((p) => (
-            <article
-              className={`bx-pillar bx-reveal${p.gold ? " gold" : ""}`}
-              key={p.title}
-            >
-              <div className="bx-pillar-top">
-                <span className="bx-pillar-ic">{p.icon}</span>
-                <span className="bx-pillar-metric">
-                  <b>{p.metric}</b>
-                  <small>{p.metricSub}</small>
-                </span>
-              </div>
-              <h3 className="bx-pillar-title">{p.title}</h3>
-              <p className="bx-pillar-body">{p.body}</p>
-            </article>
-          ))}
-        </div>
-        <p className="bx-stats-note bx-reveal">
-          Calls, texts, emails, and faxes all land in one inbox — with AI
-          drafting, triaging, and auto-replying so your team resolves instead of
-          re-keying.{" "}
-          <Link href="/breathe/communications">
-            See how patient communications work →
-          </Link>
         </p>
       </div>
     </section>
@@ -2309,25 +2988,38 @@ function Sparkline() {
  * the illustrative ProductShowcase below, these are the actual product — the
  * strongest "show, don't tell" proof, and what every competitor's site leads
  * with. Hero screen + a four-up gallery, each captioned with the job it does. */
-const LIVE_SHOTS: { src: string; cap: string; alt: string }[] = [
+/*
+ * Real captured console screens, on demo data. `label` is set in bold ahead
+ * of the caption so each card reads as "what this is — what it shows".
+ *
+ * The owner dashboard (console-home.jpg) is deliberately NOT in this grid:
+ * it already appears immediately above as the product-tour video poster, and
+ * repeating it a few hundred pixels lower reads as a rendering bug. The
+ * unified inbox takes the fourth slot instead.
+ */
+const LIVE_SHOTS: { src: string; label: string; cap: string; alt: string }[] = [
   {
     src: "/breathe/screens/console-resupply.jpg",
-    cap: "Resupply opportunities — who's due, overdue, and ready to refit",
+    label: "Resupply worklist",
+    cap: "who's overdue, who's due, and who needs a re-fit — filtered by item.",
     alt: "Breathe admin: resupply opportunities worklist with overdue and at-risk flags",
   },
   {
-    src: "/breathe/screens/console-fleet.jpg",
-    cap: "Therapy fleet — compliance across ResMed, Philips & 3B",
-    alt: "Breathe admin: therapy fleet compliance dashboard across manufacturer systems",
-  },
-  {
     src: "/breathe/screens/console-denials.jpg",
-    cap: "Denials ranked by recoverable $ × win-probability",
+    label: "AI denials worklist",
+    cap: "ranked by recoverable dollars times win probability.",
     alt: "Breathe admin: denials worklist ranked by recoverable dollars",
   },
   {
+    src: "/breathe/screens/console-fleet.jpg",
+    label: "Therapy monitoring",
+    cap: "compliance and clinical flags across ResMed, Philips and 3B.",
+    alt: "Breathe admin: therapy fleet compliance dashboard across manufacturer systems",
+  },
+  {
     src: "/breathe/screens/console-conversations.jpg",
-    cap: "One inbox — SMS, email, voice & in-app",
+    label: "Unified inbox",
+    cap: "SMS, MMS, email and fax in one thread per patient.",
     alt: "Breathe admin: unified conversations inbox across every channel",
   },
 ];
@@ -2480,7 +3172,9 @@ function LiveConsole() {
                 </span>
                 <img src={s.src} alt={s.alt} loading="lazy" />
               </div>
-              <figcaption>{s.cap}</figcaption>
+              <figcaption>
+                <b>{s.label}</b> — {s.cap}
+              </figcaption>
             </figure>
           ))}
         </div>
@@ -3773,19 +4467,34 @@ function CompareMark({ v }: { v: Cell }) {
   );
 }
 
-export function Comparison() {
+/*
+ * The comparison table. `limit` trims it to a teaser on the home page —
+ * the full 18 rows plus the four migration guides live on /breathe/compare,
+ * so the landing page stays scannable without hiding the argument.
+ */
+export function Comparison({ limit }: { limit?: number } = {}) {
+  const rows = limit ? COMPARE_ROWS.slice(0, limit) : COMPARE_ROWS;
+  const hidden = COMPARE_ROWS.length - rows.length;
   return (
     <section className="bx-section" id="compare">
       <div className="bx-shell">
         <div className="bx-section-head center bx-reveal">
           <span className="bx-eyebrow">
-            <BrainCircuit size={13} /> How Breathe compares
+            <BrainCircuit size={13} /> Against the incumbents
           </span>
-          <h2 className="bx-h2">One platform vs. a stack of point tools</h2>
+          <h2 className="bx-h2">
+            What a legacy DME suite <em>makes you buy twice</em>
+          </h2>
           <p className="bx-lede">
-            Legacy DME software bolts modules onto decades-old cores. Breathe
-            was built AI-first, so the intelligence is in the product — not in
-            the add-on you license separately.
+            Brightree, Bonafide, and NikoHealth each cover part of the lifecycle
+            and leave you contracting the rest.
+            {hidden > 0 ? (
+              <>
+                {" "}
+                {hidden} more rows and four migration guides live on the compare
+                page.
+              </>
+            ) : null}
           </p>
         </div>
 
@@ -3795,7 +4504,14 @@ export function Comparison() {
         </p>
 
         <div className="bx-compare-wrap bx-reveal">
-          <div className="bx-compare-scroll">
+          <div
+            className="bx-compare-scroll"
+            // Scrolls horizontally under ~720px; without a tabindex a
+            // keyboard-only user cannot reach the columns off-screen.
+            tabIndex={0}
+            role="region"
+            aria-label="Feature comparison against Brightree, Bonafide and NikoHealth"
+          >
             <table className="bx-compare">
               <thead>
                 <tr>
@@ -3818,7 +4534,7 @@ export function Comparison() {
                 </tr>
               </thead>
               <tbody>
-                {COMPARE_ROWS.map((row) => (
+                {rows.map((row) => (
                   <tr key={row.label}>
                     <td className="bx-row-label">
                       {row.label}
@@ -4867,7 +5583,9 @@ function PricingPlans({
                   letterSpacing: "0.03em",
                   textTransform: "uppercase",
                   background: "rgba(16,185,129,0.14)",
-                  color: "#047857",
+                  // The page is dark navy: emerald-700 (#047857) here scored
+                  // 2.12:1. The page's own mint accent clears WCAG AA.
+                  color: "var(--bx-mint)",
                 }}
               >
                 🚀 Founder Launch · rate locked {p.lockMonths} months
@@ -5026,20 +5744,20 @@ function Pricing() {
 function PricingHome() {
   const [billing, setBilling] = useState<BillingMode>("monthly");
   return (
-    <section className="bx-section">
+    <section className="bx-section" id="pricing">
       <div className="bx-shell">
         <div className="bx-section-head center bx-reveal">
           <span className="bx-eyebrow">
             <CircleDollarSign size={13} /> Pricing
           </span>
           <h2 className="bx-h2">
-            One platform, <em>packaged for your size</em>
+            Start with the fitter, or run the <em>whole business</em>
           </h2>
           <p className="bx-lede">
-            Subscription tiers sized to your patient base — monthly or annual
-            (two months free), with onboarding and migration included. Upload a
-            spreadsheet (CSV) of your patients and you&apos;re live on day one.
-            Add premium modules only when you need them.
+            One published price per tier, month to month, and the virtual mask
+            fitter is in every one of them — 25 completed fittings a month, then
+            $2 each. Founder rates are locked for 12 months, and onboarding and
+            migration are included.
           </p>
         </div>
         <BillingToggle mode={billing} onChange={setBilling} />
@@ -5647,7 +6365,21 @@ function FoundingPartner() {
 }
 
 /* ───────────────────────── Closing CTA ───────────────────────── */
-export function ClosingCta() {
+/*
+ * Shared closing CTA. The 16 deep-dive pages take the defaults; the home
+ * page overrides the copy to close on the fitter specifically, which is the
+ * page's whole argument. Everything below the lede — the email capture, the
+ * buttons, the reassurance row — is identical either way.
+ */
+export function ClosingCta({
+  title,
+  lede,
+  note,
+}: {
+  title?: React.ReactNode;
+  lede?: React.ReactNode;
+  note?: React.ReactNode;
+} = {}) {
   const { openContact } = useDemoGate();
   return (
     <section className="bx-section" id="demo">
@@ -5656,12 +6388,12 @@ export function ClosingCta() {
           <span className="bx-eyebrow">
             <Sparkles size={13} /> Ready when you are
           </span>
-          <h2>Give your team room to breathe.</h2>
+          <h2>{title ?? "Give your team room to breathe."}</h2>
           <p>
-            Jump straight into the live console on sample data — no call, no
-            credit card. Enter your email and you&apos;re in. When you&apos;re
-            ready, create your account in minutes.
+            {lede ??
+              "Jump straight into the live console on sample data — no call, no credit card. Enter your email and you're in. When you're ready, create your account in minutes."}
           </p>
+          {note ? <p>{note}</p> : null}
           <DemoEmailForm source="breathe-cta" cta="Start the demo" />
           <div className="bx-cta-row">
             <Link className="bx-btn bx-btn-gold" href="/breathe/signup">
@@ -5707,60 +6439,84 @@ function Footer() {
   return (
     <footer className="bx-footer">
       <div className="bx-shell bx-footer-inner">
-        <Link className="bx-brand" href="/breathe">
-          <img src={LOGO} alt="CareMetric AI" />
-          <span>
-            <span className="bx-brand-name">Breathe</span>
-            <span className="bx-brand-sub">by CareMetric.ai</span>
-          </span>
-        </Link>
-        <p className="bx-footer-note">
-          Breathe is the AI-native operating platform for durable medical
-          equipment providers, built by CareMetric.ai.
-        </p>
-        <ul className="bx-footer-badges" aria-label="Security posture">
-          <li>
-            <ShieldCheck size={14} aria-hidden="true" />
-            HIPAA-eligible infrastructure
-          </li>
-          <li>
-            <ScanFace size={14} aria-hidden="true" />
-            On-device patient imaging
-          </li>
-          <li>
-            <Lock size={14} aria-hidden="true" />
-            Encrypted in transit
-          </li>
-        </ul>
-        <div className="bx-footer-contact">
-          <span className="bx-footer-contact-label">
-            <Headphones size={13} aria-hidden="true" />
-            Customer &amp; tech support
-          </span>
-          <a className="bx-footer-contact-link" href="tel:+18775212890">
-            <PhoneCall size={13} aria-hidden="true" />
-            (877) 521-2890
-            <span className="bx-footer-contact-toll">toll-free</span>
-          </a>
-          <a
-            className="bx-footer-contact-link"
-            href="mailto:info@cmbreathe.com"
-          >
-            <Mail size={13} aria-hidden="true" />
-            info@cmbreathe.com
-          </a>
+        <div className="bx-footer-cols">
+          <div>
+            <Link className="bx-brand" href="/breathe">
+              <img src={LOGO} alt="CareMetric AI" />
+              <span>
+                <span className="bx-brand-name">Breathe</span>
+                <span className="bx-brand-sub">by CareMetric.ai</span>
+              </span>
+            </Link>
+            <p className="bx-footer-blurb">
+              All-in-one software for CPAP &amp; DME providers: resupply
+              automation, revenue cycle, clinical monitoring, and the clinical
+              mask fitter — on one record.
+            </p>
+            <ul className="bx-footer-badges" aria-label="Security posture">
+              <li>
+                <ShieldCheck size={14} aria-hidden="true" />
+                HIPAA-eligible infrastructure
+              </li>
+              <li>
+                <ScanFace size={14} aria-hidden="true" />
+                On-device patient imaging
+              </li>
+              <li>
+                <Lock size={14} aria-hidden="true" />
+                Encrypted in transit
+              </li>
+            </ul>
+            <div className="bx-footer-contact">
+              <span className="bx-footer-contact-label">
+                <Headphones size={13} aria-hidden="true" />
+                Customer &amp; tech support
+              </span>
+              <a className="bx-footer-contact-link" href="tel:+18775212890">
+                <PhoneCall size={13} aria-hidden="true" />
+                (877) 521-2890
+                <span className="bx-footer-contact-toll">toll-free</span>
+              </a>
+              <a
+                className="bx-footer-contact-link"
+                href="mailto:info@cmbreathe.com"
+              >
+                <Mail size={13} aria-hidden="true" />
+                info@cmbreathe.com
+              </a>
+            </div>
+          </div>
+          {FOOTER_COLS.map((col) => (
+            <nav
+              className="bx-footer-col"
+              key={col.title}
+              aria-label={col.title}
+            >
+              <h3 className="bx-footer-col-title">{col.title}</h3>
+              <ul>
+                {col.links.map((l) => (
+                  <li key={`${col.title}-${l.label}`}>
+                    <Link href={l.href}>{l.label}</Link>
+                  </li>
+                ))}
+              </ul>
+            </nav>
+          ))}
         </div>
-        <div className="bx-brand-sub">
-          © {new Date().getFullYear()} CareMetric.ai
+        <div className="bx-footer-bottom">
+          <p>
+            © {new Date().getFullYear()} CareMetric.ai · Breathe is the platform
+            sold to DME &amp; HME providers. Trademarks named on this site
+            belong to their respective owners.
+          </p>
+          <div className="bx-footer-bottom-links">
+            <Link href="/admin/sign-in">Sign in</Link>
+            <Link href="/breathe/signup">Create account</Link>
+            <Link href="/breathe/faq">FAQ</Link>
+            <Link href="/breathe/security">Security</Link>
+          </div>
         </div>
       </div>
-      <nav className="bx-shell bx-footer-nav" aria-label="Breathe pages">
-        {FOOTER_LINKS.map((l) => (
-          <Link className="bx-footer-link" href={l.href} key={l.href}>
-            {l.label}
-          </Link>
-        ))}
-      </nav>
       <div className="bx-footer-admin">
         <Link
           href="/platform"
