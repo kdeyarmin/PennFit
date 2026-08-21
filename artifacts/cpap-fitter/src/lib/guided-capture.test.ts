@@ -11,6 +11,8 @@ import {
   POSE_STRUGGLE_MS,
   skipPose,
   STEADY_FRAMES_REQUIRED,
+  steadyFramesRequiredFor,
+  TURN_STEADY_FRAMES_REQUIRED,
 } from "./guided-capture";
 import type { QualityResult } from "./scan-quality";
 
@@ -58,6 +60,27 @@ describe("guided capture state machine", () => {
     }
     const final = guidedTick(state, quality(true), 1_000);
     expect(final.action).toEqual({ kind: "capture", pose: "front" });
+  });
+
+  it("fires a TURN capture on the shorter turn streak", () => {
+    // Holding a turned head steady with eyes off the screen is the hard
+    // part of the whole flow; turns take a two-frame streak where front
+    // keeps three (turn frames contribute no measurement samples).
+    let state = initialGuidedState(0);
+    state = advancePose(state, 0); // second front
+    state = advancePose(state, 0); // at turn_left
+    for (let i = 0; i < TURN_STEADY_FRAMES_REQUIRED - 1; i += 1) {
+      const tick = guidedTick(state, quality(true), 100 * i);
+      state = tick.state;
+      expect(tick.action.kind).toBe("hold");
+    }
+    const final = guidedTick(state, quality(true), 1_000);
+    expect(final.action).toEqual({ kind: "capture", pose: "turn_left" });
+    expect(TURN_STEADY_FRAMES_REQUIRED).toBeLessThan(STEADY_FRAMES_REQUIRED);
+    expect(steadyFramesRequiredFor("front")).toBe(STEADY_FRAMES_REQUIRED);
+    expect(steadyFramesRequiredFor("turn_right")).toBe(
+      TURN_STEADY_FRAMES_REQUIRED,
+    );
   });
 
   it("resets the steady streak on an unacceptable frame", () => {

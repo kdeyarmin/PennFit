@@ -15,6 +15,7 @@ import {
   coachMessage,
   estimatePoseFromLandmarks,
   poseCorrect,
+  turnCoachNudge,
   type CapturePose,
   type FrameMeasurement,
   type Point2D,
@@ -96,6 +97,22 @@ describe("frame quality gates", () => {
     expect(
       assessFrameQuality(input({ ...turned, pose: "turn_right" })).acceptable,
     ).toBe(true);
+  });
+
+  it("tolerates the self-shadow a turn manufactures, but only at a turn pose", () => {
+    // Turning the head in even light rotates the far cheek into its own
+    // shadow — the imbalance is caused by the pose the flow asked for.
+    // The same delta on a FRONT frame is real side light and still fails:
+    // front frames are where the measurements come from.
+    const sideShadow = { faceLumaLeft: 100, faceLumaRight: 170 };
+    expect(
+      assessFrameQuality(input({ ...sideShadow, pose: "front" })).failing,
+    ).toContain("lighting");
+    const turned = assessFrameQuality(
+      input({ ...sideShadow, pose: "turn_right", yawDeg: 20 }),
+    );
+    expect(turned.failing).not.toContain("lighting");
+    expect(turned.acceptable).toBe(true);
   });
 
   it("rejects a blurred frame", () => {
@@ -204,6 +221,35 @@ describe("pose correction", () => {
     const at30 = poseCorrect("noseToChin", 65, 30, 0);
     const at60 = poseCorrect("noseToChin", 65, 60, 0);
     expect(at60).toBeCloseTo(at30, 5);
+  });
+});
+
+describe("turn coach nudges", () => {
+  it("says nothing on the front pose or inside the turn window", () => {
+    expect(turnCoachNudge(0, "front", false)).toBeNull();
+    expect(turnCoachNudge(20, "turn_right", false)).toBeNull();
+    expect(turnCoachNudge(-20, "turn_left", false)).toBeNull();
+    // Either physical direction satisfies an unlocked turn step.
+    expect(turnCoachNudge(-20, "turn_right", false)).toBeNull();
+  });
+
+  it("asks for more turn when the head is barely turned", () => {
+    expect(turnCoachNudge(3, "turn_right", false)).toMatch(/further/i);
+    expect(turnCoachNudge(-3, "turn_left", false)).toMatch(/further/i);
+  });
+
+  it("asks for less when the head is turned past the window", () => {
+    expect(turnCoachNudge(45, "turn_right", false)).toMatch(/too far/i);
+    expect(turnCoachNudge(-45, "turn_left", false)).toMatch(/too far/i);
+  });
+
+  it("redirects a locked step turned the wrong way", () => {
+    // One turn is already on film; the remaining step requires the other
+    // direction, and the patient has turned the recorded way again.
+    expect(turnCoachNudge(-20, "turn_right", true)).toMatch(/other way/i);
+    expect(turnCoachNudge(20, "turn_left", true)).toMatch(/other way/i);
+    // Straight-on at a locked step is "further", not "other way".
+    expect(turnCoachNudge(2, "turn_right", true)).toMatch(/further/i);
   });
 });
 
@@ -346,6 +392,44 @@ describe("multi-frame aggregation", () => {
     // not merely "not high" — the score alone cannot get there, because a
     // single frame's fixed agreement term floors it around 0.35.
     expect(result.band).toBe("low");
+  });
+
+  it("does not let a rough TURN frame torpedo pristine front evidence", () => {
+    // The "take the photo anyway" escape hatch exists for the turn steps,
+    // and a patient who used it has produced a frame that fails its own
+    // gates. That frame contributed NO measurement samples (yaw beyond
+    // MEASUREMENT_YAW_LIMIT_DEG), so the unacceptable-frame floor must
+    // not zero out two clean, agreeing front frames — it pays through the
+    // quality means instead.
+    const poor = assessFrameQuality(input({ faceLuma: 30, sharpness: 5 }));
+    expect(poor.acceptable).toBe(false);
+    const result = aggregateFrames([
+      frame({ noseWidth: 34, noseToChin: 66 }, { pose: "front" }),
+      frame(
+        { noseWidth: 34.1, noseToChin: 66.2 },
+        { pose: "front", yawDeg: 2 },
+      ),
+      frame(
+        { noseWidth: 30, noseToChin: 75 },
+        { pose: "turn_right", yawDeg: 24, quality: poor },
+      ),
+    ]);
+    expect(result.band).not.toBe("low");
+    // The measurements still come from the fronts alone.
+    expect(result.measurements.noseWidth).toBeCloseTo(34.1, 1);
+    // But when the bad frame IS load-bearing (nothing near-frontal), the
+    // floor still applies in full.
+    const allTurned = aggregateFrames([
+      frame(
+        { noseWidth: 30 },
+        { pose: "turn_right", yawDeg: 24, quality: poor },
+      ),
+      frame(
+        { noseWidth: 31 },
+        { pose: "turn_left", yawDeg: -24, quality: poor },
+      ),
+    ]);
+    expect(allTurned.band).toBe("low");
   });
 
   it("returns an empty, low-confidence result for no frames", () => {

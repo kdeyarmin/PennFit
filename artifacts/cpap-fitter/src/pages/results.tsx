@@ -600,18 +600,11 @@ export function Results() {
 
   // The engine declined to name a mask. This is confidence gating doing
   // its job, not a failure: showing a "best guess" here is exactly what
-  // the tiered engine exists to prevent, so the patient gets the reason
-  // and a route to a human instead.
+  // the tiered engine exists to prevent. The flow ends here — no retake
+  // loop — and the patient is referred to the DME company by name (see
+  // FitWithheld for the reasoning).
   if (assessment && isWithheld(assessment.outcome)) {
-    return (
-      <FitWithheld
-        assessment={assessment}
-        onRetake={() => {
-          track("results_retake_requested", { outcome: assessment.outcome });
-          setLocation("/capture");
-        }}
-      />
-    );
+    return <FitWithheld assessment={assessment} />;
   }
 
   // The safety screen outranks every other branch below, including the
