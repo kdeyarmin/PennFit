@@ -31,10 +31,12 @@ export interface NotifyCsrInboxInput {
   customerDisplayName: string | null;
   /**
    * Optional origin hint surfaced in the subject so a CSR can tell a
-   * message the customer typed themselves from one PennBot filed on
-   * their behalf. Defaults to a plain customer message.
+   * message the customer typed themselves from one the storefront
+   * assistant filed on their behalf. Defaults to a plain customer message.
    */
   source?: "customer" | "chatbot";
+  /** Tenant-resolved assistant display name. Used only when source is chatbot. */
+  assistantName?: string | null;
 }
 
 /**
@@ -68,9 +70,12 @@ export async function notifyCsrInboxOfCustomerMessage(
   // not new PHI surface.
   const customerLabel =
     input.customerDisplayName ?? input.customerEmail ?? "A shop customer";
-  const viaPennBot = input.source === "chatbot" ? " (via PennBot)" : "";
+  const viaChatbot =
+    input.source === "chatbot"
+      ? ` (via ${input.assistantName?.trim() || "assistant"})`
+      : "";
   const subjectPrefix = input.threadCreated ? "New" : "Reply on";
-  const subject = `${subjectPrefix} customer message${viaPennBot} — ${customerLabel}`;
+  const subject = `${subjectPrefix} customer message${viaChatbot} — ${customerLabel}`;
 
   // Pull the public base URL from the same env the rest of the shop
   // side uses. Fallback to relative path so the link still navigates
@@ -80,7 +85,7 @@ export async function notifyCsrInboxOfCustomerMessage(
 
   const intro =
     input.source === "chatbot"
-      ? `PennBot filed a message for a signed-in shop customer who asked to reach a person.`
+      ? `The storefront assistant filed a message for a signed-in shop customer who asked to reach a person.`
       : `A signed-in shop customer just messaged customer service.`;
 
   await sg.sendEmail({

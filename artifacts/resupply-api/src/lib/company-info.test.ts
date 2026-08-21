@@ -36,6 +36,7 @@ import {
   hydrateCompanyInfoCache,
   applyPlatformBranding,
   applyPlatformBrandingForOrg,
+  brandToolDescriptors,
   formatPhoneForDisplay,
   getCompanyInfo,
   PLATFORM_NAME,
@@ -335,5 +336,50 @@ describe("applyCompanyIdentityToText", () => {
     await getCompanyInfo(); // warm the sync cache
     const text = "Hi, this is an automated check-in from Penn Paps.";
     expect(applyCompanyIdentityToText(text)).toBe(text);
+  });
+});
+
+describe("brandToolDescriptors", () => {
+  it("rewrites Penn placeholders in the function description and nested parameter descriptions", async () => {
+    stageSupabaseResponse("dme_organization", "select", { data: ORG_ROW });
+    const info = await getCompanyInfo();
+    const branded = brandToolDescriptors(
+      [
+        {
+          type: "function" as const,
+          function: {
+            name: "recommend_masks",
+            description:
+              "Recommend the best PennPaps masks. PennBot should cite (814) 471-0627.",
+            parameters: {
+              type: "object",
+              properties: {
+                order_reference: {
+                  type: "string",
+                  description:
+                    "The PennPaps order reference, e.g. 'PENN-AB1234'.",
+                },
+              },
+            },
+          },
+        },
+      ],
+      info,
+    );
+    const desc = branded[0]?.function.description ?? "";
+    expect(desc).toContain("Acme Sleep");
+    expect(desc).toContain("CareMetric Assistant");
+    expect(desc).toContain("(555) 123-4567");
+    expect(desc).not.toContain("PennPaps");
+    expect(desc).not.toContain("PennBot");
+    expect(desc).not.toContain("(814) 471-0627");
+    const paramDesc =
+      (
+        branded[0]?.function.parameters as {
+          properties: { order_reference: { description: string } };
+        }
+      ).properties.order_reference.description ?? "";
+    expect(paramDesc).toContain("Acme Sleep");
+    expect(paramDesc).not.toContain("PennPaps");
   });
 });

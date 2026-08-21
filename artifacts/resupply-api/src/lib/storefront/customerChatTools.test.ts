@@ -47,6 +47,26 @@ beforeEach(() => {
 });
 
 describe("escalate_to_human", () => {
+  it("uses the tenant assistant name in the persisted prefix when provided", async () => {
+    supabaseMock.stage("conversations", "select", { data: null });
+    supabaseMock.stage("conversations", "insert", {
+      data: { id: "conv_new" },
+    });
+    supabaseMock.stage("messages", "insert", { data: { id: "msg_1" } });
+
+    const result = await executeCustomerChatTool(
+      "escalate_to_human",
+      { summary: "Please call me about my last order." },
+      { ...makeCtx(), assistantStorefrontName: "Acme Assistant" },
+    );
+    expect(result.ok).toBe(true);
+    const body = (
+      getSupabaseWritePayloads("messages", "insert")[0] as { body: string }
+    ).body;
+    expect(body).toContain("[Via Acme Assistant · General]");
+    expect(body).not.toContain("PennBot");
+  });
+
   it("opens a new support thread and reports it was escalated", async () => {
     // appendCustomerMessage flow for a first-time messager:
     //   conversations.select (find existing) -> none

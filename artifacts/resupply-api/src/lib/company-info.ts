@@ -538,6 +538,58 @@ export async function applyPlatformBrandingForOrg(
   return applyPlatformBranding(text, { ...getCompanyInfoSync(), ...names });
 }
 
+function brandIdentityText(text: string, info: CompanyInfo): string {
+  return applyCompanyIdentityToText(applyPlatformBranding(text, info), info);
+}
+
+/**
+ * Rewrite Penn* placeholders in every `description` string inside an
+ * LLM tool schema (top-level function copy and nested parameter
+ * descriptions). System prompts already go through
+ * applyCompanyIdentityToText + applyPlatformBranding; tool schemas
+ * were historically shipped raw.
+ */
+function brandDescriptionFields(value: unknown, info: CompanyInfo): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item) => brandDescriptionFields(item, info));
+  }
+  if (value && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [key, nested] of Object.entries(
+      value as Record<string, unknown>,
+    )) {
+      out[key] =
+        key === "description" && typeof nested === "string"
+          ? brandIdentityText(nested, info)
+          : brandDescriptionFields(nested, info);
+    }
+    return out;
+  }
+  return value;
+}
+
+export function brandToolDescriptors<
+  T extends { function: { description: string; parameters?: unknown } },
+>(tools: T[], info: CompanyInfo): T[] {
+  return tools.map((t) => {
+    const fn = t.function;
+    return {
+      ...t,
+      function: {
+        ...fn,
+        description: brandIdentityText(fn.description, info),
+        ...(fn.parameters !== undefined
+          ? {
+              parameters: brandDescriptionFields(fn.parameters, info) as
+                | T["function"]["parameters"]
+                | undefined,
+            }
+          : {}),
+      },
+    };
+  });
+}
+
 /**
  * Warm the seed/default company-info cache entry.
  *
