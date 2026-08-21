@@ -59,11 +59,19 @@ inflated by the shrunken iris — got no yaw correction at all. Simulating
 the guided front/left-20°/right-20° flow end-to-end, the old aggregation
 landed **+5…+11% high on every measurement**.
 
-**4. Vertical spans can't be measured from turned frames at all.** At
-20° of yaw the nose's own depth swings through the image plane and
-tip-referenced heights read +10…+18% — an error outside the small-angle
-cos model entirely. Turned frames are width evidence, not height
-evidence.
+**4. Turned frames can't be trusted for measurement at all.** Two
+independent reasons, one per axis. Heights: at 20° of yaw the nose's
+own depth swings through the image plane and tip-referenced heights
+read +10…+18% — outside the small-angle cos model entirely. Widths
+(surfaced by automated review of this PR, and correct): whether the
+iris calibration self-corrects a turned width depends on **gaze**. The
+iris only foreshortens with the head when the eyes turn with it; a
+patient watching the on-screen coach counter-rotates their eyes, the
+iris stays camera-facing, and the width then reads ~cos(yaw) ≈ 6% low
+at the 20° turn poses — indistinguishable, from landmarks alone, from
+the case the rigid-face model verifies. The synthetic harness cannot
+represent independent eye rotation, so turned-frame widths carry an
+irreducible ±6% gaze ambiguity.
 
 ## What changed
 
@@ -88,16 +96,30 @@ evidence.
 
 2. **Pose-correction physics fixed**
    ([`scan-quality.ts`](../artifacts/cpap-fitter/src/lib/scan-quality.ts)):
-   horizontal spans are no longer touched under yaw; vertical spans are
-   multiplied by cos(yaw) (undoing the iris-driven calibration shift)
-   and still divided by cos(pitch). Same 30° clamp.
+   horizontal spans are no longer divided by cos(yaw) (the rigid-face
+   double-correction); vertical spans are multiplied by cos(yaw) and
+   still divided by cos(pitch). Same 30° clamp. Because of the gaze
+   ambiguity (finding 4), yaw correction now matters only in the
+   no-near-frontal-frame fallback; the pitch correction is
+   gaze-independent (the iris's horizontal diameter — the calibration —
+   is unaffected by pitch regardless of where the eyes point).
 
-3. **Vertical spans aggregate from near-frontal frames only**
-   (`|yaw| ≤ 10°`), with a fall-back to all frames when none qualifies.
-   Guided turn frames keep contributing width evidence. Simulated
+3. **Measurements sample near-frontal frames only** (`|yaw| ≤ 10°`,
+   where the gaze ambiguity is ≤ ~1.5%), on BOTH axes, with a fall-back
+   to all frames when none qualifies. Turned frames still contribute
+   capture-quality evidence but no measurement samples. Simulated
    guided-flow error drops from +5…+11% to **≈0…+3.5%**.
 
-4. **One-tap burst capture**
+4. **High confidence requires two samples of every measurement.** The
+   aggregate caps its band at "moderate" whenever ANY measurement rests
+   on a single sample — previously the frame-count bonus plus the
+   widths' agreement could carry a set whose heights were single-
+   sampled into the high band (surfaced by automated review). To keep
+   the high band reachable, the guided flow now captures the front pose
+   **twice** (front → front → turn → turn), giving every measurement
+   genuine repeated near-frontal evidence; the one-tap burst gets 5.
+
+5. **One-tap burst capture**
    ([`capture.tsx`](../artifacts/cpap-fitter/src/pages/capture.tsx)):
    the single "Take Photo" tap now captures 5 frames over ~560 ms —
    the customer experience is unchanged, but /measure drops any frame
@@ -107,8 +129,22 @@ evidence.
    a lone frame is capped at the "moderate" scan band by design ("we
    only looked once"), which capped every default-path fitting below
    high confidence; a burst that genuinely agrees can now clear the
-   high-confidence scan floor. Frames stay in memory only and are
-   discarded after extraction — the same privacy promise as before.
+   high-confidence scan floor. Two guards keep the agreement honest: a
+   frozen or very-low-frame-rate camera's byte-identical frames are
+   deduplicated (one observation must not masquerade as five), and the
+   burst motion check compares each frame against its immediate
+   predecessor only, so one mid-burst jolt costs at most its
+   neighbouring frames rather than poisoning every later one. Frames
+   stay in memory only and are discarded after extraction — the same
+   privacy promise as before.
+
+6. **The face-width convention is now documented at the source.**
+   `faceWidthAtCheekbones` measures the frontal face-silhouette width
+   at landmarks 234/454, not caliper bizygomatic breadth. The 0486
+   catalog seed ships **no** face-width bands (the field gates nothing
+   today — verified); a tenant authoring `face_width_min/max_mm` bands
+   later must calibrate them against this pipeline's own readings, and
+   the code comment on the landmark table now says exactly that.
 
 ## Known residual limitations (documented, not hidden)
 

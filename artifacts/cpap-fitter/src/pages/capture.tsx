@@ -218,10 +218,19 @@ function SingleFrameCapture() {
         canvas.width = video.videoWidth;
         canvas.height = video.videoHeight;
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        frames.push({
-          dataUrl: canvas.toDataURL("image/jpeg", 0.92),
-          pose: "front",
-        });
+        const dataUrl = canvas.toDataURL("image/jpeg", 0.92);
+        // A stalled or very-low-frame-rate camera can present the SAME
+        // still across the whole burst window. Byte-identical captures
+        // are one observation, not five — keeping them would fabricate
+        // perfect cross-frame agreement and let a single image claim
+        // multi-frame confidence. Deduplicate against the previous
+        // capture (re-encoding identical pixels is deterministic, so
+        // frozen frames collapse while live-sensor noise keeps genuine
+        // frames distinct); a fully frozen feed degrades to one frame,
+        // which the aggregate honestly caps below high confidence.
+        if (dataUrl !== frames[frames.length - 1]?.dataUrl) {
+          frames.push({ dataUrl, pose: "front" });
+        }
         if (i < BURST_FRAME_COUNT - 1) {
           await new Promise((resolve) =>
             setTimeout(resolve, BURST_FRAME_INTERVAL_MS),

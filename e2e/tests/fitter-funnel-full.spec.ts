@@ -174,17 +174,17 @@ test("demo mode: entire fitter funnel from consent to placed order", async ({
   await page.getByTestId("input-phone").fill("5551234567");
   await page.getByTestId("input-street1").fill("123 Main St");
   await page.getByTestId("input-city").fill("Philadelphia");
-  // The state dropdown scrolls internally (a Radix viewport with scroll
-  // buttons, overflow hidden), so an option low in the list can sit
-  // outside the viewport where Playwright's own scrolling can't reach
-  // it. scrollIntoView adjusts the internal viewport's scrollTop even
-  // under overflow:hidden, after which a normal click lands.
-  await page.getByTestId("select-state").click();
-  const paOption = page.getByRole("option", { name: /^PA$/ });
-  await paOption.waitFor({ state: "visible" });
-  await paOption.evaluate((el) => el.scrollIntoView({ block: "center" }));
-  await paOption.click();
-  await expect(page.getByTestId("select-state")).toContainText("PA");
+  // Selecting "PA" by clicking inside the open dropdown is unstable
+  // under headless Chromium: Radix's item-aligned popper keeps options
+  // low in the list outside the clickable viewport (it scrolls via
+  // hover buttons, and re-clamps programmatic scrolls), so the click
+  // retries forever. Use Radix's CLOSED-trigger typeahead instead —
+  // printable keys on the focused trigger select the matching option
+  // directly, no popper geometry involved.
+  const stateTrigger = page.getByTestId("select-state");
+  await stateTrigger.focus();
+  await page.keyboard.type("PA", { delay: 80 });
+  await expect(stateTrigger).toContainText("PA");
   await page.getByTestId("input-zip").fill("19104");
   await page.getByTestId("input-insurance-provider").fill("Test Insurance");
   await page.getByTestId("input-member-id").fill("MEM-12345");

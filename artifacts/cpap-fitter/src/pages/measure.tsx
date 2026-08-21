@@ -306,7 +306,13 @@ export function Measure() {
           // motion check below.
           const isBurst = capturedFrames.every((f) => f.pose === "front");
           const perFrame: FrameMeasurement[] = [];
-          const priorCentroids: Point2D[] = [];
+          // Motion baseline for bursts: the IMMEDIATELY PRECEDING frame's
+          // centroid only. Judging against the worst of ALL prior
+          // centroids would let one jolt mid-burst poison every later
+          // frame (each compared against the old outlier), defeating
+          // exactly the recovery the burst exists for; adjacent drift is
+          // the actual "hold still" signal.
+          let priorCentroid: Point2D | null = null;
           let lastFailure: ExtractionError | null = null;
           for (let i = 0; i < capturedFrames.length; i += 1) {
             if (!isMountedRef.current) return;
@@ -352,11 +358,11 @@ export function Measure() {
                 // where drift between frames IS a defect (a shaking
                 // hand). Guided angles deliberately skip it: movement
                 // between poses is the instruction, not a problem.
-                ...(isBurst && priorCentroids.length > 0
-                  ? { previousCentroids: [...priorCentroids] }
+                ...(isBurst && priorCentroid
+                  ? { previousCentroids: [priorCentroid] }
                   : {}),
               });
-              if (isBurst) priorCentroids.push(centroidOf(landmarks));
+              if (isBurst) priorCentroid = centroidOf(landmarks);
               perFrame.push({
                 pose: frame.pose,
                 quality,

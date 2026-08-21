@@ -103,6 +103,17 @@ const MEASUREMENT_LANDMARKS = {
   noseHeight: [6, 4],
   noseToChin: [4, 152],
   mouthWidth: [61, 291],
+  // CONVENTION NOTE — "faceWidthAtCheekbones" measures the frontal
+  // face-silhouette width at landmarks 234/454 (the mesh's lateral
+  // outline points, roughly zygomatic-arch height, pre-auricular). On
+  // the canonical model this spans ~153 mm — wider than textbook
+  // caliper bizygomatic breadth. Any `face_width_min/max_mm` sizing
+  // band a tenant authors must be calibrated against THIS convention
+  // (silhouette width as this pipeline reports it), not against
+  // caliper-measured bizygomatic norms. The 0486 catalog seed ships no
+  // face-width bands, so nothing gates on this field until a tenant
+  // adds bands — and they should derive them from observed fitter
+  // readings, not population tables.
   faceWidthAtCheekbones: [234, 454],
 } as const;
 
