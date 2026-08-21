@@ -68,18 +68,26 @@ async function seedConsentedEmail(page: Page): Promise<void> {
   });
 }
 
-/** Seed already-extracted measurements (the /measure output). */
+/**
+ * Seed already-extracted measurements (the /measure output).
+ *
+ * The canonical face, as `extractMeasurementValues` measures it — this
+ * has to be a set the /measure plausibility gate and the server windows
+ * both admit, or the funnel stops here. (It previously carried a 48.2 mm
+ * `noseHeight`, the textbook nasion→subnasale span rather than the
+ * ~29 mm bridge→tip span the scanner reports.)
+ */
 async function seedMeasurements(page: Page): Promise<void> {
   await page.addInitScript(() => {
     try {
       sessionStorage.setItem(
         "fitter_measurements",
         JSON.stringify({
-          noseWidth: 32.1,
-          noseHeight: 48.2,
-          noseToChin: 60.5,
-          mouthWidth: 45.0,
-          faceWidthAtCheekbones: 130.4,
+          noseWidth: 35.7,
+          noseHeight: 29.4,
+          noseToChin: 89.4,
+          mouthWidth: 49.1,
+          faceWidthAtCheekbones: 153.3,
           calibrationMethod: "iris",
         }),
       );

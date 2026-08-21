@@ -31,26 +31,107 @@ import type {
 } from "./types.js";
 
 /**
- * Millimetre windows outside which a measurement is not a plausible adult
- * face. Mirrors PLAUSIBILITY_BOUNDS on the client and in the legacy route;
- * a value outside these is a measurement failure, not a small patient.
+ * Millimetre windows outside which a measurement is not a plausible face.
+ * A value outside these is a measurement failure — a bad iris
+ * calibration, a poster, a face on a screen — not an unusual patient.
+ *
+ * CALIBRATION. These are anchored to the ONE face in this repository
+ * whose millimetres are known exactly: MediaPipe's canonical face model,
+ * the metric reference mesh the landmark indices are defined against.
+ * Its frontal spans through the production landmark pairs are
+ *
+ *   noseWidth 35.7 · noseHeight 29.4 · noseToChin 89.4 · mouthWidth 49.1
+ *   · faceWidthAtCheekbones 153.3
+ *
+ * (derived in `plausibility-windows.test.ts`, which fails if any window
+ * drifts off them). Each window clears that average adult by at least
+ * 25% on BOTH edges, which is what has to fit in the gap:
+ *
+ *   * ~18% of population spread — facial dimensions run SD ≈ 6% of the
+ *     mean, so ±3 SD ≈ ±18%; and
+ *   * 7% of pipeline error — the verified worst case for
+ *     `extractMeasurementValues` across 28–55 cm and a true camera FOV
+ *     of 55–85° (face-measurements.accuracy.test.ts).
+ *
+ * The windows are then widened per field where the anthropometric
+ * spread genuinely is larger — alar width varies most between
+ * populations, head-silhouette width least.
+ *
+ * The historical windows were authored from textbook norms rather than
+ * from this pipeline's own readings, and two of them were wrong in a way
+ * that rejected real patients: the adult `noseToChin` ceiling sat at
+ * 90 mm, 0.6 mm above the canonical average adult, so a correctly
+ * measured ordinary face landed `outside_validated_range` on any read
+ * that rounded up; and the pediatric ceilings were set BELOW the adult
+ * ones, which is backwards — "pediatric" here means under 18, and a
+ * 17-year-old has a fully adult-sized face. Both are now structural: see
+ * the superset invariant below.
  */
-export const PLAUSIBILITY_BOUNDS = {
-  noseWidth: [20, 60],
-  noseHeight: [25, 70],
-  noseToChin: [40, 90],
-  mouthWidth: [30, 80],
-  faceWidthAtCheekbones: [110, 180],
+export const ADULT_PLAUSIBILITY_BOUNDS = {
+  // Alar span. Widest between-population variation of the five (means
+  // range ~34–45 mm across ancestries), so the widest relative window.
+  noseWidth: [20, 55],
+  // Bridge (landmark 6) → tip (4). NOT nasion→subnasale "nose height",
+  // which is ~50 mm; this pipeline's span is ~29 mm on an average face.
+  noseHeight: [18, 45],
+  // Tip (4) → menton (152), measured frontally.
+  noseToChin: [55, 125],
+  mouthWidth: [30, 70],
+  // Head-silhouette width at 234/454, not caliper bizygomatic breadth
+  // (see the convention note in face-measurements.ts). Least variable of
+  // the five in relative terms.
+  faceWidthAtCheekbones: [105, 200],
 } as const;
 
-/** Pediatric faces legitimately fall below the adult floor. */
+/**
+ * Pediatric window: the adult window with the FLOOR lowered, and nothing
+ * else. The ceilings are identical by construction — an adolescent is
+ * classified pediatric (fit-assess derives it as age < 18 from the
+ * chart's date of birth) and has adult facial dimensions, so any ceiling
+ * below the adult one would reject them. Lowering only the floor makes
+ * this a strict superset of the adult window, which is the invariant
+ * `plausibility-windows.test.ts` pins.
+ */
 export const PEDIATRIC_PLAUSIBILITY_BOUNDS = {
-  noseWidth: [12, 45],
-  noseHeight: [15, 55],
-  noseToChin: [25, 70],
-  mouthWidth: [18, 60],
-  faceWidthAtCheekbones: [80, 150],
+  noseWidth: [12, ADULT_PLAUSIBILITY_BOUNDS.noseWidth[1]],
+  noseHeight: [15, ADULT_PLAUSIBILITY_BOUNDS.noseHeight[1]],
+  noseToChin: [25, ADULT_PLAUSIBILITY_BOUNDS.noseToChin[1]],
+  mouthWidth: [18, ADULT_PLAUSIBILITY_BOUNDS.mouthWidth[1]],
+  faceWidthAtCheekbones: [
+    80,
+    ADULT_PLAUSIBILITY_BOUNDS.faceWidthAtCheekbones[1],
+  ],
 } as const;
+
+export type PlausibilityField = keyof typeof ADULT_PLAUSIBILITY_BOUNDS;
+
+export const PLAUSIBILITY_FIELDS = Object.keys(
+  ADULT_PLAUSIBILITY_BOUNDS,
+) as PlausibilityField[];
+
+/**
+ * Adult ∪ pediatric — the window for callers that cannot know the
+ * patient's population (the public /api/recommend route, the fitter
+ * invite ingest, and the client's own /measure gate). DERIVED from the
+ * two above rather than hand-copied: three transcribed copies of this
+ * table is how the pediatric ceilings drifted below the adult ones in
+ * the first place.
+ */
+export const UNION_PLAUSIBILITY_BOUNDS = Object.fromEntries(
+  PLAUSIBILITY_FIELDS.map((field) => [
+    field,
+    [
+      Math.min(
+        ADULT_PLAUSIBILITY_BOUNDS[field][0],
+        PEDIATRIC_PLAUSIBILITY_BOUNDS[field][0],
+      ),
+      Math.max(
+        ADULT_PLAUSIBILITY_BOUNDS[field][1],
+        PEDIATRIC_PLAUSIBILITY_BOUNDS[field][1],
+      ),
+    ] as const,
+  ]),
+) as Record<PlausibilityField, readonly [number, number]>;
 
 export const CONFIDENCE_THRESHOLDS = {
   high: 0.78,
@@ -97,7 +178,7 @@ export function measurementsOutOfBounds(
   const bounds =
     population === "pediatric"
       ? PEDIATRIC_PLAUSIBILITY_BOUNDS
-      : PLAUSIBILITY_BOUNDS;
+      : ADULT_PLAUSIBILITY_BOUNDS;
   for (const [key, [min, max]] of Object.entries(bounds)) {
     const value = measurements[key];
     if (typeof value !== "number" || !Number.isFinite(value)) return true;

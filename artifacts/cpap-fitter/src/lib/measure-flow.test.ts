@@ -2,12 +2,18 @@ import { describe, expect, test } from "vitest";
 import type { FacialMeasurements } from "@workspace/api-client-react/storefront";
 import { canStayOnMeasure, findImplausibleMeasurement } from "./measure-flow";
 
+// The canonical face — MediaPipe's metric reference mesh, as
+// `extractMeasurementValues` measures it (derived in
+// face-measurements.accuracy.test.ts). The previous numbers were
+// hand-picked from textbook norms and put `noseHeight` at 48.7 mm, which
+// is the nasion→subnasale span; the scanner reports bridge→tip, ~29 mm
+// on this same face.
 const realisticMeasurements: FacialMeasurements = {
-  noseWidth: 35.2,
-  noseHeight: 48.7,
-  noseToChin: 62.3,
-  mouthWidth: 52.1,
-  faceWidthAtCheekbones: 138.4,
+  noseWidth: 35.7,
+  noseHeight: 29.4,
+  noseToChin: 89.4,
+  mouthWidth: 49.1,
+  faceWidthAtCheekbones: 153.3,
   calibrationMethod: "iris",
 };
 

@@ -25,6 +25,10 @@ import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { isFeatureEnabled } from "../../lib/feature-flags";
 import { completeInviteFromFitting } from "../../lib/fitting/complete-invite";
+import {
+  type PlausibilityField,
+  UNION_PLAUSIBILITY_BOUNDS,
+} from "../../lib/fitting/index";
 import { logger } from "../../lib/logger";
 import { verifyFitterInviteToken } from "../../lib/fitter-invite-token";
 import { resolveOrgIdForSignedRecord } from "../../lib/storefront/signed-link-org";
@@ -185,25 +189,17 @@ router.get("/shop/fitter-invite/resolve", resolveLimiter, async (req, res) => {
 
 /**
  * Adult ∪ pediatric plausibility window (mm). This route cannot know the
- * patient's population, so it uses the same union window the client's
- * own /measure gate applies (cpap-fitter measure-flow.ts
- * PLAUSIBILITY_BOUNDS); the population-correct windows live in
- * lib/fitting/confidence.ts. Keep the three in sync.
+ * patient's population, so it uses the union window — the same one the
+ * client's /measure gate and the public /api/recommend route apply. It
+ * is imported from lib/fitting/confidence.ts, not transcribed: this was
+ * previously one of three hand-copied tables kept in sync by a comment.
  */
-const COMPLETE_MEASUREMENT_BOUNDS = {
-  noseWidth: [12, 60],
-  noseHeight: [15, 70],
-  noseToChin: [25, 90],
-  mouthWidth: [18, 80],
-  faceWidthAtCheekbones: [80, 180],
-} as const;
-
-const boundedMm = (field: keyof typeof COMPLETE_MEASUREMENT_BOUNDS) =>
+const boundedMm = (field: PlausibilityField) =>
   z
     .number()
     .finite()
-    .min(COMPLETE_MEASUREMENT_BOUNDS[field][0])
-    .max(COMPLETE_MEASUREMENT_BOUNDS[field][1]);
+    .min(UNION_PLAUSIBILITY_BOUNDS[field][0])
+    .max(UNION_PLAUSIBILITY_BOUNDS[field][1]);
 
 const measurementsSchema = z.object({
   noseWidth: boundedMm("noseWidth"),

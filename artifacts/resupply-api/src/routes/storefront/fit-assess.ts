@@ -51,7 +51,11 @@ import {
   completeInviteFromFitting,
   toLegacyMaskType,
 } from "../../lib/fitting/complete-invite.js";
-import { assess } from "../../lib/fitting/index.js";
+import {
+  ADULT_PLAUSIBILITY_BOUNDS,
+  assess,
+  PEDIATRIC_PLAUSIBILITY_BOUNDS,
+} from "../../lib/fitting/index.js";
 import { buildProfile } from "../../lib/fitting/profile.js";
 import { RULES_ENGINE_VERSION } from "../../lib/fitting/versions.js";
 import type {
@@ -90,26 +94,6 @@ const assessLimiter = rateLimit({
       : ipKeyGenerator(req.ip ?? "");
   },
 });
-
-// Server-side plausibility window, mirroring the client and the legacy
-// route. Generous enough for ~99% of adult faces; a value outside it is a
-// measurement failure, not a small patient, and now feeds the
-// `outside_validated_range` exception state rather than a flat 400.
-const ADULT_BOUNDS = {
-  noseWidth: [20, 60],
-  noseHeight: [25, 70],
-  noseToChin: [40, 90],
-  mouthWidth: [30, 80],
-  faceWidthAtCheekbones: [110, 180],
-} as const;
-
-const PEDIATRIC_BOUNDS = {
-  noseWidth: [12, 45],
-  noseHeight: [15, 55],
-  noseToChin: [25, 70],
-  mouthWidth: [18, 60],
-  faceWidthAtCheekbones: [80, 150],
-} as const;
 
 const measurementsSchema = z
   .object({
@@ -380,8 +364,13 @@ router.post("/fit/assess", assessLimiter, async (req, res) => {
   // are population-specific, and picking them from the client-claimed
   // population meant a pediatric chart with a browser-supplied "adult"
   // hint was gross-checked against adult windows (and vice versa).
+  // Imported, not transcribed: these used to be a hand-copied pair in
+  // this file, which is how the pediatric ceilings drifted below the
+  // adult ones. See lib/fitting/confidence.ts.
   const bounds =
-    profile.population === "pediatric" ? PEDIATRIC_BOUNDS : ADULT_BOUNDS;
+    profile.population === "pediatric"
+      ? PEDIATRIC_PLAUSIBILITY_BOUNDS
+      : ADULT_PLAUSIBILITY_BOUNDS;
   for (const [field, [, max]] of Object.entries(bounds)) {
     const value = measurements[field as keyof FitMeasurements];
     if (value <= 0 || value > max * 3) {

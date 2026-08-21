@@ -22,6 +22,10 @@ import {
   signFitterInviteToken,
   FITTER_INVITE_TTL_MS,
 } from "../../lib/fitter-invite-token";
+import {
+  ADULT_PLAUSIBILITY_BOUNDS,
+  PLAUSIBILITY_FIELDS,
+} from "../../lib/fitting/index";
 
 function makeApp(): Express {
   const app = express();
@@ -62,12 +66,19 @@ function postRecommend(body: object) {
     .send(body);
 }
 
+// The canonical face — MediaPipe's metric reference mesh, as this
+// pipeline's landmark pairs measure it (see
+// lib/fitting/plausibility-windows.test.ts). A fixture that claims to be
+// a normal adult face should be one; the previous hand-picked numbers
+// carried a 40 mm noseHeight, which is the ~50 mm textbook
+// nasion→subnasale span, not the ~29 mm bridge→tip span this route
+// actually receives.
 const VALID_MEASUREMENTS = {
-  noseWidth: 28,
-  noseHeight: 40,
-  noseToChin: 55,
-  mouthWidth: 45,
-  faceWidthAtCheekbones: 135,
+  noseWidth: 35.7,
+  noseHeight: 29.4,
+  noseToChin: 89.4,
+  mouthWidth: 49.1,
+  faceWidthAtCheekbones: 153.3,
   calibrationMethod: "iris" as const,
 };
 
@@ -148,18 +159,22 @@ describe("POST /recommend — plausibility guard", () => {
   });
 
   it("accepts the exact min/max boundary values", async () => {
-    const res = await postRecommend({
-      measurements: {
-        noseWidth: 20,
-        noseHeight: 70,
-        noseToChin: 40,
-        mouthWidth: 80,
-        faceWidthAtCheekbones: 110,
-        calibrationMethod: "iris",
-      },
-      answers: VALID_ANSWERS,
-    });
-    expect(res.status).toBe(200);
+    // Bounds are inclusive on both edges.
+    for (const edge of [0, 1] as const) {
+      const res = await postRecommend({
+        measurements: {
+          ...Object.fromEntries(
+            PLAUSIBILITY_FIELDS.map((f) => [
+              f,
+              ADULT_PLAUSIBILITY_BOUNDS[f][edge],
+            ]),
+          ),
+          calibrationMethod: "iris",
+        },
+        answers: VALID_ANSWERS,
+      });
+      expect(res.status, edge === 0 ? "all-min" : "all-max").toBe(200);
+    }
   });
 
   it("rejects an out-of-range (too small) noseWidth with 400", async () => {
@@ -191,104 +206,40 @@ describe("POST /recommend — plausibility guard", () => {
   });
 
   // ── Per-field boundary coverage ─────────────────────────────────────────
-  // The guard iterates PLAUSIBILITY_BOUNDS and short-circuits on the first
-  // violation, returning exactly one details entry. Tests below exercise
-  // the remaining fields not covered above and verify both the
-  // min and max extremes.
+  // Driven off the window itself rather than transcribed numbers: these
+  // used to name their bounds in the test title ("accepts noseWidth at
+  // its upper bound (60 mm)"), so recalibrating the window meant editing
+  // ten titles, and a stale one asserted the OLD bound was still
+  // enforced. The claim being made is "the route enforces exactly this
+  // window on every field, inclusive", which is what this says.
 
-  it("accepts noseWidth at its upper bound (60 mm)", async () => {
-    const res = await postRecommend({
-      measurements: { ...VALID_MEASUREMENTS, noseWidth: 60 },
-      answers: VALID_ANSWERS,
-    });
-    expect(res.status).toBe(200);
-  });
+  it.each(PLAUSIBILITY_FIELDS)(
+    "accepts %s at both of its bounds",
+    async (field) => {
+      for (const value of ADULT_PLAUSIBILITY_BOUNDS[field]) {
+        const res = await postRecommend({
+          measurements: { ...VALID_MEASUREMENTS, [field]: value },
+          answers: VALID_ANSWERS,
+        });
+        expect(res.status, `${field}=${value}`).toBe(200);
+      }
+    },
+  );
 
-  it("rejects noseWidth just above its upper bound (61 mm) with 400", async () => {
-    const res = await postRecommend({
-      measurements: { ...VALID_MEASUREMENTS, noseWidth: 61 },
-      answers: VALID_ANSWERS,
-    });
-    expect(res.status).toBe(400);
-    expect(res.body.details.join(" ")).toContain("noseWidth");
-  });
-
-  it("accepts noseHeight at its lower bound (25 mm)", async () => {
-    const res = await postRecommend({
-      measurements: { ...VALID_MEASUREMENTS, noseHeight: 25 },
-      answers: VALID_ANSWERS,
-    });
-    expect(res.status).toBe(200);
-  });
-
-  it("rejects noseHeight below its lower bound (24 mm) with 400", async () => {
-    const res = await postRecommend({
-      measurements: { ...VALID_MEASUREMENTS, noseHeight: 24 },
-      answers: VALID_ANSWERS,
-    });
-    expect(res.status).toBe(400);
-    expect(res.body.details.join(" ")).toContain("noseHeight");
-  });
-
-  it("rejects noseHeight above its upper bound (71 mm) with 400", async () => {
-    const res = await postRecommend({
-      measurements: { ...VALID_MEASUREMENTS, noseHeight: 71 },
-      answers: VALID_ANSWERS,
-    });
-    expect(res.status).toBe(400);
-    expect(res.body.details.join(" ")).toContain("noseHeight");
-  });
-
-  it("accepts noseToChin at its upper bound (90 mm)", async () => {
-    const res = await postRecommend({
-      measurements: { ...VALID_MEASUREMENTS, noseToChin: 90 },
-      answers: VALID_ANSWERS,
-    });
-    expect(res.status).toBe(200);
-  });
-
-  it("rejects noseToChin above its upper bound (91 mm) with 400", async () => {
-    const res = await postRecommend({
-      measurements: { ...VALID_MEASUREMENTS, noseToChin: 91 },
-      answers: VALID_ANSWERS,
-    });
-    expect(res.status).toBe(400);
-    expect(res.body.details.join(" ")).toContain("noseToChin");
-  });
-
-  it("accepts mouthWidth at its lower bound (30 mm)", async () => {
-    const res = await postRecommend({
-      measurements: { ...VALID_MEASUREMENTS, mouthWidth: 30 },
-      answers: VALID_ANSWERS,
-    });
-    expect(res.status).toBe(200);
-  });
-
-  it("rejects mouthWidth below its lower bound (29 mm) with 400", async () => {
-    const res = await postRecommend({
-      measurements: { ...VALID_MEASUREMENTS, mouthWidth: 29 },
-      answers: VALID_ANSWERS,
-    });
-    expect(res.status).toBe(400);
-    expect(res.body.details.join(" ")).toContain("mouthWidth");
-  });
-
-  it("accepts faceWidthAtCheekbones at its upper bound (180 mm)", async () => {
-    const res = await postRecommend({
-      measurements: { ...VALID_MEASUREMENTS, faceWidthAtCheekbones: 180 },
-      answers: VALID_ANSWERS,
-    });
-    expect(res.status).toBe(200);
-  });
-
-  it("rejects faceWidthAtCheekbones above its upper bound (181 mm) with 400", async () => {
-    const res = await postRecommend({
-      measurements: { ...VALID_MEASUREMENTS, faceWidthAtCheekbones: 181 },
-      answers: VALID_ANSWERS,
-    });
-    expect(res.status).toBe(400);
-    expect(res.body.details.join(" ")).toContain("faceWidthAtCheekbones");
-  });
+  it.each(PLAUSIBILITY_FIELDS)(
+    "rejects %s just outside either bound with 400",
+    async (field) => {
+      const [min, max] = ADULT_PLAUSIBILITY_BOUNDS[field];
+      for (const value of [min - 0.1, max + 0.1]) {
+        const res = await postRecommend({
+          measurements: { ...VALID_MEASUREMENTS, [field]: value },
+          answers: VALID_ANSWERS,
+        });
+        expect(res.status, `${field}=${value}`).toBe(400);
+        expect(res.body.details.join(" ")).toContain(field);
+      }
+    },
+  );
 
   it("error details include the mm unit and the numeric bounds", async () => {
     // Verify the error message format so callers can surface it to users.
@@ -300,8 +251,8 @@ describe("POST /recommend — plausibility guard", () => {
     const detail = res.body.details[0] as string;
     expect(detail).toContain("measurements.noseWidth");
     expect(detail).toContain("mm");
-    expect(detail).toContain("20");
-    expect(detail).toContain("60");
+    expect(detail).toContain(String(ADULT_PLAUSIBILITY_BOUNDS.noseWidth[0]));
+    expect(detail).toContain(String(ADULT_PLAUSIBILITY_BOUNDS.noseWidth[1]));
   });
 
   it("returns only one error entry when the first checked field is invalid (early-return behaviour)", async () => {

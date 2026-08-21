@@ -35,6 +35,7 @@ import {
   IRIS_DIAMETER_MM,
   type MeasureLandmark,
 } from "./face-measurements";
+import { PLAUSIBILITY_BOUNDS } from "./measure-flow";
 
 /** Canonical face model vertices (mm). Index = MediaPipe landmark id. */
 const CANONICAL: Record<number, [number, number, number]> = {
@@ -290,5 +291,59 @@ describe("failure modes", () => {
       reason = err instanceof ExtractionError ? err.reason : "wrong-type";
     }
     expect(reason).toBe("iris_too_small");
+  });
+});
+
+describe("the /measure plausibility gate admits this face", () => {
+  /**
+   * The client's window is the one copy of the table that cannot import
+   * the server's (different workspace, browser bundle), so it is pinned
+   * here instead — to the same canonical face, by the same rule the
+   * server's windows are held to in resupply-api's
+   * `lib/fitting/plausibility-windows.test.ts`:
+   *
+   *   ±18% of population spread (SD ≈ 6% of the mean, ±3 SD) plus the 7%
+   *   worst-case pipeline error the tests above bound.
+   *
+   * A window that merely CONTAINS the average adult is not enough. The
+   * server's adult ceiling for `noseToChin` was 90 mm against a
+   * canonical 89.4 — an ordinary face, measured correctly, was 0.6 mm
+   * from being told it was out of range.
+   */
+  const REQUIRED_MARGIN = 0.18 + 0.07;
+
+  it("clears the canonical average adult by ≥25% on every bound", () => {
+    for (const key of Object.keys(TRUTH) as Array<keyof typeof TRUTH>) {
+      const truth = TRUTH[key];
+      const [min, max] = PLAUSIBILITY_BOUNDS[key];
+      expect(
+        (truth - min) / truth,
+        `${key} floor ${min}`,
+      ).toBeGreaterThanOrEqual(REQUIRED_MARGIN);
+      expect(
+        (max - truth) / truth,
+        `${key} ceiling ${max}`,
+      ).toBeGreaterThanOrEqual(REQUIRED_MARGIN);
+    }
+  });
+
+  it("admits what the extractor actually returns, across the coached range", () => {
+    // The end-to-end guarantee: nothing the measurement path can produce
+    // from a well-captured average face may be rejected by the gate in
+    // front of it.
+    for (const fovDeg of [55, ASSUMED_HFOV_DEG, 85]) {
+      for (const D of [280, 400, 550]) {
+        const { values } = measureAt({ D, fovDeg });
+        for (const key of Object.keys(TRUTH) as Array<keyof typeof TRUTH>) {
+          const [min, max] = PLAUSIBILITY_BOUNDS[key];
+          expect(values[key], `${key} at D=${D} FOV=${fovDeg}`).toBeGreaterThan(
+            min,
+          );
+          expect(values[key], `${key} at D=${D} FOV=${fovDeg}`).toBeLessThan(
+            max,
+          );
+        }
+      }
+    }
   });
 });

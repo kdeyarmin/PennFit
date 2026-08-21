@@ -146,6 +146,61 @@ irreducible ±6% gaze ambiguity.
    later must calibrate them against this pipeline's own readings, and
    the code comment on the landmark table now says exactly that.
 
+## Follow-up: the plausibility windows were never calibrated against this (2026-08-21)
+
+The verification above measured the _arithmetic_ against ground truth
+but left the **plausibility windows** — the millimetre gates that decide
+whether a measurement is a face at all — on their original values, which
+were authored from textbook norms rather than from this pipeline's own
+readings. Two of them were wrong in the direction that rejects real
+patients, and the failure is invisible from the outside: the patient is
+told their measurements are outside the range we cover and handed to a
+respiratory therapist, which looks exactly like the feature working.
+
+1. **The adult `noseToChin` ceiling was 90 mm.** The canonical average
+   adult measures **89.4 mm** on that span. An ordinary face, measured
+   correctly, sat 0.6 mm inside the window — and since the corrected
+   pipeline carries ±3.5% at the assumed FOV (≈ ±3 mm here), a
+   better-than-average share of average adults read over 90 and landed
+   `outside_validated_range`.
+
+2. **The pediatric ceilings were set _below_ the adult ceilings**
+   (`noseToChin` 70 mm, `faceWidthAtCheekbones` 150 mm). "Pediatric" is
+   derived as age < 18 from the chart's date of birth, and a 17-year-old
+   has a fully adult-sized face: the canonical adult falls **outside**
+   the pediatric window on both spans. Every adolescent scanned through
+   the pediatric path was rejected.
+
+**What changed.** All three windows (adult, pediatric, and the adult ∪
+pediatric union the population-blind callers apply) are re-derived from
+the canonical face and now clear it by ≥25% on both edges — ~18% of
+population spread (facial dimensions run SD ≈ 6% of the mean, so ±3 SD)
+plus the 7% worst-case pipeline error bounded above. The pediatric
+window is now the adult window **with the floor lowered and nothing
+else**, so it is a strict superset by construction, and the union window
+is _derived_ from the two rather than transcribed. The five hand-copied
+copies of the table are down to two — the server's single definition in
+`lib/fitting/confidence.ts`, and the client's `/measure` gate, which
+cannot import across the workspace boundary.
+
+**What prevents a recurrence.**
+[`plausibility-windows.test.ts`](../artifacts/resupply-api/src/lib/fitting/plausibility-windows.test.ts)
+asserts the canonical face sits inside every window with that margin,
+and holds the superset invariant directly; the client's copy is pinned
+the same way in `face-measurements.accuracy.test.ts`, which additionally
+runs the real extractor across 28–55 cm and 55–85° and requires that
+nothing it can produce from a well-captured average face is rejected by
+the gate in front of it. Both defects fail that assertion.
+
+**Also found, and worth knowing:** several test fixtures across the repo
+described a "typical adult face" with a `noseHeight` of 45–50 mm. That
+is the textbook **nasion→subnasale** span; this pipeline measures
+**bridge (landmark 6) → tip (4)**, ~29 mm on the same face. The fixtures
+on the fitting paths are now anchored to the canonical face. The same
+confusion is worth checking wherever a tenant authors mask size bands —
+`face_width_min/max_mm` and friends must be calibrated against this
+pipeline's readings, per finding 6 above.
+
 ## Known residual limitations (documented, not hidden)
 
 - **Pitch** remains the weakest axis for vertical spans: at ±8° (the

@@ -19,28 +19,10 @@ import { GetRecommendationBody } from "../../lib/api-zod/index.js";
 import { recommend } from "../../lib/storefront/recommendationEngine.js";
 import { maskCatalog } from "../../data/maskCatalog.js";
 import { verifyFitterInviteToken } from "../../lib/fitter-invite-token.js";
-
-// Server-side plausibility bounds (millimeters). The browser rejects
-// out-of-window measurements before sending (PLAUSIBILITY_BOUNDS in
-// artifacts/cpap-fitter/src/lib/measure-flow.ts), but this endpoint is
-// stateless and public — a direct caller bypasses that guard entirely.
-// Generous enough to cover ~99% of adult faces while rejecting
-// negative / zero / absurd values that would otherwise feed garbage into
-// the recommender. Keep in sync with the client copy.
-type BoundedMeasurement =
-  | "noseWidth"
-  | "noseHeight"
-  | "noseToChin"
-  | "mouthWidth"
-  | "faceWidthAtCheekbones";
-
-const PLAUSIBILITY_BOUNDS = {
-  noseWidth: [20, 60],
-  noseHeight: [25, 70],
-  noseToChin: [40, 90],
-  mouthWidth: [30, 80],
-  faceWidthAtCheekbones: [110, 180],
-} as const satisfies Record<BoundedMeasurement, readonly [number, number]>;
+import {
+  ADULT_PLAUSIBILITY_BOUNDS,
+  PLAUSIBILITY_FIELDS,
+} from "../../lib/fitting/index.js";
 
 const router = Router();
 
@@ -108,14 +90,21 @@ router.post("/recommend", (req, res) => {
 
   const { measurements, answers } = parseResult.data;
 
-  // Plausibility guard: defense-in-depth for direct API callers that
-  // bypass the on-device measurement window. Zod enforces the shape;
-  // this rejects numerically out-of-range values before they reach the
-  // recommender.
-  for (const field of Object.keys(
-    PLAUSIBILITY_BOUNDS,
-  ) as BoundedMeasurement[]) {
-    const [min, max] = PLAUSIBILITY_BOUNDS[field];
+  // Plausibility guard: defense-in-depth for direct API callers. The
+  // browser rejects out-of-window measurements before sending
+  // (PLAUSIBILITY_BOUNDS in cpap-fitter's measure-flow.ts), but this
+  // endpoint is stateless and public — a direct caller bypasses that
+  // entirely. Zod enforces the shape; this rejects numerically
+  // out-of-range values before they reach the recommender.
+  //
+  // The ADULT window, deliberately: this legacy route has no chart and
+  // no date of birth, and its recommendation engine has no pediatric
+  // service line, so it must not start sizing adult masks for children.
+  // A pediatric face is turned away here and fitted through
+  // /api/fit/assess, which does know the population. Imported rather
+  // than transcribed — the copies of this table are what drifted apart.
+  for (const field of PLAUSIBILITY_FIELDS) {
+    const [min, max] = ADULT_PLAUSIBILITY_BOUNDS[field];
     const value = measurements[field];
     if (!Number.isFinite(value) || value < min || value > max) {
       res.status(400).json({
