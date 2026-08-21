@@ -1,20 +1,38 @@
 /**
- * CPAP Mask Catalog — Seed Data for Penn Home Medical Supply
+ * CPAP Mask Catalog — the legacy storefront fitter's data.
  *
- * Uses real product names from ResMed AirFit, Philips DreamWear, Fisher & Paykel
- * Brevida, Bleep Sleep, and React Health (iVolve / Numa / Viva) lines as
- * representative examples. Replace with actual Penn Home Medical Supply
- * inventory and manufacturer-provided fit ranges before production use.
+ * Model names, types, features, and (as of 2026-08-21) SIZE RUNS are
+ * real and verified — see docs/mask-size-run-registry-2026-08-21.md for
+ * the per-model evidence. The DB Mask Intelligence Catalog (migrations
+ * 0481/0486/0511/0512) is this array's successor for the clinical
+ * fitter; this array still drives the legacy /api/recommend +
+ * /api/masks path and the storefront chatbot.
+ *
+ * FIT RANGES — read this before editing them.
+ * Every `fitRanges` block carries the SAME values by design: the ±18%
+ * (±3 SD) population envelope around MediaPipe's canonical face, on the
+ * axes the browser pipeline actually measures (nose tip → menton for
+ * noseToChin — NOT textbook subnasale → menton, which is what the
+ * original hand-authored ranges turned out to be). Under
+ * recommendationEngine's semantics that makes the ranges do exactly two
+ * jobs, honestly:
+ *   - scoreFitMatch: every plausible face scores 1.0 on every mask —
+ *     geometry no longer pretends to distinguish MASKS (the per-model
+ *     differences it used to encode were invented, and on the wrong
+ *     axis, which systematically de-ranked full-face masks for average
+ *     adults);
+ *   - recommendSize: the linear partition of the envelope reproduces
+ *     the per-size bands the DB catalog derives (same anchor, same
+ *     envelope), so the two engines agree on sizes. A face outside ±3 SD
+ *     clamps to the end size with the "verify in person" warning, which
+ *     for a genuine outlier is the right answer.
+ * Do not re-introduce per-model ranges without manufacturer-published
+ * geometry to cite — that is what the DB catalog's provenance columns
+ * (fit_data_source / fit_data_source_ref, migration 0495) are for.
  *
  * Fit range dimensions are in millimeters (mm).
  * Pressure ranges are in cmH2O (centimeters of water).
  * Weight is in grams (g).
- *
- * Sources:
- *   - ResMed AirFit specifications
- *   - Philips DreamWear specifications
- *   - Fisher & Paykel product guides
- *   - Manufacturer fitting guides and DME clinical practice notes
  */
 
 export type MaskType = "fullFace" | "nasal" | "nasalPillow" | "hybrid";
@@ -63,12 +81,12 @@ export const maskCatalog: MaskEntry[] = [
     description:
       "ResMed's flagship full face mask featuring an InfinitySeal silicone cushion that adapts to a wide range of face shapes. Magnetic clips make it easy to put on and take off, even in the dark.",
     fitRanges: {
-      noseWidthMin: 28,
-      noseWidthMax: 44,
-      noseToChinMin: 55,
-      noseToChinMax: 80,
-      mouthWidthMin: 42,
-      mouthWidthMax: 60,
+      noseWidthMin: 29.3,
+      noseWidthMax: 42.1,
+      noseToChinMin: 73.3,
+      noseToChinMax: 105.5,
+      mouthWidthMin: 40.3,
+      mouthWidthMax: 58.0,
     },
     features: [
       "Magnetic clips for easy removal",
@@ -81,7 +99,7 @@ export const maskCatalog: MaskEntry[] = [
     headgearStyle: "Soft fabric with magnetic clips",
     hoseConnection: "front",
     weightGrams: 124,
-    sizesAvailable: ["XS", "S", "M", "L", "LW (Large Wide)"],
+    sizesAvailable: ["S", "M", "L"],
     pressureRangeMin: 4,
     pressureRangeMax: 25,
     priceTier: "premium",
@@ -97,12 +115,12 @@ export const maskCatalog: MaskEntry[] = [
     description:
       "A compact under-the-nose full face mask that keeps your line of sight clear so you can read or watch TV with glasses on. The minimal frame is great for patients who feel claustrophobic.",
     fitRanges: {
-      noseWidthMin: 26,
-      noseWidthMax: 40,
-      noseToChinMin: 52,
-      noseToChinMax: 76,
-      mouthWidthMin: 38,
-      mouthWidthMax: 56,
+      noseWidthMin: 29.3,
+      noseWidthMax: 42.1,
+      noseToChinMin: 73.3,
+      noseToChinMax: 105.5,
+      mouthWidthMin: 40.3,
+      mouthWidthMax: 58.0,
     },
     features: [
       "Under-nose cushion (minimal contact)",
@@ -118,7 +136,7 @@ export const maskCatalog: MaskEntry[] = [
     headgearStyle: "QuickFit elastic straps",
     hoseConnection: "front",
     weightGrams: 98,
-    sizesAvailable: ["S", "M", "Wide-S", "Wide-M"],
+    sizesAvailable: ["S", "M"],
     pressureRangeMin: 4,
     pressureRangeMax: 25,
     priceTier: "premium",
@@ -134,12 +152,12 @@ export const maskCatalog: MaskEntry[] = [
     description:
       "Innovative full face mask with a top-of-head hose connection that gives you 360° freedom of movement. The soft silicone frame channels air down the sides, eliminating the bulky front tube.",
     fitRanges: {
-      noseWidthMin: 27,
-      noseWidthMax: 42,
-      noseToChinMin: 53,
-      noseToChinMax: 78,
-      mouthWidthMin: 40,
-      mouthWidthMax: 58,
+      noseWidthMin: 29.3,
+      noseWidthMax: 42.1,
+      noseToChinMin: 73.3,
+      noseToChinMax: 105.5,
+      mouthWidthMin: 40.3,
+      mouthWidthMax: 58.0,
     },
     features: [
       "Top-of-head hose connection (360° rotation)",
@@ -152,7 +170,7 @@ export const maskCatalog: MaskEntry[] = [
     headgearStyle: "Soft fabric wrap",
     hoseConnection: "top",
     weightGrams: 110,
-    sizesAvailable: ["S", "M", "MW (Medium Wide)", "L"],
+    sizesAvailable: ["S", "M", "MW", "L"],
     pressureRangeMin: 4,
     pressureRangeMax: 25,
     priceTier: "premium",
@@ -172,12 +190,12 @@ export const maskCatalog: MaskEntry[] = [
     description:
       "Premium full face mask featuring RollFit XT seal technology that rolls and adjusts as you move. VentiCool venting reduces noise and CO2 rebreathing for a cooler, fresher therapy experience.",
     fitRanges: {
-      noseWidthMin: 29,
-      noseWidthMax: 45,
-      noseToChinMin: 56,
-      noseToChinMax: 82,
-      mouthWidthMin: 43,
-      mouthWidthMax: 62,
+      noseWidthMin: 29.3,
+      noseWidthMax: 42.1,
+      noseToChinMin: 73.3,
+      noseToChinMax: 105.5,
+      mouthWidthMin: 40.3,
+      mouthWidthMax: 58.0,
     },
     features: [
       "RollFit XT seal adapts to movement",
@@ -210,12 +228,12 @@ export const maskCatalog: MaskEntry[] = [
     description:
       "ResMed's most compact full face mask. The minimal under-nose design lies flat on the face — perfect for side sleepers — while the QuietAir vent makes it one of the quietest masks available.",
     fitRanges: {
-      noseWidthMin: 25,
-      noseWidthMax: 38,
-      noseToChinMin: 50,
-      noseToChinMax: 74,
-      mouthWidthMin: 36,
-      mouthWidthMax: 54,
+      noseWidthMin: 29.3,
+      noseWidthMax: 42.1,
+      noseToChinMin: 73.3,
+      noseToChinMax: 105.5,
+      mouthWidthMin: 40.3,
+      mouthWidthMax: 58.0,
     },
     features: [
       "Minimal under-nose design",
@@ -228,7 +246,7 @@ export const maskCatalog: MaskEntry[] = [
     headgearStyle: "Soft adjustable straps",
     hoseConnection: "front",
     weightGrams: 88,
-    sizesAvailable: ["S", "M", "L"],
+    sizesAvailable: ["SW", "M", "L"],
     pressureRangeMin: 4,
     pressureRangeMax: 25,
     priceTier: "premium",
@@ -250,12 +268,12 @@ export const maskCatalog: MaskEntry[] = [
     description:
       "ResMed's best-selling nasal mask. The InfinitySeal silicone cushion provides a stable seal across a wide range of nose shapes, while the soft headgear adjusts easily even with one hand.",
     fitRanges: {
-      noseWidthMin: 26,
-      noseWidthMax: 40,
-      noseToChinMin: 45,
-      noseToChinMax: 72,
-      mouthWidthMin: 35,
-      mouthWidthMax: 56,
+      noseWidthMin: 29.3,
+      noseWidthMax: 42.1,
+      noseToChinMin: 73.3,
+      noseToChinMax: 105.5,
+      mouthWidthMin: 40.3,
+      mouthWidthMax: 58.0,
     },
     features: [
       "Soft InfinitySeal silicone cushion",
@@ -272,7 +290,7 @@ export const maskCatalog: MaskEntry[] = [
     headgearStyle: "Soft fabric with magnetic clips",
     hoseConnection: "front",
     weightGrams: 90,
-    sizesAvailable: ["XS", "S", "M", "LW (Large Wide)"],
+    sizesAvailable: ["S", "M", "L"],
     pressureRangeMin: 4,
     pressureRangeMax: 25,
     priceTier: "standard",
@@ -288,12 +306,12 @@ export const maskCatalog: MaskEntry[] = [
     description:
       "An ultra-compact nasal cradle mask that sits below the nose instead of over it. Eliminates red marks on the bridge of the nose and gives you a wide-open field of view.",
     fitRanges: {
-      noseWidthMin: 24,
-      noseWidthMax: 38,
-      noseToChinMin: 42,
-      noseToChinMax: 68,
-      mouthWidthMin: 33,
-      mouthWidthMax: 52,
+      noseWidthMin: 29.3,
+      noseWidthMax: 42.1,
+      noseToChinMin: 73.3,
+      noseToChinMax: 105.5,
+      mouthWidthMin: 40.3,
+      mouthWidthMax: 58.0,
     },
     features: [
       "Cradle cushion fits under the nose",
@@ -306,7 +324,7 @@ export const maskCatalog: MaskEntry[] = [
     headgearStyle: "Slim fabric straps",
     hoseConnection: "front",
     weightGrams: 71,
-    sizesAvailable: ["S", "M", "Wide-S", "Wide-M"],
+    sizesAvailable: ["S", "SW", "M"],
     pressureRangeMin: 4,
     pressureRangeMax: 20,
     priceTier: "standard",
@@ -326,12 +344,12 @@ export const maskCatalog: MaskEntry[] = [
     description:
       "Comfortable nasal mask with the signature DreamWear top-of-head hose. The under-nose cushion stays put without the bulk of a traditional nasal mask, making it ideal for restless sleepers.",
     fitRanges: {
-      noseWidthMin: 25,
-      noseWidthMax: 39,
-      noseToChinMin: 43,
-      noseToChinMax: 70,
-      mouthWidthMin: 34,
-      mouthWidthMax: 54,
+      noseWidthMin: 29.3,
+      noseWidthMax: 42.1,
+      noseToChinMin: 73.3,
+      noseToChinMax: 105.5,
+      mouthWidthMin: 40.3,
+      mouthWidthMax: 58.0,
     },
     features: [
       "Under-nose cushion with nasal hood",
@@ -367,12 +385,12 @@ export const maskCatalog: MaskEntry[] = [
     description:
       "Ergonomic nasal mask designed around the natural movement of your head. The RollFit seal pivots with you, and the diffused exhalation vent keeps things quiet for your bed partner.",
     fitRanges: {
-      noseWidthMin: 27,
-      noseWidthMax: 41,
-      noseToChinMin: 44,
-      noseToChinMax: 71,
-      mouthWidthMin: 36,
-      mouthWidthMax: 55,
+      noseWidthMin: 29.3,
+      noseWidthMax: 42.1,
+      noseToChinMin: 73.3,
+      noseToChinMax: 105.5,
+      mouthWidthMin: 40.3,
+      mouthWidthMax: 58.0,
     },
     features: [
       "RollFit seal follows head movement",
@@ -405,12 +423,12 @@ export const maskCatalog: MaskEntry[] = [
     description:
       "Memory foam version of the N20. The UltraSoft cushion molds to your face for a luxurious feel — ideal for sensitive skin or patients who get red marks from silicone. Replace the cushion weekly.",
     fitRanges: {
-      noseWidthMin: 26,
-      noseWidthMax: 40,
-      noseToChinMin: 43,
-      noseToChinMax: 70,
-      mouthWidthMin: 34,
-      mouthWidthMax: 54,
+      noseWidthMin: 29.3,
+      noseWidthMax: 42.1,
+      noseToChinMin: 73.3,
+      noseToChinMax: 105.5,
+      mouthWidthMin: 40.3,
+      mouthWidthMax: 58.0,
     },
     features: [
       "UltraSoft memory foam cushion",
@@ -443,12 +461,12 @@ export const maskCatalog: MaskEntry[] = [
     description:
       "A reliable, simply-designed nasal mask with a dual-wall Spring Air cushion that flexes for a gentle seal. Adjustable forehead support makes initial fitting straightforward.",
     fitRanges: {
-      noseWidthMin: 28,
-      noseWidthMax: 44,
-      noseToChinMin: 46,
-      noseToChinMax: 73,
-      mouthWidthMin: 37,
-      mouthWidthMax: 57,
+      noseWidthMin: 29.3,
+      noseWidthMax: 42.1,
+      noseToChinMin: 73.3,
+      noseToChinMax: 105.5,
+      mouthWidthMin: 40.3,
+      mouthWidthMax: 58.0,
     },
     features: [
       "Spring Air dual-wall cushion",
@@ -483,12 +501,12 @@ export const maskCatalog: MaskEntry[] = [
     description:
       "ResMed's iconic ultra-light nasal pillow mask. At just 42g it's almost unnoticeable, and the QuietAir woven vent is whisper-quiet. A favorite for first-time CPAP users.",
     fitRanges: {
-      noseWidthMin: 22,
-      noseWidthMax: 36,
-      noseToChinMin: 38,
-      noseToChinMax: 65,
-      mouthWidthMin: 30,
-      mouthWidthMax: 50,
+      noseWidthMin: 29.3,
+      noseWidthMax: 42.1,
+      noseToChinMin: 73.3,
+      noseToChinMax: 105.5,
+      mouthWidthMin: 40.3,
+      mouthWidthMax: 58.0,
     },
     features: [
       "Ultra-lightweight at just 42 g",
@@ -526,12 +544,12 @@ export const maskCatalog: MaskEntry[] = [
     description:
       "The P10 designed for women, with smaller pillow sizes calibrated for narrower nasal passages and softer, lavender-accented fabric headgear.",
     fitRanges: {
-      noseWidthMin: 20,
-      noseWidthMax: 32,
-      noseToChinMin: 36,
-      noseToChinMax: 60,
-      mouthWidthMin: 28,
-      mouthWidthMax: 46,
+      noseWidthMin: 29.3,
+      noseWidthMax: 42.1,
+      noseToChinMin: 73.3,
+      noseToChinMax: 105.5,
+      mouthWidthMin: 40.3,
+      mouthWidthMax: 58.0,
     },
     features: [
       "Smaller pillow sizes for narrower nasal passages",
@@ -564,12 +582,12 @@ export const maskCatalog: MaskEntry[] = [
     description:
       "Compact nasal pillow mask featuring an AirPillow seal that gently inflates under therapy pressure for a soft, leak-free fit. Two cushion sizes cover most patients.",
     fitRanges: {
-      noseWidthMin: 21,
-      noseWidthMax: 35,
-      noseToChinMin: 37,
-      noseToChinMax: 63,
-      mouthWidthMin: 29,
-      mouthWidthMax: 49,
+      noseWidthMin: 29.3,
+      noseWidthMax: 42.1,
+      noseToChinMin: 73.3,
+      noseToChinMax: 105.5,
+      mouthWidthMin: 40.3,
+      mouthWidthMax: 58.0,
     },
     features: [
       "AirPillow seal self-adjusts under pressure",
@@ -582,7 +600,7 @@ export const maskCatalog: MaskEntry[] = [
     headgearStyle: "VisiBlue stretch fabric",
     hoseConnection: "front",
     weightGrams: 58,
-    sizesAvailable: ["XS/S", "M/L"],
+    sizesAvailable: ["XS-S", "M-L"],
     pressureRangeMin: 4,
     pressureRangeMax: 25,
     priceTier: "standard",
@@ -598,12 +616,12 @@ export const maskCatalog: MaskEntry[] = [
     description:
       "Combines DreamWear's signature top-of-head hose design with comfortable silicone nasal pillows. The hollow soft frame channels air down the sides for a lightweight, unrestricted feel.",
     fitRanges: {
-      noseWidthMin: 22,
-      noseWidthMax: 36,
-      noseToChinMin: 38,
-      noseToChinMax: 65,
-      mouthWidthMin: 30,
-      mouthWidthMax: 50,
+      noseWidthMin: 29.3,
+      noseWidthMax: 42.1,
+      noseToChinMin: 73.3,
+      noseToChinMax: 105.5,
+      mouthWidthMin: 40.3,
+      mouthWidthMax: 58.0,
     },
     features: [
       "Top-of-head hose prevents tangling",
@@ -616,7 +634,7 @@ export const maskCatalog: MaskEntry[] = [
     headgearStyle: "Soft fabric wrap",
     hoseConnection: "top",
     weightGrams: 84,
-    sizesAvailable: ["XS", "S", "M", "L"],
+    sizesAvailable: ["S", "M", "L"],
     pressureRangeMin: 4,
     pressureRangeMax: 20,
     priceTier: "standard",
@@ -632,12 +650,12 @@ export const maskCatalog: MaskEntry[] = [
     description:
       "A radical redesign that uses gentle adhesive ports instead of headgear straps. No marks on your face, no pressure on your head, and you can sleep in any position you like.",
     fitRanges: {
-      noseWidthMin: 21,
-      noseWidthMax: 37,
-      noseToChinMin: 36,
-      noseToChinMax: 64,
-      mouthWidthMin: 28,
-      mouthWidthMax: 50,
+      noseWidthMin: 29.3,
+      noseWidthMax: 42.1,
+      noseToChinMin: 73.3,
+      noseToChinMax: 105.5,
+      mouthWidthMin: 40.3,
+      mouthWidthMax: 58.0,
     },
     features: [
       "Adhesive ports — no headgear straps",
@@ -671,12 +689,12 @@ export const maskCatalog: MaskEntry[] = [
     description:
       "Hybrid full-face mask with a top-of-head tube connection. Combines under-nose cushion with mouth coverage so mouth breathers can sleep on their side without dislodging the hose.",
     fitRanges: {
-      noseWidthMin: 24,
-      noseWidthMax: 39,
-      noseToChinMin: 48,
-      noseToChinMax: 74,
-      mouthWidthMin: 36,
-      mouthWidthMax: 55,
+      noseWidthMin: 29.3,
+      noseWidthMax: 42.1,
+      noseToChinMin: 73.3,
+      noseToChinMax: 105.5,
+      mouthWidthMin: 40.3,
+      mouthWidthMax: 58.0,
     },
     features: [
       "Top-of-head tube connection",
@@ -689,7 +707,7 @@ export const maskCatalog: MaskEntry[] = [
     headgearStyle: "Soft fabric with magnetic clips",
     hoseConnection: "top",
     weightGrams: 122,
-    sizesAvailable: ["S", "M", "L", "Wide-S", "Wide-M", "Wide-L"],
+    sizesAvailable: ["S", "SW", "M", "W"],
     pressureRangeMin: 4,
     pressureRangeMax: 25,
     priceTier: "premium",
@@ -700,44 +718,10 @@ export const maskCatalog: MaskEntry[] = [
     ],
     imageUrl: null,
   },
-  {
-    id: "philips-dreamwear-ff-gel",
-    name: "DreamWear Full Face Gel",
-    modelNumber: "PHM-PR-DWFF-G",
-    manufacturer: "Philips Respironics",
-    type: "hybrid",
-    description:
-      "Gel-cushioned variant of the DreamWear Full Face for patients with silicone sensitivity. The soft gel conforms gently to the face while the top-of-head hose stays out of the way.",
-    fitRanges: {
-      noseWidthMin: 26,
-      noseWidthMax: 41,
-      noseToChinMin: 50,
-      noseToChinMax: 76,
-      mouthWidthMin: 38,
-      mouthWidthMax: 57,
-    },
-    features: [
-      "Soft gel cushion for sensitive skin",
-      "Top-of-head hose connection",
-      "Covers nose and mouth with minimal contact",
-      "Good alternative for silicone allergies",
-    ],
-    contraindications: ["Heavy beard"],
-    cushionMaterial: "Soft gel",
-    headgearStyle: "Soft fabric wrap",
-    hoseConnection: "top",
-    weightGrams: 118,
-    sizesAvailable: ["S", "M", "MW", "L"],
-    pressureRangeMin: 4,
-    pressureRangeMax: 25,
-    priceTier: "premium",
-    bestFor: [
-      "Silicone-sensitive patients",
-      "Side sleepers",
-      "Sensitive facial skin",
-    ],
-    imageUrl: null,
-  },
+  // "DreamWear Full Face Gel" was removed 2026-08-21: no Philips product
+  // by this name exists — the DreamWear line's gel option is the gel
+  // PILLOWS cushion, and there is no gel full-face variant. The DB
+  // catalog retires the same model in migration 0512.
   {
     id: "philips-amara-view",
     name: "Amara View Full Face",
@@ -747,12 +731,12 @@ export const maskCatalog: MaskEntry[] = [
     description:
       "Under-the-nose full face mask with nothing on the bridge of the nose. The wide-open design is ideal for patients who wear glasses, want to read in bed, or simply hate having something across the nose.",
     fitRanges: {
-      noseWidthMin: 30,
-      noseWidthMax: 46,
-      noseToChinMin: 58,
-      noseToChinMax: 84,
-      mouthWidthMin: 44,
-      mouthWidthMax: 63,
+      noseWidthMin: 29.3,
+      noseWidthMax: 42.1,
+      noseToChinMin: 73.3,
+      noseToChinMax: 105.5,
+      mouthWidthMin: 40.3,
+      mouthWidthMax: 58.0,
     },
     features: [
       "Under-nose cushion — nothing over the nose bridge",
@@ -787,12 +771,12 @@ export const maskCatalog: MaskEntry[] = [
     description:
       "React Health's value-priced full face mask with a soft silicone cushion and quick-release elbow. A reliable workhorse for new CPAP patients on a budget who need mouth coverage.",
     fitRanges: {
-      noseWidthMin: 28,
-      noseWidthMax: 44,
-      noseToChinMin: 54,
-      noseToChinMax: 80,
-      mouthWidthMin: 41,
-      mouthWidthMax: 60,
+      noseWidthMin: 29.3,
+      noseWidthMax: 42.1,
+      noseToChinMin: 73.3,
+      noseToChinMax: 105.5,
+      mouthWidthMin: 40.3,
+      mouthWidthMax: 58.0,
     },
     features: [
       "Soft silicone cushion with stable seal",
@@ -821,12 +805,12 @@ export const maskCatalog: MaskEntry[] = [
     description:
       "React Health's premium full face mask featuring a dual-wall silicone cushion and ultra-quiet diffused vent. The contoured forehead support distributes pressure evenly for long-haul comfort.",
     fitRanges: {
-      noseWidthMin: 27,
-      noseWidthMax: 43,
-      noseToChinMin: 53,
-      noseToChinMax: 79,
-      mouthWidthMin: 40,
-      mouthWidthMax: 59,
+      noseWidthMin: 29.3,
+      noseWidthMax: 42.1,
+      noseToChinMin: 73.3,
+      noseToChinMax: 105.5,
+      mouthWidthMin: 40.3,
+      mouthWidthMax: 58.0,
     },
     features: [
       "Dual-wall silicone cushion adapts under pressure",
@@ -859,12 +843,12 @@ export const maskCatalog: MaskEntry[] = [
     description:
       "Traditional over-the-nose nasal mask with a soft silicone cushion and adjustable forehead arm. Straightforward fitting and competitively priced replacement parts make it a clinic favorite.",
     fitRanges: {
-      noseWidthMin: 27,
-      noseWidthMax: 42,
-      noseToChinMin: 45,
-      noseToChinMax: 72,
-      mouthWidthMin: 36,
-      mouthWidthMax: 56,
+      noseWidthMin: 29.3,
+      noseWidthMax: 42.1,
+      noseToChinMin: 73.3,
+      noseToChinMax: 105.5,
+      mouthWidthMin: 40.3,
+      mouthWidthMax: 58.0,
     },
     features: [
       "Soft silicone cushion",
@@ -900,12 +884,12 @@ export const maskCatalog: MaskEntry[] = [
     description:
       "Compact nasal cradle that sits under the nose, eliminating bridge marks and giving an open field of view. A budget-friendly alternative to premium cradle masks.",
     fitRanges: {
-      noseWidthMin: 24,
-      noseWidthMax: 38,
-      noseToChinMin: 42,
-      noseToChinMax: 68,
-      mouthWidthMin: 33,
-      mouthWidthMax: 52,
+      noseWidthMin: 29.3,
+      noseWidthMax: 42.1,
+      noseToChinMin: 73.3,
+      noseToChinMax: 105.5,
+      mouthWidthMin: 40.3,
+      mouthWidthMax: 58.0,
     },
     features: [
       "Under-nose cradle cushion",
@@ -938,12 +922,12 @@ export const maskCatalog: MaskEntry[] = [
     description:
       "Mid-tier nasal mask with a flexible silicone cushion that pivots with head movement. Soft headgear and a wide pressure range make it a versatile pick across patient profiles.",
     fitRanges: {
-      noseWidthMin: 26,
-      noseWidthMax: 41,
-      noseToChinMin: 44,
-      noseToChinMax: 71,
-      mouthWidthMin: 35,
-      mouthWidthMax: 55,
+      noseWidthMin: 29.3,
+      noseWidthMax: 42.1,
+      noseToChinMin: 73.3,
+      noseToChinMax: 105.5,
+      mouthWidthMin: 40.3,
+      mouthWidthMax: 58.0,
     },
     features: [
       "Flexible pivoting silicone cushion",
@@ -976,12 +960,12 @@ export const maskCatalog: MaskEntry[] = [
     description:
       "Lightweight nasal pillow mask with dual-wall silicone pillows for a stable seal at lower-to-moderate pressures. Minimal facial contact and an affordable price point.",
     fitRanges: {
-      noseWidthMin: 22,
-      noseWidthMax: 36,
-      noseToChinMin: 38,
-      noseToChinMax: 65,
-      mouthWidthMin: 30,
-      mouthWidthMax: 50,
+      noseWidthMin: 29.3,
+      noseWidthMax: 42.1,
+      noseToChinMin: 73.3,
+      noseToChinMax: 105.5,
+      mouthWidthMin: 40.3,
+      mouthWidthMax: 58.0,
     },
     features: [
       "Dual-wall silicone pillows",
@@ -1017,12 +1001,12 @@ export const maskCatalog: MaskEntry[] = [
     description:
       "Premium nasal pillow mask in React Health's Numa line, with self-adjusting pillows that inflate gently under pressure. Designed for active sleepers who want minimal headgear bulk.",
     fitRanges: {
-      noseWidthMin: 21,
-      noseWidthMax: 35,
-      noseToChinMin: 37,
-      noseToChinMax: 64,
-      mouthWidthMin: 29,
-      mouthWidthMax: 49,
+      noseWidthMin: 29.3,
+      noseWidthMax: 42.1,
+      noseToChinMin: 73.3,
+      noseToChinMax: 105.5,
+      mouthWidthMin: 40.3,
+      mouthWidthMax: 58.0,
     },
     features: [
       "Self-adjusting pillows seal under pressure",
@@ -1051,12 +1035,12 @@ export const maskCatalog: MaskEntry[] = [
     description:
       "Nasal cradle mask that seals under the nose, with a tube-up SpringFit frame routing the hose over the crown of the head. The frame doubles as the airflow channel, so there's nothing on the bridge of the nose.",
     fitRanges: {
-      noseWidthMin: 22,
-      noseWidthMax: 38,
-      noseToChinMin: 38,
-      noseToChinMax: 65,
-      mouthWidthMin: 30,
-      mouthWidthMax: 50,
+      noseWidthMin: 29.3,
+      noseWidthMax: 42.1,
+      noseToChinMin: 73.3,
+      noseToChinMax: 105.5,
+      mouthWidthMin: 40.3,
+      mouthWidthMax: 58.0,
     },
     features: [
       "Tube-up SpringFit frame doubles as airflow channel",
@@ -1069,7 +1053,7 @@ export const maskCatalog: MaskEntry[] = [
     headgearStyle: "Soft fabric wrap with QuickFit clips",
     hoseConnection: "top",
     weightGrams: 91,
-    sizesAvailable: ["S", "M", "SW", "W"],
+    sizesAvailable: ["S", "SW", "M", "W"],
     pressureRangeMin: 4,
     pressureRangeMax: 25,
     priceTier: "premium",
@@ -1089,12 +1073,12 @@ export const maskCatalog: MaskEntry[] = [
     description:
       "Nasal pillow mask using ResMed's tube-up SpringFit frame paired with dual-wall pillows that seat in the nostrils. Same frame architecture as the AirFit N30i — pillows and cradle cushions are interchangeable.",
     fitRanges: {
-      noseWidthMin: 20,
-      noseWidthMax: 36,
-      noseToChinMin: 35,
-      noseToChinMax: 65,
-      mouthWidthMin: 30,
-      mouthWidthMax: 50,
+      noseWidthMin: 29.3,
+      noseWidthMax: 42.1,
+      noseToChinMin: 73.3,
+      noseToChinMax: 105.5,
+      mouthWidthMin: 40.3,
+      mouthWidthMax: 58.0,
     },
     features: [
       "Tube-up SpringFit frame routes air over the crown",
@@ -1130,12 +1114,12 @@ export const maskCatalog: MaskEntry[] = [
     description:
       "Full-face mask using ResMed's UltraSoft memory-foam cushion that conforms to facial contours. The cushion is single-patient and replaced approximately monthly; the frame and headgear are shared with the AirFit F20.",
     fitRanges: {
-      noseWidthMin: 28,
-      noseWidthMax: 44,
-      noseToChinMin: 90,
-      noseToChinMax: 130,
-      mouthWidthMin: 35,
-      mouthWidthMax: 58,
+      noseWidthMin: 29.3,
+      noseWidthMax: 42.1,
+      noseToChinMin: 73.3,
+      noseToChinMax: 105.5,
+      mouthWidthMin: 40.3,
+      mouthWidthMax: 58.0,
     },
     features: [
       "UltraSoft memory-foam cushion (no silicone seal contact)",
@@ -1173,12 +1157,12 @@ export const maskCatalog: MaskEntry[] = [
     description:
       "Compact under-the-nose nasal mask with a CapFit one-piece headgear that loops over the crown. Front-facing short tube with a 360-degree ball-joint elbow keeps drag off the seal.",
     fitRanges: {
-      noseWidthMin: 26,
-      noseWidthMax: 40,
-      noseToChinMin: 38,
-      noseToChinMax: 65,
-      mouthWidthMin: 30,
-      mouthWidthMax: 50,
+      noseWidthMin: 29.3,
+      noseWidthMax: 42.1,
+      noseToChinMin: 73.3,
+      noseToChinMax: 105.5,
+      mouthWidthMin: 40.3,
+      mouthWidthMax: 58.0,
     },
     features: [
       "Dynamic Support Band stabilizes the seal during movement",
@@ -1207,12 +1191,12 @@ export const maskCatalog: MaskEntry[] = [
     description:
       "Compact full-face mask with a hybrid under-nose seal that avoids pressure on the nasal bridge. Covers nose and mouth without the bulk or sightline obstruction of a traditional full-face frame.",
     fitRanges: {
-      noseWidthMin: 28,
-      noseWidthMax: 44,
-      noseToChinMin: 75,
-      noseToChinMax: 110,
-      mouthWidthMin: 35,
-      mouthWidthMax: 55,
+      noseWidthMin: 29.3,
+      noseWidthMax: 42.1,
+      noseToChinMin: 73.3,
+      noseToChinMax: 105.5,
+      mouthWidthMin: 40.3,
+      mouthWidthMax: 58.0,
     },
     features: [
       "Under-nose seal eliminates nasal-bridge pressure points",
@@ -1229,7 +1213,7 @@ export const maskCatalog: MaskEntry[] = [
     headgearStyle: "ErgoForm headgear with stretch crown panel",
     hoseConnection: "front",
     weightGrams: 110,
-    sizesAvailable: ["XS", "S/M", "L"],
+    sizesAvailable: ["XS", "S-M", "L"],
     pressureRangeMin: 4,
     pressureRangeMax: 30,
     priceTier: "standard",
@@ -1249,12 +1233,12 @@ export const maskCatalog: MaskEntry[] = [
     description:
       "Nasal mask with AutoFit/AutoLock self-adjusting headgear — no buckles, no clips. The cushion is interchangeable with a nasal-pillow variant (Solo Pillows) on the same frame.",
     fitRanges: {
-      noseWidthMin: 26,
-      noseWidthMax: 40,
-      noseToChinMin: 38,
-      noseToChinMax: 65,
-      mouthWidthMin: 30,
-      mouthWidthMax: 50,
+      noseWidthMin: 29.3,
+      noseWidthMax: 42.1,
+      noseToChinMin: 73.3,
+      noseToChinMax: 105.5,
+      mouthWidthMin: 40.3,
+      mouthWidthMax: 58.0,
     },
     features: [
       "AutoFit stretch-to-fit, AutoLock touch-to-secure headgear",
@@ -1290,12 +1274,12 @@ export const maskCatalog: MaskEntry[] = [
     description:
       "Traditional full-face mask covering nose and mouth with a self-adjusting RollFit silicone seal that pivots on the nasal bridge as the user shifts position.",
     fitRanges: {
-      noseWidthMin: 28,
-      noseWidthMax: 44,
-      noseToChinMin: 90,
-      noseToChinMax: 130,
-      mouthWidthMin: 35,
-      mouthWidthMax: 58,
+      noseWidthMin: 29.3,
+      noseWidthMax: 42.1,
+      noseToChinMin: 73.3,
+      noseToChinMax: 105.5,
+      mouthWidthMin: 40.3,
+      mouthWidthMax: 58.0,
     },
     features: [
       "RollFit cushion auto-adjusts to nasal bridge",
@@ -1331,12 +1315,12 @@ export const maskCatalog: MaskEntry[] = [
     description:
       "Single-size nasal pillow mask using a self-inflating AirPillow seal and Stretchwise auto-adjusting headgear that fits without buckles. One of the lightest pillow masks on the market at 55 grams.",
     fitRanges: {
-      noseWidthMin: 18,
-      noseWidthMax: 40,
-      noseToChinMin: 30,
-      noseToChinMax: 65,
-      mouthWidthMin: 28,
-      mouthWidthMax: 52,
+      noseWidthMin: 29.3,
+      noseWidthMax: 42.1,
+      noseToChinMin: 73.3,
+      noseToChinMax: 105.5,
+      mouthWidthMin: 40.3,
+      mouthWidthMax: 58.0,
     },
     features: [
       "AirPillow seal inflates with therapy pressure for one-size fit",
@@ -1369,12 +1353,12 @@ export const maskCatalog: MaskEntry[] = [
     description:
       "Compact nasal pillow mask with MicroPillow cushions that gently inflate inside the nostrils. A minimal frame and split-strap headgear keep total mass under 40 grams.",
     fitRanges: {
-      noseWidthMin: 20,
-      noseWidthMax: 36,
-      noseToChinMin: 35,
-      noseToChinMax: 65,
-      mouthWidthMin: 30,
-      mouthWidthMax: 50,
+      noseWidthMin: 29.3,
+      noseWidthMax: 42.1,
+      noseToChinMin: 73.3,
+      noseToChinMax: 105.5,
+      mouthWidthMin: 40.3,
+      mouthWidthMax: 58.0,
     },
     features: [
       "MicroPillows inflate to seal under therapy pressure",
@@ -1404,12 +1388,12 @@ export const maskCatalog: MaskEntry[] = [
     description:
       "Nasal mask combining the under-nose Wisp cushion with a DreamWear-style top-of-head hose connection. The soft frame routes air over the cheeks and across the crown so the bridge of the nose stays clear.",
     fitRanges: {
-      noseWidthMin: 24,
-      noseWidthMax: 42,
-      noseToChinMin: 35,
-      noseToChinMax: 65,
-      mouthWidthMin: 30,
-      mouthWidthMax: 50,
+      noseWidthMin: 29.3,
+      noseWidthMax: 42.1,
+      noseToChinMin: 73.3,
+      noseToChinMax: 105.5,
+      mouthWidthMin: 40.3,
+      mouthWidthMax: 58.0,
     },
     features: [
       "Top-of-head hose routing keeps line of sight clear",
@@ -1445,12 +1429,12 @@ export const maskCatalog: MaskEntry[] = [
     description:
       "Nasal pillow mask with gel-infused pillows that contour to the base of the nostrils. The Pro frame adds gel cheek pads for extra stability.",
     fitRanges: {
-      noseWidthMin: 20,
-      noseWidthMax: 36,
-      noseToChinMin: 35,
-      noseToChinMax: 65,
-      mouthWidthMin: 30,
-      mouthWidthMax: 50,
+      noseWidthMin: 29.3,
+      noseWidthMax: 42.1,
+      noseToChinMin: 73.3,
+      noseToChinMax: 105.5,
+      mouthWidthMin: 40.3,
+      mouthWidthMax: 58.0,
     },
     features: [
       "Gel-infused pillows reduce nostril irritation",
@@ -1483,12 +1467,12 @@ export const maskCatalog: MaskEntry[] = [
     description:
       "Nasal pillow variant of the DreamWear platform. The soft silicone frame routes air over the cheeks and across the top of the head; pillows seat in the nostrils. Pillows are interchangeable with the DreamWear nasal cushion on the same frame.",
     fitRanges: {
-      noseWidthMin: 20,
-      noseWidthMax: 36,
-      noseToChinMin: 35,
-      noseToChinMax: 65,
-      mouthWidthMin: 30,
-      mouthWidthMax: 50,
+      noseWidthMin: 29.3,
+      noseWidthMax: 42.1,
+      noseToChinMin: 73.3,
+      noseToChinMax: 105.5,
+      mouthWidthMin: 40.3,
+      mouthWidthMax: 58.0,
     },
     features: [
       "Soft silicone frame doubles as air channel",
@@ -1524,12 +1508,12 @@ export const maskCatalog: MaskEntry[] = [
     description:
       "Lightweight, minimalist nasal mask with no forehead support. A dual-layer silicone cushion seals around the nose; the small frame keeps the line of sight clear for reading or watching TV in bed.",
     fitRanges: {
-      noseWidthMin: 26,
-      noseWidthMax: 44,
-      noseToChinMin: 38,
-      noseToChinMax: 65,
-      mouthWidthMin: 30,
-      mouthWidthMax: 52,
+      noseWidthMin: 29.3,
+      noseWidthMax: 42.1,
+      noseToChinMin: 73.3,
+      noseToChinMax: 105.5,
+      mouthWidthMin: 40.3,
+      mouthWidthMax: 58.0,
     },
     features: [
       "No forehead support — bedtime reading and TV unobstructed",

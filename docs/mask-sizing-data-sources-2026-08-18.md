@@ -1,5 +1,17 @@
 # Which mask manufacturers publish numeric size ranges (Aug 2026)
 
+> **Follow-up, 2026-08-21.** An audit of the shipped bands found the
+> catalog and the fitter were on different anatomical axes — 42 of these
+> 52 masks could not return an in-band size for an average adult face —
+> and that the Eson 2 import below carries the same class of problem in
+> its nose-HEIGHT column. Two open ends in this note are also now
+> resolved: REF 620198's full-face measurement is a profile-view span
+> anchored at the **nose bridge** (still not importable, but for a
+> specific reason), and the ResMed template's millimetre marks were
+> confirmed by extraction to be a print-calibration ruler. See
+> [`mask-fit-band-audit-2026-08-21.md`](./mask-fit-band-audit-2026-08-21.md)
+> and migration `0511`.
+
 The catalog's ~290 size bands ship as **estimates**, and the clinical
 fitter is gated behind an RT signing them off. The obvious way to make
 that faster is to import the manufacturers' own numbers. This is what
