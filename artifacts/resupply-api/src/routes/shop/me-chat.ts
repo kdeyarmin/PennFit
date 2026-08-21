@@ -55,6 +55,7 @@ import {
 
 import {
   applyPlatformBrandingForOrg,
+  brandToolDescriptors,
   getCompanyInfo,
   getCompanyInfoSync,
   type CompanyInfo,
@@ -74,6 +75,7 @@ import {
   executeCustomerChatTool,
   serializeCustomerToolResult,
   type CustomerChatToolContext,
+  type OpenAiToolDescriptor,
 } from "../../lib/storefront/customerChatTools.js";
 import { redactPiiForOutbound } from "../../lib/storefront/chatbotPii.js";
 import {
@@ -191,6 +193,20 @@ interface OpenAiToolCall {
   id: string;
   type: "function";
   function: { name: string; arguments: string };
+}
+
+function toolsForCustomerChat(
+  ctx: CustomerChatToolContext,
+): OpenAiToolDescriptor[] {
+  return ctx.tools ?? CUSTOMER_CHAT_TOOLS;
+}
+
+function toAnthropicTools(tools: OpenAiToolDescriptor[]): AnthropicTool[] {
+  return tools.map((t) => ({
+    name: t.function.name,
+    description: t.function.description,
+    input_schema: t.function.parameters,
+  }));
 }
 
 interface OpenAiChatResponse {
@@ -558,6 +574,8 @@ router.post(
       );
     }
 
+    const brandedTools = brandToolDescriptors(CUSTOMER_CHAT_TOOLS, companyInfo);
+
     const toolCtx: CustomerChatToolContext = {
       // Shared helper (customerChatTools) is typed for the unscoped
       // service-role client and is being cut over in a later wave; pass
@@ -569,6 +587,8 @@ router.post(
       // CSR-inbox notification — same label the admin inbox already shows.
       customerDisplayName: req.shopCustomerDisplayName ?? null,
       customerEmail: req.shopCustomerEmail ?? null,
+      assistantStorefrontName: companyInfo.assistantStorefrontName,
+      tools: brandedTools,
     };
 
     // Claude path — preferred when Anthropic is configured. Sonnet 4.6
@@ -670,7 +690,7 @@ async function handleJson(
           model: DEFAULT_MODEL,
           temperature: 0.4,
           max_tokens: 600,
-          tools: CUSTOMER_CHAT_TOOLS,
+          tools: toolsForCustomerChat(toolCtx),
           tool_choice: "auto",
           messages,
         }),
@@ -764,6 +784,7 @@ async function runStreamingRound(
   apiKey: string,
   signal: AbortSignal,
   writeChunk: (text: string) => void,
+  tools: OpenAiToolDescriptor[],
 ): Promise<StreamRoundResult> {
   const fetchImpl = fetchImplOverride ?? fetch;
   const upstream = await fetchImpl(OPENAI_API_URL, {
@@ -782,7 +803,7 @@ async function runStreamingRound(
       // Ask OpenAI to emit a final usage-only chunk (choices: []) so the
       // streaming path can attribute token COGS, same as handleJson.
       stream_options: { include_usage: true },
-      tools: CUSTOMER_CHAT_TOOLS,
+      tools,
       tool_choice: "auto",
       messages,
     }),
@@ -951,6 +972,7 @@ async function handleStreaming(
         apiKey,
         ctrl.signal,
         writeChunk,
+        toolsForCustomerChat(toolCtx),
       );
       // Fold every round's tokens into the tenant's AI COGS rollup — each
       // round is a separately-billed completion. Absent orgId is a no-op.
@@ -1044,11 +1066,11 @@ async function handleStreaming(
 // runs, so the four customer-scoped DB tools behave identically
 // whichever vendor answered.
 
-const ANTHROPIC_TOOLS: AnthropicTool[] = CUSTOMER_CHAT_TOOLS.map((t) => ({
-  name: t.function.name,
-  description: t.function.description,
-  input_schema: t.function.parameters,
-}));
+function anthropicToolsForCustomerChat(
+  ctx: CustomerChatToolContext,
+): AnthropicTool[] {
+  return toAnthropicTools(toolsForCustomerChat(ctx));
+}
 
 /**
  * Convert the OpenAI-shaped message log into the Anthropic Messages API
@@ -1154,7 +1176,7 @@ async function handleAnthropicJson(
           { type: "text", text: system, cache_control: { type: "ephemeral" } },
         ],
         messages: anthMessages,
-        tools: ANTHROPIC_TOOLS,
+        tools: anthropicToolsForCustomerChat(toolCtx),
       });
       if (!result.ok) {
         logger.warn(
@@ -1280,7 +1302,7 @@ async function handleAnthropicStreaming(
             },
           ],
           messages: anthMessages,
-          tools: ANTHROPIC_TOOLS,
+          tools: anthropicToolsForCustomerChat(toolCtx),
         },
         writeChunk,
       );

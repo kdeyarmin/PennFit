@@ -1708,6 +1708,9 @@ the answer over what you already know from the catalog block above.
     user has actually stated; do NOT invent values. The tool returns
     a ranked shortlist with a per-mask reasoning array — paraphrase
     those reasons in your reply rather than reading the JSON aloud.
+    Magnetic-clip masks are NEVER in this shortlist: this chat cannot
+    run the clinical implant screen. Send patients who want one to
+    the on-device fitter.
   - **find_masks**: when the user wants to BROWSE with a structured
     filter (e.g. "show me three budget nasal masks", "which Philips
     masks have the top-of-head hose", "anything rated for high

@@ -65,6 +65,7 @@ import { isFeatureEnabled } from "../../lib/feature-flags.js";
 import {
   applyCompanyIdentityToText,
   applyPlatformBrandingForOrg,
+  brandToolDescriptors,
   getCompanyInfo,
   getCompanyInfoSync,
   type CompanyInfo,
@@ -90,6 +91,7 @@ import {
   executeChatTool,
   serializeToolResult,
   type ChatToolContext,
+  type OpenAiToolDescriptor,
 } from "../../lib/storefront/chatbotTools.js";
 import {
   extractEmails,
@@ -235,6 +237,22 @@ interface OpenAiToolCall {
   id: string;
   type: "function";
   function: { name: string; arguments: string };
+}
+
+function toolsForChat(ctx: ChatToolContext): OpenAiToolDescriptor[] {
+  return ctx.tools ?? CHAT_TOOLS;
+}
+
+function toAnthropicTools(tools: OpenAiToolDescriptor[]): AnthropicTool[] {
+  return tools.map((t) => ({
+    name: t.function.name,
+    description: t.function.description,
+    input_schema: t.function.parameters,
+  }));
+}
+
+function anthropicToolsForChat(ctx: ChatToolContext): AnthropicTool[] {
+  return toAnthropicTools(toolsForChat(ctx));
 }
 
 interface OpenAiChatResponse {
@@ -561,11 +579,13 @@ router.post("/chat", chatRateLimit, async (req, res) => {
     req.socket?.remoteAddress ||
     req.headers["x-forwarded-for"]?.toString().split(",")[0]?.trim() ||
     "unknown";
+  const brandedTools = brandToolDescriptors(CHAT_TOOLS, companyInfo);
   const toolCtx: ChatToolContext = {
     candidateEmails: messages
       .filter((m) => m.role === "user")
       .flatMap((m) => extractEmails(m.content)),
     rateLimitKey: clientIp + ":track",
+    tools: brandedTools,
   };
 
   // Claude path — preferred when Anthropic is configured. Sonnet 4.6
@@ -689,7 +709,7 @@ async function handleJson(
                 model: DEFAULT_MODEL,
                 temperature: 0.5,
                 max_tokens: 500,
-                tools: CHAT_TOOLS,
+                tools: toolsForChat(toolCtx),
                 tool_choice: "auto",
                 messages,
               }),
@@ -837,6 +857,7 @@ async function runStreamingRound(
   apiKey: string,
   signal: AbortSignal,
   writeChunk: (text: string) => void,
+  tools: OpenAiToolDescriptor[],
 ): Promise<StreamRoundResult> {
   const fetchImpl = fetchImplOverride ?? fetch;
   const upstream = await fetchImpl(OPENAI_API_URL, {
@@ -855,7 +876,7 @@ async function runStreamingRound(
       // Ask OpenAI to emit a final usage-only chunk (choices: []) so the
       // streaming path can attribute token COGS, same as handleJson.
       stream_options: { include_usage: true },
-      tools: CHAT_TOOLS,
+      tools,
       tool_choice: "auto",
       messages,
     }),
@@ -1070,6 +1091,7 @@ async function handleStreaming(
         apiKey,
         ctrl.signal,
         writeChunk,
+        toolsForChat(toolCtx),
       );
       // Feed the breaker the "did we reach the vendor" signal as soon as the
       // round returns — degraded === false means the upstream fetch opened
@@ -1167,16 +1189,11 @@ async function handleStreaming(
 // same conversation cost ~10% of normal input tokens (the chatbot
 // knowledge base is ~17k tokens — that's the bulk of every request).
 //
-// Tool conversion: we translate the existing CHAT_TOOLS (OpenAI
-// shape) into Anthropic's `{ name, description, input_schema }`
-// shape at module load. Tool execution is unchanged — same
-// `executeChatTool()` dispatcher, same JSON results.
-
-const ANTHROPIC_TOOLS: AnthropicTool[] = CHAT_TOOLS.map((t) => ({
-  name: t.function.name,
-  description: t.function.description,
-  input_schema: t.function.parameters,
-}));
+// Tool conversion: we translate the existing OpenAI-shaped tool
+// descriptors into Anthropic's `{ name, description, input_schema }`
+// shape per request so tenant branding (PennPaps / phone / assistant
+// name) is applied before the model sees the schema. Tool execution
+// is unchanged — same `executeChatTool()` dispatcher, same JSON results.
 
 /**
  * Convert our internal OpenAI-shaped message log into the
@@ -1310,7 +1327,7 @@ async function handleAnthropicJson(
           { type: "text", text: system, cache_control: { type: "ephemeral" } },
         ],
         messages: anthMessages,
-        tools: ANTHROPIC_TOOLS,
+        tools: anthropicToolsForChat(toolCtx),
       });
       if (!result.ok) {
         logger.warn(
@@ -1456,7 +1473,7 @@ async function handleAnthropicStreaming(
             },
           ],
           messages: anthMessages,
-          tools: ANTHROPIC_TOOLS,
+          tools: anthropicToolsForChat(toolCtx),
         },
         writeChunk,
       );

@@ -37,6 +37,7 @@ import {
   getStripeClient,
   readStripeConfigOrNull,
 } from "../../lib/stripe/config";
+import { stripeAccountRequestOptions } from "../../lib/stripe/connect";
 import type Stripe from "stripe";
 
 const router: IRouter = Router();
@@ -212,7 +213,10 @@ router.post(
     // FAIL-SOFT: never block the moderation 200 on email infra. The
     // helper wraps every error path; we only log the outcome.
     try {
-      const productName = await resolveProductDisplayName(row.product_id);
+      const productName = await resolveProductDisplayName(
+        row.product_id,
+        orgId,
+      );
       const productUrl = buildProductUrl(req, row.product_id);
       const result = await sendReviewApprovedEmail({
         to: row.author_email,
@@ -293,7 +297,10 @@ router.post(
     );
     // FAIL-SOFT: rejection notice. Same contract as the approve path.
     try {
-      const productName = await resolveProductDisplayName(row.product_id);
+      const productName = await resolveProductDisplayName(
+        row.product_id,
+        orgId,
+      );
       const editUrl = buildProductUrl(req, row.product_id);
       const result = await sendReviewRejectedEmail({
         to: row.author_email,
@@ -462,12 +469,20 @@ router.patch(
  * into a moderation 500 — the email path always falls back to
  * "your review" / "this product" copy.
  */
-async function resolveProductDisplayName(productId: string): Promise<string> {
+async function resolveProductDisplayName(
+  productId: string,
+  orgId: string | undefined,
+): Promise<string> {
   const config = readStripeConfigOrNull();
   if (!config) return "your review";
   try {
     const stripe = getStripeClient(config);
-    const product: Stripe.Product = await stripe.products.retrieve(productId);
+    const acct = await stripeAccountRequestOptions(orgId);
+    const product: Stripe.Product = await stripe.products.retrieve(
+      productId,
+      {},
+      acct,
+    );
     return product.name || "your review";
   } catch {
     return "your review";

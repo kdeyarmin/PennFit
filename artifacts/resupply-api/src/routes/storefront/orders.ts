@@ -356,6 +356,7 @@ router.post(
           orderReference: result.orderReference,
           maskName: order.chosenMask.name,
           maskManufacturer: order.chosenMask.manufacturer ?? null,
+          maskSize: order.chosenMask.size ?? null,
           // Send under the tenant's own From identity when configured (G6).
           orgId: orgId ?? undefined,
         });

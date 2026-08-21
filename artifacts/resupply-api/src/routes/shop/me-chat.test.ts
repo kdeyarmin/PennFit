@@ -231,3 +231,20 @@ describe("POST /shop/me/chat", () => {
     expect(capturedSystem).toContain("CareMetric Assistant");
   });
 });
+
+describe("POST /shop/me/chat — branded tool schemas", () => {
+  it("brands tool descriptors per request from companyInfo", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { fileURLToPath } = await import("node:url");
+    const src = readFileSync(
+      fileURLToPath(new URL("./me-chat.ts", import.meta.url)),
+      "utf8",
+    );
+    expect(src).toContain(
+      "brandToolDescriptors(CUSTOMER_CHAT_TOOLS, companyInfo)",
+    );
+    expect(src).toContain("toolsForCustomerChat(toolCtx)");
+    expect(src).toContain("anthropicToolsForCustomerChat(toolCtx)");
+    expect(src).not.toMatch(/const ANTHROPIC_TOOLS/);
+  });
+});

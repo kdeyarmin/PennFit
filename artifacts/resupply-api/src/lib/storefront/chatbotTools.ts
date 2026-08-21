@@ -13,11 +13,13 @@
  *     size grounds — without a face scan we don't have real
  *     measurements, and the fit-score component would be uniform
  *     anyway. Type-weighted scoring + contraindications carry the
- *     ranking.
+ *     ranking. Magnetic-clip masks are always omitted: this surface
+ *     cannot run the clinical implant screen.
  *   - `find_masks(criteria)` filters the catalog by type, price
  *     tier, manufacturer, hose connection, or pressure rating.
  *     Answers questions like "show me three budget nasal masks
- *     compatible with high-pressure therapy".
+ *     compatible with high-pressure therapy". Magnetic-clip masks
+ *     are omitted here too.
  *   - `compare_masks(idA, idB)` returns a side-by-side payload for
  *     two named masks. Lets the bot answer "what's the difference
  *     between the AirFit P10 and the Brevida" with structured
@@ -42,6 +44,8 @@
 
 import { z } from "zod";
 import {
+  getActiveContraindications,
+  maskHasMagneticHardware,
   recommend,
   type FacialMeasurements,
   type QuestionnaireAnswers,
@@ -83,6 +87,7 @@ const recommendArgsSchema = z
     sensitive_skin: z.boolean().optional(),
     silicone_sensitivity: z.boolean().optional(),
     mobility_limitations: z.boolean().optional(),
+    implanted_electronic_device: z.boolean().optional(),
     cpap_pressure_setting: z
       .enum(["unknown", "low", "medium", "high"])
       .optional(),
@@ -140,6 +145,12 @@ export interface ChatToolContext {
    * disables rate limiting (unit tests only — the route always sets it).
    */
   rateLimitKey: string | null;
+  /**
+   * Per-request branded tool descriptors. When set, the chat route
+   * sends these (tenant name/phone rewritten) instead of the static
+   * CHAT_TOOLS placeholders.
+   */
+  tools?: OpenAiToolDescriptor[];
 }
 
 /**
@@ -154,7 +165,7 @@ export const CATALOG_CHAT_TOOLS: OpenAiToolDescriptor[] = [
     function: {
       name: "recommend_masks",
       description:
-        "Recommend the best PennPaps masks for a patient based on their stated preferences. Use this when the user asks 'help me pick a mask', 'which mask is best for me', or describes their sleep profile and wants a recommendation. All arguments are optional; pass only the preferences the user has actually stated. Returns a ranked shortlist.",
+        "Recommend the best PennPaps masks for a patient based on their stated preferences. Use this when the user asks 'help me pick a mask', 'which mask is best for me', or describes their sleep profile and wants a recommendation. This chat cannot run the clinical magnetic-implant screen (cardiac devices, aneurysm clips, shunts, cochlear/ocular implants, other metallic implants, and household members), so magnetic-clip masks are ALWAYS omitted — even if the user says they have no pacemaker. Direct them to the on-device fitter for that screen. Pass implanted_electronic_device when they mention an implant so you can warn them; it does not unlock magnetic masks. All other arguments are optional; pass only the preferences the user has actually stated. Returns a ranked shortlist of viable (non-contraindicated, non-magnetic) masks.",
       parameters: {
         type: "object",
         additionalProperties: false,
@@ -201,6 +212,11 @@ export const CATALOG_CHAT_TOOLS: OpenAiToolDescriptor[] = [
             description:
               "User has limited hand/finger dexterity for fitting headgear.",
           },
+          implanted_electronic_device: {
+            type: "boolean",
+            description:
+              "True if the user OR someone in their household has a pacemaker, ICD, aneurysm clip, shunt, cochlear/ocular implant, or other implanted metallic/magnetic device. False only when they have confirmed they do not. Omit when unknown. Informational only — this chat never returns magnetic-clip masks because it cannot complete the clinical screen.",
+          },
           cpap_pressure_setting: {
             type: "string",
             enum: ["unknown", "low", "medium", "high"],
@@ -228,7 +244,7 @@ export const CATALOG_CHAT_TOOLS: OpenAiToolDescriptor[] = [
     function: {
       name: "find_masks",
       description:
-        "Filter the PennPaps mask catalog by structured criteria. Use this when the user wants to BROWSE the catalog with a filter (type, price tier, manufacturer, top-of-head hose, or pressure rating) rather than asking for a tailored recommendation. Returns matching masks; an empty array means no match.",
+        "Filter the PennPaps mask catalog by structured criteria. Use this when the user wants to BROWSE the catalog with a filter (type, price tier, manufacturer, top-of-head hose, or pressure rating) rather than asking for a tailored recommendation. Magnetic-clip masks are omitted (this chat cannot run the clinical magnet screen). Returns matching masks; an empty array means no match.",
       parameters: {
         type: "object",
         additionalProperties: false,
@@ -337,6 +353,23 @@ const NEUTRAL_MEASUREMENTS: FacialMeasurements = {
   calibrationMethod: "iris",
 };
 
+/**
+ * Chatbot shortlists cannot run the clinical magnetic-implant screen
+ * (cardiac devices, aneurysm clips, shunts, cochlear/ocular implants,
+ * household members). Fail closed: unknown catalog ids, magnetic
+ * hardware, and active questionnaire contraindications are all dropped.
+ * Exported for unit tests.
+ */
+export function isCatalogMaskEligibleForChatRecommend(
+  maskId: string,
+  answers: QuestionnaireAnswers,
+): boolean {
+  const mask = maskCatalog.find((m) => m.id === maskId);
+  if (!mask) return false;
+  if (maskHasMagneticHardware(mask)) return false;
+  return getActiveContraindications(mask, answers).length === 0;
+}
+
 function toQuestionnaireAnswers(
   args: z.infer<typeof recommendArgsSchema>,
 ): QuestionnaireAnswers {
@@ -372,6 +405,7 @@ interface RecommendToolResultEntry {
   confidence: number;
   summary: string;
   reasoning: string[];
+  contraindications: string[];
 }
 
 interface FindToolResultEntry {
@@ -401,6 +435,7 @@ interface CompareToolResultMask {
   pressureRangeMax: number;
   bestFor: string[];
   contraindications: string[];
+  hasMagneticHardware: boolean;
 }
 
 /**
@@ -466,6 +501,7 @@ function summarizeMaskForCompare(m: MaskEntry): CompareToolResultMask {
     pressureRangeMax: m.pressureRangeMax,
     bestFor: m.bestFor,
     contraindications: m.contraindications,
+    hasMagneticHardware: maskHasMagneticHardware(m),
   };
 }
 
@@ -511,6 +547,15 @@ function buildDifferences(a: MaskEntry, b: MaskEntry): string[] {
   if (a.cushionMaterial !== b.cushionMaterial) {
     diffs.push(
       `Cushion materials differ — ${a.name}: ${a.cushionMaterial}; ${b.name}: ${b.cushionMaterial}.`,
+    );
+  }
+  const aMagnetic = maskHasMagneticHardware(a);
+  const bMagnetic = maskHasMagneticHardware(b);
+  if (aMagnetic !== bMagnetic) {
+    const magnetic = aMagnetic ? a : b;
+    const other = aMagnetic ? b : a;
+    diffs.push(
+      `${magnetic.name} uses magnetic headgear clips; ${other.name} does not. Magnetic-clip masks are contraindicated until the clinical implant screen (patient and household) is clear.`,
     );
   }
   return diffs;
@@ -624,21 +669,32 @@ export async function executeChatTool(
       };
     }
     const limit = parsed.data.limit ?? 3;
-    const result = recommend(
-      NEUTRAL_MEASUREMENTS,
-      toQuestionnaireAnswers(parsed.data),
-    );
-    const top = result.topRecommendations.slice(0, limit).map((r) => ({
-      maskId: r.maskId,
-      name: r.name,
-      manufacturer: r.manufacturer,
-      type: r.type,
-      priceTier:
-        maskCatalog.find((m) => m.id === r.maskId)?.priceTier ?? "standard",
-      confidence: Math.round(r.confidence * 100) / 100,
-      summary: r.summary,
-      reasoning: r.reasoning.slice(0, 4),
-    }));
+    const answers = toQuestionnaireAnswers(parsed.data);
+    const result = recommend(NEUTRAL_MEASUREMENTS, answers);
+    // The engine may pad topRecommendations / alternatives with
+    // contraindicated masks (low confidence) when the viable set is
+    // thin. The public chatbot must not surface those, nor magnetic-
+    // clip masks — this surface cannot run the clinical magnet screen,
+    // so a "no pacemaker" answer is not enough to unlock them. Unknown
+    // catalog ids fail closed.
+    const screened = [
+      ...result.topRecommendations,
+      ...result.alternatives,
+    ].filter((r) => isCatalogMaskEligibleForChatRecommend(r.maskId, answers));
+    const top = screened.slice(0, limit).map((r) => {
+      const catalog = maskCatalog.find((m) => m.id === r.maskId);
+      return {
+        maskId: r.maskId,
+        name: r.name,
+        manufacturer: r.manufacturer,
+        type: r.type,
+        priceTier: catalog?.priceTier ?? "standard",
+        confidence: Math.round(r.confidence * 100) / 100,
+        summary: r.summary,
+        reasoning: r.reasoning.slice(0, 4),
+        contraindications: r.contraindications,
+      };
+    });
     return { ok: true, data: { recommendations: top } };
   }
 
@@ -656,6 +712,7 @@ export async function executeChatTool(
     const limit = a.limit ?? 5;
     const manufacturerLower = a.manufacturer?.toLowerCase();
     const filtered = maskCatalog.filter((m) => {
+      if (maskHasMagneticHardware(m)) return false;
       if (a.type && m.type !== a.type) return false;
       if (a.price_tier && m.priceTier !== a.price_tier) return false;
       if (a.hose_connection && m.hoseConnection !== a.hose_connection)

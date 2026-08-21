@@ -465,3 +465,17 @@ describe("recommendSize — rationale carries no tenant brand", () => {
     for (const b of BRANDS) expect(r).not.toMatch(b);
   });
 });
+
+describe("recommend — magnetic clips are never a mobility selling point", () => {
+  it("does not praise magnetic clips for a patient with mobility limitations", () => {
+    const result = recommend(
+      PROFILE_MEASUREMENTS,
+      answers({ mobilityLimitations: true }),
+    );
+    const blob = [...result.topRecommendations, ...result.alternatives]
+      .flatMap((m) => [...m.reasoning, m.summary])
+      .join(" ")
+      .toLowerCase();
+    expect(blob).not.toContain("magnetic clip");
+  });
+});

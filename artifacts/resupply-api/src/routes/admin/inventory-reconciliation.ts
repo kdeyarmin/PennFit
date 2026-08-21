@@ -35,6 +35,7 @@ import {
   getStripeClient,
   readStripeConfigOrNull,
 } from "../../lib/stripe/config";
+import { stripeAccountRequestOptions } from "../../lib/stripe/connect";
 import {
   projectProduct,
   type ShopProductView,
@@ -48,21 +49,25 @@ const router: IRouter = Router();
 // `starting_after` with a hard cap of 10 pages (1000 products) as
 // defense-in-depth — mirrors the pattern in
 // `routes/admin/shop-back-in-stock.ts`.
-async function listShopProductsForReconciliation(): Promise<
-  ShopProductView[] | null
-> {
+async function listShopProductsForReconciliation(
+  orgId: string | undefined,
+): Promise<ShopProductView[] | null> {
   const config = readStripeConfigOrNull();
   if (!config) return null;
   const stripe = getStripeClient(config);
+  const acct = await stripeAccountRequestOptions(orgId);
   const all: ShopProductView[] = [];
   let startingAfter: string | undefined;
   for (let page = 0; page < 10; page++) {
-    const list = await stripe.products.list({
-      active: true,
-      limit: 100,
-      expand: ["data.default_price"],
-      ...(startingAfter ? { starting_after: startingAfter } : {}),
-    });
+    const list = await stripe.products.list(
+      {
+        active: true,
+        limit: 100,
+        expand: ["data.default_price"],
+        ...(startingAfter ? { starting_after: startingAfter } : {}),
+      },
+      acct,
+    );
     for (const p of list.data) {
       const projected = projectProduct(p);
       if (projected) all.push(projected);
@@ -292,7 +297,7 @@ router.get(
     }> | null = null;
     if (header.status === "draft") {
       try {
-        const products = await listShopProductsForReconciliation();
+        const products = await listShopProductsForReconciliation(orgId);
         if (products) {
           currentProducts = products.map((p) => ({
             productId: p.id,
@@ -433,7 +438,7 @@ router.post(
     const stripe = getStripeClient(config);
     let catalog: ShopProductView[];
     try {
-      const products = await listShopProductsForReconciliation();
+      const products = await listShopProductsForReconciliation(orgId);
       catalog = products ?? [];
     } catch (err) {
       logger.warn(
@@ -577,11 +582,16 @@ router.post(
     // records that this SKU didn't make it to Stripe.
     const appliedProductIds = new Set<string>();
     if (applyToStripe) {
+      const acct = await stripeAccountRequestOptions(orgId);
       for (const target of stripeApplyTargets) {
         try {
-          await stripe.products.update(target.productId, {
-            metadata: { stock_count: String(target.newStockCount) },
-          });
+          await stripe.products.update(
+            target.productId,
+            {
+              metadata: { stock_count: String(target.newStockCount) },
+            },
+            acct,
+          );
           appliedProductIds.add(target.productId);
         } catch (err) {
           logger.warn(

@@ -117,6 +117,13 @@ export function AdminOrderDetail() {
   const measurements = payload.measurements as MeasurementsField | undefined;
   const shipping = (payload.shippingAddress ?? {}) as ShippingField;
   const notes = typeof payload.notes === "string" ? payload.notes : null;
+  const chosenMask = (payload.chosenMask ?? {}) as {
+    size?: string | null;
+  };
+  const recommendedSize =
+    typeof chosenMask.size === "string" && chosenMask.size.trim()
+      ? chosenMask.size.trim()
+      : "—";
 
   return (
     <div className="space-y-5">
@@ -175,6 +182,7 @@ export function AdminOrderDetail() {
         <Section title="Chosen mask">
           <Field label="Mask" value={`${o.maskManufacturer} ${o.maskName}`} />
           <Field label="Model #" value={o.maskModelNumber ?? "—"} />
+          <Field label="Recommended size" value={recommendedSize} />
           <Field label="Mask ID" value={o.maskId} mono />
         </Section>
 

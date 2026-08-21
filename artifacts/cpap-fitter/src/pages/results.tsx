@@ -240,7 +240,12 @@ export function Results() {
   // so a tenant that never turns the flag on sees no change at all.
   const [assessment, setAssessment] = useState<FitAssessment | null>(null);
   const [clinicalState, setClinicalState] = useState<
-    "probing" | "clinical" | "legacy" | "safety_screen" | "invite_invalid"
+    | "probing"
+    | "clinical"
+    | "legacy"
+    | "safety_screen"
+    | "invite_invalid"
+    | "unavailable"
   >("probing");
   const [inviteInvalidReason, setInviteInvalidReason] = useState<
     "revoked" | "expired" | "invite_not_found" | null
@@ -328,6 +333,17 @@ export function Results() {
         return;
       }
 
+      // Flag off is the only remaining honest reason to use the legacy
+      // engine: that tenant does not run clinical assessment or magnet
+      // screening. Every other miss — network blip, 5xx, malformed
+      // payload — used to fall through here too, which undid
+      // migration 0500 (clinical + magnet screening ON for every
+      // tenant) whenever /api/fit/assess was briefly unreachable.
+      if (result.kind === "not_enabled") {
+        setClinicalState("legacy");
+        return;
+      }
+
       // A transient failure ON the safety-answer submission itself must
       // not fall through to the legacy engine: we already know this
       // tenant screens for magnets, and the legacy engine has no filter.
@@ -340,10 +356,7 @@ export function Results() {
         return;
       }
 
-      // Flag off, unresolvable tenant, network failure — the legacy
-      // engine is the correct fallback for all of these, because none of
-      // them means "this tenant screens for magnets".
-      setClinicalState("legacy");
+      setClinicalState("unavailable");
     },
     [
       measurements,
@@ -385,10 +398,10 @@ export function Results() {
     const controller = new AbortController();
     // `requestFitAssessment` never rejects, but anything else inside
     // `runAssessment` throwing would otherwise strand the page on the
-    // "probing" skeletons with no request in flight. Legacy is the safe
-    // landing for an unexpected client-side failure.
+    // "probing" skeletons with no request in flight. Do not fall
+    // through to the legacy engine: it has no magnet filter.
     void runAssessment(null, controller.signal).catch(() => {
-      setClinicalState("legacy");
+      setClinicalState("unavailable");
     });
     return () => controller.abort();
     // `runAssessment` is stable for the life of the page (it only reads
@@ -615,6 +628,41 @@ export function Results() {
           submitting={safetySubmitting}
           error={safetyError}
         />
+      </div>
+    );
+  }
+
+  // Clinical assessment was unreachable. Do NOT fall through to the
+  // legacy engine: it has no magnet-implant filter, and after
+  // migration 0500 every tenant screens.
+  if (clinicalState === "unavailable") {
+    return (
+      <div className="container max-w-2xl mx-auto px-4 py-12">
+        <Alert data-testid="results-clinical-unavailable">
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>We couldn&apos;t finish your fitting just now</AlertTitle>
+          <AlertDescription>
+            The clinical fitting service didn&apos;t respond, so we held the
+            recommendation rather than skipping safety checks. Please try again
+            in a moment.
+          </AlertDescription>
+        </Alert>
+        <div className="mt-6 flex flex-wrap gap-3">
+          <Button
+            onClick={() => {
+              setClinicalState("probing");
+              void runAssessment(safetyAnswersRef.current).catch(() => {
+                setClinicalState("unavailable");
+              });
+            }}
+          >
+            Try again
+          </Button>
+          <Button variant="outline" onClick={() => setLocation("/capture")}>
+            <RefreshCcw className="h-4 w-4 mr-2" />
+            Retake photo
+          </Button>
+        </div>
       </div>
     );
   }

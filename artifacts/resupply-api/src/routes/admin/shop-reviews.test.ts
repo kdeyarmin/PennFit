@@ -27,6 +27,9 @@ const { mockAdmin } = vi.hoisted(() => ({
 vi.mock("../../middlewares/requireAdmin", () =>
   makeRequireAdminMock(mockAdmin),
 );
+vi.mock("../../lib/stripe/connect", () => ({
+  stripeAccountRequestOptions: async () => ({}),
+}));
 
 import shopReviewsAdminRouter from "./shop-reviews";
 

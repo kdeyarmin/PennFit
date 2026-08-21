@@ -175,38 +175,18 @@ router.post(
 
     // Best-effort: nudge the matching link's last_sync_status so the
     // CSR sees "vendor reported new data" and the next sweep refreshes.
-    // Public webhook (no req.orgId): resolve the seed org (single-tenant
-    // posture) and degrade — skip the nudge but still audit + 202 — if it
-    // can't be resolved, so a forged/early request never 500s a webhook.
-    // Resolve the tenant lazily — only when there is actually a link to
-    // nudge — so a webhook with no partnerPatientId does NO DB work at all.
+    // Public webhook (no req.orgId): look up the link unscoped by
+    // (source, partner_patient_id), then stamp through the owning
+    // tenant's scoped client. The historical seed-org lookup silently
+    // dropped every non-seed tenant's push. Ambiguous partner ids
+    // (same id on two orgs) skip the nudge rather than writing the
+    // wrong tenant.
     let nudgedLinkId: string | null = null;
-    const orgId = parsed.partnerPatientId ? await resolveSeedOrgId() : null;
-    if (parsed.partnerPatientId && orgId) {
-      const supabase = getOrgScopedClient(orgId);
-      const { data: link } = await supabase
-        .from("patient_therapy_links")
-        .select("id")
-        .eq("source", config.source)
-        .eq("partner_patient_id", parsed.partnerPatientId)
-        .limit(1)
-        .maybeSingle();
-      if (link) {
-        nudgedLinkId = link.id;
-        const { error: nudgeErr } = await supabase
-          .from("patient_therapy_links")
-          .update({
-            last_sync_status: "vendor_pushed",
-            last_sync_error: null,
-          })
-          .eq("id", link.id);
-        if (nudgeErr) {
-          logger.warn(
-            { err: nudgeErr.message, linkId: link.id },
-            "integrations-webhooks: vendor_pushed nudge stamp failed (non-fatal)",
-          );
-        }
-      }
+    if (parsed.partnerPatientId) {
+      nudgedLinkId = await nudgeVendorPushedLink({
+        source: config.source,
+        partnerPatientId: parsed.partnerPatientId,
+      });
     }
 
     await logAudit({
@@ -231,5 +211,62 @@ router.post(
     res.status(202).json({ ok: true });
   },
 );
+
+async function nudgeVendorPushedLink(input: {
+  source: string;
+  partnerPatientId: string;
+}): Promise<string | null> {
+  const seedOrgId = await resolveSeedOrgId();
+  if (!seedOrgId) return null;
+  // `.raw()` is unscoped — partner patient ids are unique per vendor,
+  // not per tenant, so the lookup has to see every org's links.
+  const raw = getOrgScopedClient(seedOrgId).raw();
+  const { data: links, error } = await raw
+    .schema("resupply")
+    .from("patient_therapy_links")
+    .select("id, org_id")
+    .eq("source", input.source)
+    .eq("partner_patient_id", input.partnerPatientId)
+    .limit(2);
+  if (error) {
+    logger.warn(
+      { err: error.message, source: input.source },
+      "integrations-webhooks: partner link lookup failed (non-fatal)",
+    );
+    return null;
+  }
+  const rows = (links ?? []).filter(
+    (row): row is { id: string; org_id: string } =>
+      typeof row?.id === "string" &&
+      typeof row?.org_id === "string" &&
+      row.org_id.length > 0,
+  );
+  if (rows.length !== 1) {
+    if (rows.length > 1) {
+      logger.warn(
+        { source: input.source },
+        "integrations-webhooks: ambiguous partner_patient_id across tenants; skip nudge",
+      );
+    }
+    return null;
+  }
+  const link = rows[0];
+  const scoped = getOrgScopedClient(link.org_id);
+  const { error: nudgeErr } = await scoped
+    .from("patient_therapy_links")
+    .update({
+      last_sync_status: "vendor_pushed",
+      last_sync_error: null,
+    })
+    .eq("id", link.id);
+  if (nudgeErr) {
+    logger.warn(
+      { err: nudgeErr.message, linkId: link.id },
+      "integrations-webhooks: vendor_pushed nudge stamp failed (non-fatal)",
+    );
+    return null;
+  }
+  return link.id;
+}
 
 export default router;
