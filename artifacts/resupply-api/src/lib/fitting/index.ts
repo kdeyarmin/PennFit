@@ -327,7 +327,11 @@ export {
   resolveConfidence,
   measurementsOutOfBounds,
   profileCompleteness,
-  PLAUSIBILITY_BOUNDS,
+  ADULT_PLAUSIBILITY_BOUNDS,
+  PEDIATRIC_PLAUSIBILITY_BOUNDS,
+  UNION_PLAUSIBILITY_BOUNDS,
+  PLAUSIBILITY_FIELDS,
+  type PlausibilityField,
   CONFIDENCE_THRESHOLDS,
 } from "./confidence.js";
 export {

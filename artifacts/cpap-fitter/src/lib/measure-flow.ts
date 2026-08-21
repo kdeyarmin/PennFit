@@ -14,20 +14,33 @@ import type { FacialMeasurements } from "@workspace/api-client-react/storefront"
  * recommender.
  *
  * The window is the UNION of the server's adult and pediatric windows
- * (PLAUSIBILITY_BOUNDS / PEDIATRIC_PLAUSIBILITY_BOUNDS in
- * lib/fitting/confidence.ts), deliberately: this page does not know the
- * patient's population — the CHART does, server-side, from date of birth
- * — and the previous adult-only window rejected every pediatric face at
- * /measure, making the server's entire pediatric fitting path
- * unreachable from the scanner. Population-correct validation happens on
- * the server; this gate only has to reject non-faces.
+ * (`UNION_PLAUSIBILITY_BOUNDS` in resupply-api's lib/fitting/
+ * confidence.ts), deliberately: this page does not know the patient's
+ * population — the CHART does, server-side, from date of birth — and an
+ * adult-only window rejected every pediatric face at /measure, making
+ * the server's entire pediatric fitting path unreachable from the
+ * scanner. Population-correct validation happens on the server; this
+ * gate only has to reject non-faces.
+ *
+ * This is the one copy of the table that cannot import the server's
+ * (different workspace, browser bundle). It is kept honest by
+ * `face-measurements.accuracy.test.ts`, which holds these numbers to the
+ * same canonical-face margin the server's own windows are held to — so a
+ * drift here fails CI rather than silently rejecting real patients.
+ *
+ * CALIBRATION. Anchored to MediaPipe's canonical face model, the metric
+ * mesh the landmark indices are defined against: every bound clears that
+ * average adult face by ≥25% — ~18% of population spread (±3 SD at
+ * SD ≈ 6% of the mean) plus the pipeline's own verified 7% worst-case
+ * error. Note `noseHeight` is the bridge→tip span (~29 mm on an average
+ * face), NOT the ~50 mm nasion→subnasale "nose height" of the textbooks.
  */
 export const PLAUSIBILITY_BOUNDS = {
-  noseWidth: [12, 60],
-  noseHeight: [15, 70],
-  noseToChin: [25, 90],
-  mouthWidth: [18, 80],
-  faceWidthAtCheekbones: [80, 180],
+  noseWidth: [12, 55],
+  noseHeight: [15, 45],
+  noseToChin: [25, 125],
+  mouthWidth: [18, 70],
+  faceWidthAtCheekbones: [80, 200],
 } as const;
 
 export type PlausibilityField = keyof typeof PLAUSIBILITY_BOUNDS;

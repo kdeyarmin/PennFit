@@ -82,8 +82,19 @@ export async function mockCameraAndMediaPipe(
   });
 
   // Intercept the MediaPipe ESM module + the .task model file and
-  // serve a tiny replacement that returns deterministic, in-range
-  // landmarks (same fixture as results-page-resilience.spec.ts).
+  // serve a tiny replacement that returns deterministic landmarks (same
+  // fixture as results-page-resilience.spec.ts).
+  //
+  // The landmarks below are the CANONICAL FACE — MediaPipe's own metric
+  // reference mesh — back-projected so that `extractMeasurementValues`
+  // recovers its true spans (alar 35.7 mm, bridge→tip 29.4, tip→chin
+  // 89.4, mouth 49.1, silhouette 153.3) at a 1280×720 frame with the
+  // 12.8 px iris below. They were previously hand-picked "in-range"
+  // numbers that described no real face: bridge→tip came out 58% ABOVE
+  // the average adult while every other span sat 8–29% below it, which
+  // only passed because the plausibility ceiling for that span used to
+  // be 2.4x the canonical value. Keep them anatomically consistent —
+  // /measure's gate is entitled to reject a face that isn't one.
   await page.route(/(tasks-vision|mediapipe)/, async (route) => {
     if (/tasks-vision/.test(route.request().url())) {
       state.moduleIntercepted = true;
@@ -95,15 +106,15 @@ export async function mockCameraAndMediaPipe(
       const FAKE_LANDMARKS = new Array(478).fill({ x: 0.5, y: 0.5 });
       FAKE_LANDMARKS[469] = { x: 0.4950, y: 0.50 };
       FAKE_LANDMARKS[471] = { x: 0.5050, y: 0.50 };
-      FAKE_LANDMARKS[129] = { x: 0.4875, y: 0.55 };
-      FAKE_LANDMARKS[358] = { x: 0.5125, y: 0.55 };
-      FAKE_LANDMARKS[6]   = { x: 0.50, y: 0.4595 };
-      FAKE_LANDMARKS[4]   = { x: 0.50, y: 0.5205 };
-      FAKE_LANDMARKS[152] = { x: 0.50, y: 0.6045 };
-      FAKE_LANDMARKS[61]  = { x: 0.48075, y: 0.575 };
-      FAKE_LANDMARKS[291] = { x: 0.51925, y: 0.575 };
-      FAKE_LANDMARKS[234] = { x: 0.440, y: 0.50 };
-      FAKE_LANDMARKS[454] = { x: 0.560, y: 0.50 };
+      FAKE_LANDMARKS[129] = { x: 0.484735, y: 0.55 };
+      FAKE_LANDMARKS[358] = { x: 0.515265, y: 0.55 };
+      FAKE_LANDMARKS[6]   = { x: 0.50, y: 0.467694 };
+      FAKE_LANDMARKS[4]   = { x: 0.50, y: 0.512306 };
+      FAKE_LANDMARKS[152] = { x: 0.50, y: 0.648146 };
+      FAKE_LANDMARKS[61]  = { x: 0.479009, y: 0.575 };
+      FAKE_LANDMARKS[291] = { x: 0.520991, y: 0.575 };
+      FAKE_LANDMARKS[234] = { x: 0.434496, y: 0.50 };
+      FAKE_LANDMARKS[454] = { x: 0.565504, y: 0.50 };
       export class FaceLandmarker {
         static async createFromOptions() { return new FaceLandmarker(); }
         detect() { return { faceLandmarks: [FAKE_LANDMARKS] }; }

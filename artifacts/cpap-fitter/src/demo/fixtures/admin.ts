@@ -898,10 +898,10 @@ export function demoAdminOrderDetail(id: string) {
         },
         measurements: {
           noseWidth: 34.2,
-          noseHeight: 48.6,
-          noseToChin: 61.0,
+          noseHeight: 28.3,
+          noseToChin: 86.7,
           mouthWidth: 51.4,
-          faceWidthAtCheekbones: 132.5,
+          faceWidthAtCheekbones: 148.9,
           calibrationMethod: "iris",
         },
         shippingAddress: {

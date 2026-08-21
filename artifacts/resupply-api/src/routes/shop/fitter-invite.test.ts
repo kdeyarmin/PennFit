@@ -50,12 +50,16 @@ function makeApp(): Express {
   return app;
 }
 
+// The canonical face, as this pipeline's landmark pairs measure it (see
+// lib/fitting/plausibility-windows.test.ts). `noseHeight` here used to
+// be 48.2 mm — the textbook nasion→subnasale span, not the ~29 mm
+// bridge→tip span the scanner actually reports.
 const measurements = {
-  noseWidth: 32.1,
-  noseHeight: 48.2,
-  noseToChin: 60.5,
-  mouthWidth: 45.0,
-  faceWidthAtCheekbones: 130.4,
+  noseWidth: 35.7,
+  noseHeight: 29.4,
+  noseToChin: 89.4,
+  mouthWidth: 49.1,
+  faceWidthAtCheekbones: 153.3,
   calibrationMethod: "iris",
 };
 const answers = { mouthBreather: true, priorMaskExperience: "none" };
