@@ -15,11 +15,13 @@
 //                            caller falls back to /api/recommend
 //   { kind: "safety_screen" } the tenant runs magnet screening and the
 //                            patient has not completed it
-//   { kind: "unavailable" }  transient — also falls back
+//   { kind: "unavailable" }  transient — the caller must NOT fall
+//                            through to /api/recommend (no magnet screen)
 //
-// A tenant with the flag off, a network blip, or a tenant that cannot be
-// resolved all land on the legacy path, so turning the flag on is the
-// only thing that changes what a patient sees.
+// A tenant with the flag off (`not_enabled`) still lands on the legacy
+// path. A network blip or unresolvable tenant is `unavailable`: the
+// results page holds the recommendation rather than skipping magnet
+// screening.
 //
 // PRIVACY: numbers and enums only. Camera frames never leave the browser,
 // and the server rejects anything that looks like encoded media.

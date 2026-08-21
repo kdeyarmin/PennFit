@@ -28,6 +28,7 @@ import {
 } from "../../lib/stripe/config";
 import { projectProduct } from "../../lib/stripe/products-meta";
 import { stripeErrLogFields } from "../../lib/stripe/err-log-fields";
+import { stripeAccountRequestOptions } from "../../lib/stripe/connect";
 import { dispatchBackInStockForProduct } from "../../lib/back-in-stock-record";
 import { resolveTenantBaseUrl } from "../../lib/tenant-branding";
 
@@ -109,6 +110,7 @@ router.get(
     if (cfg) {
       try {
         const stripe = getStripeClient(cfg);
+        const acct = await stripeAccountRequestOptions(orgId);
         // Page through all active products. The catalog is small
         // (dozens, not thousands) so this is at most 1-3 round trips
         // — but we MUST page rather than `limit: 100` once, otherwise
@@ -117,12 +119,15 @@ router.get(
         // at 10 pages (1000 products) as a defense-in-depth bound.
         let startingAfter: string | undefined;
         for (let page = 0; page < 10; page++) {
-          const list = await stripe.products.list({
-            active: true,
-            limit: 100,
-            expand: ["data.default_price"],
-            ...(startingAfter ? { starting_after: startingAfter } : {}),
-          });
+          const list = await stripe.products.list(
+            {
+              active: true,
+              limit: 100,
+              expand: ["data.default_price"],
+              ...(startingAfter ? { starting_after: startingAfter } : {}),
+            },
+            acct,
+          );
           for (const p of list.data) {
             const projected = projectProduct(p);
             if (!projected) continue;
@@ -218,9 +223,14 @@ router.post(
     let priceLabel: string | null;
     try {
       const stripe = getStripeClient(cfg);
-      const product = await stripe.products.retrieve(productId, {
-        expand: ["default_price"],
-      });
+      const acct = await stripeAccountRequestOptions(req.orgId);
+      const product = await stripe.products.retrieve(
+        productId,
+        {
+          expand: ["default_price"],
+        },
+        acct,
+      );
       const projected = projectProduct(product);
       if (!projected) {
         res.status(422).json({ error: "unprojectable_product" });

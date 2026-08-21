@@ -47,6 +47,8 @@ export interface SendFitterOrderConfirmationInput {
   /** Mask the patient picked. */
   maskName: string;
   maskManufacturer?: string | null;
+  /** Recommended size from the fitter, when the clinical path supplied one. */
+  maskSize?: string | null;
   /** Optional override; otherwise pulled from env. */
   baseUrlOverride?: string;
   /**
@@ -113,6 +115,9 @@ export async function sendFitterOrderConfirmationEmail(
   const maskLine = input.maskManufacturer
     ? `${input.maskManufacturer} ${input.maskName}`
     : input.maskName;
+  const sizeLine = input.maskSize?.trim()
+    ? `Recommended size: ${input.maskSize.trim()}`
+    : null;
 
   const subject = `Order received — ${input.orderReference}`;
 
@@ -122,6 +127,7 @@ export async function sendFitterOrderConfirmationEmail(
     `We received your CPAP mask order. Reference: ${input.orderReference}`,
     "",
     `Selected mask: ${maskLine}`,
+    ...(sizeLine ? [sizeLine] : []),
     "",
     "What happens next:",
     "  1. We verify your insurance benefits. (Within 1 business day.)",
@@ -157,6 +163,11 @@ export async function sendFitterOrderConfirmationEmail(
           <div style="margin:0 0 18px;padding:14px 16px;border-radius:8px;background:#0f1d3a08;">
             <p style="margin:0;font-size:12px;color:#5a6478;text-transform:uppercase;letter-spacing:0.06em;">Selected mask</p>
             <p style="margin:4px 0 0;font-size:16px;font-weight:600;color:#1a1f36;">${escapeHtml(maskLine)}</p>
+            ${
+              sizeLine
+                ? `<p style="margin:6px 0 0;font-size:13px;color:#3c4458;">${escapeHtml(sizeLine)}</p>`
+                : ""
+            }
           </div>
           <p style="margin:0 0 8px;font-size:13px;font-weight:600;color:#1a1f36;">What happens next</p>
           <ol style="margin:0 0 18px;padding:0 0 0 20px;font-size:13px;line-height:1.6;color:#3c4458;">

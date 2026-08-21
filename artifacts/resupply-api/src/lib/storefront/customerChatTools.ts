@@ -42,6 +42,7 @@ import {
   appendCustomerMessage,
 } from "../messaging/in-app-conversation.js";
 import { notifyCsrInboxOfCustomerMessage } from "../messaging/csr-inbox-notify.js";
+import { DEFAULT_STOREFRONT_ASSISTANT_NAME } from "../company-info.js";
 
 /** Maximum tool-execution rounds per user turn — defense vs runaway. */
 export const MAX_CUSTOMER_TOOL_ROUNDS = 2;
@@ -398,6 +399,18 @@ export interface CustomerChatToolContext {
    */
   customerDisplayName?: string | null;
   customerEmail?: string | null;
+  /**
+   * Tenant-resolved storefront assistant name. Used as the persisted
+   * "[Via …]" prefix so a non-Penn tenant never stores "PennBot" in
+   * the customer-visible thread. Defaults to the in-source placeholder.
+   */
+  assistantStorefrontName?: string | null;
+  /**
+   * Per-request branded tool descriptors (PennPaps/PennBot/phone
+   * rewritten for this tenant). When omitted, callers send the static
+   * CUSTOMER_CHAT_TOOLS placeholders.
+   */
+  tools?: OpenAiToolDescriptor[];
 }
 
 interface SubscriptionItemPayload {
@@ -780,11 +793,13 @@ async function executeEscalateToHuman(
   const categoryLabel =
     ESCALATION_CATEGORY_LABELS[parsed.data.category ?? "other"] ?? "General";
   // Prefix a non-PHI marker so a CSR scanning the inbox can tell this
-  // came through PennBot (and was confirmed by the customer) versus a
-  // message the customer typed themselves. The body is capped well
-  // under IN_APP_MESSAGE_BODY_MAX even after the prefix.
+  // came through the storefront assistant (and was confirmed by the
+  // customer) versus a message the customer typed themselves. The body
+  // is capped well under IN_APP_MESSAGE_BODY_MAX even after the prefix.
+  const assistantName =
+    ctx.assistantStorefrontName?.trim() || DEFAULT_STOREFRONT_ASSISTANT_NAME;
   const body =
-    `[Via PennBot · ${categoryLabel}]\n` + parsed.data.summary.trim();
+    `[Via ${assistantName} · ${categoryLabel}]\n` + parsed.data.summary.trim();
   const clampedBody = body.slice(0, IN_APP_MESSAGE_BODY_MAX);
 
   const result = await appendCustomerMessage({
@@ -825,6 +840,7 @@ async function executeEscalateToHuman(
     customerEmail: ctx.customerEmail ?? null,
     customerDisplayName: ctx.customerDisplayName ?? null,
     source: "chatbot",
+    assistantName,
   }).catch((err) => {
     logger.warn(
       { err, conversation_id: result.threadId },

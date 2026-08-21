@@ -701,6 +701,7 @@ router.post(
         body: parsed.Body,
         direction: "inbound",
         messageAt: inboundAt,
+        orgId,
       },
       req.log,
     );
@@ -915,6 +916,7 @@ router.post(
         body: twimlBody,
         direction: "outbound",
         messageAt: replyAt,
+        orgId,
       },
       req.log,
     );

@@ -749,3 +749,18 @@ describe("POST /chat", () => {
     });
   });
 });
+
+describe("POST /chat — branded tool schemas", () => {
+  it("brands tool descriptors per request from companyInfo", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { fileURLToPath } = await import("node:url");
+    const src = readFileSync(
+      fileURLToPath(new URL("./chat.ts", import.meta.url)),
+      "utf8",
+    );
+    expect(src).toContain("brandToolDescriptors(CHAT_TOOLS, companyInfo)");
+    expect(src).toContain("toolsForChat(toolCtx)");
+    expect(src).toContain("anthropicToolsForChat(toolCtx)");
+    expect(src).not.toMatch(/const ANTHROPIC_TOOLS/);
+  });
+});
