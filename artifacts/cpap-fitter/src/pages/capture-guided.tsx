@@ -599,6 +599,15 @@ export function GuidedCapture({ onFallback }: { onFallback: () => void }) {
     centroidsRef.current = [];
     lastMatchedTurnRef.current = null;
     if (machineRef.current.done) {
+      // Skipping the last angle finishes the flow too — emit the same
+      // completion signal the capture path emits, so "done" always
+      // sounds the same however the final step ended. Worded to allow
+      // skipped angles ("everything we need", not "every angle").
+      const feedback = feedbackRef.current!;
+      feedback.allDone();
+      feedback.speak("That's everything we need — all done.", {
+        interrupt: true,
+      });
       finalize();
       return;
     }

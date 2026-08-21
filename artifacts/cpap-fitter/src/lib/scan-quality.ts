@@ -644,10 +644,17 @@ export function aggregateFrames(frames: FrameMeasurement[]): AggregateResult {
   //     TURN frame — a patient who gave up and tapped "take it anyway"
   //     mid-struggle — contributed no measurement samples (see
   //     MEASUREMENT_YAW_LIMIT_DEG), so it must not floor two pristine
-  //     front frames to `low` and torpedo the whole fitting. It still
-  //     pays honestly through the quality means above. When no frame is
-  //     near-frontal, `usable` is every frame and the cap covers them
-  //     all, exactly as before.
+  //     front frames to `low` and torpedo the whole fitting.
+  //
+  //     Pipeline note: the live /measure path additionally DROPS frames
+  //     that failed their gates before calling this function (keeping
+  //     them all only when every frame failed — see measure.tsx), so in
+  //     that flow an unacceptable frame normally never reaches this
+  //     check at all. The scoping is this function's own contract — it
+  //     keys the floor to the frames the numbers rest on, whatever the
+  //     caller's filtering policy — and in the everything-failed
+  //     fallback `usable` covers every frame, so the floor still fires
+  //     in full.
   //
   // That second cap has to be a floor rather than a score adjustment,
   // because the score cannot express it: a single frame's agreement term

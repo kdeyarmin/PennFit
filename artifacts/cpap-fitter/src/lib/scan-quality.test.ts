@@ -429,8 +429,9 @@ describe("multi-frame aggregation", () => {
     // and a patient who used it has produced a frame that fails its own
     // gates. That frame contributed NO measurement samples (yaw beyond
     // MEASUREMENT_YAW_LIMIT_DEG), so the unacceptable-frame floor must
-    // not zero out two clean, agreeing front frames — it pays through the
-    // quality means instead.
+    // not zero out two clean, agreeing front frames. (The live /measure
+    // path usually drops failed frames before aggregating; this pins the
+    // function's own contract for callers that pass everything.)
     const poor = assessFrameQuality(input({ faceLuma: 30, sharpness: 5 }));
     expect(poor.acceptable).toBe(false);
     const result = aggregateFrames([
