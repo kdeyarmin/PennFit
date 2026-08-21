@@ -98,13 +98,13 @@ describe("rendered scripts", () => {
     ];
     for (const day of labels) {
       // Seed brand → unchanged copy.
-      const seed = smsBodyForDay(day, "Hi Anna", "PennPaps");
+      const seed = smsBodyForDay(day, "Hi Anna", "Penn Home Medical Supply");
       expect(seed.length).toBeGreaterThan(20);
-      expect(seed).toContain("PennPaps");
-      // A second tenant's brand threads through (no "PennPaps" leak).
+      expect(seed).toContain("Penn Home Medical Supply");
+      // A second tenant's brand threads through (no "Penn Home Medical Supply" leak).
       const tenantB = smsBodyForDay(day, "Hi Anna", "Foo DME");
       expect(tenantB).toContain("Foo DME");
-      expect(tenantB).not.toContain("PennPaps");
+      expect(tenantB).not.toContain("Penn Home Medical Supply");
     }
   });
 
@@ -137,16 +137,16 @@ describe("rendered scripts", () => {
     // substitutes clients.brandName into htmlBodyForDay output.
     const brandName = "Smith & Sons CPAP";
     const html = htmlBodyForDay("day90", "Hi Anna")
-      .split("PennPaps")
+      .split("Penn Home Medical Supply")
       .join(htmlEscape(brandName));
     // The brand substitutes in HTML-escaped, so the literal "&" never lands
     // raw next to "Sons" — it is encoded as "&amp;".
     expect(html).toContain("Smith &amp; Sons CPAP");
     expect(html).not.toContain("Smith & Sons CPAP");
     // Plain-text subject/body keep the raw "&" (correct for text/plain).
-    expect(subjectForDay("day90").split("PennPaps").join(brandName)).toContain(
-      "Smith & Sons CPAP",
-    );
+    expect(
+      subjectForDay("day90").split("Penn Home Medical Supply").join(brandName),
+    ).toContain("Smith & Sons CPAP");
   });
 });
 

@@ -19,10 +19,13 @@ import { HomeStatusBanner } from "@/components/home-status-banner";
 import { TrustSignalStrip } from "@/components/trust-signal-strip";
 import { openPennBot } from "@/lib/chat-events";
 import { useCompanyContact } from "@/lib/contact";
-import { useStorefrontBranding } from "@/lib/branding";
+import {
+  hasDistinctStorefrontName,
+  useStorefrontBranding,
+} from "@/lib/branding";
 
 /**
- * Renders the PennPaps landing page with hero, trust signals, featured paths, and resource tiles.
+ * Renders the Penn Home Medical Supply landing page with hero, trust signals, featured paths, and resource tiles.
  *
  * The component builds the full Home page UI and wires primary CTAs for fitting, shopping, and account flows;
  * it also calls the application document-title hook to stamp the canonical URL and exposes a PennBot launch control.
@@ -69,13 +72,19 @@ export function Home() {
               <span className="font-semibold text-foreground">
                 {branding.storefrontName}
               </span>{" "}
-              is the online CPAP storefront from{" "}
-              <span className="font-semibold text-foreground">
-                {branding.legalName}
-              </span>{" "}
-              — your local DME team. Get clinically matched to the right mask,
-              order cushions, filters, and tubing direct, and let us keep your
-              resupply on schedule.
+              {hasDistinctStorefrontName(branding) ? (
+                <>
+                  is the online CPAP storefront from{" "}
+                  <span className="font-semibold text-foreground">
+                    {branding.legalName}
+                  </span>{" "}
+                  — your local DME team.
+                </>
+              ) : (
+                <>is your local DME team&rsquo;s online CPAP storefront.</>
+              )}{" "}
+              Get clinically matched to the right mask, order cushions, filters,
+              and tubing direct, and let us keep your resupply on schedule.
             </p>
 
             <div className="flex flex-col sm:flex-row items-center justify-center gap-3">

@@ -26,7 +26,7 @@
  * the page that does this" pointer.
  *
  * The "top 100 customer questions" lives in CUSTOMER_FAQ_SECTION below
- * — distilled from PennPaps support call logs and CPAP-vendor industry
+ * — distilled from Penn Home Medical Supply support call logs and CPAP-vendor industry
  * FAQs. These are the questions we expect the bot to handle without
  * needing to call a tool.
  */
@@ -39,7 +39,7 @@ import {
 const CUSTOMER_GREETING_GUIDE = `
 Persona:
   You are PennBot Account Assistant, the signed-in customer chatbot
-  for PennPaps.com. You help patients with their existing orders,
+  for Penn Home Medical Supply. You help patients with their existing orders,
   subscriptions, devices, and supplies. You always know the user is
   signed in (their identity was verified by the auth layer before this
   conversation started). You may receive a short ACCOUNT CONTEXT block
@@ -76,7 +76,7 @@ Voice (this is what makes you feel human):
   - When the question needs a human, end with the support phone
     (814) 471-0627 or support@pennpaps.com (Mon-Fri 9-5 ET).
   - If asked whether you're a real person: say plainly and cheerfully
-    that you're PennPaps's virtual assistant, and offer to pass them
+    that you're Penn Home Medical Supply's virtual assistant, and offer to pass them
     to the team (escalate_to_human) or point to /account -> Messages.
     Never claim to be human.
 
@@ -278,7 +278,7 @@ CPAP device support:
         lift; turn humidifier down a notch in cold rooms.
   - CPAP alternatives (oral appliances, Inspire nerve stimulation, EPAP,
     weight-loss options including the 2024 FDA-approved OSA medication)
-    are clinical decisions for the patient's sleep doctor - PennPaps
+    are clinical decisions for the patient's sleep doctor - Penn Home Medical Supply
     doesn't sell or prescribe them. If a worn-out fit is the real
     problem, that's something we CAN fix under the 60-day comfort
     guarantee.
@@ -419,7 +419,7 @@ Other safety rules:
 `;
 
 /**
- * The "top 100 questions a customer asks" — distilled from PennPaps
+ * The "top 100 questions a customer asks" — distilled from Penn Home Medical Supply
  * support call logs and the broader CPAP-DME industry. Grouped by
  * theme so the model can answer in the right tone (operational vs
  * clinical-adjacent vs account housekeeping).
@@ -670,8 +670,8 @@ ACCOUNT AND TECH (91-100)
       team directly. Either way a real person replies in that thread.
   99. What are your support hours? -> Mon-Fri 9-5 ET.
       (814) 471-0627 / support@pennpaps.com.
-  100. Where is PennPaps located? -> Penn Home Medical Supply,
-       Pennsylvania. We ship nationwide.
+  100. Where is Penn Home Medical Supply located? -> Pennsylvania.
+       We ship nationwide.
 `;
 
 /** Number of conversation turns the chat route will accept per call. */
@@ -799,7 +799,7 @@ export function buildCustomerChatSystemPrompt(
   info?: CompanyInfo,
 ): string {
   const prompt = [
-    `You are PennBot Account Assistant, the signed-in customer support chatbot for PennPaps.com (Penn Home Medical Supply). Help patients with their orders, subscriptions, devices, and supplies.`,
+    `You are PennBot Account Assistant, the signed-in customer support chatbot for Penn Home Medical Supply (pennpaps.com). Help patients with their orders, subscriptions, devices, and supplies.`,
     formatAccountContextSection(ctx),
     CUSTOMER_GREETING_GUIDE,
     ACCOUNT_TOOLS_GUIDE,

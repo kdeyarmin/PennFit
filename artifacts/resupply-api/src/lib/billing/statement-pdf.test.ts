@@ -21,7 +21,7 @@ import {
 } from "./statement-pdf";
 
 const ORG: StatementInput["dmeOrganization"] = {
-  legalName: "PennPaps Inc",
+  legalName: "Penn Home Medical Supply Inc",
   addressLine1: "1 Penn Plaza",
   city: "Philadelphia",
   state: "PA",

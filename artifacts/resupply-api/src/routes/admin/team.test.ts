@@ -362,7 +362,7 @@ describe("team.ts — cross-tenant invite guard", () => {
 // ---------------------------------------------------------------------------
 // Finding 17 — invite email brand is the inviting tenant's, not Penn.
 //
-// The invite + resend emails used to hardcode productName: "PennPaps" /
+// The invite + resend emails used to hardcode productName: "Penn Home Medical Supply" /
 // signatureName: "Penn Home Medical Supply" for EVERY tenant. They must be
 // resolved per-tenant via getCompanyInfo(orgId) so an unconfigured tenant
 // gets the neutral CareMetric Breathe identity, never the Penn seed brand.
@@ -381,7 +381,7 @@ describe("team.ts — per-tenant invite email branding", () => {
   it("passes the tenant brand to inviteTeamMember (no hardcoded Penn brand)", () => {
     expect(SRC).toContain("productName: company.name");
     expect(SRC).toContain("signatureName: company.legalName");
-    expect(SRC).not.toContain('productName: "PennPaps"');
+    expect(SRC).not.toContain('productName: "Penn Home Medical Supply"');
     expect(SRC).not.toContain('signatureName: "Penn Home Medical Supply"');
   });
 });

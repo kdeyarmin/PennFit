@@ -1054,7 +1054,7 @@ function ShipmentSection({
 // route — most edits are a one-line correction (typo in apartment
 // number, wrong unit) that doesn't justify a navigation hop.
 //
-// US-only: the country field is fixed to "US". The PennPaps shop
+// US-only: the country field is fixed to "US". The Penn Home Medical Supply shop
 // only ships domestically; international orders aren't supported and
 // surface a server-side validation error if attempted via curl.
 function EditAddressDialog({

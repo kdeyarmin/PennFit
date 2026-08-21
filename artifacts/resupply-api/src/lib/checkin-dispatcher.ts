@@ -562,15 +562,15 @@ async function sendEmail(
   }
   const greeting = greetingFor(row.firstName);
   try {
-    // Brand the day-copy to the tenant's storefront name (seed → "PennPaps",
+    // Brand the day-copy to the tenant's storefront name (seed → "Penn Home Medical Supply",
     // a no-op). Plain-text subject/body take the raw name; the HTML body
     // takes an HTML-escaped name so a tenant DBA like "Smith & Sons" can't
     // re-introduce raw markup (htmlBodyForDay strips <>& from its own inputs
     // specifically to keep the template well-formed).
     const brand = (s: string): string =>
-      s.split("PennPaps").join(clients.brandName);
+      s.split("Penn Home Medical Supply").join(clients.brandName);
     const brandHtml = (s: string): string =>
-      s.split("PennPaps").join(htmlEscape(clients.brandName));
+      s.split("Penn Home Medical Supply").join(htmlEscape(clients.brandName));
     const r = await clients.sg.sendEmail({
       to: row.email,
       subject: brand(subjectForDay(day)),
@@ -810,7 +810,7 @@ interface BuiltClients {
     from: string;
     publicBaseUrl: string;
   } | null;
-  /** Tenant storefront brand for the SMS/voice day-copy (seed → "PennPaps"). */
+  /** Tenant storefront brand for the SMS/voice day-copy (seed → "Penn Home Medical Supply"). */
   brandName: string;
 }
 
@@ -819,7 +819,7 @@ async function buildClients(
   publicBaseUrlOverride?: string,
 ): Promise<BuiltClients> {
   // The tenant's storefront brand threads into the SMS/voice day-copy so a
-  // second tenant's patients see/hear their own name (seed → "PennPaps").
+  // second tenant's patients see/hear their own name (seed → "Penn Home Medical Supply").
   const brandName = (await resolveBrandingByOrgId(orgId)).storefrontName;
 
   let sg: BuiltClients["sg"] = null;
@@ -953,7 +953,7 @@ export function subjectForDay(label: OnboardingDayLabel): string {
     case "day60":
       return "60 days in — staying on track";
     case "day90":
-      return "90-day check-in from PennPaps";
+      return "90-day check-in from Penn Home Medical Supply";
   }
 }
 
@@ -964,15 +964,15 @@ export function textBodyForDay(
   switch (label) {
     case "day1":
     case "day3":
-      return `${greeting},\n\nYou're a few days into therapy — this is the window where most patients hit their first comfort issue. Common day-3 fixes:\n* Mask leaks at the corners → tighten the lower headgear strap first.\n* Air feels too strong → look for the "ramp" button; it ramps up over 20 minutes.\n* Dry mouth → if your machine has a humidifier, set it to 3 and adjust.\n\nReply to this email if anything is uncomfortable. We answer within a business day.\n\n— PennPaps customer service\n`;
+      return `${greeting},\n\nYou're a few days into therapy — this is the window where most patients hit their first comfort issue. Common day-3 fixes:\n* Mask leaks at the corners → tighten the lower headgear strap first.\n* Air feels too strong → look for the "ramp" button; it ramps up over 20 minutes.\n* Dry mouth → if your machine has a humidifier, set it to 3 and adjust.\n\nReply to this email if anything is uncomfortable. We answer within a business day.\n\n— Penn Home Medical Supply customer service\n`;
     case "day7":
-      return `${greeting},\n\nA week in. Most patients hit at least one comfort issue by day 7 — common ones are mask seal at the corner of the mouth, ramp pressure feeling too low, and waking up with a dry mouth.\n\nQuick triage:\n1. Refit the mask while the machine is running (so you can hear leaks).\n2. Bump humidifier one notch.\n3. If the ramp is too short, lengthen it from the menu.\n\nIf you'd rather talk to a human, reply to this email.\n\n— PennPaps customer service\n`;
+      return `${greeting},\n\nA week in. Most patients hit at least one comfort issue by day 7 — common ones are mask seal at the corner of the mouth, ramp pressure feeling too low, and waking up with a dry mouth.\n\nQuick triage:\n1. Refit the mask while the machine is running (so you can hear leaks).\n2. Bump humidifier one notch.\n3. If the ramp is too short, lengthen it from the menu.\n\nIf you'd rather talk to a human, reply to this email.\n\n— Penn Home Medical Supply customer service\n`;
     case "day30":
-      return `${greeting},\n\n30 days in. By now you've felt the better-rest payoff — and you might be due for a fresh cushion. Cushion seal degrades over the first month and replacing it makes the next month dramatically easier.\n\nIf you have insurance through us, your replacement is already eligible. Reply YES and we'll ship a fresh one.\n\n— PennPaps customer service\n`;
+      return `${greeting},\n\n30 days in. By now you've felt the better-rest payoff — and you might be due for a fresh cushion. Cushion seal degrades over the first month and replacing it makes the next month dramatically easier.\n\nIf you have insurance through us, your replacement is already eligible. Reply YES and we'll ship a fresh one.\n\n— Penn Home Medical Supply customer service\n`;
     case "day60":
-      return `${greeting},\n\n60 days in — the biggest predictor of long-term success is staying consistent through the post-acclimation slump. If usage has dipped recently, a quick re-fit of the mask is the single highest-impact thing you can do this week.\n\nReply to this email if anything has changed (mask discomfort, dry mouth, machine noise) — we can usually solve it in one call.\n\n— PennPaps customer service\n`;
+      return `${greeting},\n\n60 days in — the biggest predictor of long-term success is staying consistent through the post-acclimation slump. If usage has dipped recently, a quick re-fit of the mask is the single highest-impact thing you can do this week.\n\nReply to this email if anything has changed (mask discomfort, dry mouth, machine noise) — we can usually solve it in one call.\n\n— Penn Home Medical Supply customer service\n`;
     case "day90":
-      return `${greeting},\n\nYou've made it to 90 days — the threshold most patients miss. Insurance now considers you adherent and most plans renew supply eligibility automatically.\n\nWe'll keep an eye on your supply schedule and ship replacements before they're due. If you've been struggling, reply to this email and we'll set up a call with one of our therapists.\n\n— PennPaps customer service\n`;
+      return `${greeting},\n\nYou've made it to 90 days — the threshold most patients miss. Insurance now considers you adherent and most plans renew supply eligibility automatically.\n\nWe'll keep an eye on your supply schedule and ship replacements before they're due. If you've been struggling, reply to this email and we'll set up a call with one of our therapists.\n\n— Penn Home Medical Supply customer service\n`;
   }
 }
 

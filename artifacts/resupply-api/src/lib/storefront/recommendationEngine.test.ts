@@ -148,7 +148,7 @@ describe("recommendSize", () => {
 
 // ── Manufacturer boost ──────────────────────────────────────────────
 //
-// PennPaps preferentially stocks the React Health line, so a viable
+// Penn Home Medical Supply preferentially stocks the React Health line, so a viable
 // React Health mask should out-rank an otherwise-equivalent mask from
 // another manufacturer. The boost is applied AFTER contra/pressure
 // penalties so a contraindicated React mask still loses to a viable
@@ -416,14 +416,18 @@ describe("recommend — result shape", () => {
 // I/O-boundary rename (`applyCompanyIdentityToText`) that patient SMS, email
 // and PDF copy goes through. So any brand name hardcoded in a rationale here
 // reaches every tenant's patients verbatim — which is exactly what happened:
-// the in-range rationale used to end "Final fit confirmed at PennPaps."
+// the in-range rationale used to end "Final fit confirmed at Penn Home Medical Supply."
 //
 // Asserting on the seed tenant's name specifically (rather than a generic
 // "no brands" rule) keeps this honest: the string is what regressed, and a
 // future tenant name added here would be the same bug.
 
 describe("recommendSize — rationale carries no tenant brand", () => {
-  const BRANDS = [/PennPaps/i, /Penn Home Medical/i, /PennFit/i];
+  const BRANDS = [
+    /Penn Home Medical Supply/i,
+    /Penn Home Medical/i,
+    /PennFit/i,
+  ];
 
   function rationaleFor(noseWidth: number): string {
     return recommendSize(

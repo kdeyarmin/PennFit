@@ -48,7 +48,7 @@ export interface DraftReplyInput {
   /**
    * Tenant whose brand the draft is written in. The system prompt below
    * names the company, so without this a second tenant's CSR would get
-   * drafts written as the seed tenant (PennPaps). Omitted → the seed
+   * drafts written as the seed tenant (Penn Home Medical Supply). Omitted → the seed
    * identity, so single-tenant behavior is unchanged.
    */
   orgId?: string | null;
@@ -79,7 +79,7 @@ export const MAX_TURNS = 12;
 /** Per-turn body cap so one giant paste can't blow the prompt budget. */
 export const MAX_TURN_CHARS = 1000;
 
-// "PennPaps" here is the in-source placeholder for the operating
+// "Penn Home Medical Supply" here is the in-source placeholder for the operating
 // tenant's brand, per the repo's I/O-boundary convention: the literal is
 // rewritten to the caller's tenant by `applyCompanyIdentityToText` in
 // `draftConversationReply` before it reaches the model. Keep it as the
@@ -87,7 +87,7 @@ export const MAX_TURN_CHARS = 1000;
 // hardcoded platform name, which would stop resolving per tenant.
 const SYSTEM_PROMPT = [
   "You are an assistant drafting a reply for a customer-service agent at",
-  "PennPaps, a CPAP-resupply company. You are given the recent transcript",
+  "Penn Home Medical Supply, a CPAP-resupply company. You are given the recent transcript",
   "of a conversation with a patient. Draft the agent's NEXT reply.",
   "",
   "Rules:",

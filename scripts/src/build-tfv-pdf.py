@@ -1,4 +1,4 @@
-"""Generate the Twilio Toll-Free Verification answer-sheet PDF for PennPaps."""
+"""Generate the Twilio Toll-Free Verification answer-sheet PDF for Penn Home Medical Supply."""
 from reportlab.lib.pagesizes import LETTER
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
@@ -93,7 +93,7 @@ def header_footer(canvas, doc):
     canvas.rect(0, LETTER[1] - 0.58 * inch, LETTER[0], 0.03 * inch, stroke=0, fill=1)
     canvas.setFillColor(colors.white)
     canvas.setFont("Helvetica-Bold", 11)
-    canvas.drawString(0.6 * inch, LETTER[1] - 0.36 * inch, "PennPaps")
+    canvas.drawString(0.6 * inch, LETTER[1] - 0.36 * inch, "Penn Home Medical Supply")
     canvas.setFont("Helvetica", 9)
     canvas.drawString(1.4 * inch, LETTER[1] - 0.36 * inch,
                       "Twilio Toll-Free Verification — Step 2 Answer Sheet")
@@ -113,8 +113,8 @@ doc = SimpleDocTemplate(
     OUT, pagesize=LETTER,
     leftMargin=0.6 * inch, rightMargin=0.6 * inch,
     topMargin=0.85 * inch, bottomMargin=0.65 * inch,
-    title="PennPaps — Twilio TFV Step 2 Answer Sheet",
-    author="PennPaps",
+    title="Penn Home Medical Supply — Twilio TFV Step 2 Answer Sheet",
+    author="Penn Home Medical Supply",
 )
 
 story = []
@@ -123,7 +123,7 @@ story.append(Paragraph("Twilio Toll-Free Verification", H1))
 story.append(Paragraph("Step 2/2 — Messaging use case · Copy-paste answer sheet", SUB))
 story.append(Paragraph(
     "Replace every <b><font color='#b08d3e'>YOUR-DOMAIN</font></b> placeholder with the public "
-    "domain that serves your deployed PennPaps site (e.g. <font face='Courier'>pennfit.up.railway.app</font> "
+    "domain that serves your deployed Penn Home Medical Supply site (e.g. <font face='Courier'>pennfit.up.railway.app</font> "
     "or your custom domain). The URLs you submit must be reachable by Twilio reviewers without a login.",
     NOTE,
 ))
@@ -136,7 +136,7 @@ field(story, "Estimated monthly volume", "<b>100</b>")
 # 2. Opt-in type
 field(story, "Opt-in type",
       "<b>Web form</b>",
-      "PennPaps captures consent through a labeled checkbox on the order checkout form.")
+      "Penn Home Medical Supply captures consent through a labeled checkbox on the order checkout form.")
 
 # 3. Use case categories
 field(story, "Messaging use case categories",
@@ -153,10 +153,10 @@ field(story, "Proof of consent (opt-in) collected — URL",
 
 # 5. Use case description
 field(story, "Use case description (paste verbatim)", [code_block(
-    "PennPaps is a U.S. durable medical equipment supplier that ships CPAP masks\n"
+    "Penn Home Medical Supply is a U.S. durable medical equipment supplier that ships CPAP masks\n"
     "and resupply parts to patients with sleep-apnea prescriptions. Patients place\n"
     "an order through our website (https://YOUR-DOMAIN/order) and check a clearly\n"
-    "labeled consent box authorizing PennPaps to contact them by phone, email,\n"
+    "labeled consent box authorizing Penn Home Medical Supply to contact them by phone, email,\n"
     "and SMS. After opt-in, we send transactional SMS messages from our toll-free\n"
     "number for: order confirmation, shipping updates, insurance verification\n"
     "follow-ups, prescription requests, and resupply reminders when the patient\n"
@@ -168,8 +168,8 @@ field(story, "Use case description (paste verbatim)", [code_block(
 
 # 6. Sample message
 field(story, "Sample message (paste verbatim)", [code_block(
-    "Hi John, this is PennPaps. Time to refill your CPAP supplies — reply YES to\n"
-    "confirm shipping to the address on file, EDIT to change it, or STOP to opt out."
+    "Hi John, it's Penn Home Medical Supply. Still use your CPAP and low on\n"
+    "supplies? Reply YES to ship a refill. EDIT to fix your address. STOP to opt out."
 )])
 
 # 7. Email
@@ -179,14 +179,14 @@ field(story, "E-mail for notifications",
 
 # 8. Opt-in confirmation message
 field(story, "Opt-in confirmation message (optional)", [code_block(
-    "PennPaps: You're opted in to CPAP resupply reminders for the number on file.\n"
+    "Penn Home Medical Supply: You're opted in to CPAP resupply reminders for the number on file.\n"
     "Approx 1-2 msgs per refill cycle. Msg & data rates may apply. Reply HELP for\n"
     "help, STOP to cancel."
 )])
 
 # 9. Help message sample
 field(story, "Help message sample (optional — verbatim what HELP returns)", [code_block(
-    "PennPaps — automated CPAP refill reminders. Reply YES to confirm, NO to\n"
+    "Penn Home Medical Supply — automated CPAP refill reminders. Reply YES to confirm, NO to\n"
     "decline, EDIT to change your address, STOP to opt out. Standard message +\n"
     "data rates may apply."
 )])
@@ -203,10 +203,10 @@ field(story, "Opt-in keywords (optional)",
 
 # 12. Additional information
 field(story, "Additional information (optional, paste verbatim)", [code_block(
-    "PennPaps is a HIPAA-aware DME supplier; SMS traffic is strictly transactional\n"
+    "Penn Home Medical Supply is a HIPAA-aware DME supplier; SMS traffic is strictly transactional\n"
     "to existing customers who have completed an opt-in checkbox on our order form\n"
     "at https://YOUR-DOMAIN/order. The consent text on the form (verbatim) reads:\n"
-    "\"I authorize PennPaps to contact me by phone, email, and SMS text message at\n"
+    "\"I authorize Penn Home Medical Supply to contact me by phone, email, and SMS text message at\n"
     "the number and email above regarding this order, insurance verification,\n"
     "shipping updates, and ongoing CPAP resupply reminders.\" Immediately below\n"
     "the checkbox we disclose: approximately 1-2 messages per resupply cycle,\n"
@@ -242,19 +242,19 @@ story.append(Paragraph(
 
 story.append(Paragraph("Order-form opt-in checkbox label (/order)", H2))
 story.append(code_block(
-    "I authorize PennPaps to contact me by phone, email, and SMS text\n"
+    "I authorize Penn Home Medical Supply to contact me by phone, email, and SMS text\n"
     "message at the number and email above regarding this order,\n"
     "insurance verification, shipping updates, and ongoing CPAP resupply\n"
     "reminders, and to store the order details I've entered above\n"
     "(including my contact, shipping, insurance, and prescription\n"
-    "information) in PennPaps's secure system for fulfillment and\n"
+    "information) in Penn Home Medical Supply's secure system for fulfillment and\n"
     "recordkeeping."
 ))
 
 story.append(Paragraph("SMS terms shown beneath the checkbox (/order)", H2))
 story.append(code_block(
     "SMS terms: By providing your mobile number you consent to receive\n"
-    "transactional text messages from PennPaps at that number, including\n"
+    "transactional text messages from Penn Home Medical Supply at that number, including\n"
     "via automated systems. Approximately 1-2 messages per resupply\n"
     "cycle (typically every 30-90 days). No marketing texts. Message\n"
     "and data rates may apply. Reply HELP for help, STOP to unsubscribe\n"
@@ -268,12 +268,12 @@ story.append(code_block(
     "transactional confirmations and any follow-ups if you do not\n"
     "respond. You will not receive marketing or promotional texts.\n\n"
     "Help and opt-out: Reply HELP at any time for assistance, or STOP\n"
-    "to unsubscribe from all PennPaps text messages. After you reply\n"
+    "to unsubscribe from all Penn Home Medical Supply text messages. After you reply\n"
     "STOP we will send one final confirmation and then no further\n"
     "texts; reply START to resume.\n\n"
     "Carrier charges: Message and data rates may apply. Carriers are\n"
     "not liable for delayed or undelivered messages.\n\n"
-    "No third-party sharing for marketing: PennPaps will not sell,\n"
+    "No third-party sharing for marketing: Penn Home Medical Supply will not sell,\n"
     "rent, or share your mobile phone number or SMS opt-in consent\n"
     "with any third party for their marketing purposes."
 ))
@@ -303,10 +303,11 @@ checklist = [
     ("Confirm /privacy, /terms, and /order are publicly reachable",
      "Twilio reviewers cannot complete the fitter funnel. /terms is the most important — "
      "it has the full SMS program disclosure in section 04."),
-    ("Verify business profile name is exactly \"PennPaps\"",
+    ("Verify business profile name is exactly \"Penn Home Medical Supply\"",
      "The DBA / business name on your TFV submission must match what the site says. "
-     "Site shows \"PennPaps\" everywhere; make sure your Trust Hub Business Profile uses the "
-     "same string (not \"Penn Home Medical Supply\" or any other variant)."),
+     "The storefront-only \"Penn Home Medical Supply\" DBA was retired, so the site and every message now "
+     "read \"Penn Home Medical Supply\"; update the Trust Hub Business Profile to the same "
+     "string if it still carries the old one. pennpaps.com stays as the domain."),
     ("Decide imported-patient policy",
      "Your TFV promises every recipient opted in via the web form. If you import existing "
      "patients via the dashboard CSV importer, those patients did NOT check this checkbox. "

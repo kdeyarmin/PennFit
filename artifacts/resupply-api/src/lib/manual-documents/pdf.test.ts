@@ -25,7 +25,7 @@ function input(
       equipment: "E0601 CPAP",
     },
     body: "Patient requires CPAP for documented OSA.",
-    supplierName: "PennPaps",
+    supplierName: "Penn Home Medical Supply",
     generatedOn: new Date("2026-06-09T00:00:00.000Z"),
     ...over,
   };

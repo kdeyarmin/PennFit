@@ -119,7 +119,7 @@ function composeDigestEmail(opts: {
   // deployment operator's mailbox), not a tenant notice: public.orders is
   // the legacy single-tenant fitter-orders table with no org_id, so failed
   // rows can't be attributed to a tenant. Brand it with the platform name
-  // rather than the seed tenant ("PennPaps").
+  // rather than the seed tenant ("Penn Home Medical Supply").
   const subject = `${PLATFORM_NAME}: ${totalCount} order ${
     totalCount === 1 ? "confirmation failed" : "confirmations failed"
   } in the last ${windowHours}h`;

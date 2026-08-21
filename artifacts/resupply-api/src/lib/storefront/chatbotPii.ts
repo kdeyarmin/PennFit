@@ -79,7 +79,7 @@ export interface RedactionResult {
 }
 
 /**
- * Scrub user-supplied text of obvious PII before it leaves PennPaps.
+ * Scrub user-supplied text of obvious PII before it leaves Penn Home Medical Supply.
  * Returns the redacted text plus a per-kind count for audit logging.
  */
 export function redactPiiForOutbound(input: string): RedactionResult {

@@ -1,5 +1,5 @@
 // /insurance — public, content-only explainer for "how insurance works
-// at PennPaps". This page exists because every prominent "Use insurance"
+// at Penn Home Medical Supply". This page exists because every prominent "Use insurance"
 // link on the site previously dumped customers into /consent (the
 // camera/biometrics consent screen at the start of the fitter), which
 // broke the implicit promise of the link label. Customers who want to

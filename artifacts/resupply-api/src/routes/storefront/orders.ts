@@ -317,7 +317,7 @@ router.post(
         // single segment. The order reference doubles as a per-message
         // search anchor if the patient texts back asking about it.
         // Brand to the tenant's storefront name via the shared resolver
-        // (same field the check-in voice/SMS copy uses). Seed → "PennPaps".
+        // (same field the check-in voice/SMS copy uses). Seed → "Penn Home Medical Supply".
         const brandName = (await resolveBrandingByOrgId(orgId ?? undefined))
           .storefrontName;
         const body = `${brandName}: order ${result.orderReference} received. We'll reach out to Dr. ${physicianName.split(" ").pop()} this week to coordinate your prescription. Reply STOP to opt out.`;

@@ -14,7 +14,9 @@ export function Terms() {
   const c = useCompanyContact();
   useDocumentTitle(
     "Terms of service",
-    `Terms of service for ${c.name} and ${c.legalName}.`,
+    c.name === c.legalName
+      ? `Terms of service for ${c.legalName}.`
+      : `Terms of service for ${c.name} and ${c.legalName}.`,
   );
   return (
     <div className="container max-w-3xl mx-auto px-4 py-12 animate-shimmer-in">

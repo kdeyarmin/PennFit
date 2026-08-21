@@ -7,7 +7,7 @@
 // BCC blends the caregiver into the patient's send and gives them
 // the same body — "Your supplies have shipped" reads oddly to a
 // caregiver who didn't order anything. A separate, correctly-
-// addressed email ("PennPaps just shipped supplies to Maria") is
+// addressed email ("Penn Home Medical Supply just shipped supplies to Maria") is
 // less confusing AND lets us include a one-tap "remove me as
 // caregiver" link that doesn't make sense in the patient's copy.
 //
@@ -130,7 +130,7 @@ export async function sendCaregiverNotificationEmail(
   }
 
   // Brand the email with the tenant's own storefront name (G6). For the seed
-  // tenant this resolves to "PennPaps" (its stored brand), so single-tenant
+  // tenant this resolves to "Penn Home Medical Supply" (its stored brand), so single-tenant
   // copy is unchanged; a second tenant's notification carries ITS brand.
   const brand = await resolveBrandingByOrgId(input.orgId);
   const brandName = brand.storefrontName;

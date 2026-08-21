@@ -73,7 +73,7 @@ describe("summarizePostCall", () => {
     const result = await summarizePostCall({
       client,
       turns: SAMPLE_TURNS,
-      practiceName: "PennPaps",
+      practiceName: "Penn Home Medical Supply",
       endReason: "model-end_call",
     });
     expect(result).not.toBeNull();
@@ -95,7 +95,7 @@ describe("summarizePostCall", () => {
     const result = await summarizePostCall({
       client,
       turns: [],
-      practiceName: "PennPaps",
+      practiceName: "Penn Home Medical Supply",
       endReason: "twilio-stop",
     });
     expect(called).toBe(false);
@@ -108,7 +108,7 @@ describe("summarizePostCall", () => {
     const result = await summarizePostCall({
       client,
       turns: SAMPLE_TURNS,
-      practiceName: "PennPaps",
+      practiceName: "Penn Home Medical Supply",
       endReason: "twilio-stop",
     });
     expect(result).toBeNull();
@@ -119,7 +119,7 @@ describe("summarizePostCall", () => {
     const result = await summarizePostCall({
       client,
       turns: SAMPLE_TURNS,
-      practiceName: "PennPaps",
+      practiceName: "Penn Home Medical Supply",
       endReason: "twilio-stop",
     });
     expect(result).toBeNull();
@@ -132,7 +132,7 @@ describe("summarizePostCall", () => {
     const result = await summarizePostCall({
       client,
       turns: SAMPLE_TURNS,
-      practiceName: "PennPaps",
+      practiceName: "Penn Home Medical Supply",
       endReason: "twilio-stop",
     });
     expect(result).toBeNull();
@@ -151,7 +151,7 @@ describe("summarizePostCall", () => {
     const result = await summarizePostCall({
       client,
       turns: SAMPLE_TURNS,
-      practiceName: "PennPaps",
+      practiceName: "Penn Home Medical Supply",
       endReason: "twilio-stop",
     });
     expect(result?.sentiment).toBe("neutral");
@@ -171,7 +171,7 @@ describe("summarizePostCall", () => {
     const result = await summarizePostCall({
       client,
       turns: SAMPLE_TURNS,
-      practiceName: "PennPaps",
+      practiceName: "Penn Home Medical Supply",
       endReason: "model-handoff",
     });
     expect(result?.recommendsHandoff).toBe(true);
@@ -195,7 +195,7 @@ describe("summarizePostCall", () => {
     const result = await summarizePostCall({
       client,
       turns: SAMPLE_TURNS,
-      practiceName: "PennPaps",
+      practiceName: "Penn Home Medical Supply",
       endReason: "model-end_call",
     });
     expect(result?.outcome).toBe("Routine refill confirmed.");
@@ -215,7 +215,7 @@ describe("summarizePostCall", () => {
     const result = await summarizePostCall({
       client,
       turns: SAMPLE_TURNS,
-      practiceName: "PennPaps",
+      practiceName: "Penn Home Medical Supply",
       endReason: "twilio-stop",
     });
     expect(result?.concerns).toHaveLength(20);
@@ -235,7 +235,7 @@ describe("summarizePostCall", () => {
     const result = await summarizePostCall({
       client,
       turns: SAMPLE_TURNS,
-      practiceName: "PennPaps",
+      practiceName: "Penn Home Medical Supply",
       endReason: "twilio-stop",
     });
     expect(result?.concerns).toEqual(["valid", "another valid"]);
@@ -298,7 +298,7 @@ describe("summarizePostCall", () => {
     const result = await summarizePostCall({
       client,
       turns: SAMPLE_TURNS,
-      practiceName: "PennPaps",
+      practiceName: "Penn Home Medical Supply",
       endReason: "twilio-stop",
     });
     expect(result).not.toBeNull();
@@ -323,7 +323,7 @@ describe("summarizePostCall", () => {
     const result = await summarizePostCall({
       client,
       turns: SAMPLE_TURNS,
-      practiceName: "PennPaps",
+      practiceName: "Penn Home Medical Supply",
       endReason: "twilio-stop",
     });
     // Exactly 300 chars — no truncation, no "…".
@@ -345,7 +345,7 @@ describe("summarizePostCall", () => {
     const result = await summarizePostCall({
       client,
       turns: SAMPLE_TURNS,
-      practiceName: "PennPaps",
+      practiceName: "Penn Home Medical Supply",
       endReason: "twilio-stop",
     });
     expect(result!.concerns[0]).toBe(shortItem);
@@ -367,7 +367,7 @@ describe("summarizePostCall", () => {
     const result = await summarizePostCall({
       client,
       turns: SAMPLE_TURNS,
-      practiceName: "PennPaps",
+      practiceName: "Penn Home Medical Supply",
       endReason: "twilio-stop",
     });
     expect(result!.concerns).toHaveLength(20);
@@ -419,7 +419,7 @@ describe("summarizePostCall", () => {
     const result = await summarizePostCall({
       client,
       turns: manyTurns,
-      practiceName: "PennPaps",
+      practiceName: "Penn Home Medical Supply",
       endReason: "twilio-stop",
       conversationId: "conv_truncation_test",
     });
@@ -470,7 +470,7 @@ describe("summarizePostCall", () => {
     const result = await summarizePostCall({
       client,
       turns: exactTurns,
-      practiceName: "PennPaps",
+      practiceName: "Penn Home Medical Supply",
       endReason: "twilio-stop",
     });
     expect(result).not.toBeNull();

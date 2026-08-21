@@ -1000,7 +1000,7 @@ export async function submitFitterComplete(
 // to run the AI mask fitter (/fitter-invite?t=<token>). The
 // storefront resolves the token to prefill the patient's email, then
 // — unlike the public flow — transmits the FULL fitting back on
-// completion so PennPaps can follow up and attach it to a chart.
+// completion so Penn Home Medical Supply can follow up and attach it to a chart.
 
 export interface ResolveFitterInviteResult {
   valid: boolean;

@@ -190,16 +190,23 @@ describe("buildOtpauthUri", () => {
   it("emits the canonical otpauth:// shape", () => {
     const uri = buildOtpauthUri({
       label: "csr@penn.example",
-      issuer: "PennPaps",
+      issuer: "Penn Home Medical Supply",
       secret: "JBSWY3DPEHPK3PXP",
     });
     // Standard authenticator apps require: issuer in the label
     // segment AND in the query, algorithm=SHA1, digits=6, period=30.
+    // A multi-word issuer must arrive percent-encoded in the label
+    // (encodeURIComponent) and form-encoded in the query
+    // (URLSearchParams renders a space as "+"); an unencoded space
+    // would make the URI unparseable for the authenticator app.
     expect(
-      uri.startsWith("otpauth://totp/PennPaps%3Acsr%40penn.example?"),
+      uri.startsWith(
+        "otpauth://totp/Penn%20Home%20Medical%20Supply%3Acsr%40penn.example?",
+      ),
     ).toBe(true);
     expect(uri).toContain("secret=JBSWY3DPEHPK3PXP");
-    expect(uri).toContain("issuer=PennPaps");
+    expect(uri).toContain("issuer=Penn+Home+Medical+Supply");
+    expect(uri).not.toContain("Penn Home Medical Supply");
     expect(uri).toContain("algorithm=SHA1");
     expect(uri).toContain("digits=6");
     expect(uri).toContain("period=30");

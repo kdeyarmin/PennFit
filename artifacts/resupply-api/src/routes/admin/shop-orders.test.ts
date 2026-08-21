@@ -78,10 +78,10 @@ vi.mock("@workspace/resupply-email", async () => {
 // The shipping/pickup emails brand themselves with the tenant's storefront
 // name (G6) via resolveBrandingByOrgId. The handler passes a real orgId, so
 // mock the resolver to keep the subject assertions deterministic (seed tenant
-// → "PennPaps") without staging an organizations directory read.
+// → "Penn Home Medical Supply") without staging an organizations directory read.
 vi.mock("../../lib/tenant-branding.js", () => ({
   resolveBrandingByOrgId: vi.fn(async () => ({
-    storefrontName: "PennPaps",
+    storefrontName: "Penn Home Medical Supply",
     legalName: "Penn Home Medical Supply",
     tagline: "tagline",
     logoUrl: null,
@@ -379,7 +379,7 @@ describe("POST /admin/shop/orders/:orderId/tracking", () => {
     expect(res.status).toBe(200);
     expect(sendEmailMock).toHaveBeenCalledTimes(1);
     const arg = sendEmailMock.mock.calls[0]![0];
-    expect(arg.subject).toBe("Your PennPaps order has shipped");
+    expect(arg.subject).toBe("Your Penn Home Medical Supply order has shipped");
     expect(arg.to).toBe("buyer@example.com");
     expect(arg.html).toContain("ups.com/track");
     // Two UPDATEs — tracking write + atomic claim. No release on the
@@ -391,7 +391,7 @@ describe("POST /admin/shop/orders/:orderId/tracking", () => {
     const [, pushCustId, pushPayload] = sendPushToCustomerMock.mock.calls[0]!;
     expect(pushCustId).toBe("user_alice");
     expect(pushPayload).toMatchObject({
-      title: "Your PennPaps order shipped",
+      title: "Your Penn Home Medical Supply order shipped",
       url: "/account/orders",
     });
     expect(pushPayload.body).toContain("UPS");

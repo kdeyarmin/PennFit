@@ -8,7 +8,7 @@
 //
 // We fetch the small column set we need (status / created_at /
 // canceled_at / cancel_at_period_end) and aggregate JS-side. Even at
-// ~100x the current PennPaps subscriber count this is a fraction of
+// ~100x the current Penn Home Medical Supply subscriber count this is a fraction of
 // a megabyte; the admin-only endpoint never touches a customer-
 // facing latency budget.
 //

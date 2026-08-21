@@ -454,7 +454,7 @@ async function tryNotifyCustomerOfReply(input: {
 
   // Resolve the tenant's brand + base URL once so every channel (push,
   // email) speaks in the tenant's name and links to its own domain
-  // (seed → "PennPaps" / pennpaps.com, unchanged).
+  // (seed → "Penn Home Medical Supply" / pennpaps.com, unchanged).
   const orgId = supabase.orgId;
   const brand = await resolveBrandingByOrgId(orgId);
   const brandName = brand.storefrontName;

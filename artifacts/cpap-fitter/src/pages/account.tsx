@@ -479,7 +479,7 @@ function AccountInner() {
             {activeTab === "messages" && (
               <>
                 {/*
-                  In-account messaging with PennPaps customer service.
+                  In-account messaging with Penn Home Medical Supply customer service.
                   Reuses the conversations + messages tables via the in_app
                   channel; admins reply from /admin/conversations.
                 */}

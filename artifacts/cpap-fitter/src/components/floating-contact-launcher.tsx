@@ -4,7 +4,7 @@
 // popover with TWO tabs:
 //   * Chat — PennBot, the LLM-backed support assistant. Answers
 //     questions about masks, supplies, insurance, the replacement
-//     schedule, returns, and how PennPaps works. Conversation is
+//     schedule, returns, and how Penn Home Medical Supply works. Conversation is
 //     persisted to sessionStorage so a route change or refresh
 //     keeps the thread; closing the tab clears it. Replies stream
 //     token-by-token via SSE for a live-typing feel. The bot is

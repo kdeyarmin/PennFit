@@ -27,8 +27,8 @@ vi.mock("@workspace/resupply-email", async () => {
 
 // The order email brands itself with the tenant's storefront name (G6).
 // Control it here so the copy assertions are deterministic; defaults to the
-// seed tenant's "PennPaps".
-const brandNameRef = vi.hoisted(() => ({ value: "PennPaps" }));
+// seed tenant's "Penn Home Medical Supply".
+const brandNameRef = vi.hoisted(() => ({ value: "Penn Home Medical Supply" }));
 vi.mock("../tenant-branding.js", () => ({
   resolveBrandingByOrgId: vi.fn(async () => ({
     storefrontName: brandNameRef.value,
@@ -66,7 +66,7 @@ describe("sendOrderConfirmationEmail", () => {
     for (const k of ENV_KEYS) originalEnv[k] = process.env[k];
     for (const k of ENV_KEYS) delete process.env[k];
     process.env.SHOP_PUBLIC_BASE_URL = "https://test.example.com";
-    brandNameRef.value = "PennPaps";
+    brandNameRef.value = "Penn Home Medical Supply";
     sendEmailMock.mockReset();
     createSendgridClientMock.mockReset();
     createSendgridClientMock.mockImplementation(() => ({
@@ -131,7 +131,9 @@ describe("sendOrderConfirmationEmail", () => {
     expect(sendEmailMock).toHaveBeenCalledTimes(1);
     const arg = sendEmailMock.mock.calls[0]![0];
     expect(arg.to).toBe("Buyer@Example.com");
-    expect(arg.subject).toBe("Your PennPaps order is confirmed");
+    expect(arg.subject).toBe(
+      "Your Penn Home Medical Supply order is confirmed",
+    );
     // HTML must be escaped, raw <script> must NOT appear.
     expect(arg.html).not.toContain("<script>alert");
     expect(arg.html).toContain("&lt;script&gt;");
@@ -168,7 +170,7 @@ describe("sendOrderConfirmationEmail", () => {
     expect(arg.subject).toBe("Your Acme CPAP order is confirmed");
     expect(arg.text).toContain("Thanks for your order at Acme CPAP.");
     expect(arg.html).toContain("Acme CPAP");
-    expect(arg.subject).not.toContain("PennPaps");
+    expect(arg.subject).not.toContain("Penn Home Medical Supply");
   });
 
   it("returns delivered=false with error string on SendGrid 4xx (no throw)", async () => {

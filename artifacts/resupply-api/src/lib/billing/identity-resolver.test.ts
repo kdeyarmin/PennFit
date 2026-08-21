@@ -57,7 +57,7 @@ describe("resolveBillingIdentity", () => {
       data: {
         id: "org_1",
         singleton: true,
-        legal_name: "PennPaps Inc",
+        legal_name: "Penn Home Medical Supply Inc",
         organizational_npi: "9999999999",
         tax_id: "999999999",
         physical_address_line1: "1 Penn Plaza",
@@ -73,7 +73,7 @@ describe("resolveBillingIdentity", () => {
         slug: "office_ally",
         etin: "DBETIN",
         usage_indicator: "P",
-        submitter_organization_name: "PennPaps Inc Submitter",
+        submitter_organization_name: "Penn Home Medical Supply Inc Submitter",
         contact_name: "Billing",
         contact_phone_e164: "+18005550100",
         sftp_host: "h",
@@ -156,7 +156,7 @@ describe("resolveBillingIdentity — multi-location Phase 1 overlay", () => {
   const ORG_ROW = {
     id: "org_1",
     singleton: true,
-    legal_name: "PennPaps Inc",
+    legal_name: "Penn Home Medical Supply Inc",
     organizational_npi: "9999999999",
     tax_id: "999999999",
     physical_address_line1: "1 Penn Plaza",
@@ -170,7 +170,7 @@ describe("resolveBillingIdentity — multi-location Phase 1 overlay", () => {
     slug: "office_ally",
     etin: "DBETIN",
     usage_indicator: "P",
-    submitter_organization_name: "PennPaps Inc Submitter",
+    submitter_organization_name: "Penn Home Medical Supply Inc Submitter",
     contact_name: "Billing",
     contact_phone_e164: "+18005550100",
     sftp_host: "h",
@@ -239,7 +239,7 @@ describe("resolveBillingIdentity — multi-location Phase 1 overlay", () => {
         name: "West Branch",
         npi: "1212121212",
         is_active: true,
-        billing_legal_name: "PennPaps West LLC",
+        billing_legal_name: "Penn Home Medical Supply West LLC",
         billing_tax_id: "222222222",
         billing_address_line1: "9 West Ave",
         billing_city: "Pittsburgh",
@@ -256,7 +256,9 @@ describe("resolveBillingIdentity — multi-location Phase 1 overlay", () => {
     expect(result.locationId).toBe(LOCATION_ID);
     // Branch NPI/name/taxId/address overlaid.
     expect(result.billingProvider.npi).toBe("1212121212");
-    expect(result.billingProvider.organizationName).toBe("PennPaps West LLC");
+    expect(result.billingProvider.organizationName).toBe(
+      "Penn Home Medical Supply West LLC",
+    );
     expect(result.billingProvider.taxId).toBe("222222222");
     expect(result.billingProvider.address.line1).toBe("9 West Ave");
     expect(result.billingProvider.address.zip).toBe("15201");
@@ -450,7 +452,7 @@ describe("resolveClearinghouse", () => {
         slug: "office_ally",
         etin: "DBETIN",
         usage_indicator: "P",
-        submitter_organization_name: "PennPaps",
+        submitter_organization_name: "Penn Home Medical Supply",
         contact_name: "Billing",
         contact_phone_e164: "+18005550100",
         sftp_host: "h",

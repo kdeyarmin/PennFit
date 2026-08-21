@@ -8,7 +8,7 @@
 // composer falls back to manual typing rather than showing an error.
 //
 // PHI posture: message bodies are scrubbed by `redactPiiForOutbound`
-// inside the drafter before any text leaves PennPaps. We do NOT send the
+// inside the drafter before any text leaves Penn Home Medical Supply. We do NOT send the
 // patient's name (the `bytea` name columns need a vetted decode path —
 // a generic greeting is fine and the CSR personalizes on edit). The log
 // records counts + the soft reason only — never the bodies or the draft.

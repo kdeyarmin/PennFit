@@ -72,7 +72,7 @@ const describeIfDb = skip ? describe.skip : describe;
 
 const AUTO_SYNC_KEY = "pacware.auto_sync";
 const RECIPIENT = "ops@pacware-it.example.test";
-const PRACTICE = "PennPaps";
+const PRACTICE = "Penn Home Medical Supply";
 
 describeIfDb("pacware ready-to-sync digest fan-out (live db)", () => {
   const runTag = `pacware-digest-it-${Math.random().toString(36).slice(2, 10)}`;

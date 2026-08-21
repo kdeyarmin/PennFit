@@ -165,7 +165,7 @@ export const CATALOG_CHAT_TOOLS: OpenAiToolDescriptor[] = [
     function: {
       name: "recommend_masks",
       description:
-        "Recommend the best PennPaps masks for a patient based on their stated preferences. Use this when the user asks 'help me pick a mask', 'which mask is best for me', or describes their sleep profile and wants a recommendation. This chat cannot run the clinical magnetic-implant screen (cardiac devices, aneurysm clips, shunts, cochlear/ocular implants, other metallic implants, and household members), so magnetic-clip masks are ALWAYS omitted — even if the user says they have no pacemaker. Direct them to the on-device fitter for that screen. Pass implanted_electronic_device when they mention an implant so you can warn them; it does not unlock magnetic masks. All other arguments are optional; pass only the preferences the user has actually stated. Returns a ranked shortlist of viable (non-contraindicated, non-magnetic) masks.",
+        "Recommend the best Penn Home Medical Supply masks for a patient based on their stated preferences. Use this when the user asks 'help me pick a mask', 'which mask is best for me', or describes their sleep profile and wants a recommendation. This chat cannot run the clinical magnetic-implant screen (cardiac devices, aneurysm clips, shunts, cochlear/ocular implants, other metallic implants, and household members), so magnetic-clip masks are ALWAYS omitted — even if the user says they have no pacemaker. Direct them to the on-device fitter for that screen. Pass implanted_electronic_device when they mention an implant so you can warn them; it does not unlock magnetic masks. All other arguments are optional; pass only the preferences the user has actually stated. Returns a ranked shortlist of viable (non-contraindicated, non-magnetic) masks.",
       parameters: {
         type: "object",
         additionalProperties: false,
@@ -244,7 +244,7 @@ export const CATALOG_CHAT_TOOLS: OpenAiToolDescriptor[] = [
     function: {
       name: "find_masks",
       description:
-        "Filter the PennPaps mask catalog by structured criteria. Use this when the user wants to BROWSE the catalog with a filter (type, price tier, manufacturer, top-of-head hose, or pressure rating) rather than asking for a tailored recommendation. Magnetic-clip masks are omitted (this chat cannot run the clinical magnet screen). Returns matching masks; an empty array means no match.",
+        "Filter the Penn Home Medical Supply mask catalog by structured criteria. Use this when the user wants to BROWSE the catalog with a filter (type, price tier, manufacturer, top-of-head hose, or pressure rating) rather than asking for a tailored recommendation. Magnetic-clip masks are omitted (this chat cannot run the clinical magnet screen). Returns matching masks; an empty array means no match.",
       parameters: {
         type: "object",
         additionalProperties: false,
@@ -292,7 +292,7 @@ export const CATALOG_CHAT_TOOLS: OpenAiToolDescriptor[] = [
     function: {
       name: "compare_masks",
       description:
-        "Compare two specific PennPaps masks side by side. Use this when the user asks 'what's the difference between X and Y' or 'should I pick A or B?'. Pass each mask by its catalog id (preferred — e.g. 'resmed-airfit-p10') or by name (case-insensitive substring match — e.g. 'P10', 'AirFit F20'). Returns the structured fields for both masks plus a list of meaningful differences.",
+        "Compare two specific Penn Home Medical Supply masks side by side. Use this when the user asks 'what's the difference between X and Y' or 'should I pick A or B?'. Pass each mask by its catalog id (preferred — e.g. 'resmed-airfit-p10') or by name (case-insensitive substring match — e.g. 'P10', 'AirFit F20'). Returns the structured fields for both masks plus a list of meaningful differences.",
       parameters: {
         type: "object",
         additionalProperties: false,
@@ -320,7 +320,7 @@ export const CHAT_TOOLS: OpenAiToolDescriptor[] = [
     function: {
       name: "track_order",
       description:
-        "Look up the status of a PennPaps fitting order for a guest. Use this when the user asks 'where is my order' / 'did my order go through'. Requires TWO things from the user: (1) their order reference — 'PENN-' plus 6 letters/digits, from their confirmation email — passed as order_reference, and (2) the email address they used on the order, which must already appear somewhere in this conversation. You will see their email as [redacted-email]; that is expected — call the tool anyway, the server restores the real value. If the tool returns needs_email, ask the user to type the email they used. Never echo the email back to the user.",
+        "Look up the status of a Penn Home Medical Supply fitting order for a guest. Use this when the user asks 'where is my order' / 'did my order go through'. Requires TWO things from the user: (1) their order reference — 'PENN-' plus 6 letters/digits, from their confirmation email — passed as order_reference, and (2) the email address they used on the order, which must already appear somewhere in this conversation. You will see their email as [redacted-email]; that is expected — call the tool anyway, the server restores the real value. If the tool returns needs_email, ask the user to type the email they used. Never echo the email back to the user.",
       parameters: {
         type: "object",
         additionalProperties: false,
@@ -329,7 +329,7 @@ export const CHAT_TOOLS: OpenAiToolDescriptor[] = [
           order_reference: {
             type: "string",
             description:
-              "The PennPaps order reference, e.g. 'PENN-AB1234' (the 6-character tail alone is also accepted).",
+              "The Penn Home Medical Supply order reference, e.g. 'PENN-AB1234' (the 6-character tail alone is also accepted).",
           },
         },
       },
@@ -588,7 +588,7 @@ async function executeTrackOrder(
       data: {
         status: "not_found",
         guidance:
-          "That doesn't look like a PennPaps order reference — it's 'PENN-' plus 6 letters/digits, from the confirmation email. Ask the user to double-check it.",
+          "That doesn't look like a Penn Home Medical Supply order reference — it's 'PENN-' plus 6 letters/digits, from the confirmation email. Ask the user to double-check it.",
       },
     };
   }

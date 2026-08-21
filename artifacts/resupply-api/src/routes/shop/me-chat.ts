@@ -3,7 +3,7 @@
  *
  * The signed-in cousin of /api/chat. Where the public PennBot answers
  * pre-purchase questions over a static catalog, this bot answers the
- * questions a current PennPaps patient asks AFTER they have an
+ * questions a current Penn Home Medical Supply patient asks AFTER they have an
  * account: "where is my order", "did my last subscription bill",
  * "what machine did I tell you about", "how do I cancel auto-ship".
  *

@@ -130,13 +130,13 @@ describe("composeReminder", () => {
   it("includes the greeting, practice, start time, and link in every format", () => {
     const msg = composeReminder({
       firstName: "Pat",
-      practiceName: "PennPaps",
+      practiceName: "Penn Home Medical Supply",
       scheduledAt: "2026-06-12T15:00:00.000Z",
       link: "https://pennpaps.com/video-visit?token=abc",
     });
     for (const body of [msg.sms, msg.text, msg.html]) {
       expect(body).toContain("Pat");
-      expect(body).toContain("PennPaps");
+      expect(body).toContain("Penn Home Medical Supply");
       expect(body).toContain("https://pennpaps.com/video-visit?token=abc");
     }
     // No PHI in the subject line.
@@ -146,7 +146,7 @@ describe("composeReminder", () => {
   it("falls back to a generic greeting without a first name", () => {
     const msg = composeReminder({
       firstName: null,
-      practiceName: "PennPaps",
+      practiceName: "Penn Home Medical Supply",
       scheduledAt: "2026-06-12T15:00:00.000Z",
       link: "https://x.test/v",
     });

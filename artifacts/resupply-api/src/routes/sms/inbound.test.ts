@@ -297,7 +297,7 @@ describe("POST /sms/inbound", () => {
     stageSupabaseResponse("messages", "select", {
       data: {
         body:
-          "Hi Sam, it's PennPaps. Time for a CPAP refill. Reply YES if you " +
+          "Hi Sam, it's Penn Home Medical Supply. Time for a CPAP refill. Reply YES if you " +
           "still use it and are low on supplies, EDIT to change address, " +
           "STOP to opt out.",
       },

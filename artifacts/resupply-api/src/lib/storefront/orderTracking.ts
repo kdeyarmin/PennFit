@@ -71,7 +71,7 @@ export function _resetTrackOrderRateBucketForTests(): void {
 
 /**
  * Uppercase, validate, and PENN- prefix a user-supplied reference.
- * Returns null when the input can't be a PennPaps reference.
+ * Returns null when the input can't be a Penn Home Medical Supply reference.
  */
 export function normalizeOrderReference(raw: string): string | null {
   const candidate = raw.trim().toUpperCase();

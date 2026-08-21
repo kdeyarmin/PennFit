@@ -227,7 +227,7 @@ export const CUSTOMER_CHAT_TOOLS: OpenAiToolDescriptor[] = [
     function: {
       name: "escalate_to_human",
       description:
-        "Forward the customer's request to PennPaps's human customer-service team by posting it to their in-app message thread (the same thread at /account → Messages, which a CSR monitors and replies to). Use this ONLY after the customer has confirmed they want a person — for things you cannot resolve yourself: refund requests, changing or canceling an order/subscription on their behalf, address changes on an order that already shipped, insurance/prescription/prior-auth issues, reporting a wrong or damaged item, complaints, or anything the read-only tools and self-serve pages don't cover. Do NOT use it for questions you already answered or that a self-serve page handles. Compose `summary` as a clear, first-person message FROM the customer's perspective that includes any relevant order id, subscription, dates, or specifics gathered in the conversation, so the CSR has full context without asking again. After it succeeds, tell the customer their message was sent and the team will reply in /account → Messages (or to call (814) 471-0627 if it's urgent).",
+        "Forward the customer's request to Penn Home Medical Supply's human customer-service team by posting it to their in-app message thread (the same thread at /account → Messages, which a CSR monitors and replies to). Use this ONLY after the customer has confirmed they want a person — for things you cannot resolve yourself: refund requests, changing or canceling an order/subscription on their behalf, address changes on an order that already shipped, insurance/prescription/prior-auth issues, reporting a wrong or damaged item, complaints, or anything the read-only tools and self-serve pages don't cover. Do NOT use it for questions you already answered or that a self-serve page handles. Compose `summary` as a clear, first-person message FROM the customer's perspective that includes any relevant order id, subscription, dates, or specifics gathered in the conversation, so the CSR has full context without asking again. After it succeeds, tell the customer their message was sent and the team will reply in /account → Messages (or to call (814) 471-0627 if it's urgent).",
       parameters: {
         type: "object",
         additionalProperties: false,
@@ -406,7 +406,7 @@ export interface CustomerChatToolContext {
    */
   assistantStorefrontName?: string | null;
   /**
-   * Per-request branded tool descriptors (PennPaps/PennBot/phone
+   * Per-request branded tool descriptors (Penn Home Medical Supply/PennBot/phone
    * rewritten for this tenant). When omitted, callers send the static
    * CUSTOMER_CHAT_TOOLS placeholders.
    */

@@ -130,7 +130,7 @@ describeIfDb("recall-notifications-send fan-out (live db)", () => {
     // is mocked, so these values are never used to authenticate.
     for (const [k, v] of [
       ["SENDGRID_API_KEY", "SG.integration-test"],
-      ["SENDGRID_FROM_NAME", "PennPaps"],
+      ["SENDGRID_FROM_NAME", "Penn Home Medical Supply"],
       ["SENDGRID_FROM_EMAIL", "info@pennpaps.example"],
     ] as const) {
       priorEnv[k] = process.env[k];

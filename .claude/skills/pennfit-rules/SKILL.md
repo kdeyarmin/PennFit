@@ -115,7 +115,7 @@ split for SMS/voice/fax (`resolveTenantSmsFrom`/`resolveTenantVoiceFrom`/
 `resolveTenantFaxFrom`) and for brand copy (`applyCompanyIdentityToText` /
 `resolveBrandingByOrgId`). The `company-info.ts` unconfigured fallback and
 patient-facing link defaults are the platform (`CareMetric Breathe` /
-`https://cmbreathe.com`), never PennPaps.
+`https://cmbreathe.com`), never a tenant's.
 
 ### R7 — Admin theme stays scoped
 Admin tokens (`--penn-navy`, …) live in `artifacts/cpap-fitter/src/admin.css`
@@ -182,20 +182,30 @@ import-side rule, and `docs/mask-sizing-data-sources-2026-08-18.md` for
 what each manufacturer actually publishes.
 
 ### R9 — A tenant brand in shared code must be resolved, not typed
-`PennPaps` is ONE TENANT's storefront name. In shared platform code it is
-only ever legitimate in two forms:
+`Penn Home Medical Supply` is ONE TENANT's name (it retired its
+storefront-only `PennPaps` DBA in migration 0510 and now trades under
+that one name). In shared platform code the literal is only ever
+legitimate in two forms:
 
 1. **A placeholder that is normalized at the I/O boundary** — the large
    prose bodies (`chatbotKnowledge.ts`, `customerChatKnowledge.ts`, the
-   LLM system prompts, the tool descriptions) keep `PennPaps`/`PennBot`/
-   `PennPilot` verbatim, and the *route* renames them per tenant via
+   LLM system prompts, the tool descriptions) keep
+   `Penn Home Medical Supply`/`PennBot`/`PennPilot` verbatim, and the
+   *route* renames them per tenant via
    `applyCompanyIdentityToText(text, await getCompanyInfo(orgId))` and/or
    `applyPlatformBrandingForOrg(text, orgId)`. CLAUDE.md endorses this so
    the knowledge bases don't need editing. A few files carry their own
    equivalent (`checkin-dispatcher.ts`, `routes/voice/inbound-reorder.ts`
-   both do `text.split("PennPaps").join(brandName)`).
+   both do `text.split("Penn Home Medical Supply").join(brandName)`).
 2. **Genuinely tenant-scoped data** — the seeded `organizations` row, the
    Penn logo asset, `capacitor.config.ts`'s native app name.
+
+The retired `PennPaps` spelling survives in exactly two places, both
+deliberate: the legacy `identityReplacements()` needles in
+`company-info.ts` (which rewrite content *persisted* under the old
+brand) and the brand-leak guard specs, whose patterns must keep matching
+it. Do not reintroduce it as a display name. `pennpaps.com` and
+`info@pennpaps.com` are unaffected — they are addresses, not names.
 
 Anything else is a bug: the literal reaches **every** tenant's users
 verbatim. Found in the wild across ~20 callsites — push-notification
@@ -220,7 +230,12 @@ Deciding a hit:
 
 Prefer threading a parameter over adding a placeholder: the compiler then
 finds every callsite. Watch for spaced TTS variants (`Penn Paps`) that a
-`PennPaps` grep misses.
+`Penn Home Medical Supply` grep misses.
+
+- **Never print a storefront brand and a legal name side by side.** With
+  a one-name tenant that renders "X by X". Use `formatBrandSignature()`
+  (`lib/tenant-branding.ts`) or `hasDistinctStorefrontName()`
+  (`cpap-fitter/src/lib/branding.ts`) to gate the second name.
 
 ## Step 3 — convention invariants (also worth checking)
 

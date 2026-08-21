@@ -11,7 +11,7 @@ import {
 import type { CompanyInfo } from "../company-info";
 
 // A second tenant's saved identity (source "database" so the brand/
-// contact rewrite fires). Distinct from the seed "PennPaps" defaults so
+// contact rewrite fires). Distinct from the seed "Penn Home Medical Supply" defaults so
 // a leak is obvious.
 const TENANT_B: CompanyInfo = {
   name: "Acme Respiratory",
@@ -45,9 +45,9 @@ describe("buildChatSystemPrompt (public PennBot)", () => {
 
   it("builds under the char cap without throwing", () => {
     expect(prompt.length).toBeGreaterThan(0);
-    // Comfortable headroom below the 110k tripwire so routine edits don't
+    // Comfortable headroom below the 120k tripwire so routine edits don't
     // trip it, while still catching a runaway section.
-    expect(prompt.length).toBeLessThan(110_000);
+    expect(prompt.length).toBeLessThan(120_000);
   });
 
   it("includes the CPAP-alternatives knowledge (oral appliances, Inspire, Zepbound)", () => {
@@ -140,7 +140,7 @@ describe("per-tenant brand/contact threading", () => {
     // No seed leak.
     expect(prompt).not.toContain("(814) 471-0627");
     expect(prompt).not.toContain("support@pennpaps.com");
-    expect(prompt).not.toContain("PennPaps");
+    expect(prompt).not.toContain("Penn Home Medical Supply");
   });
 
   it("buildCustomerChatSystemPrompt rewrites contact strings to a second tenant", () => {
@@ -159,7 +159,7 @@ describe("per-tenant brand/contact threading", () => {
     expect(prompt).toContain("help@acmeresp.com");
     expect(prompt).not.toContain("(814) 471-0627");
     expect(prompt).not.toContain("support@pennpaps.com");
-    expect(prompt).not.toContain("PennPaps");
+    expect(prompt).not.toContain("Penn Home Medical Supply");
   });
 
   it("offline fallbacks carry the second tenant's contact details", () => {

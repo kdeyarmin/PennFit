@@ -1,5 +1,5 @@
 // sendReadyForPickupEmail — single-shot SendGrid notice that a paid
-// PennPaps in-store-pickup order is ready to collect.
+// Penn Home Medical Supply in-store-pickup order is ready to collect.
 //
 // The pickup analogue of sendShippingNotificationEmail. Fired from the
 // admin POST /admin/shop/orders/:orderId/ready-for-pickup endpoint after
@@ -118,7 +118,7 @@ export async function sendReadyForPickupEmail(
   }
 
   // Brand the email with the tenant's own storefront name (G6). For the seed
-  // tenant this resolves to "PennPaps" (its stored brand), so single-tenant
+  // tenant this resolves to "Penn Home Medical Supply" (its stored brand), so single-tenant
   // copy is unchanged; a second tenant's email carries ITS brand.
   const brand = await resolveBrandingByOrgId(input.orgId);
   const brandName = brand.storefrontName;

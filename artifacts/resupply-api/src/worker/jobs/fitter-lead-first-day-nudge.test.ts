@@ -42,21 +42,21 @@ beforeEach(() => {
 describe("composeFirstDayEmail", () => {
   it("tailors the opening line to the lead source", () => {
     const fit = composeFirstDayEmail({
-      practiceName: "PennPaps",
+      practiceName: "Penn Home Medical Supply",
       resumeUrl: "https://x/consent",
       source: "consent",
     });
     expect(fit.text).toContain("the at-home mask fitting");
 
     const quiz = composeFirstDayEmail({
-      practiceName: "PennPaps",
+      practiceName: "Penn Home Medical Supply",
       resumeUrl: "https://x/consent",
       source: "sleep_apnea_quiz",
     });
     expect(quiz.text).toContain("the sleep-apnea quiz");
 
     const ins = composeFirstDayEmail({
-      practiceName: "PennPaps",
+      practiceName: "Penn Home Medical Supply",
       resumeUrl: "https://x/consent",
       source: "insurance_quote",
     });
@@ -77,7 +77,7 @@ describe("composeFirstDayEmail", () => {
 describe("composeFirstDaySms", () => {
   it("stays under 160 characters and includes STOP", () => {
     const sms = composeFirstDaySms({
-      practiceName: "PennPaps",
+      practiceName: "Penn Home Medical Supply",
       resumeUrl: "https://pennfit.example/consent",
     });
     expect(sms.length).toBeLessThanOrEqual(160);

@@ -24,7 +24,7 @@ import type { CapacitorConfig } from "@capacitor/cli";
 
 const config: CapacitorConfig = {
   appId: "com.pennpaps.app",
-  appName: "PennPaps",
+  appName: "Penn Home Medical Supply",
   // Vite build output. Make sure `pnpm build` runs before
   // `pnpm cap sync`.
   webDir: "dist/public",

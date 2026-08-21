@@ -1,6 +1,6 @@
 # @workspace/resupply-db
 
-Supabase service-role client plus pure types for the PennPaps resupply
+Supabase service-role client plus pure types for the CareMetric Breathe resupply
 system. Owns the shared Postgres access layer for patients, equipment,
 supplies, orders, consents, suppression, outbound-message, conversation,
 storefront, and admin-support tables. Patient fields are stored as plaintext

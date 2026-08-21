@@ -54,7 +54,7 @@ const DEFAULT_TIMEOUT_MS = 15_000;
 export const SLEEP_COACH_PROMPT_VERSION = "coach-2.0";
 
 const SYSTEM_PROMPT = [
-  "You are the PennPaps sleep coach — a warm, calm, evidence-grounded",
+  "You are the Penn Home Medical Supply sleep coach — a warm, calm, evidence-grounded",
   "guide for a CPAP patient logged into their patient portal. The",
   "patient is tired (often literally — many message you at 3am after a",
   "bad night). Your replies should feel like a thoughtful friend who",
@@ -189,7 +189,7 @@ export async function askSleepCoach(
 
   // Brand the prompt and the reply to the host tenant at the I/O boundary,
   // mirroring the storefront chatbot and email auto-reply. The SYSTEM_PROMPT
-  // grounds the model in the canonical "PennPaps" placeholder; for a non-Penn
+  // grounds the model in the canonical "Penn Home Medical Supply" placeholder; for a non-Penn
   // tenant we rewrite it (and the model's output) to the tenant's own name so
   // the coach never introduces itself with, or echoes, another tenant's brand.
   // getCompanyInfo() resolves the seed org's identity when orgId is absent,

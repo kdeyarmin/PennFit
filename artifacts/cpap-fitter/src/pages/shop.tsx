@@ -1,4 +1,4 @@
-// /shop — public PennPaps cash-pay catalog.
+// /shop — public Penn Home Medical Supply cash-pay catalog.
 //
 // Coexists with the insurance flow (/consent → /capture → /measure →
 // /questionnaire → /results → /order). Each product card surfaces two
@@ -148,7 +148,7 @@ const SECTION_ORDER: Category[] = [
 ];
 
 /**
- * Render the PennPaps public shop storefront for browsing and purchasing CPAP supplies.
+ * Render the Penn Home Medical Supply public shop storefront for browsing and purchasing CPAP supplies.
  *
  * Renders the catalog UI including hero, filter bar, search (synced to ?q=), machine/device filter, sorting, recently viewed strip, product grid (or flat search results), review-aggregate-driven "top-rated" ordering, insurance CTA, compare tray, and appropriate loading, unavailable, error, and empty states with retry behavior.
  *

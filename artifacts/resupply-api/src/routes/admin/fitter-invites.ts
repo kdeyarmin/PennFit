@@ -132,7 +132,7 @@ async function deliverInvite(opts: {
 }): Promise<{ delivered: boolean; reason?: string }> {
   const greeting = opts.name ? opts.name.split(/\s+/)[0] : "there";
   // Brand the invite with the tenant's own storefront name (G6). For the
-  // seed tenant this resolves to "PennPaps", so single-tenant copy is
+  // seed tenant this resolves to "Penn Home Medical Supply", so single-tenant copy is
   // unchanged; another tenant's invite carries ITS brand.
   const brandName = (await resolveBrandingByOrgId(opts.orgId)).storefrontName;
   try {

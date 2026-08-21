@@ -63,7 +63,7 @@ mid-call.
 | `DEEPGRAM_API_KEY`                            | Opens a parallel Nova-3 transcription on the caller audio for a higher-accuracy audit transcript + the summarizer. Unset → the model's built-in transcription is used. |
 | `ELEVENLABS_API_KEY`                          | ElevenLabs becomes the agent's voice (Realtime runs text-output, each turn synthesised to µ-law). Unset → OpenAI's built-in `cedar` voice.                             |
 | `ELEVENLABS_VOICE_ID` / `ELEVENLABS_MODEL_ID` | Override the ElevenLabs voice / model (sensible client defaults otherwise).                                                                                            |
-| `RESUPPLY_PRACTICE_NAME`                      | Practice name baked into the system prompt (defaults to `PennPaps`).                                                                                                   |
+| `RESUPPLY_PRACTICE_NAME`                      | Practice name baked into the system prompt (defaults to the platform name, `CareMetric Breathe`).                                                                      |
 
 Set these in **Railway → the `resupply-api` service → Variables**. Then confirm
 the shape with `preflight:prod` (§4).

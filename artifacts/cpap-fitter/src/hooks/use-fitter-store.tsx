@@ -84,7 +84,7 @@ interface FitterState {
    * Signed token from a staff-initiated AI-fitter invite
    * (`/fitter-invite?t=…`). When present, the /results page transmits
    * the full fitting (measurements + answers + recommendation) back to
-   * PennPaps via /shop/fitter-invite/complete so it can be attached to
+   * Penn Home Medical Supply via /shop/fitter-invite/complete so it can be attached to
    * the patient's chart. Null for the normal public storefront flow.
    */
   inviteToken: string | null;

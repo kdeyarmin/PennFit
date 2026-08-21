@@ -17,12 +17,12 @@
 //     leak. The subject line mentions item count only.
 //
 // Template:
-//   - Subject:   "You left {N} items in your PennPaps cart"
+//   - Subject:   "You left {N} items in your Penn Home Medical Supply cart"
 //   - HTML body: brand banner, item list (qty × name @ unit price),
 //                subtotal, primary CTA "Return to your cart" linking
 //                to ${SHOP_PUBLIC_BASE_URL}/shop/cart?resume=1, footer
 //                "You're receiving this because you started a checkout
-//                at PennPaps. Reply STOP if you don't want to hear
+//                at Penn Home Medical Supply. Reply STOP if you don't want to hear
 //                about your cart again." (the STOP wording is for
 //                customer reassurance — there's no opt-out wiring in
 //                v1; one nudge per cart-event is the entire policy).
@@ -125,7 +125,7 @@ export async function sendCartAbandonmentEmail(
   }
 
   // Brand the email with the tenant's own storefront name (G6). For the seed
-  // tenant this resolves to "PennPaps" (its stored brand), so single-tenant
+  // tenant this resolves to "Penn Home Medical Supply" (its stored brand), so single-tenant
   // copy is unchanged; a second tenant's cart nudge carries ITS brand.
   const brand = await resolveBrandingByOrgId(input.orgId);
   const brandName = brand.storefrontName;

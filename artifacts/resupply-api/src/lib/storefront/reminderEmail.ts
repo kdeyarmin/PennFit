@@ -1,5 +1,5 @@
 /**
- * Reminder email delivery for PennPaps supply replacement reminders.
+ * Reminder email delivery for Penn Home Medical Supply supply replacement reminders.
  *
  * Three flavors:
  *   - sendReminderConfirmation — sent immediately after a customer subscribes,
@@ -39,6 +39,7 @@ import { EmailApiError, EmailConfigError } from "@workspace/resupply-email";
 
 import { createTenantSendgridClient } from "../email/tenant-sender.js";
 import {
+  formatBrandSignature,
   resolveBrandingByOrgId,
   resolveTenantBaseUrl,
 } from "../tenant-branding.js";
@@ -175,7 +176,7 @@ export async function sendReminderConfirmation(opts: {
   orgId?: string;
 }): Promise<SendEmailResult> {
   // Brand with the tenant's own identity (G6). For the seed tenant these
-  // resolve to "PennPaps"/"Penn Home Medical Supply" so single-tenant copy
+  // resolve to "Penn Home Medical Supply" so single-tenant copy
   // is unchanged; a second tenant's reminder carries ITS brand.
   const brand = await resolveBrandingByOrgId(opts.orgId);
   // Build the manage link from the tenant's own storefront origin (its
@@ -186,7 +187,9 @@ export async function sendReminderConfirmation(opts: {
     (await resolveTenantBaseUrl(opts.orgId)) ?? undefined,
   );
   const lines: string[] = [];
-  lines.push(`You're signed up for ${brand.storefrontName} supply reminders.`);
+  lines.push(
+    `You're signed up for supply reminders from ${brand.storefrontName}.`,
+  );
   lines.push("");
   lines.push("We'll email you when each of these items is due to be replaced:");
   lines.push("");
@@ -195,11 +198,11 @@ export async function sendReminderConfirmation(opts: {
   lines.push("Need to change your dates, intervals, or unsubscribe?");
   lines.push(link);
   lines.push("");
-  lines.push(`— ${brand.storefrontName} by ${brand.legalName}`);
+  lines.push(`— ${formatBrandSignature(brand)}`);
 
   return sendViaSendGrid({
     toEmail: opts.toEmail,
-    subject: `You're signed up for ${brand.storefrontName} supply reminders`,
+    subject: `You're signed up for supply reminders from ${brand.storefrontName}`,
     body: lines.join("\n"),
     orgId: opts.orgId,
   });
@@ -218,7 +221,7 @@ export async function sendReminderManageLink(opts: {
   manageToken: string;
   orgId?: string;
 }): Promise<SendEmailResult> {
-  // Brand with the tenant's own identity (G6); seed tenant → "PennPaps".
+  // Brand with the tenant's own identity (G6); seed tenant → "Penn Home Medical Supply".
   const brand = await resolveBrandingByOrgId(opts.orgId);
   const link = manageLinkFor(
     opts.manageToken,
@@ -226,7 +229,7 @@ export async function sendReminderManageLink(opts: {
   );
   const lines: string[] = [];
   lines.push(
-    `Someone — possibly you — re-submitted the ${brand.storefrontName} reminder signup form`,
+    `Someone — possibly you — re-submitted the reminder signup form for ${brand.storefrontName}`,
   );
   lines.push("with this email address.");
   lines.push("");
@@ -241,11 +244,11 @@ export async function sendReminderManageLink(opts: {
     "If this wasn't you, no action is needed — your subscription is unchanged.",
   );
   lines.push("");
-  lines.push(`— ${brand.storefrontName} by ${brand.legalName}`);
+  lines.push(`— ${formatBrandSignature(brand)}`);
 
   return sendViaSendGrid({
     toEmail: opts.toEmail,
-    subject: `Your ${brand.storefrontName} reminders manage link`,
+    subject: `Your reminders manage link from ${brand.storefrontName}`,
     body: lines.join("\n"),
     orgId: opts.orgId,
   });
@@ -262,7 +265,7 @@ export async function sendReminderDue(opts: {
   dueItems: ReminderItemForEmail[];
   orgId?: string;
 }): Promise<SendEmailResult> {
-  // Brand with the tenant's own identity (G6); seed tenant → "PennPaps".
+  // Brand with the tenant's own identity (G6); seed tenant → "Penn Home Medical Supply".
   const brand = await resolveBrandingByOrgId(opts.orgId);
   const link = manageLinkFor(
     opts.manageToken,
@@ -281,7 +284,7 @@ export async function sendReminderDue(opts: {
   lines.push(formatItemsList(opts.dueItems));
   lines.push("");
   lines.push(
-    `Need a refill? Visit the ${brand.storefrontName} shop to order — or call ${brand.legalName}.`,
+    `Need a refill? Visit the ${brand.storefrontName} shop to order — or give us a call.`,
   );
   lines.push("");
   lines.push(
@@ -290,7 +293,7 @@ export async function sendReminderDue(opts: {
   lines.push("nag you again:");
   lines.push(link);
   lines.push("");
-  lines.push(`— ${brand.storefrontName} by ${brand.legalName}`);
+  lines.push(`— ${formatBrandSignature(brand)}`);
 
   return sendViaSendGrid({
     toEmail: opts.toEmail,

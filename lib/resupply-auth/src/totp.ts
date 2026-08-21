@@ -51,11 +51,11 @@ export function generateBase32Secret(byteLength = 20): string {
  * Build the standard otpauth:// provisioning URI an authenticator
  * decodes from a QR. The label is what the authenticator displays
  * for this account; the issuer disambiguates when a user has
- * multiple PennPaps accounts (rare, but the spec mandates it).
+ * multiple Penn Home Medical Supply accounts (rare, but the spec mandates it).
  */
 export function buildOtpauthUri(opts: {
   label: string; // e.g. "csr@penn.example"
-  issuer: string; // e.g. "PennPaps"
+  issuer: string; // e.g. "Penn Home Medical Supply"
   secret: string; // base32, no padding
 }): string {
   const label = encodeURIComponent(`${opts.issuer}:${opts.label}`);

@@ -2,7 +2,7 @@
 //
 // The SPA fetches this once on first paint and renders the resolving
 // tenant's storefront name, tagline, and logo instead of the bundled
-// PennPaps defaults. Strictly public brand identity — never anything
+// Penn Home Medical Supply defaults. Strictly public brand identity — never anything
 // tenant-private. Resolved by the request Host: a verified custom domain
 // gets that tenant's brand; every other host gets the seed/default brand,
 // so the canonical site is unchanged.

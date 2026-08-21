@@ -9,7 +9,7 @@
 //
 // Branding is mocked at ../tenant-branding.js (matching the proven
 // send-order-confirmation-email.test.ts pattern) so the brand the copy
-// renders is deterministic; it defaults to the seed tenant's "PennPaps".
+// renders is deterministic; it defaults to the seed tenant's "Penn Home Medical Supply".
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -29,9 +29,9 @@ vi.mock("@workspace/resupply-email", async () => {
 
 // The return-status email brands itself with the tenant's storefront name
 // (G6). Control it here so the copy assertions are deterministic; defaults
-// to the seed tenant's "PennPaps".
+// to the seed tenant's "Penn Home Medical Supply".
 const brandNameRef = vi.hoisted(() => ({
-  storefrontName: "PennPaps",
+  storefrontName: "Penn Home Medical Supply",
   legalName: "Penn Home Medical Supply",
 }));
 vi.mock("../tenant-branding.js", () => ({
@@ -48,7 +48,7 @@ import { sendReturnStatusEmail } from "./send-return-status-email";
 
 describe("sendReturnStatusEmail", () => {
   beforeEach(() => {
-    brandNameRef.storefrontName = "PennPaps";
+    brandNameRef.storefrontName = "Penn Home Medical Supply";
     brandNameRef.legalName = "Penn Home Medical Supply";
     sendEmailMock.mockReset();
     sendEmailMock.mockResolvedValue({ messageId: "msg_test" });
@@ -71,8 +71,10 @@ describe("sendReturnStatusEmail", () => {
 
     expect(result).toMatchObject({ configured: true, delivered: true });
     const arg = sendEmailMock.mock.calls[0]![0];
-    expect(arg.subject).toBe("Your PennPaps return is approved");
-    expect(arg.html).toContain(">PennPaps<");
+    expect(arg.subject).toBe(
+      "Your Penn Home Medical Supply return is approved",
+    );
+    expect(arg.html).toContain(">Penn Home Medical Supply<");
     expect(arg.customArgs).toEqual({
       kind: "return_approved_v1",
       return_id: "ret-1",
@@ -89,7 +91,9 @@ describe("sendReturnStatusEmail", () => {
 
     expect(result).toMatchObject({ configured: true, delivered: true });
     const arg = sendEmailMock.mock.calls[0]![0];
-    expect(arg.subject).toBe("We've received your PennPaps return");
+    expect(arg.subject).toBe(
+      "We've received your Penn Home Medical Supply return",
+    );
     expect(arg.html).toContain("Return received");
     expect(arg.text).toContain("We've received your returned item");
     expect(arg.customArgs).toEqual({
@@ -109,9 +113,13 @@ describe("sendReturnStatusEmail", () => {
     });
 
     const arg = sendEmailMock.mock.calls[0]![0];
-    expect(arg.subject).toBe("Your PennPaps refund is on the way");
-    expect(arg.text).toContain("appear on your statement under PennPaps.");
-    expect(arg.html).toContain("<strong>PennPaps</strong>");
+    expect(arg.subject).toBe(
+      "Your Penn Home Medical Supply refund is on the way",
+    );
+    expect(arg.text).toContain(
+      "appear on your statement under Penn Home Medical Supply.",
+    );
+    expect(arg.html).toContain("<strong>Penn Home Medical Supply</strong>");
   });
 
   it("flows a different tenant's brand into subject + body (G6)", async () => {
@@ -132,7 +140,7 @@ describe("sendReturnStatusEmail", () => {
     expect(arg.subject).toBe("Your Acme CPAP refund is on the way");
     expect(arg.text).toContain("appear on your statement under Acme CPAP.");
     expect(arg.html).toContain("<strong>Acme CPAP</strong>");
-    expect(arg.subject).not.toContain("PennPaps");
+    expect(arg.subject).not.toContain("Penn Home Medical Supply");
   });
 
   it("HTML-escapes a hostile storefront name", async () => {

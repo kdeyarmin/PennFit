@@ -20,7 +20,7 @@ vi.mock("@workspace/resupply-email", async () => {
   };
 });
 
-const brandNameRef = vi.hoisted(() => ({ value: "PennPaps" }));
+const brandNameRef = vi.hoisted(() => ({ value: "Penn Home Medical Supply" }));
 vi.mock("../tenant-branding.js", () => ({
   resolveBrandingByOrgId: vi.fn(async () => ({
     storefrontName: brandNameRef.value,
@@ -49,7 +49,7 @@ describe("sendRefundNotificationEmail", () => {
     for (const k of ENV_KEYS) originalEnv[k] = process.env[k];
     for (const k of ENV_KEYS) delete process.env[k];
     process.env.SHOP_PUBLIC_BASE_URL = "https://test.example.com";
-    brandNameRef.value = "PennPaps";
+    brandNameRef.value = "Penn Home Medical Supply";
     sendEmailMock.mockReset();
     createSendgridClientMock.mockReset();
     createSendgridClientMock.mockImplementation(() => ({
@@ -93,7 +93,9 @@ describe("sendRefundNotificationEmail", () => {
 
     expect(result.delivered).toBe(true);
     const arg = sendEmailMock.mock.calls[0]![0];
-    expect(arg.subject).toBe("Your PennPaps order was refunded");
+    expect(arg.subject).toBe(
+      "Your Penn Home Medical Supply order was refunded",
+    );
     expect(arg.html).toContain("Refund issued");
     expect(arg.html).toContain("$49.99");
     expect(arg.html).toContain(
@@ -159,6 +161,6 @@ describe("sendRefundNotificationEmail", () => {
     });
     const arg = sendEmailMock.mock.calls[0]![0];
     expect(arg.subject).toBe("Your Acme CPAP order was refunded");
-    expect(arg.subject).not.toContain("PennPaps");
+    expect(arg.subject).not.toContain("Penn Home Medical Supply");
   });
 });

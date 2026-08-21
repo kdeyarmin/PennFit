@@ -14,7 +14,7 @@ vi.mock("../email/tenant-sender.js", () => ({
     createTenantSendgridClientMock(orgId),
 }));
 
-const brandNameRef = vi.hoisted(() => ({ value: "PennPaps" }));
+const brandNameRef = vi.hoisted(() => ({ value: "Penn Home Medical Supply" }));
 vi.mock("../tenant-branding.js", () => ({
   resolveBrandingByOrgId: vi.fn(async () => ({
     storefrontName: brandNameRef.value,
@@ -37,7 +37,7 @@ describe("sendFitterOrderConfirmationEmail", () => {
   beforeEach(() => {
     for (const k of ENV_KEYS) originalEnv[k] = process.env[k];
     process.env.SHOP_PUBLIC_BASE_URL = "https://test.example.com";
-    brandNameRef.value = "PennPaps";
+    brandNameRef.value = "Penn Home Medical Supply";
     sendEmailMock.mockReset();
     createTenantSendgridClientMock.mockReset();
     createTenantSendgridClientMock.mockImplementation(

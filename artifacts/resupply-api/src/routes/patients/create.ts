@@ -1,6 +1,6 @@
 // POST /patients — admin-initiated patient creation.
 //
-// Lets a PennPaps admin enter a brand-new patient into the
+// Lets a Penn Home Medical Supply admin enter a brand-new patient into the
 // system from the dashboard, without waiting for a Pacware CSV
 // import. The body carries every field the admin console
 // reasonably knows at intake — name, DOB, contact methods,

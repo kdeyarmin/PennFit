@@ -11,7 +11,7 @@
 //
 //   The copy here is deliberately BRAND-NEUTRAL (no manufacturer names, no
 //   first-person voice) so it's appropriate for any tenant. The seed
-//   tenant (Penn Home Medical Supply / PennPaps) keeps its own branded
+//   tenant (Penn Home Medical Supply) keeps its own branded
 //   catalog via scripts/src/seed-stripe-products.ts — that stays as-is and
 //   is NOT replaced by this.
 //

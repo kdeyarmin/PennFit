@@ -31,22 +31,22 @@ describe("renderPlaybookBody", () => {
     expect(
       renderPlaybookBody("Hi {{first_name}}, from {{practice_name}}!", {
         firstName: "Alice",
-        practiceName: "PennPaps",
+        practiceName: "Penn Home Medical Supply",
       }),
-    ).toBe("Hi Alice, from PennPaps!");
+    ).toBe("Hi Alice, from Penn Home Medical Supply!");
   });
 
   it("falls back to 'there' for a missing first name", () => {
     expect(
       renderPlaybookBody("Hi {{first_name}}", {
         firstName: null,
-        practiceName: "PennPaps",
+        practiceName: "Penn Home Medical Supply",
       }),
     ).toBe("Hi there");
     expect(
       renderPlaybookBody("Hi {{first_name}}", {
         firstName: "   ",
-        practiceName: "PennPaps",
+        practiceName: "Penn Home Medical Supply",
       }),
     ).toBe("Hi there");
   });

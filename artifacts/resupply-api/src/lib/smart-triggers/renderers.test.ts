@@ -73,12 +73,12 @@ describe("smsBody", () => {
   });
 
   it("signs off with the passed tenant brand, not the seed brand", () => {
-    // Regression: the seed "PennPaps" must never be hardcoded — a non-seed
+    // Regression: the seed "Penn Home Medical Supply" must never be hardcoded — a non-seed
     // tenant's SMS must carry ITS brand.
     for (const kind of KINDS) {
       const body = smsBody("Anna", kind, SMS_BRAND);
       expect(body).toContain(`- ${SMS_BRAND}`);
-      expect(body).not.toContain("PennPaps");
+      expect(body).not.toContain("Penn Home Medical Supply");
     }
   });
 

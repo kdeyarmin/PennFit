@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-// PennPaps-branded card surface. Now driven by the .surface-card token
+// Penn Home Medical Supply-branded card surface. Now driven by the .surface-card token
 // utility (defined in index.css) so border / shadow / radius can be
 // retuned in one place. Layout stays inline; everything else moves to
 // the token system.

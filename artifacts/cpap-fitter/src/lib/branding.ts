@@ -7,7 +7,7 @@
 // tenant — so a brand-new or unconfigured tenant never flashes another
 // tenant's brand. At runtime the module fetches GET /api/storefront-branding
 // once (host-resolved on the server: a verified custom domain returns that
-// tenant's brand — e.g. pennpaps.com → PennPaps) and components using
+// tenant's brand — e.g. pennpaps.com → Penn Home Medical Supply) and components using
 // `useStorefrontBranding()` re-render with the live values. A fetch failure
 // just leaves the platform fallback in place.
 //
@@ -17,7 +17,7 @@ import { useSyncExternalStore } from "react";
 
 /**
  * The platform/parent-product brand. `PennFit` is only the repository
- * codename and `PennPaps` is one tenant operating on the platform — when
+ * codename and `Penn Home Medical Supply` is one tenant operating on the platform — when
  * the software refers to *itself* (the admin workstation chrome, the SaaS
  * product name) it is always **CareMetric Breathe**. Mirrors the
  * server-side `PLATFORM_NAME` in
@@ -68,7 +68,7 @@ export interface StorefrontBranding {
 }
 
 // Platform default — NOT a tenant. A host that resolves to a real tenant
-// (e.g. pennpaps.com → PennPaps) overrides every field at runtime via the
+// (e.g. pennpaps.com → Penn Home Medical Supply) overrides every field at runtime via the
 // host-resolved fetch; an unconfigured/new tenant keeps this CareMetric
 // identity. `logoUrl: null` falls back to PLATFORM_LOGO_URL at the render
 // site (storefront header/footer + auth pages).
@@ -143,4 +143,21 @@ export function useStorefrontBranding(): StorefrontBranding {
 export function getStorefrontBranding(): StorefrontBranding {
   startBrandingFetch();
   return current;
+}
+
+/**
+ * Whether the tenant's storefront brand is a genuinely DIFFERENT name
+ * from its registered company name.
+ *
+ * Surfaces that show both — the header lockup's "by <company>" line, the
+ * footer brand block, the home hero's "<brand> is the online storefront
+ * from <company>" — must gate the second name on this. A tenant that
+ * trades under its registered name has the two fields equal (Penn Home
+ * Medical Supply, since migration 0510 retired its "PennPaps" storefront
+ * DBA), and rendering both unconditionally reads as "X by X".
+ */
+export function hasDistinctStorefrontName(b: StorefrontBranding): boolean {
+  const storefront = b.storefrontName.trim().toLowerCase();
+  const legal = b.legalName.trim().toLowerCase();
+  return storefront.length > 0 && legal.length > 0 && storefront !== legal;
 }

@@ -530,7 +530,7 @@ router.post(
       return;
     }
     // Brand the confirmation with the subscription's OWN tenant (resolved from
-    // its row, not the host) so a tenant-B unsubscribe doesn't say "PennPaps".
+    // its row, not the host) so a tenant-B unsubscribe doesn't say "Penn Home Medical Supply".
     const brand = await resolveBrandingByOrgId(updated.org_id ?? undefined);
     res.json({
       success: true,

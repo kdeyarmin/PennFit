@@ -9,7 +9,7 @@
 // Copy here is static and brand-neutral apart from the company name,
 // which is a PARAMETER, not a literal. It used to be hardcoded to the
 // seed tenant, so every tenant's patients and providers received a PDF
-// branded "PennPaps". Each document is therefore a factory taking the
+// branded "Penn Home Medical Supply". Each document is therefore a factory taking the
 // tenant's own name; `render.ts` keys its byte cache on that name as
 // well as the doc + version. No PHI ever appears in a help document —
 // they are generic onboarding guides, identical for every recipient of

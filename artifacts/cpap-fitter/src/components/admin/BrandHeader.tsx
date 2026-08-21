@@ -9,14 +9,14 @@ import {
 // Admin workstation top chrome. The admin console is the CareMetric
 // Breathe *platform* product (every tenant's staff signs into the same
 // software), so the primary brand is always CareMetric Breathe; the
-// host-resolved tenant brand (PennPaps for the Penn Home Medical Supply
-// tenant) rides along as a secondary label. Token-driven `.brand-band`
+// host-resolved tenant brand (Penn Home Medical Supply, say) rides
+// along as a secondary label. Token-driven `.brand-band`
 // (radial gold glow over the navy gradient) with an `.aurora-divider`
 // underneath — matches the customer-app vocabulary so the two SPAs feel
 // like one product.
 //
 // Tenant-neutral until resolved: `useStorefrontBranding()`'s bundled
-// fallback is the Penn tenant's "PennPaps", which is correct on the
+// fallback is the Penn tenant's "Penn Home Medical Supply", which is correct on the
 // storefront but would mis-label a DIFFERENT tenant's admin console before
 // (or if) the host-resolved fetch lands. So the shared admin chrome shows a
 // neutral label until `resolved` is true, then the real tenant name.

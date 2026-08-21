@@ -129,7 +129,7 @@ export async function sendDeliveredNotificationEmail(
   }
 
   // Brand the email with the tenant's own storefront name (G6). For the seed
-  // tenant this resolves to "PennPaps"; a second tenant's email carries ITS
+  // tenant this resolves to "Penn Home Medical Supply"; a second tenant's email carries ITS
   // brand.
   const brand = await resolveBrandingByOrgId(input.orgId);
   const brandName = brand.storefrontName;

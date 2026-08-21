@@ -123,7 +123,7 @@ describe("POST /shop/products/:productId/questions", () => {
     expect(v.customer_id).toBe("user_1");
   });
 
-  it("uses the tenant's storefront brand (not the seed 'PennPaps') as the empty-name fallback", async () => {
+  it("uses the tenant's storefront brand (not the seed 'Penn Home Medical Supply') as the empty-name fallback", async () => {
     // Signed-in customer with no parsable display name. The stored public
     // author label must fall back to the TENANT's storefront name, never
     // the hard-coded seed brand. The org has no staged organizations row,
@@ -152,6 +152,6 @@ describe("POST /shop/products/:productId/questions", () => {
     ) as Record<string, unknown>[];
     const stored = String(inserts[0]!.asker_display_name ?? "");
     expect(stored).toBe("CareMetric Breathe customer");
-    expect(stored).not.toContain("PennPaps");
+    expect(stored).not.toContain("Penn Home Medical Supply");
   });
 });

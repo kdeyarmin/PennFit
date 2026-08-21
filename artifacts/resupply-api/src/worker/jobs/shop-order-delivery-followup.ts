@@ -366,7 +366,7 @@ async function deliveryFollowupSweepForOrg(
           await resolveTenantSmsClientOptions(orgId),
         );
         // Tenant brand when the patient's first name is unknown — never the
-        // seed tenant's "PennPaps" for another tenant's customer. Resolved
+        // seed tenant's "Penn Home Medical Supply" for another tenant's customer. Resolved
         // once (cached, fail-soft); the greeting doesn't depend on it.
         const brand = await resolveBrandingByOrgId(orgId);
         const greeting = smsRecipient.patientFirstName

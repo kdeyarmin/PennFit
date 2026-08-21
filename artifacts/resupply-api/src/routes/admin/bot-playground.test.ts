@@ -291,7 +291,7 @@ describe("bot playground — voice scenario contexts build valid prompts", () =>
       expect(setup.callContext.length).toBeLessThanOrEqual(250);
       expect(() =>
         buildSystemPrompt({
-          practiceName: "PennPaps",
+          practiceName: "Penn Home Medical Supply",
           callerKind: setup.callerKind,
           callContext: setup.callContext,
         }),

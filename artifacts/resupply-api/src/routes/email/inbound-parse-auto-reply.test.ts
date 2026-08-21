@@ -31,7 +31,7 @@ vi.mock("../../lib/messaging/messaging-config", () => ({
   readEmailConfigOrNull: () => ({
     sendgridApiKey: "SG.test",
     sendgridFromEmail: "info@pennpaps.com",
-    sendgridFromName: "PennPaps",
+    sendgridFromName: "Penn Home Medical Supply",
     sendgridEventWebhookPublicKey: "pk",
     publicBaseUrl: "https://pennpaps.example",
   }),
@@ -116,7 +116,8 @@ describe("POST /email/inbound-parse — auto-reply", () => {
   it("sends a reply and flips to awaiting_patient when the bot answers", async () => {
     generateEmailReplyMock.mockResolvedValue({
       kind: "reply",
-      reply: "Hi!\n\nFull-face masks are the way to go.\n\n— The PennPaps Team",
+      reply:
+        "Hi!\n\nFull-face masks are the way to go.\n\n— The Penn Home Medical Supply Team",
     });
     stageMatchedPatientWithOpenThread();
 

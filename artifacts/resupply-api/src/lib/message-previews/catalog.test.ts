@@ -71,7 +71,9 @@ describe("message preview catalog", () => {
     // exact bug the platform/tenant split exists to prevent.
     for (const p of previews) {
       const blob = `${p.email?.subject ?? ""}\n${p.email?.text ?? ""}\n${p.sms?.body ?? ""}`;
-      expect(blob, `${p.id} mentions PennPaps`).not.toContain("PennPaps");
+      expect(blob, `${p.id} mentions Penn Home Medical Supply`).not.toContain(
+        "Penn Home Medical Supply",
+      );
     }
     // And at least some scenarios actually interpolate the brand.
     const branded = previews.filter((p) =>

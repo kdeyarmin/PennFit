@@ -30,7 +30,7 @@ function fixture(overrides: Partial<CmnPdfInput> = {}): CmnPdfInput {
         zip: "16601",
       },
     },
-    supplierName: "PennPaps Inc",
+    supplierName: "Penn Home Medical Supply Inc",
     generatedOn: new Date(Date.UTC(2026, 5, 9)),
     ...overrides,
   };
