@@ -77,14 +77,30 @@ Next available migration number: **`0474`** (`0473` is the current tip).
   auto-stamping an assumed dx — a wrong/assumed diagnosis drives denials like
   wrong modifiers do.
 
-  The same fallback existed in a second, worse place and was fixed with it:
-  `prescription-request-builder.ts` stamped `["G47.33"]` onto a
-  prescription-request packet that is **faxed to a prescriber to sign**, so an
-  unsourced diagnosis could become attested clinical documentation — and that
-  document is what justifies billing. It now returns a new
-  `rx_missing_diagnosis` outcome; the auto-draft worker counts those in their
-  own `skipped_no_diagnosis` bucket rather than as failures, so the daily
-  number reads as "N patients need a sleep study attached".
+  The same fallback existed in **two** other places, both fixed with it. A
+  first pass at this note claimed the gap was closed while the third site was
+  still live — the guard was only ever as strong as its least-guarded caller,
+  which is worth remembering before marking anything here closed.
+  1. `prescription-request-builder.ts` stamped `["G47.33"]` onto a
+     prescription-request packet that is **faxed to a prescriber to sign**, so
+     an unsourced diagnosis could become attested clinical documentation — and
+     that document is what justifies billing. It now returns
+     `rx_missing_diagnosis`; the auto-draft worker counts those in their own
+     `skipped_no_diagnosis` bucket rather than as failures, so the daily
+     number reads as "N patients need a sleep study attached".
+  2. `routes/patients/insurance-claims-ai.ts` (auto-fix-and-resubmit) builds
+     its 837P directly through `adapter.submitClaims` rather than
+     `buildOneDetail`, and hardcoded `diagnosisCodes: ["G47.33"]` — so an
+     assumed diagnosis could still reach a payer on the resubmit path after
+     the batch builder started refusing them. It now resolves the recorded
+     diagnosis and refuses the resubmit without one.
+
+  All three resolve the code through the shared `parseRecordedIcd10`
+  validator (`lib/billing/coverage-diagnosis.ts`), which accepts the dotted
+  and undotted spellings and the alphanumeric extensions real ICD-10-CM codes
+  carry, and treats an unusable value the same as a missing one. A failed
+  lookup is reported separately from an absent diagnosis, so a database
+  outage is never filed as "this patient needs paperwork".
 
 - **External gates (cannot be satisfied from the repo):**
   - ~~DMEPOS sign-off (human/out-of-band)~~ — **done.** Confirmed complete by
