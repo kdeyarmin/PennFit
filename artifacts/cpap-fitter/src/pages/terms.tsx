@@ -9,14 +9,15 @@ import {
   GeneralEmailLink,
 } from "@/components/company-contact";
 import { useCompanyContact } from "@/lib/contact";
+import { areDistinctCompanyNames } from "@/lib/branding";
 
 export function Terms() {
   const c = useCompanyContact();
   useDocumentTitle(
     "Terms of service",
-    c.name === c.legalName
-      ? `Terms of service for ${c.legalName}.`
-      : `Terms of service for ${c.name} and ${c.legalName}.`,
+    areDistinctCompanyNames(c.name, c.legalName)
+      ? `Terms of service for ${c.name} and ${c.legalName}.`
+      : `Terms of service for ${c.legalName}.`,
   );
   return (
     <div className="container max-w-3xl mx-auto px-4 py-12 animate-shimmer-in">

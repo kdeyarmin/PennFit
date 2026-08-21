@@ -2,7 +2,8 @@
 //
 // Why hand-authored: `mcp__supabase__generate_typescript_types` only
 // emits the schemas exposed via PostgREST's `db_schemas` setting.
-// The Penn Home Medical Supply Supabase project currently exposes only `public`, but
+// The `PennPaps` Supabase project (its project name, unrelated to the
+// tenant's retired DBA) currently exposes only `public`, but
 // every resupply table lives under `resupply` or `resupply_auth`. Until
 // those schemas are added to the project's Exposed schemas list (Studio
 // → Project Settings → API → "Exposed schemas") this file is the

@@ -34,7 +34,11 @@ import {
 import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 import { COMPLIANT_MINUTES_PER_NIGHT } from "@workspace/resupply-domain";
 
-import { applyCompanyIdentityToText, getCompanyInfo } from "../company-info";
+import {
+  applyCompanyIdentityToText,
+  brandToolDescriptors,
+  getCompanyInfo,
+} from "../company-info";
 import {
   DEFAULT_ANTHROPIC_MODEL_CHAT,
   getAnthropicClient,
@@ -125,11 +129,20 @@ const SYSTEM_PROMPT = [
 // it needs the chat route's harvested-email context.) Without
 // tools the coach hallucinates mask names when patients ask product
 // questions; with tools every answer is grounded in maskCatalog.ts.
-const ANTHROPIC_TOOLS: AnthropicTool[] = CATALOG_CHAT_TOOLS.map((t) => ({
-  name: t.function.name,
-  description: t.function.description,
-  input_schema: t.function.parameters,
-}));
+// Branded PER REQUEST, not at module load: the descriptions carry the
+// in-source company placeholder, and a module-level array would ship the
+// seed tenant's name to every other tenant's model context — where the
+// coach can read it back to the patient. `brandToolDescriptors` rewrites
+// the top-level and nested `description` fields to the resolved tenant's
+// identity, matching what routes/storefront/chat.ts and routes/shop/me-chat.ts
+// already do with their own tool sets.
+function toAnthropicTools(tools: typeof CATALOG_CHAT_TOOLS): AnthropicTool[] {
+  return tools.map((t) => ({
+    name: t.function.name,
+    description: t.function.description,
+    input_schema: t.function.parameters,
+  }));
+}
 
 export interface SleepCoachInput {
   patientId: string;
@@ -197,6 +210,10 @@ export async function askSleepCoach(
   // can't be read or doesn't exist.
   const companyInfo = await getCompanyInfo(input.orgId);
   const systemPrompt = applyCompanyIdentityToText(SYSTEM_PROMPT, companyInfo);
+  // Same identity as the system prompt — the tool descriptions are model
+  // context too, and leak the brand just as readily.
+  const brandedTools = brandToolDescriptors(CATALOG_CHAT_TOOLS, companyInfo);
+  const brandedAnthropicTools = toAnthropicTools(brandedTools);
   const brandReply = (text: string): string =>
     applyCompanyIdentityToText(text, companyInfo);
 
@@ -241,7 +258,7 @@ export async function askSleepCoach(
           },
         ],
         messages,
-        tools: ANTHROPIC_TOOLS,
+        tools: brandedAnthropicTools,
       });
       const latencyMs = Date.now() - startedAt;
       if (!result.ok) {
@@ -422,9 +439,7 @@ export async function askSleepCoach(
             model: DEFAULT_OPENAI_MODEL,
             temperature: 0.4,
             max_tokens: 400,
-            ...(sendTools
-              ? { tools: CATALOG_CHAT_TOOLS, tool_choice: "auto" }
-              : {}),
+            ...(sendTools ? { tools: brandedTools, tool_choice: "auto" } : {}),
             messages,
           }),
         });

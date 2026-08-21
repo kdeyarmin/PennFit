@@ -114,6 +114,12 @@ const DEFAULTS = {
   phoneDisplay: "",
   supportEmail: "support@cmbreathe.com",
   generalEmail: "support@cmbreathe.com",
+  // The platform's own site. Shared by BOTH fallback identities so they
+  // cannot drift: `identityReplacements()` derives `websiteHost` from this,
+  // and a null here made the unconfigured (source="fallback") path rewrite
+  // "pennpaps.com" to the company NAME — "visit CareMetric Breathe" instead
+  // of a working host — in every patient-facing string it touched.
+  websiteUrl: "https://cmbreathe.com",
   supportHours: "Mon–Fri 9a–5p ET",
 } as const;
 
@@ -177,7 +183,7 @@ function envFallbackInfo(): CompanyInfo {
     generalEmail: DEFAULTS.generalEmail,
     billingEmail: DEFAULTS.generalEmail,
     faxE164: null,
-    websiteUrl: null,
+    websiteUrl: DEFAULTS.websiteUrl,
     supportHours: DEFAULTS.supportHours,
     address: null,
     organizationalNpi: null,
@@ -206,7 +212,7 @@ function platformFallbackInfo(): CompanyInfo {
     // The platform's own site, so applyCompanyIdentityToText rewrites the
     // historical "pennpaps.com" placeholder to "cmbreathe.com" for an
     // unconfigured tenant rather than a broken substitution.
-    websiteUrl: "https://cmbreathe.com",
+    websiteUrl: DEFAULTS.websiteUrl,
     supportHours: DEFAULTS.supportHours,
     address: null,
     organizationalNpi: null,

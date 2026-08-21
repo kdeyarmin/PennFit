@@ -74,7 +74,7 @@ export interface StorefrontBranding {
 // site (storefront header/footer + auth pages).
 export const DEFAULT_BRANDING: StorefrontBranding = {
   storefrontName: "CareMetric Breathe",
-  legalName: "CareMetric",
+  legalName: "CareMetric Breathe",
   tagline: "Your CPAP, made simple. Fit. Shop. Resupply.",
   logoUrl: null,
   resolved: false,
@@ -157,7 +157,22 @@ export function getStorefrontBranding(): StorefrontBranding {
  * DBA), and rendering both unconditionally reads as "X by X".
  */
 export function hasDistinctStorefrontName(b: StorefrontBranding): boolean {
-  const storefront = b.storefrontName.trim().toLowerCase();
-  const legal = b.legalName.trim().toLowerCase();
-  return storefront.length > 0 && legal.length > 0 && storefront !== legal;
+  return areDistinctCompanyNames(b.storefrontName, b.legalName);
+}
+
+/**
+ * Whether two company-name strings are genuinely different names, ignoring
+ * surrounding whitespace and casing. Either side being blank counts as "not
+ * distinct" — there is no second name to show.
+ *
+ * The single normalization every surface that prints two names must share.
+ * `terms.tsx` compares `CompanyContact` fields rather than
+ * `StorefrontBranding`, and a case-only difference there used to render
+ * "Terms of service for Acme and acme" while the header and footer
+ * correctly suppressed the duplicate.
+ */
+export function areDistinctCompanyNames(a: string, b: string): boolean {
+  const left = a.trim().toLowerCase();
+  const right = b.trim().toLowerCase();
+  return left.length > 0 && right.length > 0 && left !== right;
 }
