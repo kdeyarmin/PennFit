@@ -169,25 +169,40 @@ describe("geometric pose fallback", () => {
 });
 
 describe("pose correction", () => {
-  it("expands a horizontal span measured on a turned head", () => {
-    // A 20-degree turn foreshortens a width by ~6%.
-    const corrected = poseCorrect("noseWidth", 32, 20, 0);
-    expect(corrected).toBeGreaterThan(32);
-    expect(corrected).toBeLessThan(35);
+  it("leaves a horizontal span alone under yaw — the iris calibration already self-corrects it", () => {
+    // The iris is a circle: it foreshortens by the same cos(yaw) as any
+    // horizontal span at its depth, and the two cancel in px / pxPerMm.
+    // Dividing by cos(yaw) again (the old model) over-read every width
+    // from a turned frame by ~6% at the 20° guided poses — verified
+    // against pinhole projections of the canonical face model.
+    expect(poseCorrect("noseWidth", 32, 20, 0)).toBeCloseTo(32, 5);
+    expect(poseCorrect("faceWidthAtCheekbones", 140, 20, 0)).toBeCloseTo(
+      140,
+      5,
+    );
   });
 
   it("leaves a horizontal span untouched by pitch", () => {
     expect(poseCorrect("noseWidth", 32, 0, 20)).toBeCloseTo(32, 5);
   });
 
-  it("corrects a vertical span by pitch, not yaw", () => {
-    expect(poseCorrect("noseToChin", 65, 20, 0)).toBeCloseTo(65, 5);
+  it("shrinks a vertical span measured on a turned head — the shrunken iris inflated it", () => {
+    // Under yaw a vertical pixel span barely changes while the iris
+    // (and with it pxPerMm) shrinks by cos(yaw), inflating the
+    // millimetre value; multiply by cos(yaw) to undo the calibration
+    // shift. A 20° turn ≈ 6%.
+    const corrected = poseCorrect("noseToChin", 65, 20, 0);
+    expect(corrected).toBeLessThan(65);
+    expect(corrected).toBeGreaterThan(60);
+  });
+
+  it("expands a vertical span measured on a pitched head", () => {
     expect(poseCorrect("noseToChin", 65, 0, 20)).toBeGreaterThan(65);
   });
 
   it("stops correcting past 30 degrees rather than amplifying error", () => {
-    const at30 = poseCorrect("noseWidth", 32, 30, 0);
-    const at60 = poseCorrect("noseWidth", 32, 60, 0);
+    const at30 = poseCorrect("noseToChin", 65, 30, 0);
+    const at60 = poseCorrect("noseToChin", 65, 60, 0);
     expect(at60).toBeCloseTo(at30, 5);
   });
 });
@@ -244,15 +259,15 @@ describe("multi-frame aggregation", () => {
     expect(single.band).not.toBe("high");
   });
 
-  it("rates three consistent, high-quality frames as high confidence", () => {
+  it("rates repeated, consistent near-frontal evidence as high confidence", () => {
+    // Two front frames give every measurement two independent samples;
+    // the turned frame adds capture evidence without contributing
+    // measurement samples.
     const result = aggregateFrames([
       frame({ noseWidth: 34, noseToChin: 66 }, { pose: "front" }),
       frame(
         { noseWidth: 34.1, noseToChin: 66.2 },
-        {
-          pose: "turn_left",
-          yawDeg: -18,
-        },
+        { pose: "front", yawDeg: 3 },
       ),
       frame(
         { noseWidth: 33.9, noseToChin: 65.8 },
@@ -264,6 +279,60 @@ describe("multi-frame aggregation", () => {
     ]);
     expect(result.band).toBe("high");
     expect(result.frameCount).toBe(3);
+  });
+
+  it("caps a set with only ONE near-frontal frame at moderate — every measurement is single-sampled", () => {
+    // The guided-capture shape before the second front frame existed:
+    // three good frames, but the turned two contribute no measurement
+    // samples, so every value rests on a single look. The frame-count
+    // bonus and the widths' agreement must not smuggle that into a
+    // high-confidence fitting.
+    const result = aggregateFrames([
+      frame({ noseWidth: 34, noseToChin: 66 }, { pose: "front" }),
+      frame(
+        { noseWidth: 34.1, noseToChin: 66.2 },
+        { pose: "turn_left", yawDeg: -18 },
+      ),
+      frame(
+        { noseWidth: 33.9, noseToChin: 65.8 },
+        { pose: "turn_right", yawDeg: 18 },
+      ),
+    ]);
+    expect(result.band).not.toBe("high");
+  });
+
+  it("measures every span from near-frontal frames only", () => {
+    // Turned frames are excluded from measuring on both axes: their
+    // heights are distorted beyond the cos model (the nose's own depth
+    // swings through the image plane), and their widths are
+    // gaze-ambiguous — the iris only co-foreshortens when the eyes turn
+    // with the head, and a patient watching the on-screen coach keeps
+    // their iris camera-facing.
+    const result = aggregateFrames([
+      frame({ noseWidth: 34, noseToChin: 66 }, { pose: "front", yawDeg: 2 }),
+      frame(
+        { noseWidth: 31, noseToChin: 74 }, // distorted turned readings
+        { pose: "turn_left", yawDeg: -20 },
+      ),
+      frame(
+        { noseWidth: 38, noseToChin: 73 },
+        { pose: "turn_right", yawDeg: 20 },
+      ),
+    ]);
+    // Both values come from the front frame, not medians polluted by
+    // the turned outliers.
+    expect(result.measurements.noseWidth).toBeCloseTo(34, 1);
+    expect(result.measurements.noseToChin).toBeCloseTo(66, 0);
+  });
+
+  it("falls back to every frame when none is near-frontal", () => {
+    const result = aggregateFrames([
+      frame({ noseToChin: 70 }, { pose: "turn_left", yawDeg: -20 }),
+      frame({ noseToChin: 71 }, { pose: "turn_right", yawDeg: 20 }),
+    ]);
+    // Corrected by cos(20°) ≈ 0.94 — measured, not missing.
+    expect(result.measurements.noseToChin).toBeGreaterThan(60);
+    expect(result.measurements.noseToChin).toBeLessThan(70);
   });
 
   it("drags confidence down when the frames themselves were poor", () => {

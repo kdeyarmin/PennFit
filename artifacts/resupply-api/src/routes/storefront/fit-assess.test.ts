@@ -689,6 +689,39 @@ describe("POST /api/fit/assess — structured recommendation columns", () => {
     expect(primary?.maskId).toBeTruthy();
   });
 
+  it("a degraded-catalog fitting never skips human review, even at high confidence", async () => {
+    // The static fallback catalog ships ZERO mask contraindications
+    // (catalog-store.ts staticCatalogAsMasks), so Tier-1 factor
+    // exclusions were not applied to a degraded recommendation. A
+    // high-confidence outcome normally sets review_status
+    // "not_required" — on the degraded path it must stay
+    // "pending_review" so a clinician sees the fitting before anyone
+    // acts on it.
+    db.persistOk = true;
+    catalogStore.degraded = true;
+
+    const res = await post({
+      measurements: VALID_MEASUREMENTS,
+      profile: VALID_PROFILE,
+      // A strong multi-frame scan, so the scan floor cannot be what
+      // keeps the outcome below high confidence.
+      scan: {
+        frameCount: 3,
+        quality: { lighting: 0.95, distance: 0.95, pose: 0.95 },
+        agreement: { noseWidth: 0.97, noseToChin: 0.97 },
+        measurementConfidence: 0.95,
+        band: "high",
+      },
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body.provenance.degraded).toBe(true);
+    const row = db.inserts.find((i) => i.table === "fit_sessions")!
+      .payload as Record<string, unknown>;
+    // Regardless of the outcome the engine reached, degraded ⇒ review.
+    expect(row.review_status).toBe("pending_review");
+  });
+
   it("routes a withheld-but-not-rescannable outcome to awaiting_review", async () => {
     // `rescan_required` is for outcomes a better photo can fix. An
     // outside-range or contraindicated fitting needs a clinician, and

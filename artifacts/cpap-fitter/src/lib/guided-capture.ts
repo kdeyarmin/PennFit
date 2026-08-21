@@ -5,7 +5,15 @@
  *
  * The flow it drives (behind `fitter.multiframe_capture`):
  *
- *   front → turn_left → turn_right
+ *   front → front → turn_left → turn_right
+ *
+ * The front pose is captured TWICE, deliberately: measurement samples
+ * come from near-frontal frames only (turned frames are excluded — see
+ * MEASUREMENT_YAW_LIMIT_DEG in scan-quality.ts), and the aggregate caps
+ * its confidence band at "moderate" whenever any measurement rests on a
+ * single sample. One front frame would therefore lock every guided
+ * fitting out of the high band; two give each measurement genuine
+ * repeated evidence.
  *
  * At each pose the live loop feeds one `QualityResult` per assessed
  * preview frame. A pose auto-captures only after `STEADY_FRAMES_REQUIRED`
@@ -31,6 +39,7 @@ import { coachMessage, POSE_PROMPT } from "./scan-quality";
 import type { CapturePose, QualityResult } from "./scan-quality";
 
 export const GUIDED_POSES: readonly CapturePose[] = [
+  "front",
   "front",
   "turn_left",
   "turn_right",

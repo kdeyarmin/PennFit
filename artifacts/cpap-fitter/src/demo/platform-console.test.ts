@@ -824,7 +824,10 @@ describe("tenant admin — fit sessions", () => {
     // send it" branch, which hands back a link staff can pass on.
     expect(body.patientNotified).toBe(false);
     expect(body.notifyReason).toBe("no_channel_config");
-    expect(body.inviteLink).toContain("/fit/rescan/");
+    // The demo link must use the shape the real rescan-notify.ts
+    // builds — /fitter-invite?t=… — so a copied link resolves to the
+    // actual invite landing route instead of a 404.
+    expect(body.inviteLink).toContain("/fitter-invite?t=");
   });
 });
 

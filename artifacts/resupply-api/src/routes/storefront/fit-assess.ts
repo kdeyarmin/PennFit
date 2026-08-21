@@ -890,8 +890,17 @@ async function persistSession(input: PersistInput): Promise<string | null> {
         catalog_snapshot_version:
           input.assessment.provenance.catalogSnapshotVersion,
         degraded: input.assessment.provenance.degraded,
+        // A high-confidence fitting normally skips the review queue —
+        // but NEVER on the degraded path: the static fallback catalog
+        // ships zero mask contraindications (catalog-store.ts
+        // staticCatalogAsMasks), so Tier-1 factor exclusions
+        // (mouth-breathing, dentures, skin breakdown, …) were not
+        // applied to this recommendation. Magnets still fail closed,
+        // but a fitting produced without the full exclusion data must
+        // be seen by a human before anyone acts on it.
         review_status:
-          input.assessment.outcome === "high_confidence"
+          input.assessment.outcome === "high_confidence" &&
+          !input.assessment.provenance.degraded
             ? "not_required"
             : "pending_review",
       })

@@ -140,9 +140,16 @@ export function FitterInvite() {
     track("fitter_invite_started");
     if (email) {
       // Known patient — prefill the email gate and head straight into
-      // the camera step. Consent flag (true) just satisfies the flow
-      // gate; the privacy/biometric disclosure still renders in-flow.
-      setEmailConsent(email, true);
+      // the camera step. Marketing consent stays FALSE: this patient
+      // skips /consent entirely, so they never see the optional
+      // marketing opt-in checkbox, and granting it for them here
+      // auto-enrolled every invited patient in the nurture campaign
+      // without consent. The flow gate reads only the email
+      // (useFitterEmailGate in App.tsx); the consent flag's sole
+      // consumer is the marketing-gated completion ping on /results.
+      // The staff-chart transmission is invite-token-gated and is not
+      // affected by this flag.
+      setEmailConsent(email, false);
       setLocation("/capture");
     } else {
       // No email on file (SMS-only prospect) — collect one on /consent

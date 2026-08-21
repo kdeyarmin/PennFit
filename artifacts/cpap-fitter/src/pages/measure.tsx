@@ -24,9 +24,16 @@ import { sampleFrame } from "@/lib/frame-sampling";
 import {
   aggregateFrames,
   assessFrameQuality,
+  centroidOf,
   estimatePoseFromLandmarks,
   type FrameMeasurement,
+  type Point2D,
 } from "@/lib/scan-quality";
+import {
+  ExtractionError,
+  extractMeasurementValues,
+  type ExtractionFailReason,
+} from "@/lib/face-measurements";
 
 // How long the success state ("Measurements Ready" + readout) stays
 // visible before auto-advancing to /questionnaire. Long enough for the
@@ -34,27 +41,6 @@ import {
 // engaged user doesn't feel stalled. Users can also click "Continue"
 // to skip the wait.
 const AUTO_ADVANCE_MS = 2600;
-
-// Reason codes attached to extraction failures. Drives the help-text
-// card on the error screen and is what we send to analytics so we can
-// see, in aggregate, why patients can't get past /measure (vs the old
-// world where every failure was just "measurement_error").
-type ExtractionFailReason =
-  | "no_face"
-  | "iris_too_small"
-  | "implausible_measurements"
-  | "image_decode"
-  | "image_decode_timeout"
-  | "model_load_timeout"
-  | "unknown";
-
-class ExtractionError extends Error {
-  reason: ExtractionFailReason;
-  constructor(reason: ExtractionFailReason, message: string) {
-    super(message);
-    this.reason = reason;
-  }
-}
 
 const FAIL_HINTS: Record<ExtractionFailReason, string[]> = {
   no_face: [
@@ -86,95 +72,6 @@ const FAIL_HINTS: Record<ExtractionFailReason, string[]> = {
     "Try retaking the photo with even lighting and your face centered.",
   ],
 };
-
-// MediaPipe normalized landmark — has at least x/y in [0..1]. Typing this
-// explicitly (vs `any`) lets the compiler catch typos in the index
-// lookups and protects us if MediaPipe ever returns null/undefined for a
-// missing point.
-type Landmark = { x: number; y: number; z?: number };
-
-/**
- * Landmark set → millimetre values, iris-calibrated. Shared by the
- * single-frame path and every angle of the guided multi-frame path, so
- * the two can never drift on the landmark math. Throws `ExtractionError`
- * (no_face / iris_too_small) when the frame cannot be measured.
- *
- * MediaPipe landmarks are normalized [0, 1]. We calibrate the millimeter
- * scale using the iris diameter, which is remarkably consistent across
- * adults at ~11.7mm horizontally (Forrester JV et al, "The Eye: Basic
- * Sciences in Practice", 4th ed).
- *
- * Landmarks (normalized coordinates):
- *   Nose tip 4 · nose bridge 6 · nostrils 129/358 · mouth corners 61/291
- *   · chin 152 · cheekbones 234/454 · left iris 469/471 · right 474/476.
- */
-function extractMeasurementValues(
-  landmarks: Landmark[],
-  img: { width: number; height: number },
-): {
-  values: {
-    noseWidth: number;
-    noseHeight: number;
-    noseToChin: number;
-    mouthWidth: number;
-    faceWidthAtCheekbones: number;
-  };
-  irisPix: number;
-} {
-  const dist = (p1: Landmark, p2: Landmark) => {
-    const dx = (p1.x - p2.x) * img.width;
-    const dy = (p1.y - p2.y) * img.height;
-    return Math.sqrt(dx * dx + dy * dy);
-  };
-
-  // Runtime guard, not just a type: a model bundle emitting the 468-point
-  // (iris-less) mesh would make landmarks[469] undefined and crash `dist`
-  // with an unhelpful "unknown" error.
-  if (!landmarks[469] || !landmarks[471]) {
-    throw new ExtractionError(
-      "no_face",
-      "We couldn't locate your eyes precisely enough to calibrate. Please retake the photo.",
-    );
-  }
-
-  const irisLeftPix = dist(landmarks[469], landmarks[471]);
-  // Use BOTH irises when the right one is available. Calibrating off a
-  // single eye lets a squint, glasses glare, or a stray hair silently
-  // rescale every millimetre value; the mean of two independent reads
-  // halves that error.
-  const irisRightPix =
-    landmarks[474] && landmarks[476] ? dist(landmarks[474], landmarks[476]) : 0;
-  const irisPix =
-    irisLeftPix > 0 && irisRightPix > 0
-      ? (irisLeftPix + irisRightPix) / 2
-      : Math.max(irisLeftPix, irisRightPix);
-  const pxPerMm = irisPix / 11.7;
-
-  // pxPerMm < 1 means the iris was less than ~12 pixels across, which is
-  // too small for the millimeter math to be trustworthy.
-  if (pxPerMm < 1) {
-    throw new ExtractionError(
-      "iris_too_small",
-      "Your face is too far from the camera for accurate measurement. Please move closer and try again.",
-    );
-  }
-
-  const mm = (pixels: number) => Math.round((pixels / pxPerMm) * 10) / 10;
-
-  return {
-    values: {
-      // Nose alar (nostril span) — outer alar landmarks. This is the
-      // nasal-pillow base width (drives small/medium/large pillow fit).
-      noseWidth: mm(dist(landmarks[129], landmarks[358])),
-      noseHeight: mm(dist(landmarks[6], landmarks[4])),
-      noseToChin: mm(dist(landmarks[4], landmarks[152])),
-      mouthWidth: mm(dist(landmarks[61], landmarks[291])),
-      // Face width at cheekbones drives headgear strap sizing.
-      faceWidthAtCheekbones: mm(dist(landmarks[234], landmarks[454])),
-    },
-    irisPix,
-  };
-}
 
 /** Bounded image decode — a hung decode must never strand the patient. */
 function decodeImage(dataUrl: string): Promise<HTMLImageElement> {
@@ -271,17 +168,30 @@ export function Measure() {
   useEffect(() => {
     if (startedRef.current) return;
     if (!capturedImage) {
-      // Cold-load with no image (e.g. user pasted /measure into the URL).
-      // The /capture → /measure handoff goes through GuardedMeasure
-      // (App.tsx), which already keeps users without a captured image off
-      // this route, so this branch is rarely hit in practice.
+      // Cold-load with no image — two distinct situations land here:
       //
-      // `replace` matters (app-review 2026-06-10, P2-8): a PUSH here
-      // leaves the image-less /measure entry in history, so pressing
-      // Back from /capture re-mounts /measure, which pushes /capture
-      // again — the user can never navigate back past this page and is
-      // herded toward re-taking the photo.
-      setLocation("/capture", { replace: true });
+      // 1. Measurements already extracted (a refresh on /measure after
+      //    a successful extraction, or during the auto-advance window:
+      //    the image is memory-only and lost, but the measurements were
+      //    persisted). There is nothing left for this page to do, and
+      //    bouncing to /capture forces a redundant photo retake — so
+      //    continue FORWARD to the questionnaire with the saved
+      //    measurements. This is also what `canStayOnMeasure`
+      //    (measure-flow.ts) documents: measurements alone are a valid
+      //    reason to be past the capture step.
+      //
+      // 2. No measurements either (user pasted /measure into the URL).
+      //    Send them to /capture to start properly. The /capture →
+      //    /measure handoff goes through GuardedMeasure (App.tsx), so
+      //    this branch is rarely hit in practice.
+      //
+      // `replace` matters in both (app-review 2026-06-10, P2-8): a PUSH
+      // here leaves the image-less /measure entry in history, so
+      // pressing Back re-mounts /measure, which pushes again — the user
+      // can never navigate back past this page.
+      setLocation(measurements ? "/questionnaire" : "/capture", {
+        replace: true,
+      });
       return;
     }
     startedRef.current = true;
@@ -381,23 +291,37 @@ export function Measure() {
         if (!isMountedRef.current) return;
         setProgress(60);
 
-        // ── Guided multi-angle path (fitter.multiframe_capture). Each
-        //    captured angle is independently landmark-detected and
-        //    iris-calibrated with the SAME math as the single frame
+        // ── Multi-frame path: the guided multi-angle capture
+        //    (fitter.multiframe_capture) AND the default one-tap burst
+        //    both land here. Each frame is independently landmark-
+        //    detected and iris-calibrated with the SAME math
         //    (extractMeasurementValues); the per-frame values are then
         //    pose-corrected and folded to a median with cross-frame
-        //    agreement by aggregateFrames. A failed angle is dropped, not
+        //    agreement by aggregateFrames. A failed frame is dropped, not
         //    fatal — fewer frames is an honest degradation the confidence
         //    model already prices in. ──
         if (capturedFrames && capturedFrames.length > 0) {
+          // A burst is a run of same-pose frames; the guided capture
+          // mixes poses. The distinction drives the status copy and the
+          // motion check below.
+          const isBurst = capturedFrames.every((f) => f.pose === "front");
           const perFrame: FrameMeasurement[] = [];
+          // Motion baseline for bursts: the IMMEDIATELY PRECEDING frame's
+          // centroid only. Judging against the worst of ALL prior
+          // centroids would let one jolt mid-burst poison every later
+          // frame (each compared against the old outlier), defeating
+          // exactly the recovery the burst exists for; adjacent drift is
+          // the actual "hold still" signal.
+          let priorCentroid: Point2D | null = null;
           let lastFailure: ExtractionError | null = null;
           for (let i = 0; i < capturedFrames.length; i += 1) {
             if (!isMountedRef.current) return;
             setProgress(
               60 + Math.round(((i + 1) / capturedFrames.length) * 30),
             );
-            setStatus(`Analyzing angle ${i + 1} of ${capturedFrames.length}…`);
+            setStatus(
+              `Analyzing ${isBurst ? "frame" : "angle"} ${i + 1} of ${capturedFrames.length}…`,
+            );
             const frame = capturedFrames[i]!;
             try {
               const frameImg = await decodeImage(frame.dataUrl);
@@ -430,10 +354,15 @@ export function Measure() {
                 yawDeg: angles.yawDeg,
                 pitchDeg: angles.pitchDeg,
                 rollDeg: angles.rollDeg,
-                // Deliberately no cross-frame motion check here: these
-                // stills were taken at different poses, and the movement
-                // BETWEEN them is the instruction, not a defect.
+                // The motion check applies only to same-pose bursts,
+                // where drift between frames IS a defect (a shaking
+                // hand). Guided angles deliberately skip it: movement
+                // between poses is the instruction, not a problem.
+                ...(isBurst && priorCentroid
+                  ? { previousCentroids: [priorCentroid] }
+                  : {}),
               });
+              if (isBurst) priorCentroid = centroidOf(landmarks);
               perFrame.push({
                 pose: frame.pose,
                 quality,
@@ -461,7 +390,20 @@ export function Measure() {
             );
           }
 
-          const aggregate = aggregateFrames(perFrame);
+          // Drop frames that failed their own quality gates BEFORE
+          // aggregating, as long as at least one acceptable frame
+          // remains — the burst exists precisely so one blurred or
+          // badly-lit frame can be discarded instead of dragging the
+          // whole capture's band to `low` (aggregateFrames floors the
+          // band when ANY contributing frame was unacceptable). When
+          // every frame failed its gates, keep them all: the aggregate
+          // then reports `low` honestly rather than pretending the
+          // problem frames weren't there.
+          const acceptableFrames = perFrame.filter((f) => f.quality.acceptable);
+          const usedFrames =
+            acceptableFrames.length > 0 ? acceptableFrames : perFrame;
+
+          const aggregate = aggregateFrames(usedFrames);
           const measurements: FacialMeasurements = {
             noseWidth: aggregate.measurements.noseWidth ?? Number.NaN,
             noseHeight: aggregate.measurements.noseHeight ?? Number.NaN,
@@ -484,8 +426,10 @@ export function Measure() {
           setStatus("Analysis complete.");
           setMeasurements(measurements, payloadFromAggregate(aggregate));
           track("measurements_extracted", {
-            frames: perFrame.length,
-            guided: true,
+            frames: usedFrames.length,
+            framesCaptured: capturedFrames.length,
+            guided: !isBurst,
+            burst: isBurst,
           });
           setTimeout(goToQuestionnaire, AUTO_ADVANCE_MS);
           return;

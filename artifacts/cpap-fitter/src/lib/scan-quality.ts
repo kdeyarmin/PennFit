@@ -373,12 +373,50 @@ const HORIZONTAL_KEYS = new Set([
 ]);
 
 /**
+ * Yaw beyond which a frame stops contributing MEASUREMENT samples to
+ * the aggregate (it still contributes quality evidence). Two verified
+ * reasons, one per axis:
+ *
+ *   * VERTICAL spans (noseHeight, noseToChin): the nose's own depth
+ *     swings through the image plane, distorting tip-referenced heights
+ *     by ~+10–18% at 20° of yaw — outside the small-angle cos model
+ *     entirely (pinhole projections of the canonical face model).
+ *   * HORIZONTAL spans: whether the calibration self-corrects under yaw
+ *     depends on GAZE. The iris foreshortens with the head only when
+ *     the eyes turn with it; a patient watching the on-screen coach
+ *     counter-rotates their eyes, the iris stays camera-facing, and the
+ *     width then reads ~cos(yaw) low with no way to tell the two cases
+ *     apart from landmarks alone. Inside this limit the ambiguity is
+ *     ≤ ~1.5% either way; at the 20° turn poses it is ~6%.
+ *
+ * Frames inside the limit are "front enough" to measure from. When NO
+ * frame qualifies, the aggregate falls back to every frame — a fully
+ * turned set still measures rather than failing.
+ */
+export const MEASUREMENT_YAW_LIMIT_DEG = 10;
+
+/**
  * Correct a span for head rotation.
  *
- * A horizontal span foreshortens by cos(yaw) as the head turns, and a
- * vertical one by cos(pitch). Clamped at 30 degrees: past that the small-
- * angle assumption stops holding and the correction would amplify error
- * rather than remove it.
+ * The naive model — divide a horizontal span by cos(yaw) — is wrong,
+ * because the iris that CALIBRATES the millimetre scale is itself a
+ * circle and foreshortens by the same cos(yaw) as any horizontal span at
+ * its depth. The two cancel in `span_px / pxPerMm`, so under yaw:
+ *
+ *   * horizontal spans are already self-corrected — dividing them by
+ *     cos(yaw) again was a systematic over-correction (~+6% per frame at
+ *     the 20° guided turn poses, verified against pinhole projections of
+ *     the canonical face model);
+ *   * VERTICAL spans are the ones inflated — their pixel span is yaw-
+ *     stable while the shrunken iris drags pxPerMm down — so they are
+ *     multiplied by cos(yaw) to undo the calibration shift.
+ *
+ * Under pitch the roles flip: the iris's horizontal diameter is pitch-
+ * stable, so horizontal spans need nothing, while vertical spans
+ * genuinely foreshorten and are divided by cos(pitch).
+ *
+ * Clamped at 30 degrees: past that the small-angle assumption stops
+ * holding and the correction would amplify error rather than remove it.
  */
 export function poseCorrect(
   key: string,
@@ -386,10 +424,12 @@ export function poseCorrect(
   yawDeg: number,
   pitchDeg: number,
 ): number {
-  const angle = HORIZONTAL_KEYS.has(key) ? yawDeg : pitchDeg;
-  const clamped = Math.min(30, Math.abs(angle));
-  const factor = Math.cos((clamped * Math.PI) / 180);
-  return factor > 0.1 ? value / factor : value;
+  if (HORIZONTAL_KEYS.has(key)) return value;
+  const yawFactor = Math.cos((Math.min(30, Math.abs(yawDeg)) * Math.PI) / 180);
+  const pitchFactor = Math.cos(
+    (Math.min(30, Math.abs(pitchDeg)) * Math.PI) / 180,
+  );
+  return (value * yawFactor) / (pitchFactor > 0.1 ? pitchFactor : 1);
 }
 
 function median(values: number[]): number {
@@ -430,14 +470,26 @@ export function aggregateFrames(frames: FrameMeasurement[]): AggregateResult {
   const keys = Object.keys(frames[0]!.values);
   const measurements: Record<string, number> = {};
   const agreement: Record<string, number> = {};
+  const sampleCounts: Record<string, number> = {};
+
+  // Measurement samples come from near-frontal frames only (see
+  // MEASUREMENT_YAW_LIMIT_DEG) — turned frames' heights are distorted
+  // beyond the cos model, and their widths are gaze-ambiguous. Fall
+  // back to every frame when none qualifies, so a fully-turned set
+  // still measures rather than failing.
+  const nearFrontal = frames.filter(
+    (f) => Math.abs(f.yawDeg) <= MEASUREMENT_YAW_LIMIT_DEG,
+  );
+  const usable = nearFrontal.length > 0 ? nearFrontal : frames;
 
   for (const key of keys) {
-    const corrected = frames
+    const corrected = usable
       .map((f) =>
         poseCorrect(key, f.values[key] ?? Number.NaN, f.yawDeg, f.pitchDeg),
       )
       .filter((v) => Number.isFinite(v));
     if (corrected.length === 0) continue;
+    sampleCounts[key] = corrected.length;
     const med = median(corrected);
     measurements[key] = Math.round(med * 10) / 10;
     if (corrected.length === 1 || med === 0) {
@@ -488,9 +540,14 @@ export function aggregateFrames(frames: FrameMeasurement[]): AggregateResult {
   // Hard caps, all saying the same thing: a number is only as good as the
   // evidence behind it.
   //
-  //   * One frame carries no cross-frame agreement at all, so however
-  //     clean it looks we have not actually verified the measurement is
-  //     stable. Cap at moderate.
+  //   * Every measurement must rest on at least TWO independent samples
+  //     before the aggregate may claim `high`. A single look carries no
+  //     cross-frame agreement — and this must be enforced PER KEY, not
+  //     per frame count: a guided set whose turned frames were excluded
+  //     from measuring (see MEASUREMENT_YAW_LIMIT_DEG) can have three
+  //     frames yet only one sample behind every value, and the
+  //     frame-count bonus plus width agreement must not smuggle that
+  //     single look into a high-confidence fitting.
   //   * If any contributing frame failed its own quality gates, the
   //     aggregate is `low`, not merely "not high" — three consistent
   //     readings off three equally bad frames are consistently wrong, and
@@ -503,9 +560,10 @@ export function aggregateFrames(frames: FrameMeasurement[]): AggregateResult {
   // however bad the pixels were. Without the cap, a too-dark, too-soft
   // frame still lands around 0.55 and reads as "moderate".
   const anyUnacceptable = frames.some((f) => !f.quality.acceptable);
+  const anySingleSampled = keys.some((k) => (sampleCounts[k] ?? 0) < 2);
   if (anyUnacceptable) {
     band = "low";
-  } else if (band === "high" && frames.length < 2) {
+  } else if (band === "high" && anySingleSampled) {
     band = "moderate";
   }
 

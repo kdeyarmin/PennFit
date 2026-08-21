@@ -31,8 +31,14 @@ function quality(acceptable: boolean, failing: QualityResult["failing"] = []) {
 }
 
 describe("guided capture state machine", () => {
-  it("starts at front and walks the three poses in order", () => {
+  it("walks front twice, then the turns, in order", () => {
+    // Two front captures are load-bearing: measurements sample only
+    // near-frontal frames, and the aggregate caps any single-sampled
+    // measurement below the high band — one front frame would lock
+    // every guided fitting out of high confidence.
     let state = initialGuidedState(0);
+    expect(currentPose(state)).toBe("front");
+    state = advancePose(state, 0);
     expect(currentPose(state)).toBe("front");
     state = advancePose(state, 0);
     expect(currentPose(state)).toBe("turn_left");
@@ -77,6 +83,7 @@ describe("guided capture state machine", () => {
 
   it("re-issues the turn prompt (not 'look straight') for a pose failure mid-turn", () => {
     let state = initialGuidedState(0);
+    state = advancePose(state, 0); // second front
     state = advancePose(state, 0); // now at turn_left
     const tick = guidedTick(state, quality(false, ["pose"]), 0);
     expect(tick.action.kind).toBe("coach");
@@ -117,25 +124,30 @@ describe("guided capture state machine", () => {
     }
   });
 
-  it("never allows skipping the front pose", () => {
-    const state = initialGuidedState(0);
+  it("never allows skipping either front capture", () => {
+    let state = initialGuidedState(0);
+    expect(canSkipPose(state)).toBe(false);
+    expect(skipPose(state, 0)).toBe(state);
+    state = advancePose(state, 0); // at the second front
     expect(canSkipPose(state)).toBe(false);
     expect(skipPose(state, 0)).toBe(state);
   });
 
   it("allows skipping the turn poses and finishes with fewer frames", () => {
     let state = initialGuidedState(0);
-    state = advancePose(state, 0); // front captured
+    state = advancePose(state, 0); // front #1 captured
+    state = advancePose(state, 0); // front #2 captured
     expect(canSkipPose(state)).toBe(true);
     state = skipPose(state, 0); // skip turn_left
     state = skipPose(state, 0); // skip turn_right
     expect(state.done).toBe(true);
-    expect(state.captured).toEqual(["front"]);
-    expect(guidedProgress(state)).toEqual({ captured: 1, total: 3 });
+    expect(state.captured).toEqual(["front", "front"]);
+    expect(guidedProgress(state)).toEqual({ captured: 2, total: 4 });
   });
 
   it("is inert once done", () => {
     let state = initialGuidedState(0);
+    state = advancePose(state, 0);
     state = advancePose(state, 0);
     state = skipPose(state, 0);
     state = skipPose(state, 0);

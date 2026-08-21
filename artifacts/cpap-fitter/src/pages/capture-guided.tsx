@@ -5,7 +5,8 @@
 // in VIDEO mode over the preview stream, scores every look through the
 // same pure quality checks the measurement step trusts (lighting,
 // distance, head position, obstruction, movement, framing), talks the
-// patient into a good frame, and auto-captures three angles —
+// patient into a good frame, and auto-captures four frames (two
+// straight-on for repeated measurement evidence, then two turns) —
 // front, then a slight turn each way — the moment each pose holds steady.
 //
 // The extra angles are what buy cross-frame measurement agreement in
@@ -296,7 +297,15 @@ export function GuidedCapture({ onFallback }: { onFallback: () => void }) {
         required ? POSE_PROMPT[required] : posePrompt(machineRef.current),
       );
       setSkippable(canSkipPose(machineRef.current));
-      setCoach({ message: "Nice. Next angle…", struggling: false });
+      // The second front capture repeats the same pose — "next angle"
+      // would contradict the prompt right above it.
+      setCoach({
+        message:
+          currentPose(machineRef.current) === "front"
+            ? "Nice. One more, hold steady…"
+            : "Nice. Next angle…",
+        struggling: false,
+      });
     }
     return true;
   };

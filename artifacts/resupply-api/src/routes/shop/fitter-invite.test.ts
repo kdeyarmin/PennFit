@@ -334,4 +334,101 @@ describe("POST /shop/fitter-invite/complete", () => {
     expect(res.status).toBe(400);
     expect(res.body.error).toBe("invalid_body");
   });
+
+  it("400s on measurements outside the adult∪pediatric plausibility window", async () => {
+    // Same posture as /api/recommend and /api/fit/assess: this route
+    // stores what it accepts, so non-face numerics (a bad iris
+    // calibration, a hand-rolled request) are rejected, not recorded.
+    const token = signFitterInviteToken(INVITE_ID);
+    const res = await request(makeApp())
+      .post("/resupply-api/shop/fitter-invite/complete")
+      .send({
+        t: token,
+        measurements: { ...measurements, noseWidth: 500 },
+        answers,
+        recommendation,
+      });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("invalid_body");
+    expect(getSupabaseWritePayloads("fitter_invites", "update")).toHaveLength(
+      0,
+    );
+  });
+
+  it("400s when the body smuggles encoded media, even under a key the schema would strip", async () => {
+    // "No images in the backend" is a hard rule. The media guard runs on
+    // the RAW body, so a data-URL hidden under an unknown key — which
+    // plain z.object would silently strip — still rejects loudly.
+    const token = signFitterInviteToken(INVITE_ID);
+    const res = await request(makeApp())
+      .post("/resupply-api/shop/fitter-invite/complete")
+      .send({
+        t: token,
+        measurements: {
+          ...measurements,
+          selfie: "data:image/png;base64,AAAA",
+        },
+        answers,
+        recommendation,
+      });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("invalid_body");
+    expect(getSupabaseWritePayloads("fitter_invites", "update")).toHaveLength(
+      0,
+    );
+  });
+
+  it("400s on answers that are not bounded scalars", async () => {
+    // The answers record is scalars-only (the v1 questionnaire shape) —
+    // a nested object is exactly where a blob would hide.
+    const token = signFitterInviteToken(INVITE_ID);
+    const res = await request(makeApp())
+      .post("/resupply-api/shop/fitter-invite/complete")
+      .send({
+        t: token,
+        measurements,
+        answers: { mouthBreather: { nested: "object" } },
+        recommendation,
+      });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("invalid_body");
+  });
+
+  it("strips unknown keys instead of storing them", async () => {
+    // Unknown keys must neither 400 the transmission (it is
+    // fire-and-forget on the client) nor reach the jsonb columns.
+    const token = signFitterInviteToken(INVITE_ID);
+    stageSupabaseResponse("fitter_invites", "select", {
+      data: {
+        id: INVITE_ID,
+        status: "opened",
+        patient_id: null,
+        recipient_email: "nomatch@example.com",
+        recipient_phone_e164: null,
+        expires_at: new Date(Date.now() + 86_400_000).toISOString(),
+      },
+    });
+    stageSupabaseResponse("patients", "select", { data: [] });
+    stageSupabaseResponse("fitter_invites", "update", { data: null });
+    const res = await request(makeApp())
+      .post("/resupply-api/shop/fitter-invite/complete")
+      .send({
+        t: token,
+        measurements: { ...measurements, extraField: "should not persist" },
+        answers,
+        recommendation: {
+          ...recommendation,
+          top: [{ ...recommendation.top[0]!, surprise: "extra" }],
+        },
+      });
+    expect(res.status).toBe(200);
+    const upd = getSupabaseWritePayloads(
+      "fitter_invites",
+      "update",
+    )[0] as Record<string, unknown>;
+    expect(upd.measurements).toEqual(measurements);
+    expect(
+      (upd.recommendations as Array<Record<string, unknown>>)[0],
+    ).not.toHaveProperty("surprise");
+  });
 });
