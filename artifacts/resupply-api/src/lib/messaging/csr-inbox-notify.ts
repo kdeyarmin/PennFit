@@ -23,6 +23,7 @@ import {
   createSendgridClient,
   EmailConfigError,
 } from "@workspace/resupply-email";
+import { DEFAULT_STOREFRONT_ASSISTANT_NAME } from "../company-info.js";
 
 export interface NotifyCsrInboxInput {
   threadId: string;
@@ -72,7 +73,7 @@ export async function notifyCsrInboxOfCustomerMessage(
     input.customerDisplayName ?? input.customerEmail ?? "A shop customer";
   const viaChatbot =
     input.source === "chatbot"
-      ? ` (via ${input.assistantName?.trim() || "assistant"})`
+      ? ` (via ${input.assistantName?.trim() || DEFAULT_STOREFRONT_ASSISTANT_NAME})`
       : "";
   const subjectPrefix = input.threadCreated ? "New" : "Reply on";
   const subject = `${subjectPrefix} customer message${viaChatbot} — ${customerLabel}`;
