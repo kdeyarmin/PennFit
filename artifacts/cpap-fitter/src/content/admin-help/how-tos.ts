@@ -62,8 +62,12 @@ export const HOW_TO_GUIDES: readonly HowToGuide[] = [
         },
       },
       {
-        title: "Connect payments and confirm your plan",
-        body: "Plan & billing /admin/billing/package shows your plan, its allowances, and your usage against them. Payments must be connected before the storefront can take a card, so do this before you promote your shop.",
+        title: 'Connect payments — and know which "billing" is which',
+        body: "Two different things are both called billing. Your storefront's card processing is connected from Config → Organization /admin/billing/config/organization, and that is the one that has to be done before your shop can take a payment. Plan & billing /admin/billing/package is your own subscription to this platform — its allowances and invoices — and connecting it does nothing for storefront checkout.",
+        callout: {
+          tone: "warning",
+          text: "Setting up Plan & billing does NOT enable storefront payments. If you stop after that, your shop still cannot take a card while the checklist looks finished.",
+        },
       },
       {
         title: "Invite your team",
@@ -279,7 +283,11 @@ export const HOW_TO_GUIDES: readonly HowToGuide[] = [
     steps: [
       {
         title: "Find them",
-        body: "Use the global lookup in the top header when you have a name or phone number in front of you. Use Patients /admin/patients when you want to filter the roster instead — by status, payer, equipment, or where they are in the resupply cycle.",
+        body: "The global lookup in the top header matches a phone number, an email address, or an id (a record id or a Stripe checkout session) — not a name. When you have a name, search from Patients /admin/patients instead, which also filters by status and, with multi-branch enabled, by location.",
+        callout: {
+          tone: "tip",
+          text: "Typing a name into the header lookup returns nothing. That is the lookup working as designed, not a missing patient — take the name to /admin/patients.",
+        },
       },
       {
         title: "Read the timeline first",
@@ -306,7 +314,7 @@ export const HOW_TO_GUIDES: readonly HowToGuide[] = [
       {
         symptom:
           "Search finds nothing but the patient swears they have an account.",
-        fix: "Try their phone number and their maiden or previous name, then check /admin/patients/duplicates. Storefront customers who have never ordered appear under Customers /admin/shop/customers rather than the clinical roster.",
+        fix: "If you used the header lookup, remember it does not match names — search again from /admin/patients. Then try their phone number, their maiden or previous name, and /admin/patients/duplicates. Storefront customers who have never ordered appear under Customers /admin/shop/customers rather than the clinical roster.",
       },
     ],
     related: ["answer-a-patient-message", "send-a-fitting-invite"],
@@ -388,7 +396,9 @@ export const HOW_TO_GUIDES: readonly HowToGuide[] = [
     category: "patients",
     summary:
       "Fitter Invites /admin/fitter-invites texts or emails a guided mask-fitting link to anyone — including someone who is not in the system yet. Their scan lands in Fit review /admin/fit-sessions for you to approve.",
-    audience: "CSR, clinician, or admin",
+    // Sending an invite is gated on conversations.manage, which the
+    // clinician role does not hold — it would 403 for an RT.
+    audience: "CSR or admin",
     timeEstimate: "About 2 minutes",
     primaryPath: "/admin/fitter-invites",
     featured: true,
@@ -537,7 +547,9 @@ export const HOW_TO_GUIDES: readonly HowToGuide[] = [
     category: "patients",
     summary:
       "Draft the document at Documents /admin/documents, send it as a packet from Document packets /admin/patient-packets, then track it through Awaiting signatures /admin/signature-tracking until it comes back signed.",
-    audience: "CSR, clinician, or admin",
+    // Sending a packet needs patients.update, and the provider portal
+    // needs provider_portal.manage — neither is held by the clinician role.
+    audience: "CSR or admin",
     timeEstimate: "About 5 minutes",
     primaryPath: "/admin/patient-packets",
     prerequisites: [
@@ -754,8 +766,12 @@ export const HOW_TO_GUIDES: readonly HowToGuide[] = [
         body: "Add what they are taking today. Inventory /admin/shop/inventory is the stock position behind those items; if something is short, Backorders & subs /admin/shop/backorders is where the substitution decision gets recorded.",
       },
       {
-        title: "Take payment and finish",
-        body: "Complete the sale and give them the receipt. The order appears in Orders /admin/shop/orders like any other, so the rest of the workflow — returns, billing, history — behaves normally.",
+        title: "Record the payment path — the screen does not charge a card",
+        body: 'Front Desk records how the order will be paid: "Cash / collected now" or "Bill to insurance". It does not run a card and it does not produce a receipt. Choosing cash asserts you have already taken the money at the counter; choosing insurance records that nothing was collected and flags the order for the billing team. Once placed, the order appears in Orders /admin/shop/orders like any other, so returns, billing, and history behave normally.',
+        callout: {
+          tone: "warning",
+          text: 'Only choose "Cash / collected now" once the money is actually in the drawer — the order is recorded as paid on your say-so and nothing verifies it. Receipts, if you give one, come from your own till.',
+        },
       },
       {
         title: "Set up what comes next",
@@ -808,8 +824,8 @@ export const HOW_TO_GUIDES: readonly HowToGuide[] = [
         body: "Shipping labels /admin/shipping buys the label, prints it, and tracks the parcel. Use it rather than a carrier site so the tracking number attaches to the order and reaches the patient.",
       },
       {
-        title: "Watch for delivery problems",
-        body: "Delivery Failures /admin/delivery-failures surfaces sends and shipments that did not land. A failed delivery caught the same week is a re-ship; caught a month later it is a refund and a bad review.",
+        title: "Track the parcel, not the message queue",
+        body: "Carrier tracking lives with the order and its label in Shipping labels /admin/shipping. Delivery Failures /admin/delivery-failures is a different queue — failed SMS, email, and voice sends — so a stuck parcel will never appear there. A shipment problem caught the same week is a re-ship; caught a month later it is a refund and a bad review.",
       },
     ],
     related: ["handle-a-return", "manage-subscriptions"],
@@ -873,36 +889,48 @@ export const HOW_TO_GUIDES: readonly HowToGuide[] = [
   },
   {
     slug: "manage-subscriptions",
-    title: "Set up and manage a resupply subscription",
+    title: "Answer a question about a resupply subscription",
     category: "orders",
     summary:
-      "Subscriptions /admin/shop/subscriptions holds every recurring resupply plan — the cadence, the items, and what is due next. Change the cadence rather than cancelling when a patient says they have too much.",
+      "Subscriptions /admin/shop/subscriptions is a health dashboard, not a management screen — tiles, a cohort table, and 30-day churn. A specific patient's subscription state shows on their customer record, and the patient changes the plan themselves from their account.",
     audience: "CSR",
-    timeEstimate: "About 3 minutes",
+    timeEstimate: "About 5 minutes",
     primaryPath: "/admin/shop/subscriptions",
-    prerequisites: [
-      "The patient has a payment method on file or billable coverage.",
-    ],
+    prerequisites: ["The Storefront module is on."],
     steps: [
       {
-        title: "Open the subscription list",
-        body: "Orders → Subscriptions /admin/shop/subscriptions. Each row is a recurring plan with its items, cadence, and next ship date.",
-      },
-      {
-        title: "Match the cadence to real usage",
-        body: 'A patient who says "I have a drawer full of cushions" does not want to cancel — they want a longer interval. Therapy-driven timing is better than a calendar: Resupply Opportunities /admin/therapy-resupply is based on actual device usage.',
+        title: "Know what the Subscriptions page is for",
+        body: 'Subscriptions /admin/shop/subscriptions answers "how healthy is the subscription base" — counts of active and paused, pending cancellations, cancellations in the last 30 days, a six-month cohort retention table, and a 30-day churn rate. It is read-only. There is no list of individual subscriptions here and no cadence, pause, or cancel control.',
         callout: {
-          tone: "tip",
-          text: "Stretching the interval saves the subscription. Cancelling loses the patient and the revenue.",
+          tone: "warning",
+          text: "Do not go to this page to change someone's subscription — it cannot. Going there first is the most common wrong turn on this workflow.",
         },
       },
       {
-        title: "Keep payment current",
-        body: "An expired card is the most common silent failure. Delivery Failures /admin/delivery-failures and the billing pages surface it; catching it before the ship date avoids an awkward call.",
+        title: "Look up the specific patient instead",
+        body: "For one person, open their record from Customers /admin/shop/customers. Their subscription state — status, items, current period end, and whether it is set to cancel at period end — shows there alongside their orders and carts.",
       },
       {
-        title: "Pause rather than cancel where you can",
-        body: "Travel, a hospital stay, or a temporary stop is a pause. Cancelling drops them out of the reminder program entirely and they usually do not come back on their own.",
+        title: "Walk the patient through changing it themselves",
+        body: "Plan changes are the patient's to make from their own account area, which is where their payment method and billing portal live. Talk them through it rather than promising to do it for them, because from this console you cannot.",
+        callout: {
+          tone: "tip",
+          text: "A patient with too many supplies wants a longer interval, not a cancellation. Say that explicitly before they reach for cancel — it is the single sentence that saves the most subscriptions.",
+        },
+      },
+      {
+        title: "Time future reminders from real usage",
+        body: "If the underlying problem is that supplies arrive before they are needed, Resupply Opportunities /admin/therapy-resupply is driven by actual device usage rather than a fixed calendar, and the cadence rules behind reminders live in Frequency rules /admin/rules.",
+      },
+      {
+        title: "Watch the trend, not the individual",
+        body: "If pending cancellations or 30-day churn are climbing on /admin/shop/subscriptions, that is a program problem — usually cadence or price — rather than a run of unrelated individual decisions.",
+      },
+    ],
+    troubleshooting: [
+      {
+        symptom: "A patient asked us to pause and I can't find the control.",
+        fix: "There isn't one in this console. Their subscription state is visible on their customer record at /admin/shop/customers, but the change itself is made by the patient from their account. Walk them through it on the call.",
       },
     ],
     related: ["set-up-resupply-reminders", "fulfill-and-ship-an-order"],
@@ -910,10 +938,11 @@ export const HOW_TO_GUIDES: readonly HowToGuide[] = [
       "subscription",
       "auto-ship",
       "recurring",
-      "cadence",
-      "resupply",
+      "churn",
+      "cohort",
       "cancel",
       "pause",
+      "resupply",
     ],
   },
   {
@@ -1334,43 +1363,61 @@ export const HOW_TO_GUIDES: readonly HowToGuide[] = [
   },
   {
     slug: "set-up-resupply-reminders",
-    title: "Turn on resupply reminders",
+    title: "Run the resupply reminder program",
     category: "outreach",
     summary:
-      "Reminders /admin/fitter/reminders sets the resupply schedule. Patients get a signed link that lets them confirm or decline in one tap, and Reorder Reminders /admin/reorder-reminders shows how the program is performing.",
+      'Cadence lives in Frequency rules /admin/rules, the copy in Automated messages /admin/templates, the subscriber list and a manual "send due now" in Reminders /admin/fitter/reminders, and the results in Reorder Reminders /admin/reorder-reminders. Four surfaces, one program.',
     audience: "Admin",
-    timeEstimate: "About 20 minutes to configure",
-    primaryPath: "/admin/fitter/reminders",
+    timeEstimate: "About 30 minutes to set up",
+    primaryPath: "/admin/rules",
     featured: true,
     prerequisites: [
       "The Outreach module is on.",
-      "Your phone number and email sender are configured.",
+      "Your phone number and email sender are configured, so reminders come from your brand.",
       "Patient records carry current contact details.",
     ],
     steps: [
       {
-        title: "Set the schedule",
-        body: "Outreach → Reminders /admin/fitter/reminders holds the resupply reminder schedule — which supplies get a reminder and how often. Start from standard replacement intervals and adjust from what you actually see.",
+        title: "Set the cadence in Frequency rules",
+        body: "Frequency rules /admin/rules is where reminder cadence and channel are decided — the defaults by therapy type, payer, and how long someone has been a customer. A per-patient override always beats the rule, so the rules are the baseline rather than the last word.",
       },
       {
-        title: "Review the copy that goes out",
-        body: "Automated messages /admin/templates holds the system-sent copy. Read every template before it goes live, and preview it with sample data at Message previews /admin/message-previews.",
-      },
-      {
-        title: "Understand the patient's side",
-        body: "The reminder carries a short-lived signed link. One tap confirms or declines — no sign-in, no password. That one-tap path is why the program works; anything that adds friction reduces the response rate sharply.",
+        title: "Simulate before you rely on it",
+        body: 'Rule Tester /admin/rule-tester answers "for a patient like this, which rule fires and what cadence and channel does the worker pick?". It reads the live rules and changes nothing, so run it freely — it is the cheapest way to find a rule that is narrower or broader than you intended.',
         callout: {
-          tone: "note",
-          text: 'Those links expire by design. A patient who says "the link doesn\'t work" usually has an old message — re-send rather than troubleshooting.',
+          tone: "tip",
+          text: "Simulate the awkward cases, not the typical one: a new customer on an unusual payer is where overlapping rules disagree.",
         },
       },
       {
-        title: "Time it from real usage where you can",
-        body: "Resupply Opportunities /admin/therapy-resupply is based on actual device usage rather than the calendar. A reminder that arrives when a patient genuinely needs supplies converts far better than one on a fixed schedule.",
+        title: "Read the copy that will go out",
+        body: "Automated messages /admin/templates holds the system-sent wording. Read it before it goes live and preview it with sample data at Message previews /admin/message-previews — a merge field that fails to resolve is invisible in the editor and obvious to the patient.",
       },
       {
-        title: "Watch the program, not the individual sends",
-        body: "Reorder Reminders /admin/reorder-reminders shows how the program is performing — sends, responses, conversions. If response is falling, the copy or the cadence is wrong; adjust one thing at a time.",
+        title: "Know what the Reminders page does",
+        body: "Reminders /admin/fitter/reminders lists the storefront reminder subscribers and gives you one action: send the reminders that are currently due. It is a roster plus a manual trigger — it is not where the schedule is configured, so do not go looking for cadence controls there.",
+        callout: {
+          tone: "note",
+          text: 'The routine sends happen on their own. The manual "send due" button is for catching up after a pause or verifying a change, not for daily use.',
+        },
+      },
+      {
+        title: "Understand the patient's side",
+        body: 'The reminder carries a short-lived signed link, and one tap confirms or declines — no sign-in, no password. That single-tap path is why the program works; anything that adds friction cuts the response rate sharply. The links expire by design, so a patient saying "the link doesn\'t work" usually has an old message and needs a fresh send.',
+      },
+      {
+        title: "Measure the funnel, not the sends",
+        body: "Reorder Reminders /admin/reorder-reminders shows the ladder — due, reminded, confirmed, shipped — broken down by SMS, email, and voice, so you can see which channel actually drives reorders. If confirmation is falling, change the cadence or the copy, one at a time.",
+      },
+    ],
+    troubleshooting: [
+      {
+        symptom: "I can't find where to set the reminder interval.",
+        fix: "It is in Frequency rules /admin/rules, not on the Reminders page. /admin/fitter/reminders only lists subscribers and sends what is due.",
+      },
+      {
+        symptom: "A patient is getting reminders too often.",
+        fix: "Simulate them in /admin/rule-tester to see which rule is firing. A per-patient override beats the rule, so check for one before editing a rule that affects everybody.",
       },
     ],
     related: [
@@ -1382,18 +1429,19 @@ export const HOW_TO_GUIDES: readonly HowToGuide[] = [
       "reminder",
       "resupply",
       "reorder",
-      "schedule",
       "cadence",
-      "automated",
+      "frequency",
+      "schedule",
+      "funnel",
       "renewal",
     ],
   },
   {
     slug: "build-an-automation-rule",
-    title: "Build an automation rule and dry-run it first",
+    title: "Set reminder frequency rules and simulate them",
     category: "outreach",
     summary:
-      "Rules /admin/rules defines what happens automatically. Always dry-run a new or edited rule in the Rule Tester /admin/rule-tester before enabling it — a misconfigured rule messages real patients.",
+      "Frequency rules /admin/rules set the default reminder cadence and channel by therapy type, payer, and customer tenure. A per-patient override always wins. Rule Tester /admin/rule-tester shows which rule would fire for a hypothetical patient, without changing anything.",
     audience: "Admin",
     timeEstimate: "About 30 minutes",
     primaryPath: "/admin/rules",
@@ -1402,45 +1450,53 @@ export const HOW_TO_GUIDES: readonly HowToGuide[] = [
     ],
     steps: [
       {
-        title: "Write down the rule in a sentence first",
-        body: '"When X happens, do Y." If you cannot say it in one sentence, it is more than one rule. Rules /admin/rules is where it gets built.',
+        title: "Know what these rules decide",
+        body: "Frequency rules /admin/rules answer one question: for this kind of patient, how often do we reach out about resupply, and on which channel. They are matched on therapy type, payer, and how long the person has been a customer.",
       },
       {
-        title: "Scope the trigger narrowly",
-        body: "A specific keyword or a specific event, not a broad category. Broad triggers are what turn a helpful rule into a patient receiving four messages about one order.",
+        title: "Start broad, then add exceptions",
+        body: "A sensible default covering most patients plus a small number of deliberate exceptions is easier to reason about than a rule per segment. Every extra rule is another thing that can overlap with the others.",
       },
       {
-        title: "One action per rule",
-        body: "Chaining several actions into one rule makes it almost impossible to work out which part misfired. Separate rules are easier to test, easier to disable, and easier to explain.",
-      },
-      {
-        title: "Dry-run it — every time, including after edits",
-        body: "Rule Tester /admin/rule-tester runs the rule against sample input and shows what it would have done, without sending anything. Do this before enabling and after every edit.",
+        title: "Remember that per-patient overrides win",
+        body: "An override on an individual patient beats whatever the rules say. So before editing a rule because one person is getting the wrong cadence, check whether that person simply has an override.",
         callout: {
-          tone: "warning",
-          text: "This is the one step people skip and then regret. An untested rule can message your entire patient list before anyone notices.",
+          tone: "tip",
+          text: "One patient with the wrong cadence is usually an override. Everybody with the wrong cadence is a rule.",
         },
       },
       {
-        title: "Enable it and watch the first day",
-        body: "Turn it on, then check Outbound Messages /admin/outbound-messages to see what it actually sent. Compliance Rules /admin/compliance-rules is the separate place per-payer adherence thresholds live.",
+        title: "Simulate before and after every change",
+        body: "Rule Tester /admin/rule-tester takes a hypothetical patient and reports which rule fires and what cadence and channel the worker would pick. It reads the live rules and modifies nothing, so there is no reason not to run it — do it for the edge cases, where overlapping rules actually disagree.",
+      },
+      {
+        title: "Watch the funnel after it ships",
+        body: "Reorder Reminders /admin/reorder-reminders shows whether the change moved confirmations and reorders. Change one thing at a time or the funnel cannot tell you which change did it.",
+      },
+      {
+        title: "Know what lives elsewhere",
+        body: "Per-payer adherence thresholds are Compliance Rules /admin/compliance-rules, not these. The wording of what goes out is Automated messages /admin/templates. One-off and batch sends are the Alert Library /admin/alerts and Bulk Campaigns /admin/bulk-campaigns.",
       },
     ],
     troubleshooting: [
       {
-        symptom: "The rule is on but nothing fires.",
-        fix: "Dry-run it again in /admin/rule-tester with input you know should match. Nine times out of ten the trigger is narrower than intended, or the module it depends on is off in /admin/control-center.",
+        symptom: "I changed a rule and nothing seems different.",
+        fix: "Simulate the affected patient shape in /admin/rule-tester. Either another rule is matching first, or that patient carries a per-patient override that beats every rule.",
       },
     ],
-    related: ["send-a-bulk-campaign", "manage-modules-and-flags"],
+    related: [
+      "set-up-resupply-reminders",
+      "send-a-bulk-campaign",
+      "manage-modules-and-flags",
+    ],
     keywords: [
-      "rule",
-      "automation",
-      "trigger",
-      "workflow",
-      "dry run",
-      "tester",
-      "auto reply",
+      "frequency rule",
+      "cadence",
+      "channel",
+      "rule tester",
+      "simulate",
+      "override",
+      "reminder",
     ],
   },
 
@@ -2600,7 +2656,7 @@ export const HOW_TO_GUIDES: readonly HowToGuide[] = [
       },
       {
         title: "Route what the comments actually say",
-        body: "Fit complaints belong with Mask-fit feedback /admin/clinical/mask-fit and Fit review /admin/fit-sessions. Delivery complaints go to Delivery Failures /admin/delivery-failures. Billing surprises usually mean coverage was quoted from eligibility status rather than benefit detail.",
+        body: "Fit complaints belong with Mask-fit feedback /admin/clinical/mask-fit and Fit review /admin/fit-sessions. Shipping complaints belong with the order and its tracking in Shipping labels /admin/shipping. Billing surprises usually mean coverage was quoted from eligibility status rather than benefit detail.",
       },
       {
         title: "Close the loop with detractors",
@@ -2687,11 +2743,11 @@ export const HOW_TO_GUIDES: readonly HowToGuide[] = [
         body: "Account security /admin/security walks you through enrolling a time-based one-time-password app. Anyone who can open a patient chart should do this, which in practice means everyone with console access.",
       },
       {
-        title: "Know exactly what enrollment does today",
-        body: "Sign-in is not currently gated on enrollment — the page says so deliberately, so nobody enrolls believing a stricter rule just switched on. Enroll anyway: it is the step that makes enforcement painless when it arrives, and it protects your account now.",
+        title: "Know whether enrollment is enforced where you work",
+        body: "Enforcement is a deployment setting, so the answer differs by installation. Where it is switched on, an admin or agent without a verified factor is blocked from the admin API — everything except their own identity and the enrollment endpoints — until they enroll, and enrolled users are challenged at sign-in. Where it is off, nothing stops you working unenrolled.",
         callout: {
           tone: "warning",
-          text: "Because it is not enforced, nobody will chase you. Treat it as your own responsibility rather than waiting for a prompt.",
+          text: "If you are suddenly locked out of every admin page but can still reach Account security, that is enforcement, not an outage. Finish enrolling and access returns.",
         },
       },
       {

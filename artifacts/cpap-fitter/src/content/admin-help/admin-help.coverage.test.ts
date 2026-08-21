@@ -59,9 +59,12 @@ const NAV_PATHS = new Set<string>(
 const NON_NAV_PATHS = new Set<string>([
   "/admin/resources/faq",
   "/admin/resources/user-guide",
-  // A real registered route (console.tsx) reached from the Config
+  // Real registered routes (console.tsx) reached from the Config
   // card-grid rather than the sidebar.
   "/admin/billing/config/modifier-rules",
+  // Where StripeConnectCard lives — the tenant's storefront card
+  // processing, distinct from /admin/billing/package (platform plan).
+  "/admin/billing/config/organization",
 ]);
 
 describe("help content — identifiers", () => {

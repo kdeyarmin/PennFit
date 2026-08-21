@@ -295,7 +295,7 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
     question: "A patient says they have too many supplies and wants to cancel.",
     category: "orders",
     answer: [
-      "They usually want a longer interval, not a cancellation. Change the cadence in Subscriptions /admin/shop/subscriptions and offer a pause if the reason is temporary.",
+      "They usually want a longer interval, not a cancellation — say so before they reach for cancel. You cannot make the change for them from this console: Subscriptions /admin/shop/subscriptions is a read-only health dashboard, and the plan is changed by the patient from their own account. Their current state is visible on their customer record at /admin/shop/customers.",
       "Cancelling drops them out of the reminder program entirely, and patients rarely restart on their own. Stretching the interval keeps the relationship.",
     ],
     seeAlso: "manage-subscriptions",
@@ -829,8 +829,8 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
     question: "Is multi-factor authentication required to sign in?",
     category: "system",
     answer: [
-      "Not currently — sign-in is not gated on enrollment, and Account security /admin/security says so explicitly so nobody enrolls expecting an immediate change.",
-      "Enroll anyway. It protects your account now and makes enforcement painless whenever it arrives. Because it is not enforced, nobody will chase you about it.",
+      "It depends on your deployment. Enforcement is a configurable setting: where it is on, an admin or agent with no verified factor is blocked from the admin API — everything except their own identity and the enrollment endpoints — until they enroll, and enrolled users are challenged at sign-in. Where it is off, you can work unenrolled.",
+      "Enroll either way. It protects your account now, and if enforcement is switched on later you will not be locked out on the morning it happens.",
     ],
     seeAlso: "secure-your-account",
     keywords: [

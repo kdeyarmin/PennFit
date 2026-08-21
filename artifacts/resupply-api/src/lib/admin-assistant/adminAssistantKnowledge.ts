@@ -378,7 +378,7 @@ Guides (55):
     take-a-front-desk-order — Ring up a walk-in at the front desk
     fulfill-and-ship-an-order — Fulfill an order and print a shipping label
     handle-a-return — Process a return, exchange, or refund
-    manage-subscriptions — Set up and manage a resupply subscription
+    manage-subscriptions — Answer a question about a resupply subscription
     count-and-reconcile-inventory — Run an inventory count and reconcile variance
     moderate-reviews-and-questions — Moderate product reviews and answer customer questions
     recover-abandoned-carts — Recover abandoned carts and clear back-in-stock waitlists
@@ -400,8 +400,8 @@ Guides (55):
     check-capped-rental-modifiers — Check the modifiers on a capped-rental claim
   Outreach & automation:
     send-a-bulk-campaign — Send a bulk SMS or email campaign
-    set-up-resupply-reminders — Turn on resupply reminders
-    build-an-automation-rule — Build an automation rule and dry-run it first
+    set-up-resupply-reminders — Run the resupply reminder program
+    build-an-automation-rule — Set reminder frequency rules and simulate them
     build-your-reply-library — Build the reply library your team actually uses
   Analytics & reports:
     find-and-read-a-report — Find the right report and read it correctly

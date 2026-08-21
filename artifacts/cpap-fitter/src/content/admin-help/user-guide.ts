@@ -516,7 +516,7 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
       },
       {
         kind: "para",
-        text: "Subscriptions holds the recurring resupply plans — items, cadence, and next ship date. The single most useful thing to know about subscriptions is that a patient with too many supplies wants a longer interval, not a cancellation.",
+        text: "Subscriptions is a read-only health dashboard for the subscription base — active and paused counts, pending cancellations, cancellations in the last 30 days, a six-month cohort retention table, and a 30-day churn rate. It has no per-subscription controls: an individual's subscription state shows on their customer record, and the patient makes plan changes from their own account. The most useful thing to know when one calls is that somebody with too many supplies wants a longer interval, not a cancellation.",
       },
       {
         kind: "pages",
@@ -540,7 +540,7 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
           {
             path: "/admin/shop/subscriptions",
             label: "Subscriptions",
-            what: "Recurring resupply plans, cadence, and next ship.",
+            what: "Read-only subscription health: counts, cohort retention, churn.",
           },
           {
             path: "/admin/shop/returns",
@@ -1004,16 +1004,16 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
     title: "Automation",
     category: "outreach",
     intro:
-      "Rules make the app act on its own. That is powerful and slightly dangerous, which is why a dry-run tester ships alongside them.",
+      "How often the app reaches out about resupply, and on which channel — plus a simulator that shows which rule would fire before you rely on it.",
     blocks: [
       {
         kind: "para",
-        text: "Rules define what happens when something occurs — an inbound keyword, an order event, a therapy signal. Compliance rules are the separate, per-payer adherence thresholds that the therapy boards measure against. The rule tester dry-runs a rule against sample input and shows what it would have done without sending anything.",
+        text: "Frequency rules set the default reminder cadence and channel by therapy type, payer, and how long someone has been a customer, and a per-patient override always beats the rule. Compliance rules are a separate thing: the per-payer adherence thresholds the therapy boards measure against. The rule tester takes a hypothetical patient and reports which rule fires and what cadence and channel the worker would pick — it reads the live rules and modifies nothing.",
       },
       {
         kind: "callout",
         tone: "warning",
-        text: "Dry-run every new or edited rule before enabling it. A misconfigured rule messages real patients, and there is no recall.",
+        text: "Simulate a rule change before you rely on it. Cadence rules decide how often real patients hear from you, and a sent reminder cannot be recalled.",
       },
       {
         kind: "pages",
@@ -1022,7 +1022,7 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
           {
             path: "/admin/rules",
             label: "Rules",
-            what: "Automation rules that trigger replies and actions.",
+            what: "Frequency rules — reminder cadence and channel defaults.",
           },
           {
             path: "/admin/compliance-rules",
@@ -1082,7 +1082,7 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
           {
             path: "/admin/delivery-failures",
             label: "Delivery Failures",
-            what: "Sends and shipments that did not land.",
+            what: "Failed SMS, email, and voice sends. Not parcels.",
           },
           {
             path: "/admin/integrations",
