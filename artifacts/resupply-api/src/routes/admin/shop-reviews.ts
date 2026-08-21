@@ -480,6 +480,7 @@ async function resolveProductDisplayName(
     const acct = await stripeAccountRequestOptions(orgId);
     const product: Stripe.Product = await stripe.products.retrieve(
       productId,
+      {},
       acct,
     );
     return product.name || "your review";

@@ -236,8 +236,10 @@ describe("POST /shop/me/chat — branded tool schemas", () => {
   it("brands tool descriptors per request from companyInfo", async () => {
     const { readFileSync } = await import("node:fs");
     const { fileURLToPath } = await import("node:url");
-    const path = await import("node:path");
-    const src = readFileSync(fileURLToPath(new URL("./me-chat.ts", import.meta.url)), "utf8");
+    const src = readFileSync(
+      fileURLToPath(new URL("./me-chat.ts", import.meta.url)),
+      "utf8",
+    );
     expect(src).toContain("brandToolDescriptors(CUSTOMER_CHAT_TOOLS, companyInfo)");
     expect(src).toContain("toolsForCustomerChat(toolCtx)");
     expect(src).toContain("anthropicToolsForCustomerChat(toolCtx)");

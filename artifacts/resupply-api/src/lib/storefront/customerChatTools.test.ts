@@ -97,12 +97,12 @@ describe("escalate_to_human", () => {
       threadCreated: true,
     });
 
-    // The customer's message was actually persisted, with the PennBot
+    // The customer's message was actually persisted, with the assistant
     // marker prefix and the human-readable category label.
     const msgInserts = getSupabaseWritePayloads("messages", "insert");
     expect(msgInserts).toHaveLength(1);
     const body = (msgInserts[0] as { body: string }).body;
-    expect(body).toContain("[Via PennBot · Return / refund]");
+    expect(body).toContain("[Via CareMetric Assistant · Return / refund]");
     expect(body).toContain("cracked");
     expect((msgInserts[0] as { sender_role: string }).sender_role).toBe(
       "customer",
@@ -135,7 +135,7 @@ describe("escalate_to_human", () => {
     const body = (
       getSupabaseWritePayloads("messages", "insert")[0] as { body: string }
     ).body;
-    expect(body).toContain("[Via PennBot · General]");
+    expect(body).toContain("[Via CareMetric Assistant · General]");
   });
 
   it("rejects an empty summary without touching the database", async () => {

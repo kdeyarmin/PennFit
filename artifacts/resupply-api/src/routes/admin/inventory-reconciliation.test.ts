@@ -599,9 +599,13 @@ describe("POST /admin/shop/inventory/reconciliations/:id/submit", () => {
     expect(res.status).toBe(200);
     // Only the SKU with a non-zero delta should be pushed.
     expect(stripeUpdateMock).toHaveBeenCalledTimes(1);
-    expect(stripeUpdateMock).toHaveBeenCalledWith("prod_A", {
-      metadata: { stock_count: "11" },
-    });
+    expect(stripeUpdateMock).toHaveBeenCalledWith(
+      "prod_A",
+      {
+        metadata: { stock_count: "11" },
+      },
+      {},
+    );
     // RPC's lines all carry applied=false; the applied=true stamps land
     // via the follow-up UPDATE on inventory_reconciliation_lines.
     const rpcArgs = getSupabaseRpcArgs(

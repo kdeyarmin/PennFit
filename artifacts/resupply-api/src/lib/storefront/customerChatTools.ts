@@ -42,6 +42,7 @@ import {
   appendCustomerMessage,
 } from "../messaging/in-app-conversation.js";
 import { notifyCsrInboxOfCustomerMessage } from "../messaging/csr-inbox-notify.js";
+import { DEFAULT_STOREFRONT_ASSISTANT_NAME } from "../company-info.js";
 
 /** Maximum tool-execution rounds per user turn — defense vs runaway. */
 export const MAX_CUSTOMER_TOOL_ROUNDS = 2;
@@ -796,7 +797,7 @@ async function executeEscalateToHuman(
   // customer) versus a message the customer typed themselves. The body
   // is capped well under IN_APP_MESSAGE_BODY_MAX even after the prefix.
   const assistantName =
-    ctx.assistantStorefrontName?.trim() || "PennBot";
+    ctx.assistantStorefrontName?.trim() || DEFAULT_STOREFRONT_ASSISTANT_NAME;
   const body =
     `[Via ${assistantName} · ${categoryLabel}]\n` + parsed.data.summary.trim();
   const clampedBody = body.slice(0, IN_APP_MESSAGE_BODY_MAX);

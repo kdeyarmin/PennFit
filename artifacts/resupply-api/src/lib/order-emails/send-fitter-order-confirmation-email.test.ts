@@ -6,12 +6,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const sendEmailMock = vi.fn();
-const createTenantSendgridClientMock = vi.fn(async () => ({
-  sendEmail: sendEmailMock,
-}));
+const createTenantSendgridClientMock = vi.fn(
+  async (_orgId?: string) => ({
+    sendEmail: sendEmailMock,
+  }),
+);
 vi.mock("../email/tenant-sender.js", () => ({
-  createTenantSendgridClient: (...args: unknown[]) =>
-    createTenantSendgridClientMock(...args),
+  createTenantSendgridClient: (orgId?: string) =>
+    createTenantSendgridClientMock(orgId),
 }));
 
 const brandNameRef = vi.hoisted(() => ({ value: "PennPaps" }));
@@ -40,7 +42,7 @@ describe("sendFitterOrderConfirmationEmail", () => {
     brandNameRef.value = "PennPaps";
     sendEmailMock.mockReset();
     createTenantSendgridClientMock.mockReset();
-    createTenantSendgridClientMock.mockImplementation(async () => ({
+    createTenantSendgridClientMock.mockImplementation(async (_orgId?: string) => ({
       sendEmail: sendEmailMock,
     }));
   });
