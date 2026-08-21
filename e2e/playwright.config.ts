@@ -71,7 +71,20 @@ export default defineConfig({
   // network jitter; locally, fail fast.
   retries: process.env["CI"] ? 2 : 0,
   workers: process.env["CI"] ? 1 : undefined,
-  reporter: process.env["CI"] ? "github" : "list",
+  // In CI, "github" alone annotates the run summary but writes NOTHING to
+  // disk — so the `Upload Playwright report on failure` steps in ci.yml found
+  // no `playwright-report/` and silently uploaded nothing. Four Playwright
+  // jobs (two of them required) could fail with no artifact to open. Pair it
+  // with the html reporter so a failure leaves something to read; `open:
+  // "never"` keeps it from trying to launch a browser on a runner.
+  //
+  // Traces and screenshots land under `test-results/` (see `trace` and
+  // `screenshot` below) and ci.yml uploads that directory too — the trace is
+  // usually the thing worth having for a failure that won't reproduce
+  // locally.
+  reporter: process.env["CI"]
+    ? [["github"], ["html", { open: "never" }]]
+    : "list",
 
   webServer: {
     command: "pnpm --filter @workspace/cpap-fitter dev",

@@ -517,7 +517,12 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: playwright-a11y-report
-          path: playwright-report/
+          # Both: the html report (readable summary) and test-results/
+          # (traces from `trace: on-first-retry`, plus failure screenshots).
+          # The trace is what makes a CI-only failure diagnosable.
+          path: |
+            playwright-report/
+            test-results/
           retention-days: 14
 
   smoke:
@@ -614,7 +619,12 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: playwright-smoke-report
-          path: playwright-report/
+          # Both: the html report (readable summary) and test-results/
+          # (traces from `trace: on-first-retry`, plus failure screenshots).
+          # The trace is what makes a CI-only failure diagnosable.
+          path: |
+            playwright-report/
+            test-results/
           retention-days: 14
 
   e2e-dev:
@@ -728,7 +738,12 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: playwright-e2e-dev-report
-          path: playwright-report/
+          # Both: the html report (readable summary) and test-results/
+          # (traces from `trace: on-first-retry`, plus failure screenshots).
+          # The trace is what makes a CI-only failure diagnosable.
+          path: |
+            playwright-report/
+            test-results/
           retention-days: 14
 
   railway-build:
@@ -969,7 +984,12 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: playwright-admin-report
-          path: playwright-report/
+          # Both: the html report (readable summary) and test-results/
+          # (traces from `trace: on-first-retry`, plus failure screenshots).
+          # The trace is what makes a CI-only failure diagnosable.
+          path: |
+            playwright-report/
+            test-results/
           retention-days: 14
 
   audit:
