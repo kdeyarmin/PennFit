@@ -10,7 +10,7 @@
 > specific reason), and the ResMed template's millimetre marks were
 > confirmed by extraction to be a print-calibration ruler. See
 > [`mask-fit-band-audit-2026-08-21.md`](./mask-fit-band-audit-2026-08-21.md)
-> and migration `0510`.
+> and migration `0511`.
 
 The catalog's ~290 size bands ship as **estimates**, and the clinical
 fitter is gated behind an RT signing them off. The obvious way to make

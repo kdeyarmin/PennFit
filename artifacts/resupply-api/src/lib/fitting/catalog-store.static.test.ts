@@ -12,7 +12,7 @@
  * every mask, so `runTiers` would report `outsideValidatedRange` and,
  * under confidence gating, withhold a fitting the DB path would size
  * without complaint. The DB bands run their edge sizes out to the
- * plausibility window (0510's outer-edge rule); this file pins that the
+ * plausibility window (0511's outer-edge rule); this file pins that the
  * fallback adapter does the same.
  */
 

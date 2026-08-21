@@ -3,7 +3,7 @@
  *
  * `maskCatalog` still drives the live /api/recommend path (the
  * invite-gated virtual fitter) and /api/masks. Its original hand-authored
- * `fitRanges` carried the same defect migration 0510 fixed in the DB
+ * `fitRanges` carried the same defect migration 0511 fixed in the DB
  * catalog: nose-to-chin authored on a subnasale→menton scale (~65 mm)
  * while the browser pipeline reports nose TIP → menton (~89 mm on the
  * canonical face). Under `recommendationEngine`'s semantics that had two
@@ -99,7 +99,7 @@ describe("legacy catalog fit ranges", () => {
 
 describe("legacy catalog size runs", () => {
   it("the fabricated DreamWear Full Face Gel is gone", () => {
-    // No such Philips product exists; migration 0511 retires the same
+    // No such Philips product exists; migration 0512 retires the same
     // model in the DB catalog.
     expect(
       maskCatalog.find((m) => m.id === "philips-dreamwear-ff-gel"),

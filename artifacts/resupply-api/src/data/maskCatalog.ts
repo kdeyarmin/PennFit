@@ -4,7 +4,7 @@
  * Model names, types, features, and (as of 2026-08-21) SIZE RUNS are
  * real and verified — see docs/mask-size-run-registry-2026-08-21.md for
  * the per-model evidence. The DB Mask Intelligence Catalog (migrations
- * 0481/0486/0510/0511) is this array's successor for the clinical
+ * 0481/0486/0511/0512) is this array's successor for the clinical
  * fitter; this array still drives the legacy /api/recommend +
  * /api/masks path and the storefront chatbot.
  *
@@ -721,7 +721,7 @@ export const maskCatalog: MaskEntry[] = [
   // "DreamWear Full Face Gel" was removed 2026-08-21: no Philips product
   // by this name exists — the DreamWear line's gel option is the gel
   // PILLOWS cushion, and there is no gel full-face variant. The DB
-  // catalog retires the same model in migration 0511.
+  // catalog retires the same model in migration 0512.
   {
     id: "philips-amara-view",
     name: "Amara View Full Face",

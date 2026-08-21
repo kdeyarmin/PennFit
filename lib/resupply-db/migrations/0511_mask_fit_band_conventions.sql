@@ -1,4 +1,4 @@
--- 0510_mask_fit_band_conventions — put every size band on the axis the
+-- 0511_mask_fit_band_conventions — put every size band on the axis the
 -- fitter actually measures.
 --
 -- The defect

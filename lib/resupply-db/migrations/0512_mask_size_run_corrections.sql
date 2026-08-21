@@ -1,7 +1,7 @@
--- 0511_mask_size_run_corrections — the second wave of size-run fixes,
+-- 0512_mask_size_run_corrections — the second wave of size-run fixes,
 -- from manufacturer-grade sources.
 --
--- 0510 corrected the seven ResMed size runs that could be verified
+-- 0511 corrected the seven ResMed size runs that could be verified
 -- against ResMed's own storefront and flagged the rest as "checked
 -- against retailer listings only … the obvious next pass". This is that
 -- pass. Every change below reached either a manufacturer-hosted document
@@ -68,7 +68,7 @@
 --   retired with bands nulled. Rows are kept, not deleted — fit_sessions
 --   and referrals hold plain foreign keys onto them.
 --
--- Mechanics — same rules as 0510
+-- Mechanics — same rules as 0511
 -- ------------------------------
 -- Renames happen IN PLACE so row UUIDs survive for formulary entries,
 -- past fit sessions and referrals. The Amara rename is a CHAIN
@@ -76,7 +76,7 @@
 -- because the unique index on (model, component, size_code) would
 -- reject a transient duplicate inside one statement. Bands for every
 -- touched model are restated on the final codes using the same
--- derivation as 0510 (canonical-face anchor, ±18% envelope, 10%
+-- derivation as 0511 (canonical-face anchor, ±18% envelope, 10%
 -- overlap, plausibility-window outer edges); a "wide" size shares its
 -- base size's height band and steps up in width. Everything stays
 -- fit_data_source='estimated', needs_clinical_review=true — a verified
@@ -115,7 +115,7 @@ WHERE v."mask_model_id" = m."id"
 -- ---------------------------------------------------------------
 -- 2. The DreamWear Gel Pillows XS — a size Philips never made.
 -- ---------------------------------------------------------------
--- Same retire-don't-delete rule as 0510 step 1.
+-- Same retire-don't-delete rule as 0511 step 1.
 UPDATE "resupply"."mask_size_variants" v
 SET "status" = 'discontinued',
     "sort_order" = 900 + v."sort_order",
@@ -281,7 +281,7 @@ ON CONFLICT ("mask_model_id", "component", "size_code") DO NOTHING;
 -- ---------------------------------------------------------------
 -- 6. Bands for every touched model, restated on the final codes.
 -- ---------------------------------------------------------------
--- Same derivation as 0510 section 3, re-run over the corrected runs.
+-- Same derivation as 0511 section 3, re-run over the corrected runs.
 UPDATE "resupply"."mask_size_variants" v
 SET "nose_width_min_mm"   = x."nw_min", "nose_width_max_mm"   = x."nw_max",
     "nose_height_min_mm"  = x."nh_min", "nose_height_max_mm"  = x."nh_max",
@@ -379,7 +379,7 @@ WHERE v."mask_model_id" = m."id"
 -- ---------------------------------------------------------------
 -- 7. Invalidate sign-offs on touched models; bump catalog versions.
 -- ---------------------------------------------------------------
--- Per 0510 section 5: the rows were rewritten in place, so a prior
+-- Per 0511 section 5: the rows were rewritten in place, so a prior
 -- approval would attest to millimetre ranges that no longer exist.
 DELETE FROM "resupply"."mask_variant_reviews" r
 USING "resupply"."mask_size_variants" v,

@@ -1,7 +1,7 @@
 # Virtual fitter review — capture, measurement, and both engines (2026-08-21)
 
 An end-to-end correctness review of the virtual mask fitter, run after the
-catalog-axis corrections landed (migrations `0510`/`0511`,
+catalog-axis corrections landed (migrations `0511`/`0512`,
 [`mask-fit-band-audit-2026-08-21.md`](./mask-fit-band-audit-2026-08-21.md)).
 Scope: the browser capture + measurement pipeline, the clinical DB engine
 (`/api/fit/assess`), and the legacy engine (`/api/recommend`). One
@@ -47,7 +47,7 @@ Verdict: no defects found. Within a browser/MediaPipe approach this is
 near the practical ceiling — the remaining error budget is dominated by
 landmark localisation noise, which multi-frame medians already attack.
 The one _systematic_ accuracy risk left is the mask-side data, which is
-what 0510/0511 addressed.
+what 0511/0512 addressed.
 
 ## 2. Clinical engine — one gap found and fixed
 

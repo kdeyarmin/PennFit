@@ -9,7 +9,7 @@ The short version: **the catalog's size bands and the fitter's
 measurements were on different anatomical axes**, and 42 of those 52
 models could not return an in-band size for an average adult face.
 Migration
-[`0510_mask_fit_band_conventions.sql`](../lib/resupply-db/migrations/0510_mask_fit_band_conventions.sql)
+[`0511_mask_fit_band_conventions.sql`](../lib/resupply-db/migrations/0511_mask_fit_band_conventions.sql)
 fixes it. Companion research on what manufacturers actually publish is in
 [`mask-sizing-data-sources-2026-08-18.md`](./mask-sizing-data-sources-2026-08-18.md);
 this document is what an audit of the shipped numbers found.
@@ -68,7 +68,7 @@ a patient with an unusual face.
 The seed gated nasal masks and nasal pillows on nose-to-chin **and** mouth
 width. Neither sizes those masks, and because `scoreVariant` averages
 every non-NULL dimension, a dimension that does not size the mask does not
-merely add nothing — it dilutes the ones that do. `0510` sets:
+merely add nothing — it dilutes the ones that do. `0511` sets:
 
 | Interface                       | Gating measurements                     |
 | ------------------------------- | --------------------------------------- |
@@ -153,12 +153,12 @@ formulary entries, past sessions and referrals keep resolving.
 The magnet-free twins `0493` clones off the F20 and F30i inherit both
 corrections.
 
-### The second pass (0511) — every remaining run resolved
+### The second pass (0512) — every remaining run resolved
 
 The runs this section originally deferred ("checked against retailer
 listings only … the obvious next pass") were subsequently verified against
 manufacturer-hosted documents or two independent per-size-SKU sources and
-corrected in migration `0511`. The compiled per-model evidence — every
+corrected in migration `0512`. The compiled per-model evidence — every
 model, seeded vs verified run, citation — lives in
 [`mask-size-run-registry-2026-08-21.md`](./mask-size-run-registry-2026-08-21.md).
 Highlights: the Philips Amara's whole run was shifted one size (seeded
@@ -167,7 +167,7 @@ S/Standard/Wide, not S/M/L (N10 confirmed by ResMed's own sizing
 brochure); the Wisp is Petite / S-M / L / XL; TrueBlue has a fifth (MW)
 size; the DreamWear gel pillows' XS never existed (Philips' own brochure);
 and **"DreamWear Full Face Gel" is not a product at all** — the seed
-invented it, and 0511 retires the model.
+invented it, and 0512 retires the model.
 
 ### The legacy storefront engine had the same defect — fixed in the same pass
 
@@ -209,7 +209,7 @@ Large (52.1–70.0) sits entirely above the ceiling and is unreachable**,
 Medium is reachable across a 1 mm sliver, and every plausible reading
 resolves to Small.
 
-`0510` clears the height bands rather than converting them. The conversion
+`0511` clears the height bands rather than converting them. The conversion
 needs subnasale, which is not among the canonical vertices this repository
 pins, and inventing its offset would be exactly the guess 0499 refused to
 make for REF 620198's full-face column. The nose-width band is kept with
@@ -270,7 +270,7 @@ using the real `scoreVariant`:
 Reverting the AirFit F20 rows to the seed's values fails 1, 3 and 4 —
 including, in as many words, `expected 75.5 to be greater than 89.4`.
 
-The whole chain, `0510` included, was applied to a scratch Postgres 16 and
+The whole chain, `0511` included, was applied to a scratch Postgres 16 and
 the resulting `mask_size_variants` re-queried: zero bands outside the
 windows, zero adult models without an in-band size, and provenance
 unchanged at 253 `estimated` + 3 `manufacturer`, all still
@@ -278,7 +278,7 @@ unchanged at 253 `estimated` + 3 `manufacturer`, all still
 
 ## 8. Tenants who authored their own bands
 
-`0510` touches platform rows only (`org_id IS NULL`). A tenant that
+`0511` touches platform rows only (`org_id IS NULL`). A tenant that
 authored its own nose-to-chin bands against the old seed has **the same
 defect** and has to re-derive them — the correction cannot be applied for
 them, because a tenant's catalog data is its own. Worth a note in the

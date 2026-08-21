@@ -12,11 +12,11 @@
  * subnasale->menton scale (~65 mm on an average adult) while the pipeline
  * reports nose TIP -> menton (~89 mm), and 42 of the 52 Fisher & Paykel /
  * ResMed / Philips Respironics models could not return a single in-band
- * size for an average adult face. Migration 0510 re-derived every band on
+ * size for an average adult face. Migration 0511 re-derived every band on
  * the pipeline's own conventions; this file is what stops it regressing.
  *
  * The assertions run against the committed migration text rather than a
- * database, so they hold in CI with no Postgres — 0510 rewrites every
+ * database, so they hold in CI with no Postgres — 0511 rewrites every
  * platform cushion and pillow band, so its table IS the current geometry.
  * A later migration that edits bands has to extend `BAND_SOURCES` below.
  */
@@ -60,12 +60,12 @@ const MODEL_SOURCES = [
  * its rows replace the earlier file's rows for that (model, component)
  * wholesale, which is exactly what the SQL does to the database —
  * renamed codes disappear rather than lingering next to their
- * replacements. A migration that edits bands after 0511 must be
+ * replacements. A migration that edits bands after 0512 must be
  * appended here.
  */
 const BAND_SOURCES = [
-  "0510_mask_fit_band_conventions.sql",
-  "0511_mask_size_run_corrections.sql",
+  "0511_mask_fit_band_conventions.sql",
+  "0512_mask_size_run_corrections.sql",
 ];
 /**
  * Models retired outright — status='discontinued' at the MODEL level,
@@ -74,7 +74,7 @@ const BAND_SOURCES = [
  * unrecommendable; the fit expectations below skip them.
  */
 const RETIRED_MODELS = new Set([
-  // 0511: "DreamWear Full Face Gel" — no such Philips product; the
+  // 0512: "DreamWear Full Face Gel" — no such Philips product; the
   // DreamWear line's gel option is the gel PILLOWS cushion.
   "philips-dreamwear-ff-gel",
 ]);
@@ -177,7 +177,7 @@ const BAND_ROW = new RegExp(
   "gm",
 );
 
-/** Eson 2 keeps manufacturer-sourced nose-width bands; 0510 restates them. */
+/** Eson 2 keeps manufacturer-sourced nose-width bands; 0511 restates them. */
 const ESON2_ROW = /^\s*\('([SML])', ([\d.]+), ([\d.]+)\),?$/gm;
 
 interface Band {
@@ -326,7 +326,7 @@ describe("the shipped catalog parses", () => {
 });
 
 describe("an average adult face fits every adult mask", () => {
-  // THE regression test. Before migration 0510 this failed for 42 of the
+  // THE regression test. Before migration 0511 this failed for 42 of the
   // 52 masks from the three largest manufacturers, and the symptom was
   // indistinguishable from "this patient has an unusual face".
   const adultRuns = [...RUNS.entries()].filter(
@@ -449,7 +449,7 @@ describe("only the dimensions that size an interface gate it", () => {
   });
 
   it("full-face nose-to-chin bands bracket the canonical adult", () => {
-    // The defect in one line: before 0510 the AirFit F20's whole run
+    // The defect in one line: before 0511 the AirFit F20's whole run
     // topped out at 80.5 mm against an 89.4 mm average adult.
     for (const { model, bands } of RUNS.values()) {
       if (!FACE.includes(model.interfaceType)) continue;
@@ -471,8 +471,8 @@ describe("only the dimensions that size an interface gate it", () => {
 });
 
 describe("size runs match what the manufacturer actually ships", () => {
-  // Verified while auditing the seed — 0510's runs against ResMed's own
-  // storefront (eshop.resmed.com) and support pages; 0511's against
+  // Verified while auditing the seed — 0511's runs against ResMed's own
+  // storefront (eshop.resmed.com) and support pages; 0512's against
   // manufacturer-hosted documents or two independent sources with
   // per-size SKUs (docs/mask-size-run-registry-2026-08-21.md holds the
   // per-model citations). Each of these was wrong in the seed: invented
@@ -502,7 +502,7 @@ describe("size runs match what the manufacturer actually ships", () => {
     "philips-wisp-pediatric|cushion": ["S", "M", "L"],
     "philips-trueblue|cushion": ["P", "S", "M", "MW", "L"],
     "philips-comfortgel-blue-full|cushion": ["S", "M", "L", "XL"],
-    // 0511 also aligns this run's Medium-Wide CODE with the rest of the
+    // 0512 also aligns this run's Medium-Wide CODE with the rest of the
     // catalog ('MW', long form as the label) so the DB and static
     // catalog modes emit the same size code.
     "philips-dreamwear-ff|cushion": ["S", "M", "MW", "L"],
