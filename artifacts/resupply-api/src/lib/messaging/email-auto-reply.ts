@@ -75,7 +75,7 @@ const EMAIL_REPLY_ADDENDUM = [
   "EMAIL REPLY MODE",
   "",
   "You are now replying BY EMAIL to a message a patient or customer sent",
-  "to PennPaps. Everything above is your knowledge base — use it to answer.",
+  "to Penn Home Medical Supply. Everything above is your knowledge base — use it to answer.",
   "",
   "First decide whether you can fully and safely answer using ONLY general",
   "knowledge (products, insurance basics, replacement schedules, returns &",
@@ -216,7 +216,7 @@ export async function generateEmailReply(
   }
 
   const userPrompt = buildUserPrompt(input);
-  // Brand the knowledge base + email addendum (sign-off, "to PennPaps")
+  // Brand the knowledge base + email addendum (sign-off, "to Penn Home Medical Supply")
   // for the sender's tenant. Mirror the /api/chat boundary: apply the saved
   // company identity (phone/email/brand) AND swap the platform assistant-name
   // tokens (PennBot/PennPilot) per tenant via applyPlatformBrandingForOrg —

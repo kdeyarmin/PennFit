@@ -937,7 +937,7 @@ function Hero({
 // ./components/shop/shipping-eta so the cart page can render the
 // same promise. Imported at the top of this file.)
 //
-// Eastern-time ship cutoff (PennPaps warehouse is in PA). Orders
+// Eastern-time ship cutoff (Penn Home Medical Supply warehouse is in PA). Orders
 // placed before this clock time on a business day ship same-day; later
 // orders or weekend orders ship the next business day. We compute
 // everything in America/New_York so the badge is correct for shoppers

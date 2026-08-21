@@ -15,7 +15,7 @@
 //     renders a real filled button, not a bare link.
 //   * Brand-neutral by parameter. The header wordmark is whatever brand
 //     the caller passes — the PLATFORM emails pass "CareMetric Breathe",
-//     while a TENANT's transactional email (e.g. a PennPaps patient-portal
+//     while a TENANT's transactional email (e.g. a Penn Home Medical Supply patient-portal
 //     invite) passes the tenant's own product name. The *look* is shared;
 //     the *name* stays correct per the brand architecture in CLAUDE.md.
 //

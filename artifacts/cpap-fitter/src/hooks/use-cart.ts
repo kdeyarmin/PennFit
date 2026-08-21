@@ -1,4 +1,4 @@
-// useCart — localStorage-backed cart for the PennPaps cash-pay shop.
+// useCart — localStorage-backed cart for the Penn Home Medical Supply cash-pay shop.
 //
 // Why localStorage (not server-backed):
 //   The shop accepts anonymous visitors. Pushing a cart to the server

@@ -23,7 +23,7 @@ import {
 
 const SEED_ROW = {
   name: "Penn Home Medical Supply",
-  storefront_name: "PennPaps",
+  storefront_name: "Penn Home Medical Supply",
   tagline: "Your CPAP, made simple. Fit. Shop. Resupply.",
   logo_url: null,
 };
@@ -44,7 +44,7 @@ describe("resolveBrandingByHost", () => {
   it("returns the Penn tenant brand for pennpaps.com", async () => {
     stageSupabaseResponse("organizations", "select", { data: SEED_ROW });
     const b = await resolveBrandingByHost("pennpaps.com");
-    expect(b.storefrontName).toBe("PennPaps");
+    expect(b.storefrontName).toBe("Penn Home Medical Supply");
     expect(b.legalName).toBe("Penn Home Medical Supply");
     expect(b.logoUrl).toBeNull();
   });

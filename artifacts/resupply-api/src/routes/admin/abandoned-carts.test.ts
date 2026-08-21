@@ -56,10 +56,10 @@ vi.mock("@workspace/resupply-email", async () => {
 
 // The cart-abandonment email brands its subject with the tenant storefront
 // name (G6); mock the resolver so the assertion is deterministic (seed →
-// "PennPaps").
+// "Penn Home Medical Supply").
 vi.mock("../../lib/tenant-branding.js", () => ({
   resolveBrandingByOrgId: vi.fn(async () => ({
-    storefrontName: "PennPaps",
+    storefrontName: "Penn Home Medical Supply",
     legalName: "Penn Home Medical Supply",
     tagline: "tagline",
     logoUrl: null,
@@ -104,7 +104,7 @@ const originalEnv: Partial<Record<EnvKey, string | undefined>> = {};
 function setSendgridEnv(): void {
   process.env.SENDGRID_API_KEY = "SG.testkey";
   process.env.SENDGRID_FROM_EMAIL = "no-reply@penn.example";
-  process.env.SENDGRID_FROM_NAME = "PennPaps";
+  process.env.SENDGRID_FROM_NAME = "Penn Home Medical Supply";
   process.env.RESUPPLY_ADMIN_EMAILS = ALLOWED_EMAIL;
   process.env.SHOP_PUBLIC_BASE_URL = "https://test.example.com";
   process.env.NODE_ENV = "test";
@@ -189,7 +189,7 @@ describe("POST /admin/shop/abandoned-carts/send-due", () => {
     // is rendered in the email body, but no PHI should be there.
     const call = sendEmailMock.mock.calls[0][0];
     expect(call.to).toBe("joan@example.com");
-    expect(call.subject).toContain("PennPaps cart");
+    expect(call.subject).toContain("Penn Home Medical Supply cart");
     expect(call.html).toContain("Headgear");
     expect(call.text).toContain("Headgear");
     expect(call.customArgs).toEqual({ kind: "cart_abandonment_v1" });

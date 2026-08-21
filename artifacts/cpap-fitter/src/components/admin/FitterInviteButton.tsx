@@ -1,7 +1,7 @@
 // "Invite to AI Fitter" — a quick-action button + modal that sends a
 // patient (or, from the worklist, a prospect) a signed link to run the
 // on-device AI mask fitter. On completion the measurements + answers +
-// recommendation come back to PennPaps (see ../../pages/fitter-invite
+// recommendation come back to Penn Home Medical Supply (see ../../pages/fitter-invite
 // + the /shop/fitter-invite/* endpoints) and auto-attach to a matching
 // chart.
 //

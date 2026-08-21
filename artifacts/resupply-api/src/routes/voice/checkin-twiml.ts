@@ -77,7 +77,7 @@ router.post(
     const journeyId = (req.query["journeyId"] ?? "").toString();
 
     // Brand the spoken script with the patient's tenant (the patient id rode
-    // in the signed URL). Seed / unresolved → "PennPaps", unchanged.
+    // in the signed URL). Seed / unresolved → "Penn Home Medical Supply", unchanged.
     //
     // Fail-soft: this is a Twilio webhook, so a tenant-lookup hiccup
     // (PostgREST/network) must NEVER 500 — that would drop the patient's

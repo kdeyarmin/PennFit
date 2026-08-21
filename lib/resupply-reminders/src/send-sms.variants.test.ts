@@ -7,7 +7,7 @@ import { describe, it, expect } from "vitest";
 import { defaultReminderSmsBody, smsAsksRefillAttestation } from "./send-sms";
 
 const NAME = "Sam";
-const PRACTICE = "PennPaps";
+const PRACTICE = "Penn Home Medical Supply";
 
 // GSM-7 has no em-dash, curly quotes, or ellipsis; any of those silently
 // flips Twilio to UCS-2 (70-char segments), tripling cost at scale.
@@ -28,7 +28,7 @@ describe("defaultReminderSmsBody", () => {
     // the copy asks them to confirm continued use AND running low before
     // replying (see REFILL_AFFIRMATION_STATEMENT).
     expect(defaultReminderSmsBody("initial", NAME, PRACTICE)).toBe(
-      "Hi Sam, it's PennPaps. Time for your CPAP refill. Still use it and low on supplies? Reply YES to ship. EDIT to fix your address. STOP to opt out.",
+      "Hi Sam, it's Penn Home Medical Supply. Still use your CPAP and low on supplies? Reply YES to ship a refill. EDIT to fix your address. STOP to opt out.",
     );
   });
 

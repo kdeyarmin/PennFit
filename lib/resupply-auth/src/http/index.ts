@@ -33,7 +33,7 @@ import type { AuthDeps } from "./types";
 export interface AuthRouterOptions {
   /**
    * Software/product name used in email subjects + body copy,
-   * e.g. "PennPaps". Required because the lib is brand-neutral.
+   * e.g. "Penn Home Medical Supply". Required because the lib is brand-neutral.
    */
   productName: string;
   /**

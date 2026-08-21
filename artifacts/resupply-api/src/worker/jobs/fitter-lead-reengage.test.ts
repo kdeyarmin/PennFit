@@ -42,8 +42,8 @@ import {
 const FULL_CFG = {
   sendgridApiKey: "SG.fake",
   sendgridFromEmail: "info@pennpaps.example",
-  sendgridFromName: "PennPaps",
-  practiceName: "PennPaps",
+  sendgridFromName: "Penn Home Medical Supply",
+  practiceName: "Penn Home Medical Supply",
   publicBaseUrl: "https://pennfit.example",
 };
 
@@ -70,7 +70,7 @@ describe("composeReengageEmail", () => {
 
   it("links back to /consent on the public base URL", () => {
     const out = composeReengageEmail({
-      practiceName: "PennPaps",
+      practiceName: "Penn Home Medical Supply",
       publicBaseUrl: "https://pennfit.example",
     });
     expect(out.text).toContain("https://pennfit.example/consent");

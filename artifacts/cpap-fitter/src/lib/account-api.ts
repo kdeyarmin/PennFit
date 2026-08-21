@@ -460,8 +460,8 @@ export interface AccountMessage {
   /**
    * Who sent the message:
    *   "customer" — the signed-in shopper (this user)
-   *   "admin"    — full admin role at PennPaps
-   *   "agent"    — limited customer-service-agent role at PennPaps
+   *   "admin"    — full admin role at Penn Home Medical Supply
+   *   "agent"    — limited customer-service-agent role at Penn Home Medical Supply
    *   "system"   — automated event marker
    */
   senderRole: "customer" | "admin" | "agent" | "system";

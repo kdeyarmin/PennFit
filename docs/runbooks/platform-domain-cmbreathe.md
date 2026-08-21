@@ -21,7 +21,7 @@ apex**, not a tenant-claimable custom domain.
   custom domain, seeded permanently for the `penn-home-medical` org by
   migration `0353_platform_and_pennpaps_domains.sql`. A unique index on
   `organizations.custom_domain` means no other tenant can claim it. Requests
-  on this host resolve to the Penn org and render the **"PennPaps"** brand.
+  on this host resolve to the Penn org and render its brand.
 
 No code change is required to add `cmbreathe.com` — the application already
 treats it as the platform apex. The steps below are DNS + Railway + env: the
@@ -61,7 +61,7 @@ is unset the boot-time `applyEnvAliases()`
 (`lib/resupply-secrets/src/env-aliases.ts`) synthesizes the five
 `*_PUBLIC_BASE_URL` vars (`SHOP_`, `REMINDER_`, `RESUPPLY_VOICE_`,
 `RESUPPLY_DASHBOARD_`, `PENN_ADMIN_`) from it. So if those are left blank, the
-PennPaps tenant's reminder / shop / admin / voice links would silently move to
+Penn tenant's reminder / shop / admin / voice links would silently move to
 `cmbreathe.com`. Before binding, set **`PUBLIC_BASE_URL=https://pennpaps.com`**
 (or pin each `*_PUBLIC_BASE_URL` var) so the tenant's outbound links stay on
 `pennpaps.com`. An explicit value always wins over the `RAILWAY_PUBLIC_DOMAIN`
@@ -115,7 +115,7 @@ pnpm --filter @workspace/scripts verify:deploy -- https://cmbreathe.com
 Then load each host in a browser:
 
 - `https://cmbreathe.com` → **CareMetric Breathe** platform brand.
-- `https://pennpaps.com` → **PennPaps** (Penn Home Medical Supply).
+- `https://pennpaps.com` → **Penn Home Medical Supply**.
 - (optional) `https://<some-tenant-slug>.cmbreathe.com` → that tenant's
   brand via slug routing.
 

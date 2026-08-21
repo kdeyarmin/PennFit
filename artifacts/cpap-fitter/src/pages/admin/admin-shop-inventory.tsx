@@ -33,7 +33,7 @@ const DEFAULT_LOW_STOCK_THRESHOLD = 5;
 // will pick the change up on its next flush.
 //
 // Why one row per SKU (no pagination):
-//   The PennPaps cash-pay catalog is intentionally small (under
+//   The Penn Home Medical Supply cash-pay catalog is intentionally small (under
 //   ~30 SKUs). When/if it grows past a screenful, paginate then.
 //   Today's UX is "see the whole list and find the SKU you came
 //   to edit" — anything fancier would be premature.

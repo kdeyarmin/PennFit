@@ -22,7 +22,7 @@ function sampleInput(): QuickbooksExportInput {
   return {
     from: "2026-04-01",
     to: "2026-04-30",
-    practiceName: "PennPaps",
+    practiceName: "Penn Home Medical Supply",
     rows: [
       {
         txnId: "ORD-abc123",
@@ -48,7 +48,7 @@ describe("renderIif", () => {
   it("emits the schema headers and trailing newline", () => {
     const iif = renderIif(sampleInput());
     expect(iif).toMatch(
-      /^; CareMetric Breathe QuickBooks export — PennPaps\n; Range: 2026-04-01 to 2026-04-30\n; Rows: 2\n/,
+      /^; CareMetric Breathe QuickBooks export — Penn Home Medical Supply\n; Range: 2026-04-01 to 2026-04-30\n; Rows: 2\n/,
     );
     expect(iif).toContain(
       "!TRNS\tTRNSID\tTRNSTYPE\tDATE\tACCNT\tNAME\tAMOUNT\tMEMO",

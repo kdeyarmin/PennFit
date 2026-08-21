@@ -1,5 +1,5 @@
 // AccountMessagesSection — in-account thread between the signed-in
-// shopper and PennPaps customer service. Lives on /account.
+// shopper and Penn Home Medical Supply customer service. Lives on /account.
 //
 // Shape: one thread per customer. The component fetches the thread
 // once on mount, optimistically appends the customer's outgoing

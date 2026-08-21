@@ -29,7 +29,7 @@ import { getTenantConfigValue } from "./app-config/store.js";
  * The platform/parent-company brand. PennFit is the codename of this
  * SaaS; the product the business sells is **CareMetric Breathe**. It is
  * the constant that does NOT change per tenant — every DME company
- * (Penn Home Medical Supply / "PennPaps" is one such tenant) runs its
+ * (Penn Home Medical Supply is one such tenant) runs its
  * own storefront brand on top of the CareMetric Breathe platform. Use
  * this anywhere the app refers to *itself* (the software/platform), as
  * opposed to the operating tenant's own brand (see `CompanyInfo.name`).
@@ -95,7 +95,7 @@ export interface CompanyInfo {
 // no `dme_organization` row exists (and no RESUPPLY_PRACTICE_NAME env).
 //
 // Brand architecture: the platform is **CareMetric Breathe** (cmbreathe.com).
-// "Penn Home Medical Supply" / storefront brand "PennPaps" is ONE TENANT, not
+// "Penn Home Medical Supply" is ONE TENANT, not
 // the platform default — so an unseeded environment, or a second tenant that
 // hasn't filled in Company Information, falls back to the NEUTRAL platform
 // identity rather than inheriting the seed tenant's brand. The seed tenant
@@ -114,6 +114,12 @@ const DEFAULTS = {
   phoneDisplay: "",
   supportEmail: "support@cmbreathe.com",
   generalEmail: "support@cmbreathe.com",
+  // The platform's own site. Shared by BOTH fallback identities so they
+  // cannot drift: `identityReplacements()` derives `websiteHost` from this,
+  // and a null here made the unconfigured (source="fallback") path rewrite
+  // "pennpaps.com" to the company NAME — "visit CareMetric Breathe" instead
+  // of a working host — in every patient-facing string it touched.
+  websiteUrl: "https://cmbreathe.com",
   supportHours: "Mon–Fri 9a–5p ET",
 } as const;
 
@@ -177,7 +183,7 @@ function envFallbackInfo(): CompanyInfo {
     generalEmail: DEFAULTS.generalEmail,
     billingEmail: DEFAULTS.generalEmail,
     faxE164: null,
-    websiteUrl: null,
+    websiteUrl: DEFAULTS.websiteUrl,
     supportHours: DEFAULTS.supportHours,
     address: null,
     organizationalNpi: null,
@@ -206,7 +212,7 @@ function platformFallbackInfo(): CompanyInfo {
     // The platform's own site, so applyCompanyIdentityToText rewrites the
     // historical "pennpaps.com" placeholder to "cmbreathe.com" for an
     // unconfigured tenant rather than a broken substitution.
-    websiteUrl: "https://cmbreathe.com",
+    websiteUrl: DEFAULTS.websiteUrl,
     supportHours: DEFAULTS.supportHours,
     address: null,
     organizationalNpi: null,
@@ -306,7 +312,7 @@ export async function getCompanyInfo(orgId?: string): Promise<CompanyInfo> {
     if (explicitOrgId && explicitOrgId !== seedOrgId) {
       // A specific NON-seed tenant. Its own row, or the neutral platform
       // identity — never the seed (Penn) tenant's env-folded brand. This is
-      // what stops a new/unconfigured tenant from inheriting "PennPaps".
+      // what stops a new/unconfigured tenant from inheriting "Penn Home Medical Supply".
       info = (await loadFromDb(explicitOrgId)) ?? platformFallbackInfo();
     } else {
       // The seed tenant (explicit or default). Single-tenant behavior is
@@ -374,8 +380,8 @@ export function getCompanyInfoSync(): CompanyInfo {
 /**
  * Name to print on official DME documents — SWO/CMN/DWO letterheads,
  * fax covers, prescription requests, manual documents, and report
- * sign-offs. Always the registered legal name ("Penn Home Medical
- * Supply"), never the online-storefront brand ("PennPaps").
+ * sign-offs. Always the registered legal name, never a storefront-only
+ * DBA — for a tenant that has one, those are different strings.
  */
 export async function getDocumentSupplierName(orgId?: string): Promise<string> {
   return (await getCompanyInfo(orgId)).legalName;
@@ -403,19 +409,30 @@ function identityReplacements(info: CompanyInfo): Array<[string, string]> {
   return [
     ["support@pennpaps.com", info.supportEmail],
     ["info@pennpaps.com", info.generalEmail],
+    // The seed tenant's registered name is the in-source placeholder for
+    // "the operating company" across knowledge bases, email copy and the
+    // intake-form bodies. It resolves to the requesting tenant's
+    // `legalName`, NOT its storefront `name`: several of those bodies are
+    // consent / ABN / notice-of-privacy-practices text, where naming a
+    // DBA instead of the registered entity would be wrong. A tenant with
+    // no DBA — which is now every one by default — has the two equal, so
+    // this only differs for a tenant that deliberately keeps both.
     ["Penn Home Medical Supply", info.legalName],
     ["PennPaps.com", websiteHost],
     ["pennpaps.com", websiteHost],
     ["(814) 471-0627", info.supportPhoneDisplay],
     ["+18144710627", info.supportPhoneE164],
-    // The voice/IVR (TTS) day-copy spaces the storefront brand as two
-    // words ("Penn Paps") so Polly/ElevenLabs pronounce it naturally;
-    // rewrite that spelling too for a non-seed tenant. Skip it when the
-    // brand IS the seed "PennPaps" so the seed tenant keeps its deliberate
-    // two-word TTS spelling rather than collapsing to camel case.
-    ...(info.name === "PennPaps"
-      ? []
-      : ([["Penn Paps", info.name]] as Array<[string, string]>)),
+    // Legacy brand needles, kept for content PERSISTED under the seed
+    // tenant's retired "PennPaps" storefront DBA — saved campaign
+    // bodies, message drafts, stored templates — which is rewritten on
+    // read like any other baked-in placeholder. Migration 0510 dropped
+    // that DBA and the source copy above now spells the official
+    // company name, so neither needle fires on freshly-rendered text.
+    // The voice/IVR copy spaced the brand as two words ("Penn Paps") so
+    // Polly/ElevenLabs pronounced it naturally; that spelling is no
+    // longer suppressed for the seed tenant, whose brand is no longer
+    // the camel-case spelling it would have collapsed to.
+    ["Penn Paps", info.name],
     ["PennPaps", info.name],
     // Hour-blurb variants that appear across the knowledge bases.
     ["Monday-Friday 9 AM - 5 PM Eastern", info.supportHours],

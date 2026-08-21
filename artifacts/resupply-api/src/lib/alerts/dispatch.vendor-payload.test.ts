@@ -26,13 +26,13 @@ vi.hoisted(() => {
   // Make readEmailConfigOrNull() + readSmsConfigOrNull() return config.
   process.env.SENDGRID_API_KEY = "SG.test";
   process.env.SENDGRID_FROM_EMAIL = "info@pennpaps.com";
-  process.env.SENDGRID_FROM_NAME = "PennPaps";
+  process.env.SENDGRID_FROM_NAME = "Penn Home Medical Supply";
   process.env.SENDGRID_EVENT_WEBHOOK_PUBLIC_KEY = "test-pub-key";
   process.env.TWILIO_ACCOUNT_SID = "ACtest";
   process.env.TWILIO_AUTH_TOKEN = "test-token";
   process.env.TWILIO_PHONE_NUMBER = "+12158675309";
   process.env.RAILWAY_PUBLIC_DOMAIN = "pennfit.up.railway.app";
-  process.env.RESUPPLY_PRACTICE_NAME = "PennPaps";
+  process.env.RESUPPLY_PRACTICE_NAME = "Penn Home Medical Supply";
 });
 
 interface SentEmail {
@@ -133,7 +133,9 @@ describe("dispatchAlert — vendor payload (email)", () => {
     expect(sendEmail).toHaveBeenCalledTimes(1);
     const payload = sendEmail.mock.calls[0]![0];
     expect(payload.to).toBe("sam@example.com");
-    expect(payload.subject).toBe("Your PennPaps order A-100 shipped");
+    expect(payload.subject).toBe(
+      "Your Penn Home Medical Supply order A-100 shipped",
+    );
     expect(payload.text).toBe("Hi Sam, order A-100 is on its way.");
     // No html body in the template → the plain text is wrapped in a
     // <pre> (HTML-escaped) rather than sent raw.

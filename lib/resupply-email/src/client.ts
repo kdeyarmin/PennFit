@@ -163,7 +163,7 @@ export interface SendgridClient {
  * from the canonical platform address.
  *
  * This is the PLATFORM fallback, NOT a tenant address: the Penn Home Medical
- * Supply tenant ("PennPaps") has its OWN explicit sender pinned to
+ * Supply tenant ("Penn Home Medical Supply") has its OWN explicit sender pinned to
  * info@pennpaps.com (migration 0377), so moving this default to cmbreathe.com
  * does not change Penn's mail — it only changes the default every other
  * (unconfigured) tenant inherits.

@@ -232,7 +232,7 @@ export function Order() {
       {
         data: {
           chosenMask,
-          // Forward the on-device measurements so PennPaps can verify sizing.
+          // Forward the on-device measurements so Penn Home Medical Supply can verify sizing.
           // Numeric only — image was discarded after the measure step.
           ...(measurements ? { measurements } : {}),
           patient: values.patient,

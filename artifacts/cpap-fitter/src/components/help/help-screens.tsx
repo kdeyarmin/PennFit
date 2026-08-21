@@ -5,7 +5,7 @@ import { useCompanyContact } from "@/lib/contact";
 /**
  * Help Center "screenshots".
  *
- * These are hand-drawn, theme-faithful SVG mock-ups of the real PennPaps
+ * These are hand-drawn, theme-faithful SVG mock-ups of the real Penn Home Medical Supply
  * screens, wrapped in a browser- or phone-chrome frame so a help article
  * can show "here's what this screen looks like" without shipping binary
  * PNG assets into the repo (which would bloat the bundle, can't be diffed,

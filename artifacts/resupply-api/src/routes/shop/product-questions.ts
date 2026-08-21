@@ -143,7 +143,7 @@ router.post(
     // Public display name as "FirstName L." matches the shop_reviews
     // convention. When the customer has no parsable name, fall back to
     // "<tenant storefront> customer" so a non-seed tenant's Q&A byline never
-    // shows the seed brand ("PennPaps customer"). resolveBrandingByOrgId
+    // shows the seed brand ("Penn Home Medical Supply customer"). resolveBrandingByOrgId
     // returns the seed storefront name for the seed org (single-tenant copy
     // unchanged) and the neutral CareMetric Breathe brand for an
     // unconfigured tenant.

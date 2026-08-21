@@ -23,7 +23,7 @@ describe("renderGfePdf", () => {
       ],
       disclaimerText: DEFAULT_GFE_DISCLAIMER,
       dmeOrganization: {
-        legalName: "PennPaps Inc",
+        legalName: "Penn Home Medical Supply Inc",
         npi: "1234567893",
         addressLine1: "100 Main St",
         city: "State College",

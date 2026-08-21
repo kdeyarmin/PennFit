@@ -28,8 +28,8 @@ vi.mock("../web-push", () => ({
 
 vi.mock("../tenant-branding.js", () => ({
   resolveBrandingByOrgId: vi.fn(async () => ({
-    storefrontName: "PennPaps",
-    legalName: "PennPaps",
+    storefrontName: "Penn Home Medical Supply",
+    legalName: "Penn Home Medical Supply",
     tagline: "t",
     logoUrl: null,
   })),

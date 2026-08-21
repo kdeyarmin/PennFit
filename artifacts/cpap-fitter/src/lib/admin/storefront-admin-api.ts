@@ -1,5 +1,5 @@
 /**
- * Typed fetch wrappers for the PennPaps storefront admin endpoints
+ * Typed fetch wrappers for the Penn Home Medical Supply storefront admin endpoints
  * (`/api/admin/*`) that resupply-api now mounts alongside its own
  * `/resupply-api/*` routes (Task #37 consolidation).
  *

@@ -16,7 +16,7 @@ describe("deriveInitials", () => {
 
   it("uses two letters of a single-word name", () => {
     expect(deriveInitials("Acme")).toBe("AC");
-    expect(deriveInitials("PennPaps")).toBe("PE");
+    expect(deriveInitials("Breathe")).toBe("BR");
   });
 
   it("handles a single-letter word", () => {

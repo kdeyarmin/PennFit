@@ -158,7 +158,7 @@ interface ReviewAuthorIdentity {
  * Resolve the author's public display name + denormalized email from
  * the auth provider. Display name is "FirstName L." (last initial only) so the
  * public review feed reads as a real person without exposing full
- * names. Falls back to "PennPaps customer" if the the auth provider profile lacks
+ * names. Falls back to "Penn Home Medical Supply customer" if the the auth provider profile lacks
  * a usable first name.
  *
  * Throws on missing email — we will not insert a review row without
@@ -177,7 +177,7 @@ async function resolveAuthorIdentity(
   // public review list's signal-to-noise low. Split the displayName
   // on whitespace; the first token is the given name, and the
   // first letter of the LAST token is treated as the last initial.
-  // Falls through to "PennPaps customer" when displayName is null
+  // Falls through to "Penn Home Medical Supply customer" when displayName is null
   // or unparseable.
   const tokens = (profile.displayName ?? "")
     .trim()

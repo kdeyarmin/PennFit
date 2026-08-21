@@ -85,7 +85,7 @@ export interface ApprovedEmailInput {
    * Tenant the review (and recipient) belongs to. The email is sent under
    * the tenant's own From identity (G6) and branded with the tenant's
    * storefront name; omit / undefined keeps the platform default. For the
-   * seed tenant this resolves to PennPaps, so single-tenant copy is
+   * seed tenant this resolves to Penn Home Medical Supply, so single-tenant copy is
    * unchanged.
    */
   orgId?: string;

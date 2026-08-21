@@ -218,7 +218,7 @@ export function Consent() {
             commit. The image / measurement story above is unchanged (still
             on-device only). Order details are different: once a patient
             chooses to place an order, name/DOB/address/insurance/Rx ARE
-            stored on PennPaps's servers so staff can fulfill it. Be explicit so
+            stored on Penn Home Medical Supply's servers so staff can fulfill it. Be explicit so
             consent is informed.
           */}
           <div className="flex gap-4 p-5 rounded-xl glass-panel border border-[hsl(var(--penn-gold)/0.4)]">

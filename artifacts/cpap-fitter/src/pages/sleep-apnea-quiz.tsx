@@ -28,7 +28,7 @@ import { BrandName } from "@/components/company-contact";
 // Implements the STOP-BANG questionnaire (Chung et al., 2008), the
 // most-validated bedside screener for obstructive sleep apnea. We
 // surface the score AND a strongly-worded "this is not a diagnosis"
-// path back to the patient's physician — never an implicit "PennPaps
+// path back to the patient's physician — never an implicit "Penn Home Medical Supply
 // will treat your apnea" message, which would be both clinically
 // wrong (we don't diagnose) and regulatorily wrong (we're a DME
 // supplier, not a sleep clinic).
@@ -618,7 +618,7 @@ function ResultCard({ score, copy, yesSymptoms, onReset }: ResultCardProps) {
         </div>
 
         {/* Always-on physician CTA. Even at "low" risk we direct to a
-            physician conversation — never to PennPaps as if we were
+            physician conversation — never to Penn Home Medical Supply as if we were
             a diagnostic path. */}
         <div className="rounded-xl bg-[hsl(var(--penn-navy))]/[0.04] ring-1 ring-[hsl(var(--penn-navy))]/10 p-4 sm:p-5 space-y-1.5">
           <p className="text-sm font-semibold text-primary flex items-center gap-2">

@@ -11,11 +11,11 @@ describe("renderAlertMessage", () => {
       allowedVariables: ["first_name", "practice_name", "order_number"],
       variables: {
         first_name: "Sam",
-        practice_name: "PennPaps",
+        practice_name: "Penn Home Medical Supply",
         order_number: "A-100",
       },
     });
-    expect(out.subject).toBe("Hi Sam from PennPaps");
+    expect(out.subject).toBe("Hi Sam from Penn Home Medical Supply");
     expect(out.bodyHtml).toBe("<p>Order A-100 shipped</p>");
     expect(out.bodyText).toBe("Order A-100 shipped to Sam");
   });

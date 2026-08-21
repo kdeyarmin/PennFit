@@ -41,7 +41,7 @@ export async function applyTenantEmailSender<T extends EmailFromConfig>(
     sendgridFromEmail: sender.fromEmail,
     // resolveTenantSender pins a (possibly empty) fromName whenever it
     // returns an address, so a non-Penn tenant never inherits the seed
-    // tenant's "PennPaps" display name.
+    // tenant's "Penn Home Medical Supply" display name.
     sendgridFromName: sender.fromName ?? "",
   };
 }

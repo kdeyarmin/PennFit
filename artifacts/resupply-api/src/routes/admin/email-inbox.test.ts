@@ -171,7 +171,7 @@ describe("GET /admin/email-inbox", () => {
           conversation_id: CONV_ID,
           direction: "outbound",
           sender_role: "agent",
-          body: "Great question — a full-face mask is the way to go.\n— The PennPaps Team",
+          body: "Great question — a full-face mask is the way to go.\n— The Penn Home Medical Supply Team",
           vendor_metadata: { auto_reply: true, sendgrid_message_id: "sg-1" },
           created_at: new Date("2025-04-02T12:05:00Z").toISOString(),
         },

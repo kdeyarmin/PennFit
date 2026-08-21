@@ -2287,7 +2287,7 @@ def make_story(toc_entries):
         "<b>tenant</b> with its own brand, web address, phone numbers, "
         "patients, and billing. A new tenant starts with CareMetric "
         "branding and makes it their own from System Configuration; "
-        "<b>Penn Home Medical Supply</b> (storefront brand “PennPaps”) is "
+        "<b>Penn Home Medical Supply</b> is "
         "simply one example of a tenant operating on the platform. The "
         "screenshots in this manual come from the CareMetric demo "
         "environment, so they show the platform's own branding — your live "

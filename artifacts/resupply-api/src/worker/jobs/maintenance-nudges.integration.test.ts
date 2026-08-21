@@ -70,8 +70,8 @@ const FIVE_DAYS_MS = 5 * 86_400_000;
 const FULL_CFG = {
   sendgridApiKey: "SG.integration-test",
   sendgridFromEmail: "info@pennpaps.example",
-  sendgridFromName: "PennPaps",
-  practiceName: "PennPaps",
+  sendgridFromName: "Penn Home Medical Supply",
+  practiceName: "Penn Home Medical Supply",
   publicBaseUrl: "https://pennfit.example",
 };
 

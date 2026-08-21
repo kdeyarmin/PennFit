@@ -103,10 +103,10 @@ vi.mock("../../lib/web-push", () => ({
 
 // The reply-notification helper brands the push/email with the tenant's
 // storefront name + base URL. Pin the seed tenant's brand so the assertions
-// stay on "PennPaps" / pennpaps.com without a live DB.
+// stay on "Penn Home Medical Supply" / pennpaps.com without a live DB.
 vi.mock("../../lib/tenant-branding", () => ({
   resolveBrandingByOrgId: vi.fn(async () => ({
-    storefrontName: "PennPaps",
+    storefrontName: "Penn Home Medical Supply",
     legalName: "Penn Home Medical Supply",
     tagline: "",
     logoUrl: null,
@@ -248,7 +248,7 @@ describe("POST /conversations/:id/reply (in_app)", () => {
     expect(sendPushToCustomerMock).toHaveBeenCalledTimes(1);
     const [, pushCustId, pushPayload] = sendPushToCustomerMock.mock.calls[0]!;
     expect(pushCustId).toBe("user_anna");
-    expect(pushPayload.title).toBe("New message from PennPaps");
+    expect(pushPayload.title).toBe("New message from Penn Home Medical Supply");
     expect(pushPayload.url).toBe("/account/messages");
     expect(pushPayload.tag).toMatch(/^csr_reply:/);
     expect(JSON.stringify(pushPayload)).not.toContain("replacement");
@@ -295,7 +295,7 @@ describe("POST /conversations/:id/reply (in_app)", () => {
     expect(sendPushToCustomerMock).toHaveBeenCalledTimes(1);
     const [, pushCustId, pushPayload] = sendPushToCustomerMock.mock.calls[0]!;
     expect(pushCustId).toBe("user_anna");
-    expect(pushPayload.title).toBe("New message from PennPaps");
+    expect(pushPayload.title).toBe("New message from Penn Home Medical Supply");
     expect(pushPayload.url).toBe("/account/messages");
     expect(pushPayload.tag).toMatch(/^csr_reply:/);
     expect(JSON.stringify(pushPayload)).not.toContain("replacement");

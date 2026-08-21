@@ -145,7 +145,7 @@ describe("loadCustomerServiceManual", () => {
 // ---------------------------------------------------------------------------
 // These PDFs attach to patient-portal, provider-esign and staff invites. The
 // copy, titles and FILENAMES were hardcoded to the seed tenant, so every other
-// tenant's patients and providers received a guide branded "PennPaps" — while
+// tenant's patients and providers received a guide branded "Penn Home Medical Supply" — while
 // the surrounding email body was already tenant-correct. The docs are now
 // factories over the tenant's own name, and the render cache is keyed on it.
 
@@ -159,7 +159,7 @@ describe("help documents carry the inviting tenant's name", () => {
       ...staffHelpDocs("admin", CO),
     ]) {
       const blob = JSON.stringify(doc);
-      expect(blob).not.toMatch(/PennPaps/);
+      expect(blob).not.toMatch(/Penn Home Medical Supply/);
       expect(doc.filename).toContain(CO);
       expect(blob).toContain(CO);
     }

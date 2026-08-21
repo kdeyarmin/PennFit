@@ -53,7 +53,7 @@ describe("GET /platform/tenants", () => {
           id: "org-seed",
           slug: "penn-home-medical",
           name: "Penn Home Medical Supply",
-          storefront_name: "PennPaps",
+          storefront_name: "Penn Home Medical Supply",
           status: "active",
           custom_domain: "pennpaps.com",
           custom_domain_status: "verified",
@@ -78,7 +78,7 @@ describe("GET /platform/tenants", () => {
     expect(res.body.tenants).toHaveLength(2);
     expect(res.body.tenants[0]).toMatchObject({
       slug: "penn-home-medical",
-      storefrontName: "PennPaps",
+      storefrontName: "Penn Home Medical Supply",
       status: "active",
       customDomain: "pennpaps.com",
       customDomainStatus: "verified",

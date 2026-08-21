@@ -33,7 +33,7 @@ vi.mock("@workspace/resupply-email", () => ({
 // org (or none) falls back to the seed/platform copy.
 vi.mock("../../lib/tenant-branding", () => ({
   resolveBrandingByOrgId: vi.fn(async (orgId?: string) => ({
-    storefrontName: orgId === "org-b" ? "Foo DME" : "PennPaps",
+    storefrontName: orgId === "org-b" ? "Foo DME" : "Penn Home Medical Supply",
     legalName: orgId === "org-b" ? "Foo DME LLC" : "Penn Home Medical Supply",
     tagline: "",
     logoUrl: null,
@@ -52,8 +52,8 @@ import {
 const FULL_CFG = {
   sendgridApiKey: "SG.fake",
   sendgridFromEmail: "info@pennpaps.example",
-  sendgridFromName: "PennPaps",
-  practiceName: "PennPaps",
+  sendgridFromName: "Penn Home Medical Supply",
+  practiceName: "Penn Home Medical Supply",
   publicBaseUrl: "https://pennfit.example",
 };
 
@@ -94,10 +94,12 @@ describe("composeReminderEmail", () => {
 describe("composeExpiredEmail", () => {
   it("tells the user to ask for a new invite", () => {
     const out = composeExpiredEmail({
-      practiceName: "PennPaps",
+      practiceName: "Penn Home Medical Supply",
       displayName: null,
     });
-    expect(out.subject).toBe("Your PennPaps invite has expired");
+    expect(out.subject).toBe(
+      "Your Penn Home Medical Supply invite has expired",
+    );
     expect(out.text.toLowerCase()).toContain("expired");
     expect(out.text).toContain("send a new invite");
   });
@@ -226,7 +228,7 @@ describe("runInvitePasswordExpiryNotifySweep", () => {
       html: string;
     };
     // Tenant brand in the subject, tenant custom domain in the sign-in link —
-    // NOT the seed "PennPaps" / platform host from FULL_CFG.
+    // NOT the seed "Penn Home Medical Supply" / platform host from FULL_CFG.
     expect(call.subject).toBe("Your Foo DME invite expires soon");
     expect(call.html).toContain("https://foodme.example/admin/sign-in");
   });

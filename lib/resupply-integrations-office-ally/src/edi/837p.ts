@@ -65,7 +65,7 @@ export interface Claim837PInput {
 export interface SubmitterIdentity {
   /** Our trading-partner id assigned by Office Ally. */
   etin: string;
-  /** Legal organization name (PennPaps Inc.). */
+  /** Legal organization name, e.g. "Penn Home Medical Supply". */
   organizationName: string;
   /** Contact name for clearinghouse callbacks. */
   contactName: string;

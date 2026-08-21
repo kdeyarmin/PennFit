@@ -95,7 +95,7 @@ fixtures and render an empty state — those still show the real CareMetric
 chrome, which is fine (the manual's prose never depends on a screenshot to
 be understood).
 
-The demo is the **platform's** showcase, not the PennPaps tenant: a demo
+The demo is the **platform's** showcase, not the Penn tenant: a demo
 `/api/storefront-branding` handler (`src/demo/handlers/misc.ts`) returns the
 CareMetric identity and the `/breathe/caremetric-logo.png` logo, and the demo
 fixtures carry CareMetric-neutral sample data (`caremetric.example` emails,

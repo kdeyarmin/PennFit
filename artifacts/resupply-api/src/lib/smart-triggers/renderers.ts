@@ -167,7 +167,7 @@ export function smsBody(
   // reducing carrier delivery rate.
   //
   // `brand` is the tenant's own storefront name, threaded in by the caller
-  // (seed === "PennPaps", so single-tenant copy is unchanged); never the
+  // (seed === "Penn Home Medical Supply", so single-tenant copy is unchanged); never the
   // hardcoded seed brand, which would leak to a non-seed tenant's patients.
   switch (kind) {
     case "leak_rising":

@@ -1,5 +1,5 @@
 /**
- * UI shims for the four PennPaps storefront-admin pages that were
+ * UI shims for the four Penn Home Medical Supply storefront-admin pages that were
  * ported here from cpap-fitter during the Task #37 consolidation.
  *
  * Why a shim?

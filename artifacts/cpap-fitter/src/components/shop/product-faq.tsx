@@ -14,7 +14,7 @@
 //      objection a shopper has at that decision point — e.g.
 //      cushion buyers ask "how often should I replace it",
 //      filter buyers ask "do I really need to replace these",
-//      mask buyers ask "what if it doesn't fit". The PennPaps
+//      mask buyers ask "what if it doesn't fit". The Penn Home Medical Supply
 //      catalog has eight categories; we keep one entry for each
 //      so the accordion is meaningful no matter which PDP a
 //      shopper lands on.

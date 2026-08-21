@@ -9,7 +9,7 @@
 import { useCompanyContact } from "@/lib/contact";
 
 /**
- * The storefront brand/display name as plain text (e.g. "PennPaps" for the
+ * The storefront brand/display name as plain text (e.g. "Penn Home Medical Supply" for the
  * Penn tenant, "CareMetric Breathe" as the platform default). Defers the read
  * to render time so module-scope copy arrays pick up the admin-saved value.
  */

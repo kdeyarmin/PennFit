@@ -4,7 +4,7 @@ import { renderDocumentationPacket } from "./documentation-packet";
 
 const COMMON = {
   dmeOrganization: {
-    legalName: "PennPaps Inc",
+    legalName: "Penn Home Medical Supply Inc",
     addressLine1: "100 Main St",
     city: "State College",
     state: "PA",

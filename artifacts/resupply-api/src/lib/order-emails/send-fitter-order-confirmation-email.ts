@@ -100,7 +100,7 @@ export async function sendFitterOrderConfirmationEmail(
   }
 
   // Brand the signature with the tenant's own storefront name (G6). Seed
-  // tenant → "PennPaps" (unchanged); a second tenant → its own brand.
+  // tenant → "Penn Home Medical Supply" (unchanged); a second tenant → its own brand.
   const brand = await resolveBrandingByOrgId(input.orgId);
   const brandName = brand.storefrontName;
   const base = publicBaseUrl(

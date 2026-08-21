@@ -352,20 +352,30 @@ describe("applyCompanyIdentityToText", () => {
     expect(out).not.toContain("Penn Paps");
   });
 
-  it("preserves the seed tenant's two-word 'Penn Paps' TTS spelling", async () => {
-    // Seed tenant: DB row resolves to the seed brand "PennPaps". The voice
-    // copy is deliberately spaced for natural TTS pronunciation, so the
-    // spaced-spelling needle must NOT collapse it to camel case.
+  it("rewrites the legacy TTS spelling for the seed tenant, which no longer has a DBA", async () => {
+    // Migration 0510 retired the seed tenant's "PennPaps" storefront DBA, so
+    // its row resolves name === legalName === "Penn Home Medical Supply".
+    // The spaced-spelling needle used to be suppressed for that tenant to
+    // protect a deliberate two-word TTS pronunciation; with the DBA gone
+    // there is nothing to protect, and any voice copy still carrying the
+    // old spelling must resolve to the official company name.
     stageSupabaseResponse("dme_organization", "select", {
       data: {
         ...ORG_ROW,
         legal_name: "Penn Home Medical Supply",
-        dba_name: "PennPaps",
+        dba_name: null,
       },
     });
-    await getCompanyInfo(); // warm the sync cache
-    const text = "Hi, this is an automated check-in from Penn Paps.";
-    expect(applyCompanyIdentityToText(text)).toBe(text);
+    const info = await getCompanyInfo(); // warm the sync cache
+    expect(info.name).toBe("Penn Home Medical Supply");
+    expect(info.name).toBe(info.legalName);
+    const out = applyCompanyIdentityToText(
+      "Hi, this is an automated check-in from Penn Paps.",
+    );
+    expect(out).toBe(
+      "Hi, this is an automated check-in from Penn Home Medical Supply.",
+    );
+    expect(out).not.toContain("Penn Paps");
   });
 });
 

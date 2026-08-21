@@ -2,7 +2,7 @@
 //
 // Focus: the patient-facing portal-invite email must be branded with the
 // INVITING tenant's own identity (resolveBrandingByOrgId), never the
-// hardcoded seed brand ("PennPaps" / "Penn Home Medical Supply"). The
+// hardcoded seed brand ("Penn Home Medical Supply" / "Penn Home Medical Supply"). The
 // token mint, email renderer, help-doc attachments, and outbound email
 // are mocked at the module boundary; the route's brand wiring is what's
 // exercised.
@@ -165,11 +165,11 @@ describe("POST /admin/patients/:id/portal-invite", () => {
     expect(emailMock).toHaveBeenCalledTimes(1);
 
     // The renderer must receive the resolved tenant brand — never the
-    // hardcoded "PennPaps" / "Penn Home Medical Supply".
+    // hardcoded "Penn Home Medical Supply" / "Penn Home Medical Supply".
     const ctx = vi.mocked(renderPatientPortalInviteEmail).mock.calls[0]![0];
     expect(ctx.productName).toBe("Acme Sleep");
     expect(ctx.signatureName).toBe("Acme Sleep Supply LLC");
-    expect(ctx.productName).not.toContain("PennPaps");
+    expect(ctx.productName).not.toContain("Penn Home Medical Supply");
     expect(ctx.signatureName).not.toContain("Penn Home Medical Supply");
   });
 });
@@ -208,6 +208,6 @@ describe("POST /admin/patients/:id/portal-invite/resend", () => {
     const ctx = vi.mocked(renderPatientPortalInviteEmail).mock.calls[0]![0];
     expect(ctx.productName).toBe("Acme Sleep");
     expect(ctx.signatureName).toBe("Acme Sleep Supply LLC");
-    expect(ctx.productName).not.toContain("PennPaps");
+    expect(ctx.productName).not.toContain("Penn Home Medical Supply");
   });
 });

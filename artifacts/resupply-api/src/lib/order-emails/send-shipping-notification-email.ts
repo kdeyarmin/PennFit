@@ -1,5 +1,5 @@
 // sendShippingNotificationEmail — single-shot SendGrid notice that
-// a paid PennPaps shop order has shipped.
+// a paid Penn Home Medical Supply shop order has shipped.
 //
 // Fired from the admin POST /admin/shop/orders/:orderId/tracking
 // endpoint after the carrier + tracking number are stamped on the
@@ -25,7 +25,7 @@
 //     shop, not the resupply outreach surface.
 //
 // Template:
-//   - Subject:   "Your PennPaps order has shipped"
+//   - Subject:   "Your Penn Home Medical Supply order has shipped"
 //   - HTML body: brand banner ("On its way"), short note, tracking
 //                box (carrier + number, with a public carrier-tracking
 //                link when the carrier is known), shipping address
@@ -170,7 +170,7 @@ export async function sendShippingNotificationEmail(
   }
 
   // Brand the email with the tenant's own storefront name (G6). For the seed
-  // tenant this resolves to "PennPaps" (its stored brand), so single-tenant
+  // tenant this resolves to "Penn Home Medical Supply" (its stored brand), so single-tenant
   // copy is unchanged; a second tenant's email carries ITS brand.
   const brand = await resolveBrandingByOrgId(input.orgId);
   const brandName = brand.storefrontName;

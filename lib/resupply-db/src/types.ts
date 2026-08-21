@@ -130,7 +130,7 @@ export interface CommunicationPreferences {
   /** Post-purchase review-request emails. */
   emailReviewRequests: boolean;
   /**
-   * "You have a new message from PennPaps customer service" nudge
+   * "You have a new message from Penn Home Medical Supply customer service" nudge
    * sent when a CSR replies on the in-account thread. Default ON
    * because the customer is unlikely to know they have a reply
    * otherwise; surfaced as a toggle on /account so they can mute.
@@ -217,7 +217,7 @@ export interface CpapDeviceInfo {
   pressureSetting?: string | null;
   /** Humidifier level if the device supports one, e.g. "3" or "auto". */
   humidifierSetting?: string | null;
-  /** Free-form notes the customer wants to share with PennPaps. */
+  /** Free-form notes the customer wants to share with Penn Home Medical Supply. */
   notes?: string | null;
 }
 

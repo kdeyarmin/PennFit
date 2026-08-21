@@ -34,7 +34,7 @@ function input(over: Partial<DwoPdfInput> = {}): DwoPdfInput {
       faxE164: null,
     },
     generatedOn: new Date("2026-02-01T00:00:00.000Z"),
-    supplierName: "PennPaps",
+    supplierName: "Penn Home Medical Supply",
     ...over,
   };
 }

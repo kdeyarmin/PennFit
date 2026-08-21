@@ -374,7 +374,7 @@ describe("askSleepCoach — OpenAI fallback path (tools)", () => {
 });
 
 describe("askSleepCoach — per-tenant branding", () => {
-  it("rewrites the seed 'PennPaps' brand in the prompt AND the reply to the host tenant", async () => {
+  it("rewrites the seed 'Penn Home Medical Supply' brand in the prompt AND the reply to the host tenant", async () => {
     stageEmptyContext();
     // A non-seed tenant's company identity (source: "database"), so
     // applyCompanyIdentityToText rewrites the canonical placeholders.
@@ -390,7 +390,11 @@ describe("askSleepCoach — per-tenant branding", () => {
     const client = makeClient(
       // The model echoes the seed brand; the I/O-boundary rewrite must
       // catch it on the way out.
-      [textResponse("Thanks for choosing PennPaps — try the top strap.")],
+      [
+        textResponse(
+          "Thanks for choosing Penn Home Medical Supply — try the top strap.",
+        ),
+      ],
       (req) => {
         const sys = req.system;
         if (Array.isArray(sys) && sys[0] && typeof sys[0] === "object") {
@@ -408,10 +412,13 @@ describe("askSleepCoach — per-tenant branding", () => {
 
     // Prompt was branded before it reached the model.
     expect(capturedSystem).toContain("Acme Sleep");
-    expect(capturedSystem).not.toContain("PennPaps");
+    expect(capturedSystem).not.toContain("Penn Home Medical Supply");
     // And the model's reply was branded on the way back to the patient.
+    // The in-source placeholder is the seed tenant's registered name, so
+    // it resolves to the host tenant's `legalName` ("Acme Sleep LLC"),
+    // not its shorter storefront brand. See identityReplacements().
     expect(result.reply).toBe(
-      "Thanks for choosing Acme Sleep — try the top strap.",
+      "Thanks for choosing Acme Sleep LLC — try the top strap.",
     );
   });
 });

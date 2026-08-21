@@ -56,7 +56,7 @@ const ENV_KEY = "RESUPPLY_ADMIN_ALERTS_EMAIL";
 const ORG_A = "00000000-0000-4000-8000-00000000000a";
 const ORG_B = "00000000-0000-4000-8000-00000000000b";
 const RECIPIENT = "ops@penn.example.com";
-const PRACTICE = "PennPaps";
+const PRACTICE = "Penn Home Medical Supply";
 let originalRecipient: string | undefined;
 
 function stageAutoSync(value: string | null, error?: unknown): void {

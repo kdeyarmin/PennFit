@@ -42,7 +42,7 @@ const { TENANT_B_INFO, FALLBACK_INFO } = vi.hoisted(() => {
   };
   const FALLBACK_INFO: CompanyInfo = {
     ...base,
-    name: "PennPaps",
+    name: "Penn Home Medical Supply",
     legalName: "Penn Home Medical Supply",
     phoneE164: "+18144710627",
     phoneDisplay: "(814) 471-0627",
@@ -124,7 +124,7 @@ describe("generateEmailReply", () => {
           handoff: false,
           confidence: 0.95,
           reply:
-            "Hi there!\n\nGreat question — a full-face mask is the way to go.\n\n— The PennPaps Team",
+            "Hi there!\n\nGreat question — a full-face mask is the way to go.\n\n— The Penn Home Medical Supply Team",
         }),
       ),
     );
@@ -133,7 +133,7 @@ describe("generateEmailReply", () => {
     const result = await generateEmailReply(INPUT);
     expect(result.kind).toBe("reply");
     if (result.kind === "reply") {
-      expect(result.reply).toContain("— The PennPaps Team");
+      expect(result.reply).toContain("— The Penn Home Medical Supply Team");
     }
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
@@ -146,7 +146,7 @@ describe("generateEmailReply", () => {
             handoff: false,
             confidence: 0.5,
             reply:
-              "I think the deductible resets in January.\n— The PennPaps Team",
+              "I think the deductible resets in January.\n— The Penn Home Medical Supply Team",
           }),
         ),
       ) as unknown as typeof fetch,
@@ -161,7 +161,7 @@ describe("generateEmailReply", () => {
         openAiReply(
           JSON.stringify({
             handoff: false,
-            reply: "All set.\n— The PennPaps Team",
+            reply: "All set.\n— The Penn Home Medical Supply Team",
           }),
         ),
       ) as unknown as typeof fetch,
@@ -178,7 +178,7 @@ describe("generateEmailReply", () => {
           JSON.stringify({
             handoff: false,
             confidence: 0.6,
-            reply: "Happy to help.\n— The PennPaps Team",
+            reply: "Happy to help.\n— The Penn Home Medical Supply Team",
           }),
         ),
       ) as unknown as typeof fetch,
@@ -224,7 +224,7 @@ describe("generateEmailReply", () => {
     __setEmailAutoReplyFetchForTests(
       vi.fn(async () =>
         openAiReply(
-          '```json\n{"handoff": false, "confidence": 0.9, "reply": "All set.\\n— The PennPaps Team"}\n```',
+          '```json\n{"handoff": false, "confidence": 0.9, "reply": "All set.\\n— The Penn Home Medical Supply Team"}\n```',
         ),
       ) as unknown as typeof fetch,
     );
@@ -266,7 +266,7 @@ describe("generateEmailReply", () => {
     expect(capturedSystem).toContain("Acme Respiratory");
     expect(capturedSystem).toContain("help@acmeresp.com");
     expect(capturedSystem).toContain("Acme Respiratory LLC"); // addendum sign-off
-    expect(capturedSystem).not.toContain("PennPaps");
+    expect(capturedSystem).not.toContain("Penn Home Medical Supply");
     expect(capturedSystem).not.toContain("support@pennpaps.com");
     expect(capturedSystem).not.toContain("(814) 471-0627");
     expect(capturedSystem).not.toContain("Penn Home Medical Supply");

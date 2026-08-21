@@ -39,8 +39,8 @@ export interface BackInStockEmailPayload {
   /**
    * Tenant storefront brand to render in the copy. Defaults to the
    * CareMetric Breathe platform brand inside the renderers (never the seed
-   * tenant's "PennPaps"); sendBackInStockEmail threads the resolved tenant
-   * brand here (G6) — for the Penn tenant that resolves to "PennPaps".
+   * tenant's "Penn Home Medical Supply"); sendBackInStockEmail threads the resolved tenant
+   * brand here (G6) — for the Penn tenant that resolves to "Penn Home Medical Supply".
    */
   brandName?: string;
 }
@@ -169,7 +169,7 @@ export async function sendBackInStockEmail(
   }
 
   // Brand the email with the tenant's own storefront name (G6). For the seed
-  // tenant this resolves to "PennPaps" (its stored brand), so single-tenant
+  // tenant this resolves to "Penn Home Medical Supply" (its stored brand), so single-tenant
   // copy is unchanged; a second tenant's alert carries ITS brand.
   const brand = await resolveBrandingByOrgId(payload.orgId);
   const renderPayload: BackInStockEmailPayload = {

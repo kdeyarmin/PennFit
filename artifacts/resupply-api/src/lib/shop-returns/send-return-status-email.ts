@@ -15,8 +15,8 @@
 //                 patient how much, in what currency, and to expect
 //                 5-10 business days for it to land on the card.
 //
-// Privacy: subject lines are PHI-free ("Your PennPaps return is
-// approved", "Your PennPaps refund is on the way"). The body
+// Privacy: subject lines are PHI-free ("Your Penn Home Medical Supply return is
+// approved", "Your Penn Home Medical Supply refund is on the way"). The body
 // references the order's last 4 of the Stripe session ID for
 // disambiguation; we deliberately do NOT include patient name,
 // address, or any prescription detail. The recipient email is
@@ -62,7 +62,7 @@ export interface SendReturnStatusEmailInput {
    * Tenant the return belongs to. When set and the tenant has its own
    * From identity (migration 0360), the email is sent under it (G6); the
    * body/subject also carry the tenant's brand. Omit / undefined leaves the
-   * platform default From and the seed tenant's brand ("PennPaps") in place.
+   * platform default From and the seed tenant's brand ("Penn Home Medical Supply") in place.
    */
   orgId?: string;
 }
@@ -290,7 +290,7 @@ export async function sendReturnStatusEmail(
   }
 
   // Brand the email with the tenant's own storefront name (G6). For the seed
-  // tenant this resolves to "PennPaps", so single-tenant copy is unchanged.
+  // tenant this resolves to "Penn Home Medical Supply", so single-tenant copy is unchanged.
   const brand = await resolveBrandingByOrgId(input.orgId);
 
   const myReturnsUrl = `${publicBaseUrl(

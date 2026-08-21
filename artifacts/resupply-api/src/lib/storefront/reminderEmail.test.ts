@@ -10,8 +10,8 @@
 //
 // Branding is mocked at ../tenant-branding.js (matching the proven
 // send-order-confirmation-email.test.ts pattern) so the brand the copy
-// renders is deterministic; it defaults to the seed tenant's
-// "PennPaps" / "Penn Home Medical Supply".
+// renders is deterministic; it defaults to the seed tenant, which trades
+// under one name ("Penn Home Medical Supply" for both fields).
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -31,12 +31,13 @@ vi.mock("@workspace/resupply-email", async () => {
 
 // The reminder emails brand themselves with the tenant's storefront/legal
 // name (G6). Control both here so the copy assertions are deterministic;
-// defaults to the seed tenant's "PennPaps" / "Penn Home Medical Supply".
+// defaults to the seed tenant, whose two names are the same string.
 const brandNameRef = vi.hoisted(() => ({
-  storefrontName: "PennPaps",
+  storefrontName: "Penn Home Medical Supply",
   legalName: "Penn Home Medical Supply",
 }));
-vi.mock("../tenant-branding.js", () => ({
+vi.mock("../tenant-branding.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../tenant-branding.js")>()),
   resolveBrandingByOrgId: vi.fn(async () => ({
     storefrontName: brandNameRef.storefrontName,
     legalName: brandNameRef.legalName,
@@ -64,7 +65,7 @@ const ITEMS: ReminderItemForEmail[] = [
 
 describe("reminderEmail senders", () => {
   beforeEach(() => {
-    brandNameRef.storefrontName = "PennPaps";
+    brandNameRef.storefrontName = "Penn Home Medical Supply";
     brandNameRef.legalName = "Penn Home Medical Supply";
     sendEmailMock.mockReset();
     sendEmailMock.mockResolvedValue({ messageId: "msg_test" });
@@ -86,12 +87,14 @@ describe("reminderEmail senders", () => {
       expect(sendEmailMock).toHaveBeenCalledTimes(1);
       const arg = sendEmailMock.mock.calls[0]![0];
       expect(arg.subject).toBe(
-        "You're signed up for PennPaps supply reminders",
+        "You're signed up for supply reminders from Penn Home Medical Supply",
       );
       expect(arg.text).toContain(
-        "You're signed up for PennPaps supply reminders.",
+        "You're signed up for supply reminders from Penn Home Medical Supply.",
       );
-      expect(arg.text).toContain("— PennPaps by Penn Home Medical Supply");
+      // One name → the sign-off collapses instead of reading "X by X".
+      expect(arg.text).toContain("— Penn Home Medical Supply");
+      expect(arg.text).not.toContain("Supply by Penn");
     });
 
     it("flows a different tenant's brand into subject + body (G6)", async () => {
@@ -107,10 +110,10 @@ describe("reminderEmail senders", () => {
 
       const arg = sendEmailMock.mock.calls[0]![0];
       expect(arg.subject).toBe(
-        "You're signed up for Acme CPAP supply reminders",
+        "You're signed up for supply reminders from Acme CPAP",
       );
       expect(arg.text).toContain("— Acme CPAP by Acme Medical LLC");
-      expect(arg.subject).not.toContain("PennPaps");
+      expect(arg.subject).not.toContain("Penn Home Medical Supply");
       expect(arg.text).not.toContain("Penn Home Medical Supply");
     });
   });
@@ -123,9 +126,14 @@ describe("reminderEmail senders", () => {
       });
 
       const arg = sendEmailMock.mock.calls[0]![0];
-      expect(arg.subject).toBe("Your PennPaps reminders manage link");
-      expect(arg.text).toContain("re-submitted the PennPaps reminder");
-      expect(arg.text).toContain("— PennPaps by Penn Home Medical Supply");
+      expect(arg.subject).toBe(
+        "Your reminders manage link from Penn Home Medical Supply",
+      );
+      expect(arg.text).toContain(
+        "re-submitted the reminder signup form for Penn Home Medical Supply",
+      );
+      expect(arg.text).toContain("— Penn Home Medical Supply");
+      expect(arg.text).not.toContain("Supply by Penn");
     });
 
     it("flows a different tenant's brand into subject + body (G6)", async () => {
@@ -139,9 +147,11 @@ describe("reminderEmail senders", () => {
       });
 
       const arg = sendEmailMock.mock.calls[0]![0];
-      expect(arg.subject).toBe("Your Acme CPAP reminders manage link");
-      expect(arg.text).toContain("re-submitted the Acme CPAP reminder");
-      expect(arg.subject).not.toContain("PennPaps");
+      expect(arg.subject).toBe("Your reminders manage link from Acme CPAP");
+      expect(arg.text).toContain(
+        "re-submitted the reminder signup form for Acme CPAP",
+      );
+      expect(arg.subject).not.toContain("Penn Home Medical Supply");
     });
   });
 
@@ -155,9 +165,10 @@ describe("reminderEmail senders", () => {
 
       const arg = sendEmailMock.mock.calls[0]![0];
       expect(arg.text).toContain(
-        "Visit the PennPaps shop to order — or call Penn Home Medical Supply.",
+        "Visit the Penn Home Medical Supply shop to order — or give us a call.",
       );
-      expect(arg.text).toContain("— PennPaps by Penn Home Medical Supply");
+      expect(arg.text).toContain("— Penn Home Medical Supply");
+      expect(arg.text).not.toContain("Supply by Penn");
     });
 
     it("flows a different tenant's brand into the body (G6)", async () => {
@@ -173,10 +184,11 @@ describe("reminderEmail senders", () => {
 
       const arg = sendEmailMock.mock.calls[0]![0];
       expect(arg.text).toContain(
-        "Visit the Acme CPAP shop to order — or call Acme Medical LLC.",
+        "Visit the Acme CPAP shop to order — or give us a call.",
       );
+      // Two genuinely different names → both are printed.
       expect(arg.text).toContain("— Acme CPAP by Acme Medical LLC");
-      expect(arg.text).not.toContain("PennPaps");
+      expect(arg.text).not.toContain("Penn Home Medical Supply");
     });
   });
 });

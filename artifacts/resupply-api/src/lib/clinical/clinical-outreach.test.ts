@@ -93,13 +93,20 @@ describe("pickOutreachChannel", () => {
 
 describe("buildOutreachMessage", () => {
   it("uses a category-specific body, falls back to 'other'", () => {
-    const leak = buildOutreachMessage("mask_leak", "PennPaps");
+    const leak = buildOutreachMessage("mask_leak", "Penn Home Medical Supply");
     expect(leak.body.toLowerCase()).toContain("leak");
-    expect(leak.subject).toContain("PennPaps");
-    const unknown = buildOutreachMessage("not_a_category", "PennPaps");
-    expect(unknown.body).toBe(buildOutreachMessage("other", "PennPaps").body);
-    const nul = buildOutreachMessage(null, "PennPaps");
-    expect(nul.body).toBe(buildOutreachMessage("other", "PennPaps").body);
+    expect(leak.subject).toContain("Penn Home Medical Supply");
+    const unknown = buildOutreachMessage(
+      "not_a_category",
+      "Penn Home Medical Supply",
+    );
+    expect(unknown.body).toBe(
+      buildOutreachMessage("other", "Penn Home Medical Supply").body,
+    );
+    const nul = buildOutreachMessage(null, "Penn Home Medical Supply");
+    expect(nul.body).toBe(
+      buildOutreachMessage("other", "Penn Home Medical Supply").body,
+    );
   });
 });
 
@@ -186,12 +193,12 @@ describe("runClinicalOutreachBatch", () => {
         cfg: {
           sendgridApiKey: "SG.x",
           sendgridFromEmail: "info@pennpaps.com",
-          sendgridFromName: "PennPaps",
+          sendgridFromName: "Penn Home Medical Supply",
           twilioAccountSid: null,
           twilioAuthToken: null,
           twilioPhoneNumber: null,
           twilioMessagingServiceSid: null,
-          practiceName: "PennPaps",
+          practiceName: "Penn Home Medical Supply",
         },
         now: noon,
       },

@@ -525,7 +525,7 @@ router.post(
                 }),
             phone_number_collection: { enabled: true },
             metadata: sessionMetadata,
-            // PennPaps cash-pay shop never collects sales tax in v1 —
+            // Penn Home Medical Supply cash-pay shop never collects sales tax in v1 —
             // CPAP supplies are usually tax-exempt as durable medical
             // equipment, and Stripe Tax can be enabled later in the
             // dashboard without code changes.

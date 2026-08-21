@@ -1,4 +1,12 @@
-"""Generate the Twilio Toll-Free Verification answer-sheet PDF for PennPaps."""
+"""Generate the Twilio Toll-Free Verification answer-sheet PDF.
+
+The Twilio account — and therefore the Trust Hub Business Profile this
+sheet answers for — belongs to the PLATFORM (CareMetric Breathe), not to
+any one tenant. The message bodies, consent text and samples below stay
+tenant-branded because that is literally what a patient receives; the
+use-case description makes the platform-sends-for-its-DME-customers
+relationship explicit so a reviewer does not read that as a mismatch.
+"""
 from reportlab.lib.pagesizes import LETTER
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
@@ -93,7 +101,7 @@ def header_footer(canvas, doc):
     canvas.rect(0, LETTER[1] - 0.58 * inch, LETTER[0], 0.03 * inch, stroke=0, fill=1)
     canvas.setFillColor(colors.white)
     canvas.setFont("Helvetica-Bold", 11)
-    canvas.drawString(0.6 * inch, LETTER[1] - 0.36 * inch, "PennPaps")
+    canvas.drawString(0.6 * inch, LETTER[1] - 0.36 * inch, "CareMetric Breathe")
     canvas.setFont("Helvetica", 9)
     canvas.drawString(1.4 * inch, LETTER[1] - 0.36 * inch,
                       "Twilio Toll-Free Verification — Step 2 Answer Sheet")
@@ -103,7 +111,7 @@ def header_footer(canvas, doc):
     canvas.setFillColor(MUTED)
     canvas.setFont("Helvetica", 8)
     canvas.drawString(0.6 * inch, 0.4 * inch,
-                      "info@pennpaps.com  ·  Confidential — for Twilio Trust Hub submission")
+                      "support@cmbreathe.com  ·  Confidential — for Twilio Trust Hub submission")
     canvas.drawRightString(LETTER[0] - 0.6 * inch, 0.4 * inch,
                            f"Page {doc.page}")
     canvas.restoreState()
@@ -113,8 +121,8 @@ doc = SimpleDocTemplate(
     OUT, pagesize=LETTER,
     leftMargin=0.6 * inch, rightMargin=0.6 * inch,
     topMargin=0.85 * inch, bottomMargin=0.65 * inch,
-    title="PennPaps — Twilio TFV Step 2 Answer Sheet",
-    author="PennPaps",
+    title="CareMetric Breathe — Twilio TFV Step 2 Answer Sheet",
+    author="CareMetric Breathe",
 )
 
 story = []
@@ -123,12 +131,23 @@ story.append(Paragraph("Twilio Toll-Free Verification", H1))
 story.append(Paragraph("Step 2/2 — Messaging use case · Copy-paste answer sheet", SUB))
 story.append(Paragraph(
     "Replace every <b><font color='#b08d3e'>YOUR-DOMAIN</font></b> placeholder with the public "
-    "domain that serves your deployed PennPaps site (e.g. <font face='Courier'>pennfit.up.railway.app</font> "
-    "or your custom domain). The URLs you submit must be reachable by Twilio reviewers without a login.",
+    "domain that serves the storefront these messages come from (e.g. <font face='Courier'>pennpaps.com</font> "
+    "for the Penn Home Medical Supply tenant, or <font face='Courier'>pennfit.up.railway.app</font>). "
+    "The URLs you submit must be reachable by Twilio reviewers without a login.",
     NOTE,
 ))
 
 hr(story)
+
+# 0. Who the business is — the anchor for every answer below.
+field(story, "Business profile (set in Step 1)",
+      "<b>CareMetric Breathe</b> &nbsp; — the platform, not a tenant.",
+      "The Twilio account and its toll-free number belong to CareMetric Breathe, which operates "
+      "the messaging platform on behalf of its DME customers. Enter the registered legal entity "
+      "exactly as it appears on the EIN / incorporation record. Do NOT put a customer's name here "
+      "(it is not \"Penn Home Medical Supply\", and it is no longer \"PennPaps\" — that storefront-only "
+      "DBA was retired). Message bodies below are branded to the DME the patient bought from; the "
+      "use-case description explains that relationship.")
 
 # 1. Estimated monthly volume
 field(story, "Estimated monthly volume", "<b>100</b>")
@@ -136,7 +155,7 @@ field(story, "Estimated monthly volume", "<b>100</b>")
 # 2. Opt-in type
 field(story, "Opt-in type",
       "<b>Web form</b>",
-      "PennPaps captures consent through a labeled checkbox on the order checkout form.")
+      "The storefront captures consent through a labeled checkbox on the order checkout form.")
 
 # 3. Use case categories
 field(story, "Messaging use case categories",
@@ -153,10 +172,13 @@ field(story, "Proof of consent (opt-in) collected — URL",
 
 # 5. Use case description
 field(story, "Use case description (paste verbatim)", [code_block(
-    "PennPaps is a U.S. durable medical equipment supplier that ships CPAP masks\n"
-    "and resupply parts to patients with sleep-apnea prescriptions. Patients place\n"
-    "an order through our website (https://YOUR-DOMAIN/order) and check a clearly\n"
-    "labeled consent box authorizing PennPaps to contact them by phone, email,\n"
+    "CareMetric Breathe operates a CPAP fitting, ordering and resupply platform for\n"
+    "U.S. durable medical equipment suppliers, and sends this traffic on their\n"
+    "behalf. Penn Home Medical Supply, a licensed DME, is the supplier whose\n"
+    "patients receive the messages below, so the message bodies carry that\n"
+    "supplier's name. Patients place an order through the supplier's storefront\n"
+    "(https://YOUR-DOMAIN/order) and check a clearly labeled consent box\n"
+    "authorizing Penn Home Medical Supply to contact them by phone, email,\n"
     "and SMS. After opt-in, we send transactional SMS messages from our toll-free\n"
     "number for: order confirmation, shipping updates, insurance verification\n"
     "follow-ups, prescription requests, and resupply reminders when the patient\n"
@@ -168,25 +190,26 @@ field(story, "Use case description (paste verbatim)", [code_block(
 
 # 6. Sample message
 field(story, "Sample message (paste verbatim)", [code_block(
-    "Hi John, this is PennPaps. Time to refill your CPAP supplies — reply YES to\n"
-    "confirm shipping to the address on file, EDIT to change it, or STOP to opt out."
+    "Hi John, it's Penn Home Medical Supply. Still use your CPAP and low on\n"
+    "supplies? Reply YES to ship a refill. EDIT to fix your address. STOP to opt out."
 )])
 
 # 7. Email
 field(story, "E-mail for notifications",
-      "<font face='Courier'>info@pennpaps.com</font>",
-      "Or whichever inbox you actually monitor — Twilio sends approval/rejection here.")
+      "<font face='Courier'>support@cmbreathe.com</font>",
+      "Twilio sends approval/rejection here, and the profile is the platform's — so this is a "
+      "platform inbox, not the DME customer's. Substitute whichever address is actually monitored.")
 
 # 8. Opt-in confirmation message
 field(story, "Opt-in confirmation message (optional)", [code_block(
-    "PennPaps: You're opted in to CPAP resupply reminders for the number on file.\n"
+    "Penn Home Medical Supply: You're opted in to CPAP resupply reminders for the number on file.\n"
     "Approx 1-2 msgs per refill cycle. Msg & data rates may apply. Reply HELP for\n"
     "help, STOP to cancel."
 )])
 
 # 9. Help message sample
 field(story, "Help message sample (optional — verbatim what HELP returns)", [code_block(
-    "PennPaps — automated CPAP refill reminders. Reply YES to confirm, NO to\n"
+    "Penn Home Medical Supply — automated CPAP refill reminders. Reply YES to confirm, NO to\n"
     "decline, EDIT to change your address, STOP to opt out. Standard message +\n"
     "data rates may apply."
 )])
@@ -203,10 +226,11 @@ field(story, "Opt-in keywords (optional)",
 
 # 12. Additional information
 field(story, "Additional information (optional, paste verbatim)", [code_block(
-    "PennPaps is a HIPAA-aware DME supplier; SMS traffic is strictly transactional\n"
+    "Penn Home Medical Supply is a HIPAA-aware DME supplier served by the CareMetric\n"
+    "Breathe platform, which sends on its behalf. SMS traffic is strictly transactional\n"
     "to existing customers who have completed an opt-in checkbox on our order form\n"
-    "at https://YOUR-DOMAIN/order. The consent text on the form (verbatim) reads:\n"
-    "\"I authorize PennPaps to contact me by phone, email, and SMS text message at\n"
+    "at https://YOUR-DOMAIN/order. The consent text on the form reads:\n"
+    "\"I authorize Penn Home Medical Supply to contact me by phone, email, and SMS text message at\n"
     "the number and email above regarding this order, insurance verification,\n"
     "shipping updates, and ongoing CPAP resupply reminders.\" Immediately below\n"
     "the checkbox we disclose: approximately 1-2 messages per resupply cycle,\n"
@@ -242,19 +266,19 @@ story.append(Paragraph(
 
 story.append(Paragraph("Order-form opt-in checkbox label (/order)", H2))
 story.append(code_block(
-    "I authorize PennPaps to contact me by phone, email, and SMS text\n"
+    "I authorize Penn Home Medical Supply to contact me by phone, email, and SMS text\n"
     "message at the number and email above regarding this order,\n"
     "insurance verification, shipping updates, and ongoing CPAP resupply\n"
     "reminders, and to store the order details I've entered above\n"
     "(including my contact, shipping, insurance, and prescription\n"
-    "information) in PennPaps's secure system for fulfillment and\n"
+    "information) in Penn Home Medical Supply's secure system for fulfillment and\n"
     "recordkeeping."
 ))
 
 story.append(Paragraph("SMS terms shown beneath the checkbox (/order)", H2))
 story.append(code_block(
     "SMS terms: By providing your mobile number you consent to receive\n"
-    "transactional text messages from PennPaps at that number, including\n"
+    "transactional text messages from Penn Home Medical Supply at that number, including\n"
     "via automated systems. Approximately 1-2 messages per resupply\n"
     "cycle (typically every 30-90 days). No marketing texts. Message\n"
     "and data rates may apply. Reply HELP for help, STOP to unsubscribe\n"
@@ -268,12 +292,12 @@ story.append(code_block(
     "transactional confirmations and any follow-ups if you do not\n"
     "respond. You will not receive marketing or promotional texts.\n\n"
     "Help and opt-out: Reply HELP at any time for assistance, or STOP\n"
-    "to unsubscribe from all PennPaps text messages. After you reply\n"
+    "to unsubscribe from all Penn Home Medical Supply text messages. After you reply\n"
     "STOP we will send one final confirmation and then no further\n"
     "texts; reply START to resume.\n\n"
     "Carrier charges: Message and data rates may apply. Carriers are\n"
     "not liable for delayed or undelivered messages.\n\n"
-    "No third-party sharing for marketing: PennPaps will not sell,\n"
+    "No third-party sharing for marketing: Penn Home Medical Supply will not sell,\n"
     "rent, or share your mobile phone number or SMS opt-in consent\n"
     "with any third party for their marketing purposes."
 ))
@@ -303,10 +327,20 @@ checklist = [
     ("Confirm /privacy, /terms, and /order are publicly reachable",
      "Twilio reviewers cannot complete the fitter funnel. /terms is the most important — "
      "it has the full SMS program disclosure in section 04."),
-    ("Verify business profile name is exactly \"PennPaps\"",
-     "The DBA / business name on your TFV submission must match what the site says. "
-     "Site shows \"PennPaps\" everywhere; make sure your Trust Hub Business Profile uses the "
-     "same string (not \"Penn Home Medical Supply\" or any other variant)."),
+    ("Verify the Trust Hub Business Profile is CareMetric, not a customer",
+     "The Twilio account holder is the platform, so the profile carries the CareMetric legal "
+     "entity — not \"Penn Home Medical Supply\", and not the retired \"PennPaps\" DBA. If the "
+     "profile still names a customer, fix it before submitting. The message bodies staying "
+     "supplier-branded is expected and is explained in the use-case description; that is the "
+     "normal platform-sending-for-a-customer shape, not a mismatch."),
+    ("Check the reviewer can FIND the consent language on the site",
+     "The wording itself is settled — this is about findability, not phrasing. The "
+     "\"Additional information\" answer quotes a long authorization sentence; the storefront "
+     "checkbox reads \"I agree to receive text messages from <brand>\" with a shorter "
+     "sub-line, and the SMS program disclosure lives in /terms section 04. A Twilio reviewer "
+     "who cannot locate the quoted language anywhere on the public site is a common rejection "
+     "cause, so before submitting, open /order and /terms in an incognito window and confirm "
+     "the consent story you are describing is actually visible there."),
     ("Decide imported-patient policy",
      "Your TFV promises every recipient opted in via the web form. If you import existing "
      "patients via the dashboard CSV importer, those patients did NOT check this checkbox. "
@@ -317,7 +351,8 @@ checklist = [
      "(not pooled / not subaccount-borrowed). The traceback certification only holds if "
      "you are the originator."),
     ("Email inbox is monitored",
-     "Use info@pennpaps.com (or whatever real inbox you check). TFV approvals and "
+     "Use a real inbox you actually monitor — the platform address (support@cmbreathe.com) "
+     "for a platform-owned profile. TFV approvals and "
      "rejections arrive by email and can ask follow-up questions with short reply windows."),
 ]
 

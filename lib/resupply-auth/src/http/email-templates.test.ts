@@ -137,19 +137,21 @@ describe("renderPasswordResetEmail", () => {
 
 describe("renderPatientPortalInviteEmail", () => {
   const ctx = {
-    productName: "PennPaps",
+    productName: "Penn Home Medical Supply",
     publicBaseUrl: "https://shop.example.com",
   };
   const args = {
     rawToken: "tok123",
     ttlMs: 7 * DAY_MS,
     patientFirstName: "Pat Q",
-    attachmentFilenames: ["PennPaps-Patient-Portal-Guide.pdf"],
+    attachmentFilenames: ["Penn Home Medical Supply-Patient-Portal-Guide.pdf"],
   };
 
   it("greets by first name and links the set-password step", () => {
     const r = renderPatientPortalInviteEmail(ctx, args);
-    expect(r.subject).toBe("Set up your PennPaps patient portal");
+    expect(r.subject).toBe(
+      "Set up your Penn Home Medical Supply patient portal",
+    );
     expect(r.html).toContain("Hi Pat,");
     expect(r.text).toContain("Hi Pat,");
     expect(r.html).toContain(
@@ -171,7 +173,9 @@ describe("renderPatientPortalInviteEmail", () => {
 
   it("lists the attached guide and omits the section when absent", () => {
     const r = renderPatientPortalInviteEmail(ctx, args);
-    expect(r.html).toContain("PennPaps-Patient-Portal-Guide.pdf");
+    expect(r.html).toContain(
+      "Penn Home Medical Supply-Patient-Portal-Guide.pdf",
+    );
     expect(r.text).toContain("getting-started guide");
 
     const none = renderPatientPortalInviteEmail(ctx, {
@@ -325,7 +329,7 @@ describe("renderProviderPortalInviteEmail", () => {
     providerName: "Dr. Casey Jones",
     practiceName: "Penn Home Medical Supply",
     portalPath: "/provider",
-    attachmentFilenames: ["PennPaps-Provider-Portal-Guide.pdf"],
+    attachmentFilenames: ["Penn Home Medical Supply-Provider-Portal-Guide.pdf"],
   };
 
   it("is an invitation, not a password reset", () => {
@@ -362,7 +366,9 @@ describe("renderProviderPortalInviteEmail", () => {
 
   it("lists attached guides and tolerates absent optional fields", () => {
     const r = renderProviderPortalInviteEmail(ctx, args);
-    expect(r.text).toContain("PennPaps-Provider-Portal-Guide.pdf");
+    expect(r.text).toContain(
+      "Penn Home Medical Supply-Provider-Portal-Guide.pdf",
+    );
 
     const minimal = renderProviderPortalInviteEmail(ctx, {
       rawToken: "t",
