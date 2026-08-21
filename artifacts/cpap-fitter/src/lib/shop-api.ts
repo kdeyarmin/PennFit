@@ -1028,6 +1028,15 @@ export interface FitterInviteCompleteInput {
   token: string;
   measurements: FacialMeasurements;
   answers: QuestionnaireAnswers;
+  /**
+   * The mask the fitting landed on, and the ranked list behind it.
+   *
+   * NULL when the fitting deliberately named none — contraindicated,
+   * outside the validated range, every candidate excluded by the tenant's
+   * formulary. Those are still finished fittings and staff still need
+   * them; while this was required, /results had nothing valid to send and
+   * so sent nothing at all, leaving the invite stuck at "opened".
+   */
   recommendation: {
     maskId: string;
     name: string;
@@ -1038,7 +1047,7 @@ export interface FitterInviteCompleteInput {
       type: "fullFace" | "nasal" | "nasalPillow" | "hybrid";
       confidence?: number;
     }[];
-  };
+  } | null;
 }
 
 export async function submitFitterInviteComplete(

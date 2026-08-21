@@ -21,17 +21,13 @@ import { Router, type IRouter } from "express";
 import rateLimit from "express-rate-limit";
 import { z } from "zod";
 
-import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { isFeatureEnabled } from "../../lib/feature-flags";
+import { completeInviteFromFitting } from "../../lib/fitting/complete-invite";
 import { logger } from "../../lib/logger";
 import { verifyFitterInviteToken } from "../../lib/fitter-invite-token";
-import { recordTenantUsage } from "../../lib/metering/usage";
-import { reportFitterFittingMeterEvent } from "../../lib/platform-billing/stripe";
 import { resolveOrgIdForSignedRecord } from "../../lib/storefront/signed-link-org";
-
-type FitterInvitesUpdate =
-  Database["resupply"]["Tables"]["fitter_invites"]["Update"];
 
 const router: IRouter = Router();
 
@@ -273,40 +269,17 @@ const completeBody = z
     t: z.string().min(1),
     measurements: measurementsSchema,
     answers: answersSchema,
-    recommendation: recommendationSchema,
+    // NULLABLE, and that is the point.
+    //
+    // A fitting that named no mask — contraindicated, outside the
+    // validated range, every candidate excluded by the tenant formulary —
+    // is still a finished fitting, and the one staff most need to see.
+    // While this field was required, the page had nothing valid to send
+    // for those and so sent NOTHING: the invite sat at "opened" forever
+    // and the fitting existed on no invite surface at all.
+    recommendation: recommendationSchema.nullish(),
   })
   .strict();
-
-/** Find the single patient that owns this email/phone, if any. More
- *  than one match is treated as "no match" — we never auto-cross-link
- *  PHI on an ambiguous identity (mirrors me-documents findPatientByEmail). */
-async function findUniquePatient(
-  orgId: string,
-  email: string | null,
-  phone: string | null,
-): Promise<string | null> {
-  const supabase = getOrgScopedClient(orgId);
-  if (email) {
-    const { data, error } = await supabase
-      .from("patients")
-      .select("id")
-      .eq("email", email)
-      .limit(2);
-    if (error) throw error;
-    if (data && data.length === 1) return data[0]!.id;
-    if (data && data.length > 1) return null;
-  }
-  if (phone) {
-    const { data, error } = await supabase
-      .from("patients")
-      .select("id")
-      .eq("phone_e164", phone)
-      .limit(2);
-    if (error) throw error;
-    if (data && data.length === 1) return data[0]!.id;
-  }
-  return null;
-}
 
 router.post(
   "/shop/fitter-invite/complete",
@@ -351,186 +324,51 @@ router.post(
       res.status(503).json({ error: "tenant_unavailable" });
       return;
     }
-    const supabase = getOrgScopedClient(orgId);
-    const { data: invite, error } = await supabase
-      .from("fitter_invites")
-      .select(
-        "id, status, patient_id, recipient_email, recipient_phone_e164, opened_at, expires_at",
-      )
-      .eq("id", verified.inviteId)
-      .limit(1)
-      .maybeSingle();
-    // Fail soft on a DB hiccup — the patient already sees their result;
-    // losing the best-effort transmission must not 500 them.
-    if (error) {
-      logger.warn(
-        { err: error, inviteId: verified.inviteId },
-        "fitter-invite: completion lookup failed",
-      );
-      res.json({ ok: true, matched: false });
-      return;
-    }
-    if (!invite) {
-      res.status(404).json({ error: "invite_not_found" });
-      return;
-    }
-    if (invite.status === "revoked") {
-      res.status(409).json({ error: "revoked" });
-      return;
-    }
-    // Enforce the row's expiry here too, exactly as /resolve and
-    // /api/fit/assess do. Without it, a token whose own HMAC window
-    // outlives the row's `expires_at` (staff resend rewrites the row's
-    // expiry while older tokens stay valid to their embedded one) could
-    // keep writing measurements onto an invite staff consider dead.
-    if (
-      invite.expires_at &&
-      new Date(invite.expires_at).getTime() <= Date.now()
-    ) {
-      res.status(409).json({ error: "expired" });
-      return;
-    }
 
-    const rec = parsed.data.recommendation;
-    const nowIso = new Date().toISOString();
+    // The write itself — including auto-attach and the atomic
+    // exactly-once billing claim — lives in the shared helper, because
+    // /api/fit/assess records the same completion server-side and the two
+    // must not double-meter one fitting.
+    const rec = parsed.data.recommendation ?? null;
+    const outcome = await completeInviteFromFitting({
+      orgId,
+      inviteId: verified.inviteId,
+      measurements: parsed.data.measurements,
+      answers: parsed.data.answers,
+      primary: rec
+        ? { maskId: rec.maskId, name: rec.name, type: rec.type }
+        : null,
+      // A named mask always ranks at least itself: an explicitly empty
+      // `top` must not read as "nothing to record" and leave the column
+      // stale (the helper skips an empty list by design).
+      ranked: rec ? (rec.top?.length ? rec.top : [rec]) : [],
+      source: "fitter.invite.complete",
+    });
 
-    // A re-submit of an already-completed/attached fitting must not be
-    // double-counted for per-fitting billing (migration 0419). Only the
-    // transition into a completed state from sent/opened is a new fitting.
-    const isNewCompletion =
-      invite.status !== "completed" && invite.status !== "attached";
-
-    // Auto-attach: only when not already linked (a manual attach, or a
-    // re-submit, must not be clobbered).
-    let patientId = invite.patient_id;
-    let autoMatched = false;
-    if (!patientId) {
-      try {
-        const match = await findUniquePatient(
-          orgId,
-          invite.recipient_email,
-          invite.recipient_phone_e164,
-        );
-        if (match) {
-          patientId = match;
-          autoMatched = true;
-        }
-      } catch (matchErr) {
-        // Best-effort — a lookup failure must not lose the fitting.
-        logger.warn(
-          { err: matchErr, inviteId: invite.id },
-          "fitter-invite: auto-match lookup failed",
-        );
-      }
-    }
-
-    const update: FitterInvitesUpdate = {
-      // Don't downgrade an already-attached fitting on a re-submit —
-      // resolve allows reopening an attached invite, and rewriting it
-      // to "completed" would orphan patient_id/attached_at and pull it
-      // back into the holding worklist. Keep terminal states sticky.
-      status: invite.status === "attached" ? "attached" : "completed",
-      completed_at: nowIso,
-      // Preserve the true first-open timestamp; only backfill it when
-      // resolve was skipped (still in 'sent').
-      ...(invite.opened_at ? {} : { opened_at: nowIso }),
-      // Zod's passthrough/record widen these to `unknown`-valued shapes
-      // that don't structurally satisfy the generated `Json` type even
-      // though they are valid JSON at runtime. Cast at the storage edge.
-      measurements: parsed.data
-        .measurements as unknown as Database["resupply"]["Tables"]["fitter_invites"]["Row"]["measurements"],
-      questionnaire_answers: parsed.data
-        .answers as unknown as Database["resupply"]["Tables"]["fitter_invites"]["Row"]["questionnaire_answers"],
-      recommended_mask_id: rec.maskId,
-      recommended_mask_name: rec.name,
-      recommended_mask_type: rec.type,
-      recommendations: (rec.top ?? [
-        rec,
-      ]) as unknown as Database["resupply"]["Tables"]["fitter_invites"]["Row"]["recommendations"],
-      updated_at: nowIso,
-    };
-    if (patientId && !invite.patient_id) {
-      update.patient_id = patientId;
-      update.auto_matched = autoMatched;
-    }
-
-    // The billable transition is claimed ATOMICALLY: `isNewCompletion`
-    // above is derived from a stale read, so two concurrent completes
-    // (double-tap, two tabs, a replayed request) would BOTH see
-    // sent/opened and both meter a fitting. The conditional write below
-    // matches only while the row is still un-completed — exactly one
-    // request wins it; the loser falls through to a data-only update so
-    // its (newer) measurements are still recorded, unbilled.
-    let billableTransition = false;
-    if (isNewCompletion) {
-      const { data: claimed, error: claimErr } = await supabase
-        .from("fitter_invites")
-        .update(update)
-        .eq("id", invite.id)
-        .not("status", "in", "(completed,attached)")
-        .select("id");
-      if (claimErr) {
-        logger.warn(
-          { err: claimErr, inviteId: invite.id },
-          "fitter-invite: completion write failed",
-        );
+    switch (outcome.kind) {
+      case "not_found":
+        res.status(404).json({ error: "invite_not_found" });
+        return;
+      case "revoked":
+        res.status(409).json({ error: "revoked" });
+        return;
+      case "expired":
+        res.status(409).json({ error: "expired" });
+        return;
+      case "unrecorded":
+        // Fail soft — the patient already sees their result; losing the
+        // best-effort transmission must not 500 them.
         res.json({ ok: true, matched: false });
         return;
-      }
-      billableTransition = (claimed ?? []).length > 0;
-    }
-    if (!billableTransition) {
-      // Re-submit (or race loser): refresh the fitting DATA only. Status,
-      // completed_at and opened_at were settled by the first completion —
-      // rewriting status here from the stale read could regress a
-      // concurrent "attached" back to "completed". The auto-attach fields
-      // stay: they are only in `update` when the row had no chart link at
-      // read time, and setting the same match twice is idempotent.
-      const {
-        status: _status,
-        completed_at: _completedAt,
-        opened_at: _openedAt,
-        ...dataOnly
-      } = update;
-      const { error: updErr } = await supabase
-        .from("fitter_invites")
-        .update(dataOnly)
-        .eq("id", invite.id);
-      // Best-effort: a transient write failure must not 500 the patient.
-      if (updErr) {
-        logger.warn(
-          { err: updErr, inviteId: invite.id },
-          "fitter-invite: completion write failed",
-        );
-        res.json({ ok: true, matched: false });
-        return;
-      }
-    }
-
-    // Meter the completed fitting for per-fitting billing (migration 0419).
-    // Fire-and-forget + fail-soft (recordTenantUsage never throws); only on
-    // a genuinely new completion so a patient re-submit can't inflate usage.
-    if (billableTransition) {
-      void recordTenantUsage({
-        orgId,
-        metricKey: "fitterFittingsPerMonth",
-        quantity: 1,
-        source: "fitter.invite.complete",
-      });
-      // Also report it to Stripe as a Billing Meter event so per-fitting
-      // overage on the Virtual Mask Fitter plan is invoiced (migration 0420).
-      // Fire-and-forget + fail-soft; no-ops unless platform Stripe billing is
-      // configured and the tenant has a Stripe customer.
-      void reportFitterFittingMeterEvent(orgId);
     }
 
     // Counts/flags only — never the measurements or recipient PHI.
     req.log?.info?.(
-      { matched: Boolean(patientId), autoMatched },
+      { matched: outcome.matched, recommended: rec !== null },
       "shop/fitter-invite: completion recorded",
     );
 
-    res.json({ ok: true, matched: Boolean(patientId) });
+    res.json({ ok: true, matched: outcome.matched });
   },
 );
 

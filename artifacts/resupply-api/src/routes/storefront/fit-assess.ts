@@ -47,6 +47,10 @@ import {
   loadFitAdjustments,
   loadFittingContext,
 } from "../../lib/fitting/catalog-store.js";
+import {
+  completeInviteFromFitting,
+  toLegacyMaskType,
+} from "../../lib/fitting/complete-invite.js";
 import { assess } from "../../lib/fitting/index.js";
 import { buildProfile } from "../../lib/fitting/profile.js";
 import { RULES_ENGINE_VERSION } from "../../lib/fitting/versions.js";
@@ -514,6 +518,7 @@ router.post("/fit/assess", assessLimiter, async (req, res) => {
         ? "in_office"
         : (body.entryPoint ?? "remote_link"),
     measurements,
+    answers: body.answers,
     profile,
     scan: body.scan ?? NEUTRAL_SCAN,
     assessment,
@@ -786,6 +791,9 @@ interface PersistInput {
   payerProfileId: string | null;
   entryPoint: "remote_link" | "in_office" | "kiosk_qr" | "refit_campaign";
   measurements: FitMeasurements;
+  /** The legacy questionnaire answers as the client sent them, kept so
+   *  the invite's own `questionnaire_answers` column keeps its shape. */
+  answers: unknown;
   profile: ReturnType<typeof buildProfile>;
   scan: ScanSignals;
   assessment: FitAssessment;
@@ -958,13 +966,50 @@ async function persistSession(input: PersistInput): Promise<string | null> {
       },
     ]);
 
-    // Link the invite back to the session so the existing worklist can
-    // deep-link it. Best-effort; the legacy columns are still written by
-    // /shop/fitter-invite/complete.
-    await supabase
-      .from("fitter_invites")
-      .update({ fit_session_id: sessionId })
-      .eq("id", input.inviteId);
+    // Record the completed fitting on the invite — the row the STAFF
+    // worklist reads — and link it to this session so the worklist can
+    // deep-link the clinical record.
+    //
+    // This used to write `fit_session_id` alone, on the stated assumption
+    // that "the legacy columns are still written by
+    // /shop/fitter-invite/complete". That assumption was false for
+    // precisely the fittings that matter most: the page only transmits
+    // when it has a mask to name, so every contraindicated /
+    // out-of-validated-range / everything-excluded fitting left its
+    // invite stranded at "opened" with no measurements and no completion
+    // time, invisible on every invite surface, while the fit_sessions row
+    // right here held the whole story.
+    //
+    // The engine deciding is what finishes a fitting, and the server
+    // knows it at this line — so it is recorded here rather than hoped
+    // for from the browser. The helper claims the completion atomically,
+    // so the page's own (still-firing) transmission cannot double-meter.
+    await completeInviteFromFitting({
+      orgId: input.orgId,
+      inviteId: input.inviteId,
+      measurements: input.measurements,
+      // The legacy column keeps the legacy shape — the structured v2
+      // profile is already on the session as `profile_answers`.
+      answers: input.answers ?? input.profile,
+      primary: input.assessment.primary
+        ? {
+            maskId: input.assessment.primary.maskSlug,
+            name: input.assessment.primary.name,
+            type: toLegacyMaskType(input.assessment.primary.interfaceType),
+          }
+        : null,
+      ranked: [
+        ...(input.assessment.primary ? [input.assessment.primary] : []),
+        ...input.assessment.alternatives,
+      ].map((c) => ({
+        maskId: c.maskSlug,
+        name: c.name,
+        type: toLegacyMaskType(c.interfaceType),
+        confidence: c.confidence,
+      })),
+      fitSessionId: sessionId,
+      source: "fitter.assess.complete",
+    });
 
     return sessionId;
   } catch (err) {

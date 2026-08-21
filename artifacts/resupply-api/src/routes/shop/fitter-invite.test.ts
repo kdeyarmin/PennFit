@@ -431,4 +431,79 @@ describe("POST /shop/fitter-invite/complete", () => {
       (upd.recommendations as Array<Record<string, unknown>>)[0],
     ).not.toHaveProperty("surprise");
   });
+
+  // The regression this whole change exists for. The clinical engine
+  // declines to name a mask on a contraindicated / out-of-validated-range
+  // / everything-excluded fitting, so /results has no `topPick` — and
+  // while `recommendation` was REQUIRED here, it transmitted nothing at
+  // all. The invite stayed at "opened" with no measurements and no
+  // completion time, and the fittings that most needed a human were the
+  // only ones staff never saw.
+  it("records a completed fitting that named no mask", async () => {
+    const token = signFitterInviteToken(INVITE_ID);
+    stageSupabaseResponse("fitter_invites", "select", {
+      data: {
+        id: INVITE_ID,
+        status: "opened",
+        patient_id: null,
+        recipient_email: "nomatch@example.com",
+        recipient_phone_e164: null,
+        expires_at: new Date(Date.now() + 86_400_000).toISOString(),
+      },
+    });
+    stageSupabaseResponse("patients", "select", { data: [] });
+    stageSupabaseResponse("fitter_invites", "update", {
+      data: [{ id: INVITE_ID }],
+    });
+    const res = await request(makeApp())
+      .post("/resupply-api/shop/fitter-invite/complete")
+      .send({ t: token, measurements, answers, recommendation: null });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ ok: true, matched: false });
+    const upd = getSupabaseWritePayloads(
+      "fitter_invites",
+      "update",
+    )[0] as Record<string, unknown>;
+    // The fitting IS recorded — this is a completion, not a dropped call.
+    expect(upd.status).toBe("completed");
+    expect(upd.completed_at).toEqual(expect.any(String));
+    expect(upd.measurements).toEqual(measurements);
+    // …and no mask is invented to fill the columns.
+    expect(upd.recommended_mask_id).toBeNull();
+    expect(upd.recommended_mask_name).toBeNull();
+    expect(upd.recommended_mask_type).toBeNull();
+  });
+
+  it("does not blank a stored ranked list when it has none to send", async () => {
+    // Both writers fire for a clinical fitting: /api/fit/assess records
+    // the alternatives it considered even when it names no primary, and
+    // the page's own transmission then arrives with nothing to say about
+    // them. Writing an empty list here would erase the one already
+    // stored — the only place staff can see what was ruled out.
+    const token = signFitterInviteToken(INVITE_ID);
+    stageSupabaseResponse("fitter_invites", "select", {
+      data: {
+        id: INVITE_ID,
+        status: "opened",
+        patient_id: null,
+        recipient_email: "nomatch@example.com",
+        recipient_phone_e164: null,
+        expires_at: new Date(Date.now() + 86_400_000).toISOString(),
+      },
+    });
+    stageSupabaseResponse("patients", "select", { data: [] });
+    stageSupabaseResponse("fitter_invites", "update", {
+      data: [{ id: INVITE_ID }],
+    });
+    await request(makeApp())
+      .post("/resupply-api/shop/fitter-invite/complete")
+      .send({ t: token, measurements, answers, recommendation: null });
+
+    const upd = getSupabaseWritePayloads(
+      "fitter_invites",
+      "update",
+    )[0] as Record<string, unknown>;
+    expect(upd).not.toHaveProperty("recommendations");
+  });
 });
