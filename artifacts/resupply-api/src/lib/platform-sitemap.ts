@@ -82,6 +82,25 @@ export function isPlatformApexHost(host: string | null | undefined): boolean {
   return bare === PLATFORM_APEX_HOST;
 }
 
+/**
+ * Reverse {@link escapeXml}. Needed because a `<loc>` in the source document
+ * is already XML-escaped: a URL with two query params is written
+ * `?x=1&amp;y=2`. `new URL()` has no idea that is an entity and keeps it
+ * literal, so re-escaping the result produced `&amp;amp;` and silently
+ * changed the URL's query. Decode first, rewrite, escape exactly once.
+ *
+ * `&amp;` is decoded LAST: doing it first would turn `&amp;lt;` (a literal
+ * "&lt;" in the original) into `&lt;` and then into `<`.
+ */
+function unescapeXml(s: string): string {
+  return s
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, "&");
+}
+
 /** XML-escape the five characters that are unsafe in element text. */
 function escapeXml(s: string): string {
   return s
@@ -226,7 +245,7 @@ export function rewriteSitemapOrigin(xml: string, origin: string): string {
   return xml.replace(/<loc>([^<]*)<\/loc>/g, (whole, raw: string) => {
     let parsed: URL;
     try {
-      parsed = new URL(raw.trim());
+      parsed = new URL(unescapeXml(raw.trim()));
     } catch {
       return whole;
     }

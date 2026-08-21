@@ -131,6 +131,13 @@ export type BatchSubmitResult =
 const HISTORICAL_ASSUMED_DIAGNOSIS = "G47.33";
 
 /**
+ * ICD-10-CM shape: a letter, two digits, then an optional dotted extension.
+ * Deliberately a shape check, not a code-set lookup — the point is to reject
+ * free text that could never be a diagnosis, not to adjudicate validity.
+ */
+const ICD10_SHAPE = /^[A-Z]\d{2}(\.\d{1,4})?$/;
+
+/**
  * Turn the field name `buildOneDetail` reported into something an operator
  * can act on. A claim that silently refuses to submit is a support ticket;
  * naming the missing record turns it into a two-minute fix.
@@ -1367,8 +1374,15 @@ export async function buildOneDetail(
   // Refusing to build the claim is the conservative direction: the operator
   // attaches the sleep study — or records the real dx — and resubmits, which
   // is strictly cheaper than a denial or a corrected claim after the fact.
+  // `diagnosis_icd10` is free-form at the sleep-study HTTP boundary, so a
+  // truthiness check is not enough: "not-an-icd-code", or a row holding only
+  // whitespace, would sail through and land in the 837P. Normalise and shape-
+  // check it, and treat an unusable value exactly like a missing one — it can
+  // be neither billed nor defended. Mirrors the same validation the
+  // prescription-request builder applies.
+  const rawDx = sleep?.diagnosis_icd10?.trim().toUpperCase() || null;
   const recordedDx =
-    sleep?.diagnosis_icd10 ??
+    (rawDx && ICD10_SHAPE.test(rawDx) ? rawDx : null) ??
     (opts?.reproduceHistoricalDiagnosis ? HISTORICAL_ASSUMED_DIAGNOSIS : null);
   if (!recordedDx) return missing("diagnosis_icd10");
   const primaryDx = recordedDx;

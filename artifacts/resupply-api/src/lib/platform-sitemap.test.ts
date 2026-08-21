@@ -193,11 +193,24 @@ describe("rewriteSitemapOrigin", () => {
     expect(rewriteSitemapOrigin(xml, "https://acme.test")).toBe(xml);
   });
 
-  it("escapes XML metacharacters coming from the path", () => {
+  it("round-trips an escaped query without double-escaping it", () => {
+    // The <loc> in the source document is ALREADY XML-escaped, so a two-param
+    // query reads `?x=1&amp;y=2`. `new URL()` keeps that literal, and naively
+    // re-escaping produced `&amp;amp;` — silently changing the URL's query
+    // from `x=1&y=2` to `x=1&amp;y=2`. The earlier version of this test only
+    // asserted "contains &amp; and no bare &", which the broken output also
+    // satisfied. Assert the exact string.
     const xml = "<url><loc>https://old.example/a?x=1&amp;y=2</loc></url>";
     const out = rewriteSitemapOrigin(xml, "https://acme.test");
-    expect(out).toContain("&amp;");
+    expect(out).toBe("<url><loc>https://acme.test/a?x=1&amp;y=2</loc></url>");
+    expect(out).not.toContain("&amp;amp;");
     expect(out).not.toMatch(/&(?!amp;|lt;|gt;|quot;|apos;)/);
+  });
+
+  it("is idempotent — rewriting an already-rewritten document is a no-op", () => {
+    const xml = "<url><loc>https://old.example/a?x=1&amp;y=2</loc></url>";
+    const once = rewriteSitemapOrigin(xml, "https://acme.test");
+    expect(rewriteSitemapOrigin(once, "https://acme.test")).toBe(once);
   });
 });
 

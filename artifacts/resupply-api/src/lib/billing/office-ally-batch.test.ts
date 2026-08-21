@@ -1104,6 +1104,106 @@ describe("buildOneDetail — claim-level fields", () => {
     expect(missed).toEqual(["diagnosis_icd10"]);
   });
 
+  it.each([
+    ["free text", "not-an-icd-code"],
+    ["whitespace only", "   "],
+    ["empty string", ""],
+  ])("refuses a diagnosis that is %s, like a missing one", async (_l, dx) => {
+    // diagnosis_icd10 is free-form at the sleep-study HTTP boundary, so a
+    // truthiness check would let junk through onto a claim sent to a payer.
+    stageSupabaseResponse("insurance_coverages", "select", {
+      data: { member_id: "MBR-BAD", policyholder_relationship: "self" },
+      error: null,
+    });
+    stageSupabaseResponse("patients", "select", {
+      data: {
+        legal_first_name: "Ada",
+        legal_last_name: "Reyes",
+        date_of_birth: "1975-05-05",
+        address: {
+          line1: "5 Vine St",
+          city: "Reading",
+          state: "PA",
+          zip: "19601",
+        },
+      },
+      error: null,
+    });
+    stageSupabaseResponse("insurance_claim_line_items", "select", {
+      data: [
+        {
+          hcpcs_code: "E0601",
+          modifier: "RR",
+          billed_cents: 24999,
+          quantity: 1,
+        },
+      ],
+      error: null,
+    });
+    stageSupabaseResponse("sleep_studies", "select", {
+      data: { diagnosis_icd10: dx },
+      error: null,
+    });
+
+    const missed: string[] = [];
+    const detail = await buildOneDetail(
+      getOrgScopedClient(MOCK_ORG_ID),
+      makeClaimRow() as never,
+      "BCBS",
+      "00790",
+      { onMissing: (field) => void missed.push(field) },
+    );
+    expect(detail).toBeNull();
+    expect(missed).toEqual(["diagnosis_icd10"]);
+  });
+
+  it("normalises a lowercase diagnosis rather than rejecting it", async () => {
+    // sleep_studies rows come from CSR input and EHR snapshots and can ship
+    // lowercase; that is a formatting quirk, not a missing diagnosis.
+    stageSupabaseResponse("insurance_coverages", "select", {
+      data: { member_id: "MBR-LC", policyholder_relationship: "self" },
+      error: null,
+    });
+    stageSupabaseResponse("patients", "select", {
+      data: {
+        legal_first_name: "Ada",
+        legal_last_name: "Reyes",
+        date_of_birth: "1975-05-05",
+        address: {
+          line1: "5 Vine St",
+          city: "Reading",
+          state: "PA",
+          zip: "19601",
+        },
+      },
+      error: null,
+    });
+    stageSupabaseResponse("insurance_claim_line_items", "select", {
+      data: [
+        {
+          hcpcs_code: "E0601",
+          modifier: "RR",
+          billed_cents: 24999,
+          quantity: 1,
+        },
+      ],
+      error: null,
+    });
+    stageSupabaseResponse("sleep_studies", "select", {
+      data: { diagnosis_icd10: " g47.30 " },
+      error: null,
+    });
+
+    const detail = await buildOneDetail(
+      getOrgScopedClient(MOCK_ORG_ID),
+      makeClaimRow() as never,
+      "BCBS",
+      "00790",
+    );
+    expect(detail).not.toBeNull();
+    expect(detail!.diagnosisCodes).toContain("G47.30");
+  });
+
   it("reproduces the historical G47.33 for an already-transmitted submission", async () => {
     // buildEdiPayloadForSubmission regenerates the 837P for a submission that
     // ALREADY went to the payer, under its original control numbers, so
