@@ -43,6 +43,52 @@ export function normalizeIcd10(code: string | null | undefined): string {
 }
 
 /**
+ * ICD-10-CM shape, matching the validators already used at this repo's HTTP
+ * boundaries (billing/ai-patch.ts, routes/admin/claim-templates.ts): a letter,
+ * two digits, then an optional dotted extension of up to four ALPHANUMERIC
+ * characters.
+ *
+ * Two things here are easy to get wrong, and both fail in the same expensive
+ * direction — refusing a claim or a packet that should have gone out:
+ *
+ *   1. The extension is ALPHANUMERIC. Real ICD-10-CM codes carry letters
+ *      after the decimal; `S06.0X0A` (concussion, initial encounter) is a
+ *      plain example. A digits-only `\.\d{1,4}` rejects them.
+ *   2. The dot is OPTIONAL. `sleep_studies.diagnosis_icd10` is populated by
+ *      CSR entry and EHR snapshots, and the undotted form (`G4733`) is just
+ *      as common in those sources as `G47.33`. The 837P builder strips the
+ *      dot at emit time anyway, so treating the undotted spelling as invalid
+ *      would refuse a diagnosis the payer would have accepted.
+ *
+ * Deliberately a shape check, not a code-set lookup: the job is to reject
+ * text that could never be a diagnosis, not to adjudicate clinical validity.
+ */
+const ICD10_SHAPE = /^[A-Z]\d{2}(\.?[A-Z0-9]{1,4})?$/;
+
+/**
+ * Validate a diagnosis recorded on a sleep study and return it in canonical
+ * form (trimmed, upper-cased, dots preserved), or null when it is unusable.
+ *
+ * `sleep_studies.diagnosis_icd10` is free-form at the HTTP boundary, so a
+ * truthiness check is not enough: `"not-an-icd-code"`, or a row holding only
+ * whitespace, would otherwise ride onto an 837P sent to a payer or onto a
+ * packet a prescriber signs. Callers treat null exactly like a missing
+ * diagnosis — an unusable code can be neither billed nor defended.
+ *
+ * The recorded spelling is PRESERVED (only trimmed and upper-cased), unlike
+ * {@link normalizeIcd10}, which strips dots for comparison. Rewriting the
+ * operator's code into a different-looking one is a surprise nobody asked
+ * for, and the 837P builder normalises at emit time regardless.
+ */
+export function parseRecordedIcd10(
+  value: string | null | undefined,
+): string | null {
+  const trimmed = (value ?? "").trim().toUpperCase();
+  if (!trimmed) return null;
+  return ICD10_SHAPE.test(trimmed) ? trimmed : null;
+}
+
+/**
  * Decide whether any of the claim's diagnosis codes supports `hcpcsCode`
  * under the supplied coverage catalog rows.
  *

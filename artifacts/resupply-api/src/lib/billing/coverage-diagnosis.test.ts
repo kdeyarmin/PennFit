@@ -4,6 +4,7 @@ import {
   evaluateCoverageDiagnosis,
   normalizeIcd10,
   type CoverageDiagnosisRow,
+  parseRecordedIcd10,
 } from "./coverage-diagnosis";
 
 const PAP_RULES: CoverageDiagnosisRow[] = [
@@ -187,5 +188,49 @@ describe("evaluateCoverageDiagnosis — per-payer overrides", () => {
     expect(
       evaluateCoverageDiagnosis("A7032", ["G47.33"], rows, PAYER).covered,
     ).toBe(true);
+  });
+});
+
+describe("parseRecordedIcd10", () => {
+  // sleep_studies.diagnosis_icd10 is free-form at the HTTP boundary, so this
+  // is the only thing standing between a typo and an 837P sent to a payer —
+  // or a diagnosis a prescriber is asked to sign.
+
+  it("accepts the spellings real records actually contain", () => {
+    // Dotted and undotted are both common: CSR entry tends to dot, EHR
+    // snapshots often don't, and the 837P builder strips the dot at emit
+    // time either way.
+    expect(parseRecordedIcd10("G47.33")).toBe("G47.33");
+    expect(parseRecordedIcd10("G4733")).toBe("G4733");
+    // Lowercase is a formatting quirk, not a missing diagnosis.
+    expect(parseRecordedIcd10("g47.30")).toBe("G47.30");
+    expect(parseRecordedIcd10("  g4730  ")).toBe("G4730");
+    // Real ICD-10-CM extensions are alphanumeric — a digits-only rule would
+    // refuse legitimate codes.
+    expect(parseRecordedIcd10("S06.0X0A")).toBe("S06.0X0A");
+    expect(parseRecordedIcd10("S060X0A")).toBe("S060X0A");
+    expect(parseRecordedIcd10("E11.9")).toBe("E11.9");
+  });
+
+  it("rejects anything that could never be a diagnosis", () => {
+    for (const bad of [
+      "not-an-icd-code",
+      "   ",
+      "",
+      null,
+      undefined,
+      "G47.",
+      "4733",
+      "G47.33; DROP TABLE",
+    ]) {
+      expect(parseRecordedIcd10(bad), String(bad)).toBeNull();
+    }
+  });
+
+  it("preserves the recorded spelling rather than reformatting it", () => {
+    // Rewriting an operator's code into a different-looking one is a surprise
+    // nobody asked for; normalizeIcd10 exists separately for comparison.
+    expect(parseRecordedIcd10("G47.33")).not.toBe("G4733");
+    expect(normalizeIcd10(parseRecordedIcd10("G47.33"))).toBe("G4733");
   });
 });

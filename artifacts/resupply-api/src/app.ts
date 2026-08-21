@@ -816,11 +816,18 @@ app.get("/sitemap.xml", (req, res, next) => {
   // Non-canonical deploy host: duplicate content, so advertise nothing.
   if (isPlatformPreviewHost(host)) return res.status(404).end();
 
-  const raw = readSpaFile("sitemap.xml");
+  // An unusable host must NOT fall through: express.static below would serve
+  // the checked-in template verbatim, and that template carries the launch
+  // tenant's URLs. A request with an odd host shape (IPv6 literal, a
+  // single-label name) would then be handed pennpaps.com's sitemap — exactly
+  // the cross-tenant leak this handler exists to prevent. Refuse instead.
   const origin = resolvePublicOrigin(host, req.protocol);
-  // No SPA build co-served (API-only dev), or an unusable host — fall
-  // through rather than invent a document.
-  if (raw === null || origin === null) return next();
+  if (origin === null) return res.status(404).end();
+
+  // No SPA build co-served (API-only dev) — fall through; there is nothing
+  // tenant-specific to leak and the static handler may still have a file.
+  const raw = readSpaFile("sitemap.xml");
+  if (raw === null) return next();
   return res
     .type("application/xml")
     .set("Cache-Control", SEO_CACHE_CONTROL)
@@ -842,9 +849,14 @@ app.get("/robots.txt", (req, res, next) => {
       .send(buildNoindexRobotsTxt());
   }
 
-  const raw = readSpaFile("robots.txt");
+  // Same reasoning as /sitemap.xml above: falling through on an unusable host
+  // would serve the template's `Sitemap: https://<launch tenant>/sitemap.xml`
+  // line from a host that has no business advertising it.
   const origin = resolvePublicOrigin(host, req.protocol);
-  if (raw === null || origin === null) return next();
+  if (origin === null) return res.status(404).end();
+
+  const raw = readSpaFile("robots.txt");
+  if (raw === null) return next();
   return res
     .type("text/plain")
     .set("Cache-Control", SEO_CACHE_CONTROL)

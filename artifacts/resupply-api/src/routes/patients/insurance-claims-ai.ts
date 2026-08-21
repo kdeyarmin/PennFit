@@ -47,6 +47,7 @@ import {
   DENIAL_PROMPT_VERSION,
 } from "../../lib/billing/ai-denial-analyzer";
 import { applyAiPatches, type AiPatch } from "../../lib/billing/ai-patch";
+import { parseRecordedIcd10 } from "../../lib/billing/coverage-diagnosis";
 import { scoreAndPersist } from "../../lib/billing/heuristic-denial-scorer";
 import { logger } from "../../lib/logger";
 import {
@@ -786,6 +787,7 @@ async function submitDraftToOfficeAlly(
     { data: payer },
     { data: coverage },
     { data: patient },
+    { data: sleepStudy },
   ] = await Promise.all([
     supabase
       .from("insurance_claim_line_items")
@@ -813,6 +815,17 @@ async function submitDraftToOfficeAlly(
       .eq("id", claim.patient_id)
       .limit(1)
       .maybeSingle(),
+    // The recorded diagnosis. This path builds its 837P directly rather than
+    // through buildOneDetail, so it needs the same lookup — latest study that
+    // actually HAS a diagnosis.
+    supabase
+      .from("sleep_studies")
+      .select("diagnosis_icd10")
+      .eq("patient_id", claim.patient_id)
+      .not("diagnosis_icd10", "is", null)
+      .order("study_date", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
   ]);
   if (!payer?.office_ally_payer_id || !coverage || !patient) {
     return {
@@ -832,6 +845,23 @@ async function submitDraftToOfficeAlly(
       officeAllySubmissionId: null,
       uploadOk: false,
       errorMessage: "missing patient address for resubmit",
+    };
+  }
+
+  // This path used to hardcode `diagnosisCodes: ["G47.33"]`, so an assumed
+  // diagnosis could still reach the payer through auto-resubmit even after the
+  // batch builder started refusing them — the fail-closed guard was only as
+  // strong as its least-guarded caller. Resolve the real code and refuse the
+  // resubmit when there isn't one, matching buildOneDetail.
+  const resubmitDx = parseRecordedIcd10(sleepStudy?.diagnosis_icd10);
+  if (!resubmitDx) {
+    return {
+      officeAllySubmissionId: null,
+      uploadOk: false,
+      errorMessage:
+        "no diagnosis on file for resubmit — attach the sleep study (or " +
+        "record the diagnosis); the claim is not resubmitted with an " +
+        "assumed diagnosis",
     };
   }
 
@@ -856,7 +886,7 @@ async function submitDraftToOfficeAlly(
         internalClaimId: claim.id.slice(0, 38),
         totalBilledCents: claim.total_billed_cents,
         placeOfServiceCode: "12",
-        diagnosisCodes: ["G47.33"],
+        diagnosisCodes: [resubmitDx],
         priorAuthNumber: null,
         subscriber: {
           firstName: patient.legal_first_name,

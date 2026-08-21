@@ -19,6 +19,8 @@ import {
   getOrgScopedClient,
 } from "@workspace/resupply-db";
 
+import { parseRecordedIcd10 } from "./billing/coverage-diagnosis";
+
 type SupabaseClient = ReturnType<typeof getOrgScopedClient>;
 
 export type BuildPacketOutcome =
@@ -26,7 +28,11 @@ export type BuildPacketOutcome =
   | { kind: "rx_not_found" }
   | { kind: "rx_missing_provider" }
   | { kind: "rx_missing_hcpcs" }
-  | { kind: "rx_missing_diagnosis" };
+  | { kind: "rx_missing_diagnosis" }
+  /** The sleep-study lookup itself failed. Distinct from "no diagnosis on
+   *  file" so a transient outage is counted as an error to retry, not as a
+   *  patient whose chart needs paperwork. */
+  | { kind: "rx_diagnosis_lookup_failed" };
 
 export type PacketInsert =
   Database["resupply"]["Tables"]["prescription_request_packets"]["Insert"];
@@ -84,7 +90,7 @@ export async function buildPrescriptionRequestPacketFromRx(
   // `rx_missing_diagnosis` even though a diagnosis IS on file. Under the old
   // `?? "G47.33"` default that misread was invisible; now it would stall the
   // auto-draft worker on that patient every night.
-  const { data: study } = await supabase
+  const { data: study, error: studyErr } = await supabase
     .from("sleep_studies")
     .select("diagnosis_icd10")
     .eq("patient_id", input.patientId)
@@ -92,10 +98,16 @@ export async function buildPrescriptionRequestPacketFromRx(
     .order("study_date", { ascending: false })
     .limit(1)
     .maybeSingle();
-  // Normalise to upper case BEFORE validating — sleep_studies rows
-  // come from CSR input + EHR snapshots and can ship lowercase
-  // ("g47.30") even when the format is otherwise valid.
-  const rawIcd = study?.diagnosis_icd10?.toUpperCase() ?? null;
+  // A failed lookup is not an absent diagnosis. Collapsing the two would file
+  // a database outage under "N patients need a sleep study attached" and send
+  // someone to fix a chart that is already correct.
+  if (studyErr) return { kind: "rx_diagnosis_lookup_failed" };
+  // Shared validator — see parseRecordedIcd10. It handles the lowercase that
+  // CSR input and EHR snapshots ship ("g47.30"), the alphanumeric extension
+  // real codes carry ("S06.0X0A"), and the undotted spelling ("G4733"). The
+  // local regex this replaced accepted only digits after the dot and only the
+  // dotted form, so it refused legitimate diagnoses.
+  const rawIcd = parseRecordedIcd10(study?.diagnosis_icd10);
   // No usable diagnosis on file → refuse to build the packet.
   //
   // This used to fall back to ["G47.33"] (obstructive sleep apnea). That is
@@ -107,7 +119,7 @@ export async function buildPrescriptionRequestPacketFromRx(
   //
   // Same rule the 837P builder now applies (office-ally-batch.ts): a
   // diagnosis is either in the record or the paperwork doesn't go out.
-  if (!rawIcd || !/^[A-Z]\d{2}(\.\d{1,4})?$/.test(rawIcd)) {
+  if (!rawIcd) {
     return { kind: "rx_missing_diagnosis" };
   }
   const icd10 = [rawIcd];

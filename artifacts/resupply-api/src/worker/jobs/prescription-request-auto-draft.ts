@@ -147,6 +147,10 @@ async function prescriptionRequestAutoDraftForOrg(
         stats.skipped_no_provider += 1;
       } else if (built.kind === "rx_missing_hcpcs") {
         stats.skipped_no_hcpcs += 1;
+      } else if (built.kind === "rx_diagnosis_lookup_failed") {
+        // An outage, not a chart gap — belongs in `failed` so it shows up as
+        // something to investigate rather than as patients needing paperwork.
+        stats.failed += 1;
       } else if (built.kind === "rx_missing_diagnosis") {
         // Not a failure — a packet we deliberately refuse to mint because
         // no diagnosis is on file. Its own bucket so the daily count reads

@@ -49,6 +49,7 @@ import {
   resolveBillingIdentity,
   resolveClearinghouse,
 } from "./identity-resolver";
+import { parseRecordedIcd10 } from "./coverage-diagnosis";
 import { isFeatureEnabled } from "../feature-flags";
 import { reserveIsa13Value } from "./isa13-counter";
 import { logger } from "../logger";
@@ -131,19 +132,18 @@ export type BatchSubmitResult =
 const HISTORICAL_ASSUMED_DIAGNOSIS = "G47.33";
 
 /**
- * ICD-10-CM shape: a letter, two digits, then an optional dotted extension.
- * Deliberately a shape check, not a code-set lookup — the point is to reject
- * free text that could never be a diagnosis, not to adjudicate validity.
- */
-const ICD10_SHAPE = /^[A-Z]\d{2}(\.\d{1,4})?$/;
-
-/**
  * Turn the field name `buildOneDetail` reported into something an operator
  * can act on. A claim that silently refuses to submit is a support ticket;
  * naming the missing record turns it into a two-minute fix.
  */
 function missingFieldMessage(field: string | null): string {
   switch (field) {
+    case "diagnosis_lookup_failed":
+      return (
+        "the diagnosis lookup failed — this is a transient system error, not " +
+        "missing paperwork. Retry the submission; if it persists, check the " +
+        "database/PostgREST health before touching the patient record."
+      );
     case "diagnosis_icd10":
       return (
         "no diagnosis on file for this claim — attach the sleep study (or " +
@@ -1290,7 +1290,7 @@ export async function buildOneDetail(
     { data: coverage },
     { data: patient },
     { data: lines },
-    { data: sleep },
+    { data: sleep, error: sleepErr },
     { data: renderingProvider },
     { data: referringProvider },
     { data: secondaryCoverage },
@@ -1374,15 +1374,18 @@ export async function buildOneDetail(
   // Refusing to build the claim is the conservative direction: the operator
   // attaches the sleep study — or records the real dx — and resubmits, which
   // is strictly cheaper than a denial or a corrected claim after the fact.
-  // `diagnosis_icd10` is free-form at the sleep-study HTTP boundary, so a
-  // truthiness check is not enough: "not-an-icd-code", or a row holding only
-  // whitespace, would sail through and land in the 837P. Normalise and shape-
-  // check it, and treat an unusable value exactly like a missing one — it can
-  // be neither billed nor defended. Mirrors the same validation the
-  // prescription-request builder applies.
-  const rawDx = sleep?.diagnosis_icd10?.trim().toUpperCase() || null;
+  // A FAILED lookup is not the same as an absent diagnosis. If the
+  // sleep_studies read errored (PostgREST hiccup, pool exhaustion) `sleep` is
+  // null, and reporting "attach the sleep study" would send the operator to
+  // fix a record that is already correct while the real problem is
+  // availability. Report it as its own retryable field instead.
+  if (sleepErr) return missing("diagnosis_lookup_failed");
+
+  // `diagnosis_icd10` is free-form at the HTTP boundary, so presence is not
+  // enough — see parseRecordedIcd10. An unusable value is treated exactly
+  // like a missing one: it can be neither billed nor defended.
   const recordedDx =
-    (rawDx && ICD10_SHAPE.test(rawDx) ? rawDx : null) ??
+    parseRecordedIcd10(sleep?.diagnosis_icd10) ??
     (opts?.reproduceHistoricalDiagnosis ? HISTORICAL_ASSUMED_DIAGNOSIS : null);
   if (!recordedDx) return missing("diagnosis_icd10");
   const primaryDx = recordedDx;

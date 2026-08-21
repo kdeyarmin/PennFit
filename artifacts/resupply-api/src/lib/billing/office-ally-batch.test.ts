@@ -1204,6 +1204,56 @@ describe("buildOneDetail — claim-level fields", () => {
     expect(detail!.diagnosisCodes).toContain("G47.30");
   });
 
+  it("distinguishes a failed diagnosis lookup from an absent diagnosis", async () => {
+    // Telling an operator to "attach the sleep study" when the real problem
+    // is that PostgREST fell over sends them to fix a record that is already
+    // correct, and hides an outage.
+    stageSupabaseResponse("insurance_coverages", "select", {
+      data: { member_id: "MBR-ERR", policyholder_relationship: "self" },
+      error: null,
+    });
+    stageSupabaseResponse("patients", "select", {
+      data: {
+        legal_first_name: "Ivy",
+        legal_last_name: "Osei",
+        date_of_birth: "1968-08-08",
+        address: {
+          line1: "7 Pine St",
+          city: "Lancaster",
+          state: "PA",
+          zip: "17601",
+        },
+      },
+      error: null,
+    });
+    stageSupabaseResponse("insurance_claim_line_items", "select", {
+      data: [
+        {
+          hcpcs_code: "E0601",
+          modifier: "RR",
+          billed_cents: 24999,
+          quantity: 1,
+        },
+      ],
+      error: null,
+    });
+    stageSupabaseResponse("sleep_studies", "select", {
+      data: null,
+      error: { message: "connection failure" },
+    });
+
+    const missed: string[] = [];
+    const detail = await buildOneDetail(
+      getOrgScopedClient(MOCK_ORG_ID),
+      makeClaimRow() as never,
+      "BCBS",
+      "00790",
+      { onMissing: (field) => void missed.push(field) },
+    );
+    expect(detail).toBeNull();
+    expect(missed).toEqual(["diagnosis_lookup_failed"]);
+  });
+
   it("reproduces the historical G47.33 for an already-transmitted submission", async () => {
     // buildEdiPayloadForSubmission regenerates the 837P for a submission that
     // ALREADY went to the payer, under its original control numbers, so
@@ -1335,5 +1385,87 @@ describe("buildOneDetail — claim-level fields", () => {
     expect(result.detail["missing"]).toBe("diagnosis_icd10");
     expect(String(result.detail["message"])).toMatch(/sleep study/i);
     expect(String(result.detail["message"])).toMatch(/assumed diagnosis/i);
+  });
+
+  it("surfaces a lookup failure as an outage, not as missing paperwork", async () => {
+    stageSupabaseResponse("insurance_claims", "select", {
+      data: [
+        {
+          id: "claim-dberr",
+          payer_profile_id: "pp-1",
+          status: "draft",
+          insurance_coverage_id: "cov-1",
+          patient_id: "pat-1",
+        },
+      ],
+    });
+    stageSupabaseResponse("payer_profiles", "select", {
+      data: {
+        id: "pp-1",
+        payer_legal_name: "Aetna",
+        office_ally_payer_id: "60054",
+        paper_only: false,
+        claim_format: "837p",
+        is_active: true,
+        edi_enrollment_status: "enrolled",
+      },
+    });
+    stageSupabaseResponse("eligibility_checks", "select", {
+      data: {
+        id: "eli-1",
+        is_active: true,
+        requires_prior_auth: false,
+        status: "parsed",
+        responded_at: new Date().toISOString(),
+      },
+    });
+    stageSupabaseResponse("insurance_coverages", "select", {
+      data: { member_id: "MBR-1", policyholder_relationship: "self" },
+      error: null,
+    });
+    stageSupabaseResponse("patients", "select", {
+      data: {
+        legal_first_name: "Ivy",
+        legal_last_name: "Osei",
+        date_of_birth: "1968-08-08",
+        address: {
+          line1: "7 Pine St",
+          city: "Lancaster",
+          state: "PA",
+          zip: "17601",
+        },
+      },
+      error: null,
+    });
+    stageSupabaseResponse("insurance_claim_line_items", "select", {
+      data: [
+        {
+          hcpcs_code: "E0601",
+          modifier: "RR",
+          billed_cents: 24999,
+          quantity: 1,
+        },
+      ],
+      error: null,
+    });
+    stageSupabaseResponse("sleep_studies", "select", {
+      data: null,
+      error: { message: "connection failure" },
+    });
+
+    const result = await executeOfficeAllyBatchSubmit({
+      orgId: MOCK_ORG_ID,
+      claimIds: ["claim-dberr"],
+      adminEmail: "ops@example.com",
+      adminUserId: "u-1",
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.detail["missing"]).toBe("diagnosis_lookup_failed");
+    const message = String(result.detail["message"]);
+    expect(message).toMatch(/transient system error/i);
+    // The operator must NOT be sent to fix a chart that is already correct.
+    expect(message).not.toMatch(/attach the sleep study/i);
   });
 });
