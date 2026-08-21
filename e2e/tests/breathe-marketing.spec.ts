@@ -3,12 +3,20 @@
 // Why this exists: the platform marketing pages had NO e2e coverage at all —
 // the suite targets the storefront and the fitter funnel, so a broken
 // `/breathe` chunk, an unreachable header, or a footer link pointing at a
-// dead route would all have shipped green. That gap is what let a
-// nav-breakpoint regression through: the header's mega-menus hide at
-// <=1080px, but the hamburger that replaces them only appeared at <=900px,
-// so between 901px and 1080px the page had no reachable navigation at all.
-// `navigation is reachable at every breakpoint` below is that regression,
-// pinned.
+// dead route would all have shipped green.
+//
+// That gap let two nav-breakpoint regressions through in a row, and
+// `navigation is reachable at every breakpoint` below pins both:
+//   1. The mega-menus were hidden at <=1080px while the hamburger that
+//      replaces them only appeared at <=900px, so 901-1080px had no
+//      reachable navigation at all.
+//   2. The 1080px figure was then itself wrong: the full header row needs
+//      1170px, so 1081-1170px silently CLIPPED the rightmost CTA (89px of
+//      it at 1081px). `.breathe-page` sets `overflow-x: clip`, which keeps
+//      that out of `documentElement.scrollWidth` entirely — so the first
+//      version of the overflow assertion could not see it.
+// Both are why the header collapses at 1200px today and why the test
+// measures each nav item's right edge rather than trusting scrollWidth.
 //
 // Harness assumptions — this must stay green in the backend-less `smoke` /
 // `a11y` jobs (`vite preview`, no Express API):
