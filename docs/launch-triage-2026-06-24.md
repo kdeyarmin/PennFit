@@ -11,15 +11,15 @@ Next available migration number: **`0474`** (`0473` is the current tip).
 
 ## Blocking vs. deferred
 
-| #   | Item                                                 | Real bug?         | In-repo fixable            | External gate                | Verdict                             |
-| --- | ---------------------------------------------------- | ----------------- | -------------------------- | ---------------------------- | ----------------------------------- |
-| 1   | Stripe double-subscription idempotency               | yes (race)        | yes, code-only             | Stripe test-mode replay      | **Launch-blocking**                 |
-| 2   | `cart_hash` 500                                      | yes (repeat cart) | yes, code-only             | none                         | **Launch-blocking**                 |
-| 3   | Capped-rental modifiers / OA 837P / G47.33 preflight | partial           | seed migration + preflight | DMEPOS sign-off + OA sandbox | **Launch-blocking** (e-claims live) |
-| 4   | Voice inbound CallSid binding                        | yes (medium)      | yes, code-only             | Twilio test call             | **Launch-blocking** (voice live)    |
-| 5   | markPaid refunded→paid                               | yes (narrow)      | yes, code-only             | none                         | **Fixed: guard + test**             |
-| 6   | Refund restock on `charge.refunded`                  | product decision  | n/a                        | none                         | **Decided: keep CSR-return-only**   |
-| 7   | Fail-open reservation / counter & sub holds          | no (by design)    | n/a                        | n/a                          | No action                           |
+| #   | Item                                                 | Real bug?         | In-repo fixable            | External gate                     | Verdict                             |
+| --- | ---------------------------------------------------- | ----------------- | -------------------------- | --------------------------------- | ----------------------------------- |
+| 1   | Stripe double-subscription idempotency               | yes (race)        | yes, code-only             | Stripe test-mode replay           | **Launch-blocking**                 |
+| 2   | `cart_hash` 500                                      | yes (repeat cart) | yes, code-only             | none                              | **Launch-blocking**                 |
+| 3   | Capped-rental modifiers / OA 837P / G47.33 preflight | partial           | seed migration + preflight | OA sandbox (DMEPOS sign-off done) | **Launch-blocking** (e-claims live) |
+| 4   | Voice inbound CallSid binding                        | yes (medium)      | yes, code-only             | Twilio test call                  | **Launch-blocking** (voice live)    |
+| 5   | markPaid refunded→paid                               | yes (narrow)      | yes, code-only             | none                              | **Fixed: guard + test**             |
+| 6   | Refund restock on `charge.refunded`                  | product decision  | n/a                        | none                              | **Decided: keep CSR-return-only**   |
+| 7   | Fail-open reservation / counter & sub holds          | no (by design)    | n/a                        | n/a                               | No action                           |
 
 ## Findings (evidence)
 
@@ -86,10 +86,14 @@ Next available migration number: **`0474`** (`0473` is the current tip).
   own `skipped_no_diagnosis` bucket rather than as failures, so the daily
   number reads as "N patients need a sleep study attached".
 
-- **External gates (cannot be satisfied from the repo):** DMEPOS sign-off
-  (human/out-of-band) and an Office Ally **sandbox** to validate real 837P
-  acceptance (999/277CA). Local EDI can still be generated/inspected via stub
-  mode (`OFFICE_ALLY_STUB=1` → `OFFICE_ALLY_FILE_OUTBOX_DIR`).
+- **External gates (cannot be satisfied from the repo):**
+  - ~~DMEPOS sign-off (human/out-of-band)~~ — **done.** Confirmed complete by
+    the business owner on 2026-08-21. Recorded here so the gate isn't
+    re-raised; the repo has no way to observe it.
+  - Office Ally **sandbox** acceptance of a real 837P (999/277CA) — still
+    open, and the last remaining gate on flipping e-claims live. Local EDI can
+    be generated/inspected meanwhile via stub mode (`OFFICE_ALLY_STUB=1` →
+    `OFFICE_ALLY_FILE_OUTBOX_DIR`).
 
 ### 4. Voice inbound CallSid binding — real, medium
 
@@ -154,5 +158,6 @@ sign-off + Office Ally sandbox acceptance before flipping e-claims live.
 **Validation that must happen outside the repo before go-live:**
 
 - Stripe test-mode event-sequence replay for the idempotency fix (#1).
-- Office Ally sandbox 837P acceptance (999/277CA) + DMEPOS sign-off (#3).
+- Office Ally sandbox 837P acceptance (999/277CA) (#3). The DMEPOS sign-off
+  that used to sit alongside it is **done** (owner-confirmed 2026-08-21).
 - One inbound Twilio test call to confirm CallSid binding (#4).
