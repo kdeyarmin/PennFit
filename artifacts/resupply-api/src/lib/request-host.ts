@@ -40,8 +40,12 @@ export function requestHost(req: HostInput): string {
 
   // Fallback for contexts without a computed hostname (e.g. unit tests that
   // pass a bare `{ headers }`): the historical raw-header read.
-  const fwd = req.headers["x-forwarded-host"];
-  const raw = Array.isArray(fwd) ? fwd[0] : (fwd ?? req.headers.host);
+  // `?? {}` guards the shape, not the value: this helper is called from
+  // `securityHeaders`, which runs on EVERY response, so a request object
+  // without a `headers` bag would take the whole app down rather than fail
+  // one lookup. Real Express requests always have it.
+  const fwd = (req.headers ?? {})["x-forwarded-host"];
+  const raw = Array.isArray(fwd) ? fwd[0] : (fwd ?? (req.headers ?? {}).host);
   const first = (typeof raw === "string" ? raw : "").split(",")[0] ?? "";
   return stripPort(first.trim().toLowerCase());
 }

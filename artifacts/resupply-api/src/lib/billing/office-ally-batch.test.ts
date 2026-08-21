@@ -1094,7 +1094,7 @@ describe("buildOneDetail — claim-level fields", () => {
       claim as never,
       "BCBS",
       "00790",
-      (field) => missed.push(field),
+      { onMissing: (field) => void missed.push(field) },
     );
 
     // This previously returned a claim stamped with an ASSUMED G47.33.
@@ -1102,6 +1102,59 @@ describe("buildOneDetail — claim-level fields", () => {
     // misrepresents the record, so the claim must not be built at all.
     expect(detail).toBeNull();
     expect(missed).toEqual(["diagnosis_icd10"]);
+  });
+
+  it("reproduces the historical G47.33 for an already-transmitted submission", async () => {
+    // buildEdiPayloadForSubmission regenerates the 837P for a submission that
+    // ALREADY went to the payer, under its original control numbers, so
+    // support and reconciliation can see what was actually received. Applying
+    // today's stricter rule there would 404 every submission built before the
+    // rule existed — and would misrepresent the file, which really did carry
+    // this code. New claims must still refuse (the test above).
+    stageSupabaseResponse("insurance_coverages", "select", {
+      data: { member_id: "MBR-HIST", policyholder_relationship: "self" },
+      error: null,
+    });
+    stageSupabaseResponse("patients", "select", {
+      data: {
+        legal_first_name: "Ed",
+        legal_last_name: "Novak",
+        date_of_birth: "1962-03-03",
+        address: {
+          line1: "3 Elm St",
+          city: "Altoona",
+          state: "PA",
+          zip: "16601",
+        },
+      },
+      error: null,
+    });
+    stageSupabaseResponse("insurance_claim_line_items", "select", {
+      data: [
+        {
+          hcpcs_code: "E0601",
+          modifier: "RR",
+          billed_cents: 24999,
+          quantity: 1,
+        },
+      ],
+      error: null,
+    });
+    // sleep_studies unstaged → no diagnosis on file, as for a claim built
+    // back when the fallback still existed.
+
+    const claim = makeClaimRow();
+    const supabase = getOrgScopedClient(MOCK_ORG_ID);
+    const detail = await buildOneDetail(
+      supabase,
+      claim as never,
+      "BCBS",
+      "00790",
+      { reproduceHistoricalDiagnosis: true },
+    );
+
+    expect(detail).not.toBeNull();
+    expect(detail!.diagnosisCodes).toContain("G47.33");
   });
 
   it("reports diagnosis_icd10 with an actionable message through the preflight", async () => {

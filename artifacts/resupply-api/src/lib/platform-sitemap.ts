@@ -143,16 +143,30 @@ export function isPlatformPreviewHost(
 }
 
 /**
- * `robots.txt` for a platform-owned host that must not be indexed. Kept in
- * step with the SPA's `useNoIndexExceptApex` hook: the canonical apex is the
- * only platform host search engines should see.
+ * `robots.txt` for a platform-owned host that must not be indexed.
+ *
+ * Counter-intuitively this ALLOWS crawling. `Disallow: /` would be the
+ * obvious choice and is the wrong one: a crawler that is forbidden to fetch
+ * the page can never see that the page says noindex, so a preview URL that
+ * was already discovered stays in the index as a bare URL-only result.
+ * Google is explicit that a page carrying noindex has to remain crawlable
+ * for the directive to be honoured.
+ *
+ * So: let them in, and make sure what they find says noindex. The SPA's
+ * `useNoIndexExceptApex` hook sets the meta tag, and `securityHeaders`
+ * serves `X-Robots-Tag: noindex` on these hosts so the directive does not
+ * depend on the crawler executing JavaScript. No sitemap is advertised —
+ * being crawlable is not the same as being promoted.
  */
 export function buildNoindexRobotsTxt(): string {
   return [
-    "# Non-canonical deploy host — not indexed.",
+    "# Non-canonical deploy host — crawlable on purpose, but not indexed.",
+    "# Crawling stays open so the noindex directive (meta tag + the",
+    "# X-Robots-Tag response header) can actually be read; blocking the",
+    "# fetch would strand an already-discovered URL in the index.",
     `# The canonical platform site is ${PLATFORM_APEX_ORIGIN}.`,
     "User-agent: *",
-    "Disallow: /",
+    "Allow: /",
     "",
   ].join("\n");
 }

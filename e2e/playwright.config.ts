@@ -83,7 +83,28 @@ export default defineConfig({
   // usually the thing worth having for a failure that won't reproduce
   // locally.
   reporter: process.env["CI"]
-    ? [["github"], ["html", { open: "never" }]]
+    ? [
+        ["github"],
+        ["html", { open: "never" }],
+        // Machine-readable run summary. scripts/ci/assert-no-skipped-tests.mjs
+        // reads this in the e2e-dev job: against the dev server every spec's
+        // harness requirement is met, so a skipped test means the harness
+        // broke rather than that the test was inapplicable — and Playwright
+        // exits 0 on a skip, which is how three specs went uncovered for
+        // months.
+        //
+        // The `../` is load-bearing and not a typo. The json reporter
+        // resolves `outputFile` relative to THIS FILE's directory (e2e/),
+        // while the html reporter above resolves its folder relative to the
+        // cwd Playwright is launched from (the repo root — see e2e/README.md
+        // and the CI jobs). Left as a bare "playwright-report/..." the two
+        // reports split across e2e/playwright-report/ and ./playwright-report/,
+        // so the ci.yml upload step captured only half and the skip guard hit
+        // ENOENT. Verified empirically, not assumed. Deliberately a plain
+        // string: computing it via node:path would break this config's ESM
+        // load (see the ADMIN_STORAGE_STATE note above).
+        ["json", { outputFile: "../playwright-report/results.json" }],
+      ]
     : "list",
 
   webServer: {

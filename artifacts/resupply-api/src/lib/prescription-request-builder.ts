@@ -77,10 +77,18 @@ export async function buildPrescriptionRequestPacketFromRx(
   if (!rx.provider_id) return { kind: "rx_missing_provider" };
   if (!rx.hcpcs_code) return { kind: "rx_missing_hcpcs" };
 
+  // `.not(... is null)` before ordering, matching the claim builder
+  // (office-ally-batch.ts). Without it, a newer study row that records no
+  // diagnosis — a titration study, or a partial EHR import — hides an older
+  // study that does have one, and the packet is refused as
+  // `rx_missing_diagnosis` even though a diagnosis IS on file. Under the old
+  // `?? "G47.33"` default that misread was invisible; now it would stall the
+  // auto-draft worker on that patient every night.
   const { data: study } = await supabase
     .from("sleep_studies")
     .select("diagnosis_icd10")
     .eq("patient_id", input.patientId)
+    .not("diagnosis_icd10", "is", null)
     .order("study_date", { ascending: false })
     .limit(1)
     .maybeSingle();

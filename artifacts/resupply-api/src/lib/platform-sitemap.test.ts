@@ -229,10 +229,21 @@ describe("rewriteRobotsSitemapUrl", () => {
 });
 
 describe("buildNoindexRobotsTxt", () => {
-  it("blocks everything and points at the canonical apex", () => {
+  // This deliberately ALLOWS crawling. `Disallow: /` reads like the stronger
+  // choice and is the weaker one: a crawler forbidden to fetch the page never
+  // sees that the page says noindex, so an already-discovered preview URL
+  // stays in the index as a URL-only result. Google requires a noindex page
+  // to remain crawlable. The directive itself is carried by the SPA meta tag
+  // and by the `X-Robots-Tag: noindex` response header (securityHeaders).
+  it("allows crawling so the noindex directive can actually be read", () => {
     const txt = buildNoindexRobotsTxt();
-    expect(txt).toContain("Disallow: /");
-    expect(txt).not.toContain("Allow: /");
+    expect(txt).toContain("Allow: /");
+    expect(txt).not.toMatch(/^\s*Disallow: \/\s*$/m);
+  });
+
+  it("advertises no sitemap and points at the canonical apex", () => {
+    const txt = buildNoindexRobotsTxt();
+    expect(txt).not.toContain("Sitemap:");
     expect(txt).toContain(PLATFORM_APEX_ORIGIN);
   });
 });
@@ -300,7 +311,10 @@ describe("sitemap/robots host routing (wiring)", () => {
       .get("/robots.txt")
       .set("Host", "pennfit.up.railway.app");
     expect(robots.status).toBe(200);
-    expect(robots.text).toContain("Disallow: /");
+    // Crawlable on purpose (see buildNoindexRobotsTxt), and still no sitemap
+    // and no other tenant's domain.
+    expect(robots.text).toContain("Allow: /");
+    expect(robots.text).not.toContain("Sitemap:");
     expect(robots.text).not.toContain("pennpaps.com");
   });
 

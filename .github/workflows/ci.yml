@@ -208,6 +208,9 @@ jobs:
       # scenario 9 also had a self-inflicted bug (an in-repo stderr sink
       # the lib correctly swept), fixed in the same change that wired it
       # in. See docs/workflow-efficiency-audit-2026-06-04.md (W5).
+      - name: Skipped-test guard self-test
+        run: node scripts/ci/assert-no-skipped-tests.mjs --self-test
+
       - name: Staged-snapshot library self-test
         run: bash scripts/git-hooks/lib-staged-snapshot.test
 
@@ -732,6 +735,21 @@ jobs:
           E2E_BASE_URL: http://127.0.0.1:5173
           CI: "true"
         run: pnpm exec playwright test --config e2e/playwright.config.ts
+
+      # Playwright exits 0 when a test calls test.skip(), so "green" does not
+      # mean "ran". Several specs skip themselves when the
+      # @mediapipe/tasks-vision module stub fails to intercept — which is
+      # correct under `vite preview` but never expected here, against the dev
+      # server. Without this the job would keep passing while quietly covering
+      # less, which is the exact gap this job was added to close.
+      #
+      # --min guards the other direction: a filter or config change that
+      # narrows the suite toward zero.
+      - name: Assert nothing was skipped
+        if: always()
+        run: >
+          node scripts/ci/assert-no-skipped-tests.mjs
+          playwright-report/results.json --min 20
 
       - name: Upload Playwright report on failure
         if: failure()

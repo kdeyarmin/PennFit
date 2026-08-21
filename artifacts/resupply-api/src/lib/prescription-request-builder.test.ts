@@ -11,7 +11,16 @@ import { describe, expect, it, vi } from "vitest";
 // when the test wants a specific row back.
 function makeQuery(result: { data: unknown; error?: unknown }) {
   const q: Record<string, (..._args: unknown[]) => unknown> = {};
-  for (const m of ["select", "eq", "order", "limit", "in", "gte", "lte"]) {
+  for (const m of [
+    "select",
+    "eq",
+    "not",
+    "order",
+    "limit",
+    "in",
+    "gte",
+    "lte",
+  ]) {
     q[m] = () => q;
   }
   q.maybeSingle = () => Promise.resolve(result);

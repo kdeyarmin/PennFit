@@ -123,6 +123,14 @@ export type BatchSubmitResult =
     };
 
 /**
+ * The diagnosis 837P claims were stamped with before the assumed-diagnosis
+ * guard landed. It exists for exactly one purpose: regenerating a submission
+ * that was already transmitted carrying it. Building a NEW claim with this is
+ * the bug the guard prevents.
+ */
+const HISTORICAL_ASSUMED_DIAGNOSIS = "G47.33";
+
+/**
  * Turn the field name `buildOneDetail` reported into something an operator
  * can act on. A claim that silently refuses to submit is a support ticket;
  * naming the missing record turns it into a two-minute fix.
@@ -648,8 +656,10 @@ export async function executeOfficeAllyBatchSubmit(
       claim,
       payer.payer_legal_name,
       payer.office_ally_payer_id,
-      (field) => {
-        missingField ??= field;
+      {
+        onMissing: (field) => {
+          missingField ??= field;
+        },
       },
     );
     if (!detail) {
@@ -1034,6 +1044,11 @@ export async function buildEdiPayloadForSubmission(
       claim,
       payer.payer_legal_name,
       payer.office_ally_payer_id,
+      // Reproduction, not a new claim — see the option's docblock. A
+      // submission transmitted before the assumed-diagnosis guard existed
+      // must stay downloadable, and must show the code the payer actually
+      // received.
+      { reproduceHistoricalDiagnosis: true },
     );
     if (!d) return null;
     details.push(d);
@@ -1232,17 +1247,35 @@ export async function buildOneDetail(
   claim: ClaimRow,
   payerLegalName: string,
   payerId: string,
-  /**
-   * Optional sink for WHY this claim can't be built. Every `return null`
-   * below names the field it is missing, so the caller can tell the operator
-   * what to fix instead of surfacing a bare claim id. Optional on purpose:
-   * the contract stays `ClaimDetail | null` for the callers (and the ~25
-   * tests) that only care whether the claim is billable.
-   */
-  onMissing?: (field: string) => void,
+  opts?: {
+    /**
+     * Optional sink for WHY this claim can't be built. Every `return null`
+     * below names the field it is missing, so the caller can tell the
+     * operator what to fix instead of surfacing a bare claim id. Optional on
+     * purpose: the contract stays `ClaimDetail | null` for the callers (and
+     * the ~25 tests) that only care whether the claim is billable.
+     */
+    onMissing?: (field: string) => void;
+    /**
+     * Reproduce a file that ALREADY WENT OUT under the old assumed-diagnosis
+     * default, instead of refusing to build it.
+     *
+     * Only `buildEdiPayloadForSubmission` sets this. That path regenerates
+     * the 837P for a submission that was already transmitted, under its
+     * original ISA/GS control numbers, so support and reconciliation can see
+     * what the payer actually received. Applying today's stricter rule there
+     * would 404 every historical submission built before the rule existed —
+     * and would be dishonest even if it didn't, because the transmitted file
+     * really did carry this code.
+     *
+     * NEVER set this when building a NEW claim: that is the bug the guard
+     * exists to prevent.
+     */
+    reproduceHistoricalDiagnosis?: boolean;
+  },
 ): Promise<ClaimDetail | null> {
   const missing = (field: string): null => {
-    onMissing?.(field);
+    opts?.onMissing?.(field);
     return null;
   };
   if (!claim.insurance_coverage_id) return missing("insurance_coverage_id");
@@ -1334,8 +1367,11 @@ export async function buildOneDetail(
   // Refusing to build the claim is the conservative direction: the operator
   // attaches the sleep study — or records the real dx — and resubmits, which
   // is strictly cheaper than a denial or a corrected claim after the fact.
-  if (!sleep?.diagnosis_icd10) return missing("diagnosis_icd10");
-  const primaryDx = sleep.diagnosis_icd10;
+  const recordedDx =
+    sleep?.diagnosis_icd10 ??
+    (opts?.reproduceHistoricalDiagnosis ? HISTORICAL_ASSUMED_DIAGNOSIS : null);
+  if (!recordedDx) return missing("diagnosis_icd10");
+  const primaryDx = recordedDx;
   const subscriberAddress = {
     line1: addr.line1,
     city: addr.city,
