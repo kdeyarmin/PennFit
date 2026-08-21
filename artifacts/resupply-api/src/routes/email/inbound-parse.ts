@@ -496,6 +496,7 @@ router.post("/email/inbound-parse", inboundParseLimiter, async (req, res) => {
       body,
       direction: "inbound",
       messageAt: inboundAt,
+      orgId,
     },
     req.log,
   );
@@ -843,6 +844,7 @@ async function attemptEmailAutoReply(
     body: drafted.reply,
     direction: "outbound",
     messageAt: sentAt,
+    orgId,
   });
 
   await safeAudit({

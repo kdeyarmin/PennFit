@@ -76,6 +76,10 @@ vi.mock("../../lib/stripe/config", () => ({
   }),
 }));
 
+vi.mock("../../lib/stripe/connect", () => ({
+  stripeAccountRequestOptions: async () => ({}),
+}));
+
 // Minimal projection — the route only reads id, name, and stockCount.
 vi.mock("../../lib/stripe/products-meta", async () => {
   const actual = await vi.importActual<
