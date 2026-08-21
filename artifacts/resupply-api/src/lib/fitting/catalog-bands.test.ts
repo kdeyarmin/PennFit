@@ -54,8 +54,30 @@ const MODEL_SOURCES = [
   "0486_mask_catalog_seed.sql",
   "0494_mask_catalog_seed_addendum.sql",
 ];
-/** The migration that owns every platform cushion/pillow band today. */
-const BAND_SOURCES = ["0510_mask_fit_band_conventions.sql"];
+/**
+ * Migrations that state platform cushion/pillow bands, oldest first.
+ * A later migration that restates a model's bands OWNS that model:
+ * its rows replace the earlier file's rows for that (model, component)
+ * wholesale, which is exactly what the SQL does to the database —
+ * renamed codes disappear rather than lingering next to their
+ * replacements. A migration that edits bands after 0511 must be
+ * appended here.
+ */
+const BAND_SOURCES = [
+  "0510_mask_fit_band_conventions.sql",
+  "0511_mask_size_run_corrections.sql",
+];
+/**
+ * Models retired outright — status='discontinued' at the MODEL level,
+ * bands nulled — because the product could not be verified to exist.
+ * catalog-store loads only current models, so these are structurally
+ * unrecommendable; the fit expectations below skip them.
+ */
+const RETIRED_MODELS = new Set([
+  // 0511: "DreamWear Full Face Gel" — no such Philips product; the
+  // DreamWear line's gel option is the gel PILLOWS cushion.
+  "philips-dreamwear-ff-gel",
+]);
 
 // ── Ground truth ─────────────────────────────────────────────────────
 
@@ -196,42 +218,59 @@ function variantOf(
   };
 }
 
-function parseBands(): Band[] {
-  const out: Band[] = [];
-  for (const file of BAND_SOURCES) {
-    const sql = read(file);
-    for (const m of sql.matchAll(BAND_ROW)) {
-      const component = m[2] as SizeVariant["component"];
-      out.push({
-        slug: m[1]!,
+/** Bands stated by one migration file, grouped per (slug, component). */
+function parseFileBands(file: string): Map<string, Band[]> {
+  const sql = read(file);
+  const groups = new Map<string, Band[]>();
+  const push = (band: Band) => {
+    const key = `${band.slug}|${band.component}`;
+    const list = groups.get(key) ?? [];
+    list.push(band);
+    groups.set(key, list);
+  };
+  for (const m of sql.matchAll(BAND_ROW)) {
+    const component = m[2] as SizeVariant["component"];
+    push({
+      slug: m[1]!,
+      component,
+      sizeCode: m[3]!,
+      variant: variantOf(
         component,
-        sizeCode: m[3]!,
-        variant: variantOf(
-          component,
-          m[3]!,
-          m.slice(4, 12).map((v) => num(v!)),
-        ),
-      });
-    }
-    for (const m of sql.matchAll(ESON2_ROW)) {
-      out.push({
-        slug: "fisher-paykel-eson2",
-        component: "cushion",
-        sizeCode: m[1]!,
-        variant: variantOf("cushion", m[1]!, [
-          Number(m[2]),
-          Number(m[3]),
-          null,
-          null,
-          null,
-          null,
-          null,
-          null,
-        ]),
-      });
+        m[3]!,
+        m.slice(4, 12).map((v) => num(v!)),
+      ),
+    });
+  }
+  for (const m of sql.matchAll(ESON2_ROW)) {
+    push({
+      slug: "fisher-paykel-eson2",
+      component: "cushion",
+      sizeCode: m[1]!,
+      variant: variantOf("cushion", m[1]!, [
+        Number(m[2]),
+        Number(m[3]),
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+      ]),
+    });
+  }
+  return groups;
+}
+
+function parseBands(): Band[] {
+  // Later files override earlier ones per (slug, component) — see the
+  // BAND_SOURCES note.
+  const merged = new Map<string, Band[]>();
+  for (const file of BAND_SOURCES) {
+    for (const [key, bands] of parseFileBands(file)) {
+      merged.set(key, bands);
     }
   }
-  return out;
+  return [...merged.values()].flat();
 }
 
 const MODELS = parseModels();
@@ -242,7 +281,7 @@ const RUNS = (() => {
   const map = new Map<string, { model: Model; bands: Band[] }>();
   for (const band of BANDS) {
     const model = MODELS.get(band.slug);
-    if (!model) continue;
+    if (!model || RETIRED_MODELS.has(band.slug)) continue;
     const key = `${band.slug}|${band.component}`;
     const entry = map.get(key) ?? { model, bands: [] };
     entry.bands.push(band);
@@ -432,27 +471,50 @@ describe("only the dimensions that size an interface gate it", () => {
 });
 
 describe("size runs match what the manufacturer actually ships", () => {
-  // Verified against ResMed's own storefront (eshop.resmed.com) and
-  // support pages while auditing the seed. Each of these was wrong: the
-  // seed invented an XS and a Large Wide for the AirFit F20, Wide sizes
-  // for the F30 and N30, and a whole Large column for the F30i.
+  // Verified while auditing the seed — 0510's runs against ResMed's own
+  // storefront (eshop.resmed.com) and support pages; 0511's against
+  // manufacturer-hosted documents or two independent sources with
+  // per-size SKUs (docs/mask-size-run-registry-2026-08-21.md holds the
+  // per-model citations). Each of these was wrong in the seed: invented
+  // sizes (AirFit F20 XS/LW, F30 Wides, F30i Large, DreamWear gel
+  // pillows XS), missing sizes (TrueBlue MW, Forma/Wisp/ComfortGel Blue
+  // Full/FitLife XL, Wisp Pediatric L, the XS cushions), whole runs
+  // shifted (Amara), or codes the manufacturer never prints (N10 and
+  // Swift FX Nano ship S/Standard/Wide, Zest ships Petite).
   const EXPECTED: Record<string, string[]> = {
-    "resmed-airfit-f20": ["S", "M", "L"],
-    "resmed-airfit-f20-non-magnetic": ["S", "M", "L"],
-    "resmed-airfit-n20": ["S", "M", "L"],
-    "resmed-airfit-f30": ["S", "M"],
-    "resmed-airfit-n30": ["S", "SW", "M"],
-    "resmed-airfit-f30i": ["S", "SW", "M", "W"],
-    "resmed-airfit-f30i-non-magnetic": ["S", "SW", "M", "W"],
-    "resmed-airfit-f40": ["SW", "M", "L"],
-    "resmed-airfit-n30i": ["S", "SW", "M", "W"],
+    // key: "slug|component"
+    "resmed-airfit-f20|cushion": ["S", "M", "L"],
+    "resmed-airfit-f20-non-magnetic|cushion": ["S", "M", "L"],
+    "resmed-airfit-n20|cushion": ["S", "M", "L"],
+    "resmed-airfit-f30|cushion": ["S", "M"],
+    "resmed-airfit-n30|cushion": ["S", "SW", "M"],
+    "resmed-airfit-f30i|cushion": ["S", "SW", "M", "W"],
+    "resmed-airfit-f30i-non-magnetic|cushion": ["S", "SW", "M", "W"],
+    "resmed-airfit-f40|cushion": ["SW", "M", "L"],
+    "resmed-airfit-n30i|cushion": ["S", "SW", "M", "W"],
+    "resmed-airfit-n10|cushion": ["S", "Standard", "Wide"],
+    "resmed-swift-fx-nano|cushion": ["S", "Standard", "Wide"],
+    "resmed-swift-fx|pillow": ["XS", "S", "M", "L"],
+    "resmed-airfit-f10|cushion": ["XS", "S", "M", "L"],
+    "resmed-quattro-air|cushion": ["XS", "S", "M", "L"],
+    "philips-amara-full|cushion": ["P", "S", "M", "L"],
+    "philips-wisp|cushion": ["P", "S/M", "L", "XL"],
+    "philips-wisp-pediatric|cushion": ["S", "M", "L"],
+    "philips-trueblue|cushion": ["P", "S", "M", "MW", "L"],
+    "philips-comfortgel-blue-full|cushion": ["S", "M", "L", "XL"],
+    "philips-fitlife|cushion": ["S", "L", "XL"],
+    "philips-dreamwear-np|pillow": ["S", "M", "L"],
+    "fisher-paykel-forma|cushion": ["S", "M", "L", "XL"],
+    "fisher-paykel-zest|cushion": ["Petite", "Standard", "Plus"],
+    "fisher-paykel-brevida|pillow": ["XS-S", "M-L"],
+    "fisher-paykel-evora-full|cushion": ["XS", "S-M", "L"],
   };
 
-  it.each(Object.keys(EXPECTED))("%s", (slug) => {
-    const run = RUNS.get(`${slug}|cushion`);
-    expect(run, `${slug} has no cushion run`).toBeDefined();
+  it.each(Object.keys(EXPECTED))("%s", (key) => {
+    const run = RUNS.get(key);
+    expect(run, `${key} has no run`).toBeDefined();
     expect([...run!.bands.map((b) => b.sizeCode)].sort()).toEqual(
-      [...EXPECTED[slug]!].sort(),
+      [...EXPECTED[key]!].sort(),
     );
   });
 });

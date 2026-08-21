@@ -153,14 +153,39 @@ formulary entries, past sessions and referrals keep resolving.
 The magnet-free twins `0493` clones off the F20 and F30i inherit both
 corrections.
 
-### Not changed, and why
+### The second pass (0511) — every remaining run resolved
 
-Size runs for the remaining models were checked against retailer listings
-only, and several disagree with the seed — Philips Amara Full (seeded
-S/M/L/XL, listed Petite/Small/Medium/Large), Wisp, TrueBlue, F&P Forma,
-ResMed Swift FX, AirFit F10 and AirFit N10 among them. None of those
-reached a manufacturer-hosted source, and a wrong size run is worse than a
-stale one, so they are left alone. They are the obvious next pass.
+The runs this section originally deferred ("checked against retailer
+listings only … the obvious next pass") were subsequently verified against
+manufacturer-hosted documents or two independent per-size-SKU sources and
+corrected in migration `0511`. The compiled per-model evidence — every
+model, seeded vs verified run, citation — lives in
+[`mask-size-run-registry-2026-08-21.md`](./mask-size-run-registry-2026-08-21.md).
+Highlights: the Philips Amara's whole run was shifted one size (seeded
+S/M/L/XL vs the real Petite/S/M/L); the AirFit N10 and Swift FX Nano ship
+S/Standard/Wide, not S/M/L (N10 confirmed by ResMed's own sizing
+brochure); the Wisp is Petite / S-M / L / XL; TrueBlue has a fifth (MW)
+size; the DreamWear gel pillows' XS never existed (Philips' own brochure);
+and **"DreamWear Full Face Gel" is not a product at all** — the seed
+invented it, and 0511 retires the model.
+
+### The legacy storefront engine had the same defect — fixed in the same pass
+
+The DB catalog is the clinical fitter's data, but the live, invite-gated
+`/api/recommend` path still runs on the hardcoded `maskCatalog.ts`, whose
+hand-authored `fitRanges` were on the same subnasale scale. Under that
+engine's semantics (`recommendSize` sizes full-face masks by linearly
+partitioning `[noseToChinMin, noseToChinMax]`), an average adult clamped
+to the **largest size with a spurious "marginal fit" warning** on
+essentially every full-face mask, and `scoreFitMatch` zeroed the
+nose-to-chin term (weight 0.35), systematically de-ranking the whole
+interface. Every `fitRanges` block now carries the canonical-face ±18%
+envelope on the pipeline's axes — geometry stops pretending to
+distinguish masks, the linear size partition reproduces the DB bands
+(same anchor, same envelope), and only a genuine ±3 SD outlier sees the
+clamp warning. Size runs were corrected to the verified ones and the
+fabricated DreamWear Full Face Gel entry removed. Pinned by
+`data/maskCatalog.conventions.test.ts`.
 
 ## 5. Eson 2 — the manufacturer import had the same class of problem
 
