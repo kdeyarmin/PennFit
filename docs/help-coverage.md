@@ -82,11 +82,17 @@ uniqueness, that `related` and `seeAlso` cross-links resolve, that every
 category has at least one how-to, and that the routes are registered in
 the order wouter's `<Switch>` needs.
 
-Known staff-help gaps (candidates for future how-tos): appeal-letter
-writing, secondary-claim coordination-of-benefits detail, capped-rental
-modifier rotation, and inventory reorder-point strategy — the same list
-as the PennPilot gaps below, since both draw on the same missing
-material.
+Coverage today: **53 how-tos, 19 guide chapters, 59 FAQ entries.** A
+how-to is written per _task_, not per page — many console pages are
+covered as a step inside the guide for the workflow they belong to
+(shipping labels inside "fulfill and ship", filing deadlines inside
+"work the denials worklist", the analytics pages inside "find and read a
+report"), so "no how-to whose `primaryPath` is this page" is not the
+same as "undocumented".
+
+Known staff-help gaps (candidates for future how-tos): capped-rental
+**modifier rotation** specifically (the lifecycle is covered, the
+modifier sequence is not) and inventory **reorder-point strategy**.
 
 ## Other staff-facing guidance
 

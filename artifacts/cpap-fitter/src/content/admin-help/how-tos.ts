@@ -1797,4 +1797,1001 @@ export const HOW_TO_GUIDES: readonly HowToGuide[] = [
       "status",
     ],
   },
+  // ---------------------------------------------------------------
+  // Batch two — workflows that had no guide of their own.
+  // ---------------------------------------------------------------
+  {
+    slug: "open-and-work-a-case",
+    title: "Open a case and drive it to closure",
+    category: "patients",
+    summary:
+      "When one problem spans a text, a fax, and a refund, open a Case /admin/cases so it has a persistent home. Set status and priority, link the related threads, orders, and follow-ups, and work it until it closes.",
+    audience: "CSR or admin",
+    timeEstimate: "About 5 minutes to open, then ongoing",
+    primaryPath: "/admin/cases",
+    prerequisites: [
+      "The Conversations module is on and your role includes case access.",
+      "You know which patient the issue belongs to.",
+    ],
+    steps: [
+      {
+        title: "Know when a thread has become a case",
+        body: 'A single question answered in one reply is a conversation. "Lost order #12345" that involves an SMS thread, a returned fax, and a refund is a case — it spans channels and will outlive today\'s shift.',
+        callout: {
+          tone: "tip",
+          text: "The test is whether the next person picking it up could reconstruct the situation from the thread alone. If not, it needs a case.",
+        },
+      },
+      {
+        title: "Open the case",
+        body: "Cases /admin/cases holds the multi-channel tickets. Give it a title that describes the patient's problem in their words, not the internal cause you suspect.",
+      },
+      {
+        title: "Set status and priority honestly",
+        body: "Priority is how the queue gets sorted, so inflating it just moves the problem. Reserve the top priority for things that are actively harming a patient or costing money right now.",
+      },
+      {
+        title: "Link the pieces",
+        body: "Attach the related conversation threads, orders, and follow-ups. That linking is the whole point — it turns scattered artifacts into one story someone else can read.",
+      },
+      {
+        title: "Put dated promises in Episodes or Follow-ups",
+        body: "A case tracks the problem; Episodes /admin/episodes hold dated service commitments and Follow-ups /admin/followups hold the callback you promised. Use all three rather than burying a date in a case note.",
+      },
+      {
+        title: "Close it deliberately",
+        body: "Close with a resolution the next reader can understand. A case closed with no explanation is worse than one left open — it looks handled when nobody knows what happened.",
+      },
+    ],
+    related: ["answer-a-patient-message", "find-and-work-a-patient"],
+    keywords: [
+      "case",
+      "ticket",
+      "escalation",
+      "episode",
+      "follow-up",
+      "issue",
+      "multi-channel",
+    ],
+  },
+  {
+    slug: "merge-duplicate-patients",
+    title: "Merge two records for the same patient",
+    category: "patients",
+    summary:
+      "Duplicate review /admin/patients/duplicates groups likely collisions by the key they share. Pick the survivor, fold the duplicate into it, and the merge repoints every reference at once — the duplicate is closed, not deleted.",
+    audience: "CSR or admin",
+    timeEstimate: "About 5 minutes per pair",
+    primaryPath: "/admin/patients/duplicates",
+    prerequisites: [
+      "You can confirm the two records really are the same person.",
+    ],
+    steps: [
+      {
+        title: "Understand why duplicates happen",
+        body: "Intake from faxes and referrals routinely creates a second record for someone you already have — a first-name typo, a maiden versus married last name, a re-keyed phone number. It is a normal side effect of paper intake, not carelessness.",
+      },
+      {
+        title: "Work the collision list",
+        body: "Duplicate review /admin/patients/duplicates lists the collisions grouped by the key the records share, so you can see what matched before deciding anything.",
+      },
+      {
+        title: "Confirm before you merge",
+        body: "Same name and same city is not proof — families share both. Check date of birth, address, and equipment history together. A wrong merge is far more painful to unpick than a duplicate is to live with.",
+        callout: {
+          tone: "warning",
+          text: "If you are not sure the two records are the same person, leave them. Ask the patient on the next call rather than guessing.",
+        },
+      },
+      {
+        title: "Pick the survivor, then merge",
+        body: "Choose which record is the primary — usually the one with the richer history and the current insurance — and fold the other into it. The merge repoints every reference atomically, so orders, messages, documents, and claims all follow.",
+      },
+      {
+        title: "Know what happens to the duplicate",
+        body: "The folded record is closed, not deleted. That means the merge leaves a trail rather than making history disappear, which matters if anyone ever asks what happened to an old record number.",
+      },
+    ],
+    related: ["find-and-work-a-patient", "work-inbound-referrals"],
+    keywords: [
+      "duplicate",
+      "merge",
+      "collision",
+      "same patient",
+      "two records",
+      "intake",
+    ],
+  },
+  {
+    slug: "triage-inbound-faxes",
+    title: "Triage the inbound fax queue",
+    category: "patients",
+    summary:
+      "Inbound faxes /admin/inbound-faxes lists what arrived with its sender, page count, and status. Open a fax to read the PDF in place, attach it to the right patient, provider, or prescription, then archive it.",
+    audience: "CSR or intake specialist",
+    timeEstimate: "About 3 minutes per fax",
+    primaryPath: "/admin/inbound-faxes",
+    prerequisites: [
+      "The Documents module is on and your fax number is configured at /admin/fax-settings.",
+    ],
+    steps: [
+      {
+        title: "Work the Open filter daily",
+        body: "Inbound faxes /admin/inbound-faxes filters by Open, All, or Archived. Open is your queue. A signed certificate sitting untriaged is a claim you cannot bill, so this is a daily job, not a weekly one.",
+      },
+      {
+        title: "Read the fax in place",
+        body: "Selecting a row opens the triage view with the PDF embedded, so you can read it and file it without downloading anything.",
+      },
+      {
+        title: "Attach it to the right records",
+        body: "Use the search pickers to attach the patient, the provider, and where relevant the prescription. Searching by name is the supported path precisely so nobody has to copy identifiers by hand.",
+        callout: {
+          tone: "tip",
+          text: "If the patient search finds nothing, check Duplicate review /admin/patients/duplicates before creating a new record — inbound paper is the single biggest source of duplicates.",
+        },
+      },
+      {
+        title: "Route what is really a referral",
+        body: "An inbound referral belongs in Referral reviewer /admin/referral-reviews, which turns it into a patient and an order and keeps the sending practice attached for attribution.",
+      },
+      {
+        title: "Archive when it is filed",
+        body: "Archive the fax once it is attached. An accurate Open queue is what makes the daily pass fast; a queue full of already-handled faxes trains people to skim it.",
+      },
+    ],
+    related: ["work-inbound-referrals", "send-a-document-for-signature"],
+    keywords: [
+      "fax",
+      "inbound",
+      "triage",
+      "attach",
+      "archive",
+      "sleep study",
+      "prescription",
+    ],
+  },
+  {
+    slug: "run-an-equipment-recall",
+    title: "Work a manufacturer equipment recall",
+    category: "patients",
+    summary:
+      "Record the recall in Recalls /admin/equipment-recalls with its manufacturer, model, and serial criteria, run the scan to find every affected device you dispensed, then notify those patients and work the remediation to completion.",
+    audience: "Admin or clinical lead",
+    timeEstimate:
+      "An hour to set up, then ongoing until every device is resolved",
+    primaryPath: "/admin/equipment-recalls",
+    prerequisites: [
+      "The Providers module is on.",
+      "You have the manufacturer's recall notice with the affected models and serial ranges.",
+      "Dispensed equipment has been recorded with serial numbers on patient records.",
+    ],
+    steps: [
+      {
+        title: "Record the recall",
+        body: "Recalls /admin/equipment-recalls lists recalls grouped by status with active ones first, each carrying a severity badge — urgent, priority, or advisory. Add the recall with its manufacturer, model, and any serial criteria, either a range or an explicit list.",
+        callout: {
+          tone: "note",
+          text: "Enter the serial criteria exactly as the manufacturer published them. Too broad and you alarm patients who are not affected; too narrow and you miss some who are.",
+        },
+      },
+      {
+        title: "Run the scan",
+        body: "Scan the recall to run the match engine against your dispensed equipment. It surfaces every affected serial you supplied, so you learn the size of the problem before you start calling anyone.",
+      },
+      {
+        title: "Know that the scan changes nothing on its own",
+        body: "The scan is read-only by design — it identifies affected devices but does not mark them. Moving a specific device to recalled status is a deliberate action taken per device from that patient's Equipment tab, so nobody's record changes without a person deciding.",
+        callout: {
+          tone: "warning",
+          text: "Because the scan does not change device status, the work is not done when the scan finishes. Every affected device still needs a person to act on it.",
+        },
+      },
+      {
+        title: "Notify the affected patients",
+        body: "Queue notifications from the recall, and track what has gone out against what is still outstanding. Severity should set the channel: an urgent recall warrants a phone call, not only an email nobody opens.",
+      },
+      {
+        title: "Work the remediation to the end",
+        body: "Each recall keeps a notification status and remediation log so you can see which patients have been reached and which devices are actually resolved. Work it until every affected device has an outcome — a recall with a notification sent and no follow-through is not a closed recall.",
+      },
+      {
+        title: "Keep the record",
+        body: "The recall carries a document joining notifications and remediation per asset. That is what you produce if anyone ever asks how you handled it, so keep the underlying data accurate as you go rather than reconstructing it later.",
+      },
+    ],
+    related: ["recover-rental-equipment", "find-and-work-a-patient"],
+    keywords: [
+      "recall",
+      "safety",
+      "manufacturer",
+      "serial",
+      "notification",
+      "remediation",
+      "equipment",
+    ],
+  },
+  {
+    slug: "coach-a-struggling-patient",
+    title: "Run an adherence coaching plan",
+    category: "patients",
+    summary:
+      "Adherence coaching /admin/coaching holds an open plan per patient who is struggling. Create the plan, move it along with the inline state chips as you make contact, and close it with a resolution note.",
+    audience: "Clinician, RT, or trained CSR",
+    timeEstimate: "About 10 minutes to open, then per-touch",
+    primaryPath: "/admin/coaching",
+    prerequisites: [
+      "The Clinical module is on.",
+      "You have a reason to think this patient is struggling — usually from the therapy boards.",
+    ],
+    steps: [
+      {
+        title: "Find who needs it",
+        body: "Setup Adherence /admin/therapy-compliance surfaces the patients trending toward failing their compliance window, and that window closes. Those are the people worth a coaching plan; a patient who is doing fine does not need one.",
+      },
+      {
+        title: "Open a plan",
+        body: "Adherence coaching /admin/coaching has a create form alongside the open-plans queue. One plan per patient per problem — several overlapping plans for one person just splits the history.",
+      },
+      {
+        title: "Work the plan, moving its state as you go",
+        body: "Each row carries inline state chips so you advance the plan where you are looking at it. Update it at the time of the contact; a plan updated from memory at the end of the week is not reliable.",
+        callout: {
+          tone: "tip",
+          text: "Ask what specifically is going wrong before proposing anything. Mask discomfort, pressure intolerance, and dryness look identical in the usage data and need completely different fixes.",
+        },
+      },
+      {
+        title: "Use the right tool for the actual problem",
+        body: "A fit problem is a rescan or a size override — Fit review /admin/fit-sessions. A comfort or habit problem is coaching plus education from the Video library /admin/clinical/education-videos. A clinical problem belongs with the prescribing physician, not with this console.",
+      },
+      {
+        title: "Record the intervention",
+        body: "Log what you did in Interventions /admin/clinical/interventions. An intervention that was never recorded cannot be shown to a payer later, and it is invisible in RT outcomes /admin/rt-outcomes.",
+      },
+      {
+        title: "Close with a resolution note",
+        body: "Closing a plan prompts for a resolution note — write it for the next person. Closed plans hide behind a toggle so the working queue stays honest.",
+      },
+    ],
+    related: ["monitor-therapy-adherence", "review-a-fit-session"],
+    keywords: [
+      "coaching",
+      "adherence",
+      "compliance",
+      "plan",
+      "intervention",
+      "struggling",
+      "outreach",
+    ],
+  },
+  {
+    slug: "manage-document-retention",
+    title: "Place a legal hold or destroy an expired document",
+    category: "patients",
+    summary:
+      "Retention /admin/documents/retention lists documents whose retention clock is up or close. A legal hold needs a reason and blocks destruction; destruction is admin-only, requires the sweep to have marked the row, and makes you type DESTROY.",
+    audience: "Admin or compliance owner",
+    timeEstimate: "About 20 minutes per review pass",
+    primaryPath: "/admin/documents/retention",
+    prerequisites: [
+      "Your role includes audit export access — the page is gated on it.",
+      "You know your own retention obligations; the app enforces the workflow, not your policy.",
+    ],
+    steps: [
+      {
+        title: "Review what is coming due",
+        body: "Retention /admin/documents/retention shows patient documents whose retention clock has expired or is close. Review it on a schedule rather than reacting to a prompt.",
+      },
+      {
+        title: "Place a hold on anything under dispute",
+        body: "A legal hold requires a reason and blocks destruction. Anything touched by an open dispute, an audit, a payer request, or a potential claim goes on hold before anything else is considered.",
+        callout: {
+          tone: "warning",
+          text: "When in doubt, hold. Destroying a document that later turns out to be needed is not recoverable; keeping one slightly too long almost never is a problem.",
+        },
+      },
+      {
+        title: "Understand the destruction gate",
+        body: "Destruction is one-way and deliberately hard to do by accident: it is admin-only, it only becomes available once the retention sweep has marked the row as eligible, and you must type DESTROY to confirm. You cannot destroy something just because you think its time is up.",
+      },
+      {
+        title: "Release holds when the reason ends",
+        body: "A hold placed for a dispute that settled two years ago is just an unreviewed backlog. Release holds as their reasons close, and record why.",
+      },
+    ],
+    related: ["send-a-document-for-signature", "respond-to-an-adr"],
+    keywords: [
+      "retention",
+      "legal hold",
+      "destroy",
+      "documents",
+      "purge",
+      "compliance",
+      "audit",
+    ],
+  },
+  {
+    slug: "moderate-reviews-and-questions",
+    title: "Moderate product reviews and answer customer questions",
+    category: "orders",
+    summary:
+      "Reviews /admin/shop/reviews opens on Pending with inline approve and reject; a rejection takes a short note. Product Q&A /admin/shop/product-questions is the same shape but you compose an answer instead of approving.",
+    audience: "CSR or storefront owner",
+    timeEstimate: "About 15 minutes daily",
+    primaryPath: "/admin/shop/reviews",
+    prerequisites: ["The Storefront module is on."],
+    steps: [
+      {
+        title: "Work the Pending tab",
+        body: "Reviews /admin/shop/reviews lands on Pending because that is the only state that needs you. Approve or reject inline; the row leaves the tab as you act, so the queue visibly shrinks.",
+      },
+      {
+        title: "Reject for conduct, not for criticism",
+        body: "A rejection takes a short note. Reject spam, abuse, and anything containing another person's private information. A negative but genuine review is not a rejection — publishing it and replying well is far better for you than an implausible wall of five stars.",
+        callout: {
+          tone: "warning",
+          text: "Never publish a review that contains a patient's health details, even if the patient wrote it themselves. Reject it and reach out privately.",
+        },
+      },
+      {
+        title: "Answer product questions",
+        body: "Product Q&A /admin/shop/product-questions has a simpler lifecycle — pending, then answered or rejected. Pending rows let you compose the answer inline.",
+      },
+      {
+        title: "Answer for the next hundred readers",
+        body: "A published answer is read by everyone who looks at that product, not only the person who asked. Answer the general question, and keep anything patient-specific out of it.",
+      },
+      {
+        title: "Feed what you learn back",
+        body: "Repeated questions about sizing or compatibility are a product-page problem, not a Q&A problem. A recurring complaint about fit belongs with Mask-fit feedback /admin/clinical/mask-fit and the formulary.",
+      },
+    ],
+    related: ["recover-abandoned-carts", "act-on-customer-feedback"],
+    keywords: [
+      "review",
+      "moderation",
+      "question",
+      "q&a",
+      "approve",
+      "reject",
+      "storefront",
+      "answer",
+    ],
+  },
+  {
+    slug: "recover-abandoned-carts",
+    title: "Recover abandoned carts and clear back-in-stock waitlists",
+    category: "orders",
+    summary:
+      "Abandoned Carts /admin/shop/abandoned-carts sends a single reminder to carts that qualify — recovered and cleared carts are never nudged. Back-in-Stock /admin/shop/back-in-stock shows who is waiting on what and can fan out manually.",
+    audience: "CSR or storefront owner",
+    timeEstimate: "About 10 minutes weekly",
+    primaryPath: "/admin/shop/abandoned-carts",
+    prerequisites: [
+      "The Storefront module is on.",
+      "Your email sender is configured at /admin/email-settings so the nudge comes from your brand.",
+    ],
+    steps: [
+      {
+        title: "Read the cart statuses before sending",
+        body: "Abandoned Carts /admin/shop/abandoned-carts marks each row: Recovered means they paid, Cleared means they emptied the cart themselves, and Nudged means the reminder already went. Recovered and cleared carts are never nudged.",
+      },
+      {
+        title: "Send the due reminders",
+        body: "One action sends the reminders that are actually due. The nudge is deliberately one-shot per cart — there is no escalating sequence, because a second and third reminder about a forgotten cart reads as pestering.",
+        callout: {
+          tone: "note",
+          text: "One reminder per cart is the whole design. If you want more conversions here, improve the checkout, not the reminder count.",
+        },
+      },
+      {
+        title: "Use the waitlist as a restock signal",
+        body: "Back-in-Stock /admin/shop/back-in-stock shows who is waiting on what. The item with twenty-three people waiting is the item to refill first — read it before you place your next purchase order.",
+      },
+      {
+        title: "Fan out manually when you need to",
+        body: "The waitlist notification fires automatically when an item goes from zero to in-stock in the inventory editor. The manual trigger exists for the case where stock is already positive and the automatic moment passed — a closed backorder window, or a restock nobody dispatched.",
+      },
+      {
+        title: "Measure it where the numbers live",
+        body: "Outreach Attribution /admin/analytics/outreach-attribution shows what this actually converted, and Channel engagement /admin/analytics/channel-engagement shows whether email is the right channel for this audience.",
+      },
+    ],
+    related: [
+      "moderate-reviews-and-questions",
+      "count-and-reconcile-inventory",
+    ],
+    keywords: [
+      "abandoned cart",
+      "back in stock",
+      "waitlist",
+      "nudge",
+      "recovery",
+      "restock",
+      "conversion",
+    ],
+  },
+  {
+    slug: "work-insurance-leads",
+    title: "Work the insurance-coverage lead queue",
+    category: "orders",
+    summary:
+      "Insurance Leads /admin/shop/insurance-leads collects everyone who asked whether their plan covers supplies. Work it top-down, run a real eligibility check, and record the outcome with a note so the next person is not starting over.",
+    audience: "CSR",
+    timeEstimate: "About 10 minutes per lead",
+    primaryPath: "/admin/shop/insurance-leads",
+    prerequisites: [
+      "The Storefront module is on.",
+      "A clearinghouse connection is configured, so you can actually answer the question.",
+    ],
+    steps: [
+      {
+        title: "Understand what these people asked",
+        body: "Insurance Leads /admin/shop/insurance-leads is the durable queue behind the coverage form on your public site. Everyone in it raised their hand and asked a specific question — this is the warmest list you have.",
+      },
+      {
+        title: "Work it while it is fresh",
+        body: "The KPI strip and status filter let you see what is outstanding. Answer quickly: someone who asked about coverage on Monday has usually called a competitor by Thursday.",
+        callout: {
+          tone: "tip",
+          text: "Speed matters more than polish on this queue. A same-day call with a partial answer beats a perfect answer next week.",
+        },
+      },
+      {
+        title: "Actually check, do not guess",
+        body: "Run the real check at Verify insurance /admin/billing/verify. If you cannot identify their plan, Insurance discovery /admin/billing/insurance-discovery is the next step before you write them off as self-pay.",
+      },
+      {
+        title: "Answer the benefit, not just the status",
+        body: "Active coverage is not the same as a covered benefit. Tell them the deductible position and the copay or coinsurance, because that is the number they are actually asking about.",
+      },
+      {
+        title: "Record the outcome inline",
+        body: "Set the row's status and leave a note. The note is what stops the next person from repeating the same eligibility call to the same patient a week later.",
+      },
+    ],
+    related: ["verify-a-patients-insurance", "recover-abandoned-carts"],
+    keywords: [
+      "insurance lead",
+      "coverage",
+      "form",
+      "prospect",
+      "queue",
+      "eligibility",
+      "self-pay",
+    ],
+  },
+  {
+    slug: "recover-rental-equipment",
+    title: "Recover a rental device from a patient who stopped therapy",
+    category: "orders",
+    summary:
+      "Asset recovery /admin/asset-recovery is the human action queue that moves a device from identified through to received and redeployed, so a machine sitting in a closet becomes one you can refurbish and place again.",
+    audience: "CSR with case management access",
+    timeEstimate: "About 10 minutes to open, then weeks of follow-up",
+    primaryPath: "/admin/asset-recovery",
+    prerequisites: [
+      "The Providers module is on and your role includes case access.",
+      "Creating and advancing a recovery needs case-management permission, not just read.",
+    ],
+    steps: [
+      {
+        title: "Let the system surface the candidates",
+        body: "The platform already detects likely discontinuation from low-usage signals and lapsed-customer patterns. Asset recovery /admin/asset-recovery is where a person acts on that — it is the action queue, not the detector.",
+      },
+      {
+        title: "Confirm before you ask for the device back",
+        body: "Low usage is a signal, not a verdict. A patient who was in hospital for a month, or who is struggling with a mask and about to give up, needs a coaching call — not a collection letter.",
+        callout: {
+          tone: "warning",
+          text: "Check Adherence coaching /admin/coaching and the therapy boards first. Asking for the machine back from someone who was about to restart therapy is the fastest way to end their therapy for good.",
+        },
+      },
+      {
+        title: "Open the recovery",
+        body: "Open a recovery case for the device. It carries the machine through the stages, so at any point you can see how many devices are identified versus actually back on your shelf.",
+      },
+      {
+        title: "Make returning it easy",
+        body: "Send the shipping label rather than asking them to arrange it — Shipping labels /admin/shipping. Every step of friction you remove measurably raises the number of devices that actually come back.",
+      },
+      {
+        title: "Advance it to received and redeployed",
+        body: "Move the recovery along as the device arrives and is refurbished. The value is only realised at the end of that chain; a recovery that stops at identified has recovered nothing.",
+      },
+    ],
+    related: ["run-an-equipment-recall", "monitor-therapy-adherence"],
+    keywords: [
+      "asset recovery",
+      "rental",
+      "return device",
+      "discontinued",
+      "refurbish",
+      "redeploy",
+      "machine",
+    ],
+  },
+  {
+    slug: "get-a-prior-authorization",
+    title: "Get a prior authorization before you supply",
+    category: "billing",
+    summary:
+      "Prior auths /admin/billing/prior-auths is five buckets in the order they need attention — missed SLA, at-risk SLA, awaiting decision, expiring approvals, and drafts. Work them top-down.",
+    audience: "Biller",
+    timeEstimate: "About 30 minutes daily",
+    primaryPath: "/admin/billing/prior-auths",
+    prerequisites: [
+      "Coverage is verified and you know the plan requires an authorization for this item.",
+      "The clinical documentation supporting medical necessity is on file.",
+    ],
+    steps: [
+      {
+        title: "Work the buckets in order",
+        body: "The queue is organized by urgency, and the order is the recommendation.",
+        substeps: [
+          "Missed SLA — past the target with no decision. These draw regulator attention; chase the payer's portal directly.",
+          "At-risk SLA — two days or fewer remaining. Chase before they become missed.",
+          "Awaiting — submitted, no decision yet. Check, do not re-submit.",
+          "Expiring — approved, but the approval runs out within about a month. Re-authorize before the next dispense.",
+          "Drafts — captured but never submitted. The most wasteful bucket, because the work is done and the clock is not running.",
+        ],
+      },
+      {
+        title: "Submit with the documentation attached",
+        body: "Most authorization denials are documentation problems, not medical-necessity disagreements. Attach the prescription, the sleep study, and the clinical notes the payer's policy asks for, the first time.",
+      },
+      {
+        title: "Never supply ahead of a required authorization",
+        body: "Supplying before an authorization the plan requires is an avoidable write-off — the payer is entitled to refuse, and usually will. If the patient needs the item urgently, that is a business decision to make consciously, not a workflow shortcut.",
+        callout: {
+          tone: "warning",
+          text: '"We\'ll get the auth after" is how unbillable inventory leaves the building. If you supply anyway, record why, so nobody is surprised at write-off time.',
+        },
+      },
+      {
+        title: "Watch the expiring bucket like a calendar",
+        body: "An approval that lapses between dispenses turns a routine resupply into a denial. The expiring bucket exists so that never surprises you — treat it as scheduled work.",
+      },
+      {
+        title: "Work a specific patient from their chart",
+        body: "Rows deep-link to the patient record, which is where the supporting documentation and the coverage detail live. Work from the chart when you are dealing with one case rather than clearing a queue.",
+      },
+    ],
+    related: ["submit-a-claim", "verify-a-patients-insurance"],
+    keywords: [
+      "prior auth",
+      "authorization",
+      "pa",
+      "sla",
+      "expiring",
+      "approval",
+      "medical necessity",
+    ],
+  },
+  {
+    slug: "bill-a-secondary-payer",
+    title: "Bill the secondary payer after the primary pays",
+    category: "billing",
+    summary:
+      "Secondary claims /admin/billing/secondary lists paid primary claims that carry a secondary coverage and a remaining patient balance, ranked by recoverable dollars. Generating one copies the lines and snapshots the primary's adjudication into a draft you review and submit.",
+    audience: "Biller",
+    timeEstimate: "About 20 minutes per batch",
+    primaryPath: "/admin/billing/secondary",
+    prerequisites: [
+      "The primary payer has paid and the remittance is posted.",
+      "The patient's secondary coverage is recorded.",
+      "Generating a secondary claim needs tools-management permission; viewing needs reports access.",
+    ],
+    steps: [
+      {
+        title: "Understand what is on the list",
+        body: "Secondary claims /admin/billing/secondary shows claims the primary actually paid, where a secondary coverage exists and a patient-responsibility balance remains — ranked by recoverable balance, so the top row is the best use of your time.",
+      },
+      {
+        title: "Generate the secondary claim",
+        body: "Generating copies the line items and snapshots the primary's adjudication for the coordination-of-benefits loop, producing a draft. It does not submit anything — the draft is deliberately yours to review.",
+      },
+      {
+        title: "Review the draft before submitting",
+        body: "Check that the primary's payment and adjustments carried across correctly, then submit through your normal batch path. A secondary claim with a wrong primary adjudication is rejected rather than merely underpaid.",
+      },
+      {
+        title: "Do it promptly — the clock started earlier than you think",
+        body: "The secondary payer's filing window usually starts at the primary's remittance date, not at your posting date. A month of sitting on posted remittances quietly eats most of the window.",
+        callout: {
+          tone: "warning",
+          text: "Treat secondary generation as part of your posting routine, not as a separate task for later. That single habit change recovers more than most denial work does.",
+        },
+      },
+      {
+        title: "Only then bill the patient",
+        body: "Once the secondary has adjudicated, whatever remains is genuinely the patient's — Collections /admin/billing/collections. Statementing a balance a second plan owes is the fastest way to lose a patient's trust.",
+      },
+    ],
+    related: ["post-an-era", "collect-a-patient-balance"],
+    keywords: [
+      "secondary",
+      "cob",
+      "coordination of benefits",
+      "crossover",
+      "primary paid",
+      "balance",
+    ],
+  },
+  {
+    slug: "manage-capped-rentals",
+    title: "Keep capped rentals on track",
+    category: "billing",
+    summary:
+      "Capped rentals /admin/billing/capped-rentals tracks each rental through its 13- and 36-month lifecycle. A daily job advances the cycles on its own; the page is where you see the state, catch an exception, and correct one.",
+    audience: "Biller",
+    timeEstimate: "About 20 minutes weekly",
+    primaryPath: "/admin/billing/capped-rentals",
+    prerequisites: [
+      "Rental items are being billed and their cycles have started.",
+    ],
+    steps: [
+      {
+        title: "Know what is automatic",
+        body: "A daily job advances rental cycles by itself. You are not expected to tick months forward by hand — the page exists so you can see the state, spot an exception, and override when reality diverges from the schedule.",
+      },
+      {
+        title: "Review the state weekly",
+        body: "Capped rentals /admin/billing/capped-rentals shows where every rental sits in its cycle. Weekly is enough to catch problems while they are still one or two months of revenue.",
+      },
+      {
+        title: "Look for cycles that stalled",
+        body: "A rental that stopped advancing usually means the underlying billing stopped — a claim on hold, a lapsed authorization, or a patient who moved. Trace it back rather than correcting the cycle and moving on.",
+        callout: {
+          tone: "tip",
+          text: "A stalled cycle is a symptom. Fixing the cycle without fixing the cause means it stalls again next month.",
+        },
+      },
+      {
+        title: "Watch the transition points",
+        body: "The end of a capped period changes what you may bill and what you owe the patient in service. Those transitions are where the money and the compliance risk both concentrate, so review them before they arrive rather than after.",
+      },
+      {
+        title: "Correct deliberately, and leave a note",
+        body: "When you override a cycle, record why in Billing notes /admin/billing/notes. A corrected cycle with no explanation is indistinguishable from a bug when someone reviews it a year from now.",
+      },
+    ],
+    related: ["submit-a-claim", "post-an-era"],
+    keywords: [
+      "capped rental",
+      "13 month",
+      "36 month",
+      "cycle",
+      "rental",
+      "lifecycle",
+      "oxygen",
+    ],
+  },
+  {
+    slug: "configure-billing-rules",
+    title: "Configure the rules that build your claims",
+    category: "billing",
+    summary:
+      "Config /admin/billing/config is the landing grid for the settings behind the claim scrubber, claim builder, fee-schedule lookups, and denial analyzer. Fixing a rule here stops a recurring denial at its source.",
+    audience: "Billing manager or admin",
+    timeEstimate: "About an hour per surface",
+    primaryPath: "/admin/billing/config",
+    prerequisites: [
+      "You have the payer's current policy or fee schedule in hand.",
+      "You have identified a specific recurring problem — this is not a page to browse and adjust speculatively.",
+    ],
+    steps: [
+      {
+        title: "Start from a denial pattern, not from the page",
+        body: "The reason to open Config /admin/billing/config is that the same denial keeps appearing on the Denials worklist /admin/billing/denials-worklist. Configuration changes made without that evidence tend to create the next recurring denial.",
+      },
+      {
+        title: "Know which surfaces you can edit",
+        body: "Organization identity, the clearinghouse connection, payer profiles, and fee schedules are editable from their own sub-pages. Modifier rules, denial codes, and claim templates are shown read-only — they are maintained centrally, and their pages let you see which rule actually fired.",
+        callout: {
+          tone: "note",
+          text: "If the fix belongs in a read-only surface, that is a support request rather than a configuration change. Raise it at /admin/support with the claim and the rule that fired.",
+        },
+      },
+      {
+        title: "Change one thing at a time",
+        body: "These settings drive the scrubber, the claim builder, the fee-schedule lookup, and the denial analyzer together. Change several at once and the next batch tells you nothing about which change helped.",
+      },
+      {
+        title: "Verify on the next batch",
+        body: "Watch the specific denial you were targeting on the next submission cycle. If it recurs, the rule was not the cause — go back to the claim and read what actually fired.",
+      },
+    ],
+    related: ["work-the-denials-worklist", "submit-a-claim"],
+    keywords: [
+      "config",
+      "hcpcs",
+      "modifier",
+      "fee schedule",
+      "payer",
+      "scrubber",
+      "claim template",
+      "denial code",
+    ],
+  },
+  {
+    slug: "build-your-reply-library",
+    title: "Build the reply library your team actually uses",
+    category: "outreach",
+    summary:
+      "Canned Replies /admin/macros holds the one-line answers your team reaches for, Playbooks /admin/playbooks holds multi-touch outreach for a situation, and Automated messages /admin/templates holds the copy the system sends on its own.",
+    audience: "Admin or team lead",
+    timeEstimate: "About an hour to set up, then ongoing",
+    primaryPath: "/admin/macros",
+    prerequisites: [
+      "The Outreach module is on and your role includes tools management.",
+    ],
+    steps: [
+      {
+        title: "Know which of the three you need",
+        body: "The three surfaces solve genuinely different problems, and putting content in the wrong one is why libraries go stale.",
+        substeps: [
+          "Canned Replies /admin/macros — a single saved answer a CSR inserts into a reply they are writing now.",
+          "Playbooks /admin/playbooks — a multi-touch sequence for a situation, with a cadence, a channel per touch, and wording for each.",
+          "Automated messages /admin/templates — the copy the system sends without a person involved.",
+        ],
+      },
+      {
+        title: "Write macros from real replies",
+        body: "The best macro is a message somebody already sent well. When you notice the same paragraph typed a third time, save it. Macros invented in a meeting are the ones nobody uses.",
+      },
+      {
+        title: "Disable rather than delete",
+        body: "Macros can be disabled, and inactive ones stay listed separately so you can bring one back. Disabling keeps the picker clean without losing wording you may want in six months.",
+        callout: {
+          tone: "tip",
+          text: "A picker with eighty macros is a picker nobody scrolls. Prune aggressively — the library's value is in what is easy to find, not in what it contains.",
+        },
+      },
+      {
+        title: "Build playbooks for situations you handle repeatedly",
+        body: "A playbook carries a suggested cadence as day offsets, the channel for each touch, and editable wording. Its Active runs view shows what is in flight and what the next touch is, and the Call queue lists the phone touches that are due with the script rendered.",
+      },
+      {
+        title: "Preview automated copy before it ships",
+        body: "Read every template in Automated messages /admin/templates and render it with sample data at Message previews /admin/message-previews. A merge field that does not resolve is invisible in the editor and obvious to the patient.",
+      },
+    ],
+    related: [
+      "answer-a-patient-message",
+      "send-a-bulk-campaign",
+      "set-up-resupply-reminders",
+    ],
+    keywords: [
+      "macro",
+      "canned reply",
+      "playbook",
+      "template",
+      "library",
+      "cadence",
+      "call script",
+    ],
+  },
+  {
+    slug: "act-on-customer-feedback",
+    title: "Read your NPS and actually act on it",
+    category: "analytics",
+    summary:
+      "Customer NPS /admin/nps shows the headline score, the promoter/passive/detractor split, and — the part that matters — the recent comments. Read the comments in one sitting and route what they surface.",
+    audience: "Owner, admin, or team lead",
+    timeEstimate: "About 30 minutes monthly",
+    primaryPath: "/admin/nps",
+    prerequisites: [
+      "Post-delivery follow-up is running, so responses are coming in.",
+    ],
+    steps: [
+      {
+        title: "Look at the score, briefly",
+        body: "Customer NPS /admin/nps shows the score for the window — the promoter percentage minus the detractor percentage — with the counts in each band. Note the direction of travel and move on; the number is a thermometer, not a diagnosis.",
+      },
+      {
+        title: "Read the comments properly",
+        body: "The comment tail is the reason the page exists. Read it in one sitting rather than a couple at a time, because the pattern across twenty comments is the finding — no individual comment is.",
+        callout: {
+          tone: "tip",
+          text: "Read detractor and promoter comments together. What promoters praise tells you what to protect when you change something.",
+        },
+      },
+      {
+        title: "Route what the comments actually say",
+        body: "Fit complaints belong with Mask-fit feedback /admin/clinical/mask-fit and Fit review /admin/fit-sessions. Delivery complaints go to Delivery Failures /admin/delivery-failures. Billing surprises usually mean coverage was quoted from eligibility status rather than benefit detail.",
+      },
+      {
+        title: "Close the loop with detractors",
+        body: "Somebody who took the time to complain is usually still recoverable. A call within a few days converts a meaningful share of them; a survey nobody responded to converts none.",
+      },
+      {
+        title: "Track whether it moved",
+        body: "Set a target in Goals & targets /admin/goals and check the trend next month. If a change you made did not move the number, stop doing it rather than doing more of it.",
+      },
+    ],
+    related: ["find-and-read-a-report", "moderate-reviews-and-questions"],
+    keywords: [
+      "nps",
+      "survey",
+      "feedback",
+      "promoter",
+      "detractor",
+      "satisfaction",
+      "comments",
+    ],
+  },
+  {
+    slug: "set-closures-and-hours",
+    title: "Tell the system when you are closed",
+    category: "system",
+    summary:
+      "Closures /admin/closures declares the windows when your office is shut. While a window is active, an inbound text gets your configured auto-reply instead of silence — and recurring windows cover the holidays you close every year.",
+    audience: "CSR lead or admin",
+    timeEstimate: "About 20 minutes once, then a few minutes per closure",
+    primaryPath: "/admin/closures",
+    prerequisites: [
+      "Your phone number is configured at /admin/phone-settings.",
+    ],
+    steps: [
+      {
+        title: "Declare the window",
+        body: "Closures /admin/closures is where you schedule the times you are shut — federal holidays, a snow day, an all-hands offsite. Anyone who can work the inbox should be able to add one; a closure nobody declared is the one that hurts.",
+      },
+      {
+        title: "Write the auto-reply the patient will get",
+        body: 'While the window is active, an inbound text receives your configured auto-reply. Say when you reopen and what to do if it cannot wait — a bare "we\'re closed" leaves someone with a broken machine no better off.',
+        callout: {
+          tone: "note",
+          text: "Opt-out and help keywords are handled by the platform and are never replaced by a closure reply, so a patient can still text STOP while you are closed.",
+        },
+      },
+      {
+        title: "Set the recurring ones once",
+        body: "Closures can repeat, so the holidays you close every year are worth setting up once. A year of holidays entered in one sitting beats remembering the day before each one.",
+      },
+      {
+        title: "Enter unplanned closures the moment you know",
+        body: "A snow day entered at 8am does its job. Entered at 4pm, it has only told the patients who texted after everyone went home.",
+      },
+      {
+        title: "Check what happened when you reopen",
+        body: "Work the backlog in Conversations /admin/conversations first thing, and glance at Outbound Messages /admin/outbound-messages to confirm the auto-replies actually went out.",
+      },
+    ],
+    related: ["answer-a-patient-message", "brand-outbound-communications"],
+    keywords: [
+      "closure",
+      "holiday",
+      "hours",
+      "closed",
+      "auto-reply",
+      "out of office",
+      "snow day",
+    ],
+  },
+  {
+    slug: "secure-your-account",
+    title: "Secure your own account with multi-factor authentication",
+    category: "system",
+    summary:
+      "Account security /admin/security is where you enroll an authenticator app, check your status, and disable it if you change devices. Enrollment is not yet enforced at sign-in, so it only protects you if you actually do it.",
+    audience: "Everyone",
+    timeEstimate: "About 5 minutes",
+    primaryPath: "/admin/security",
+    prerequisites: ["An authenticator app on your phone."],
+    steps: [
+      {
+        title: "Enroll an authenticator",
+        body: "Account security /admin/security walks you through enrolling a time-based one-time-password app. Anyone who can open a patient chart should do this, which in practice means everyone with console access.",
+      },
+      {
+        title: "Know exactly what enrollment does today",
+        body: "Sign-in is not currently gated on enrollment — the page says so deliberately, so nobody enrolls believing a stricter rule just switched on. Enroll anyway: it is the step that makes enforcement painless when it arrives, and it protects your account now.",
+        callout: {
+          tone: "warning",
+          text: "Because it is not enforced, nobody will chase you. Treat it as your own responsibility rather than waiting for a prompt.",
+        },
+      },
+      {
+        title: "Handle a new phone before you wipe the old one",
+        body: "Disable and re-enroll from /admin/security while you still have the working device. Doing it in that order takes two minutes; doing it afterwards takes an admin and a bad afternoon.",
+      },
+      {
+        title: "Use a real password",
+        body: "A unique password from a password manager. Reused credentials are how most accounts are actually lost — a second factor helps, but it should not be the only thing standing between an attacker and a patient roster.",
+      },
+      {
+        title: "Say something if it looks wrong",
+        body: "A sign-in you do not recognize, or activity on a record you never touched, goes to Support /admin/support immediately. Audit Trail /admin/analytics/audit-trail is where an admin can see who did what.",
+      },
+    ],
+    related: ["invite-your-team", "get-help-and-report-a-problem"],
+    keywords: [
+      "mfa",
+      "2fa",
+      "totp",
+      "authenticator",
+      "password",
+      "security",
+      "account",
+      "login",
+    ],
+  },
+  {
+    slug: "appeal-a-denial",
+    title: "Write and send a denial appeal",
+    category: "billing",
+    summary:
+      "The appeal workbench lives in the claim drawer on a patient's claims: generate the letter, fax it to the payer — which moves the claim from denied to appealed — or record an out-of-band delivery, then record the payer's outcome.",
+    audience: "Biller",
+    timeEstimate: "About 30 minutes per appeal",
+    primaryPath: "/admin/billing/denials-worklist",
+    prerequisites: [
+      "The claim is denied and you have read the actual denial reason.",
+      "Your role includes patient update permission — generating, faxing, and recording an outcome all need it.",
+      "The clinical documentation supporting the claim is on file.",
+    ],
+    steps: [
+      {
+        title: "Decide whether this one is worth appealing",
+        body: "Work from the Denials worklist /admin/billing/denials-worklist, which is already ranked by recoverable dollars weighted by win probability. Not every denial should be appealed — a coding error is a correction and resubmission, not an appeal.",
+        callout: {
+          tone: "tip",
+          text: "Check Filing deadlines /admin/billing/timely-filing before you start writing. A perfect appeal filed after the window closes recovers nothing.",
+        },
+      },
+      {
+        title: "Open the claim and its appeal section",
+        body: "Open the claim from the patient's record under Patients /admin/patients — the claim drawer carries the appeal workbench alongside the claim itself, so you are writing with the adjudication in front of you.",
+      },
+      {
+        title: "Generate the letter",
+        body: "Generate the appeal letter, then read it before it goes anywhere. Address the payer's stated reason specifically and attach what their policy asks for. A generic letter that does not engage with the actual denial code is the most common reason an appeal fails twice.",
+      },
+      {
+        title: "Send it, and let the send record itself",
+        body: "Faxing the letter to the payer from the workbench transitions the claim from denied to appealed automatically, so the status reflects reality without a second step. If you sent it another way — mail, email, or the payer's portal — record that out-of-band delivery so the trail is still complete.",
+        callout: {
+          tone: "warning",
+          text: "An appeal sent through a portal and never recorded here looks like an appeal that was never sent. Record it the same day.",
+        },
+      },
+      {
+        title: "Record the payer's outcome",
+        body: "When the decision comes back, record it. That is what makes win rate and response aging measurable — without outcomes, you cannot tell which appeals are worth writing, and the worklist's ranking has nothing to learn from.",
+      },
+      {
+        title: "Fix the cause so you appeal it once",
+        body: "If the denial came from a rule you control, correct it in Config /admin/billing/config. Winning the same appeal twelve times is worse than fixing the thing that generated twelve denials.",
+      },
+    ],
+    troubleshooting: [
+      {
+        symptom:
+          "I can generate the letter but can't fax it or record an outcome.",
+        fix: "Those actions need patient update permission; listing existing letters only needs read. Ask an admin to widen your role at Team /admin/team.",
+      },
+      {
+        symptom: "The payer says they never received the appeal.",
+        fix: "The delivery record on the claim is your evidence of what was sent and when. Re-send, record the second delivery too, and note it in Billing notes /admin/billing/notes.",
+      },
+    ],
+    related: [
+      "work-the-denials-worklist",
+      "configure-billing-rules",
+      "respond-to-an-adr",
+    ],
+    keywords: [
+      "appeal",
+      "denial",
+      "letter",
+      "overturn",
+      "fax",
+      "payer",
+      "win rate",
+      "reconsideration",
+    ],
+  },
 ] as const;
