@@ -790,6 +790,21 @@ const AdminResourcesPage = lazyWithRetry(() =>
     default: m.AdminResourcesPage,
   })),
 );
+const AdminResourceHowToPage = lazyWithRetry(() =>
+  import("@/pages/admin/admin-resources-how-to").then((m) => ({
+    default: m.AdminResourceHowToPage,
+  })),
+);
+const AdminResourceUserGuidePage = lazyWithRetry(() =>
+  import("@/pages/admin/admin-resources-user-guide").then((m) => ({
+    default: m.AdminResourceUserGuidePage,
+  })),
+);
+const AdminResourceFaqPage = lazyWithRetry(() =>
+  import("@/pages/admin/admin-resources-faq").then((m) => ({
+    default: m.AdminResourceFaqPage,
+  })),
+);
 const AdminCustomerDetailPage = lazyWithRetry(() =>
   import("@/pages/admin/admin-customer-detail").then((m) => ({
     default: m.AdminCustomerDetailPage,
@@ -1390,6 +1405,21 @@ function AdminConsole() {
             </Route>
             <Route path="/admin/nps" component={AdminNpsPage} />
             <Route path="/admin/support" component={AdminSupportPage} />
+            {/* Help Center — the specific /admin/resources/* pages are
+              registered before the hub so wouter's <Switch> matches them
+              first. */}
+            <Route
+              path="/admin/resources/how-to/:slug"
+              component={AdminResourceHowToPage}
+            />
+            <Route
+              path="/admin/resources/user-guide"
+              component={AdminResourceUserGuidePage}
+            />
+            <Route
+              path="/admin/resources/faq"
+              component={AdminResourceFaqPage}
+            />
             <Route path="/admin/resources" component={AdminResourcesPage} />
             <Route
               path="/admin/productivity"

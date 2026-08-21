@@ -137,6 +137,22 @@ export function AdminFitterInvitesPage() {
               ? "Holding area is empty — no completed fittings waiting to be assigned."
               : "No fitter invites yet."}
           </p>
+          {/* The holding area only ever shows COMPLETED, unassigned
+              fittings, so an invite that is still in flight — sent,
+              opened, being worked through right now — matches nothing
+              here. On the landing filter that reads as "my invite was
+              never registered". Say where it is instead. */}
+          {status === "holding" && (
+            <Button
+              size="sm"
+              intent="secondary"
+              className="mt-3"
+              onClick={() => setStatus("all")}
+              data-testid="fitter-invites-view-all"
+            >
+              View all invites, including ones still in flight
+            </Button>
+          )}
         </Card>
       ) : (
         <div className="space-y-3">
@@ -460,7 +476,7 @@ function RecommendationSummary({ invite }: { invite: FitterInviteRow }) {
   const m = invite.measurements;
   return (
     <div className="space-y-2">
-      {invite.recommended_mask_name && (
+      {invite.recommended_mask_name ? (
         <p className="text-sm" style={{ color: "hsl(var(--ink-1))" }}>
           Recommended:{" "}
           <span className="font-medium">{invite.recommended_mask_name}</span>
@@ -468,6 +484,29 @@ function RecommendationSummary({ invite }: { invite: FitterInviteRow }) {
             ? ` (${invite.recommended_mask_type})`
             : ""}
         </p>
+      ) : (
+        // A completed fitting with no mask named is a RESULT, not a gap:
+        // the engine ruled every candidate out, or the measurements fell
+        // outside the validated range. Rendering nothing here (which this
+        // did) left staff looking at a set of measurements with no
+        // explanation and no next step.
+        <p className="text-sm" style={{ color: "hsl(var(--ink-1))" }}>
+          <span className="font-medium">No mask recommended.</span>{" "}
+          <span style={{ color: "hsl(var(--ink-3))" }}>
+            The fitting completed but didn&apos;t support a confident
+            recommendation — a clinician decides from here.
+          </span>
+        </p>
+      )}
+      {invite.fit_session_id && (
+        <Link
+          href="/admin/fit-sessions"
+          className="text-xs underline decoration-dotted"
+          style={{ color: "hsl(var(--ink-3))" }}
+          data-testid={`fitter-invite-review-${invite.id}`}
+        >
+          Open clinical review — why this result, and what was ruled out
+        </Link>
       )}
       {m && (
         <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-xs">

@@ -550,30 +550,47 @@ export function Results() {
   // Staff-invite transmission. When the patient reached /results via a
   // staff invite link (/fitter-invite), transmit the COMPLETE fitting
   // — numeric measurements + questionnaire answers + the ranked
-  // recommendation — back to PennPaps so it can be reviewed and
-  // attached to the patient's chart. (Per the privacy invariant, only
-  // the numeric measurements travel; images never left the device.)
+  // recommendation — back to the DME so it can be reviewed and attached
+  // to the patient's chart. (Per the privacy invariant, only the numeric
+  // measurements travel; images never left the device.)
   // Fires once, best-effort: a failure must never block the patient
   // from seeing their result.
+  //
+  // A fitting is finished when an ENGINE HAS ANSWERED — and "no mask" is
+  // an answer. This used to require a `topPick`, so every fitting the
+  // clinical engine declined to name a mask for (contraindicated,
+  // outside the validated range, everything excluded) transmitted
+  // NOTHING: the invite stayed at "opened" with no measurements and no
+  // completion time, and the fittings that most needed a human were the
+  // ones staff never saw. The server now records the clinical path
+  // itself, at the moment it decides; this stays as the safety net for
+  // the legacy engine and for a failed session write.
+  const fittingAnswered =
+    (clinicalState === "clinical" && assessment !== null) || topPick !== null;
   const hasTransmittedInvite = useRef(false);
   useEffect(() => {
     if (hasTransmittedInvite.current) return;
-    if (!inviteToken || !measurements || !topPick) return;
+    if (!inviteToken || !measurements || !fittingAnswered) return;
     hasTransmittedInvite.current = true;
     submitFitterInviteComplete({
       token: inviteToken,
       measurements,
       answers: fullAnswers,
-      recommendation: {
-        maskId: topPick.maskId,
-        name: topPick.name,
-        type: topPick.type,
-        top: topPick.ranked,
-      },
+      // Null when the engine named no mask. The server reads that as
+      // "completed, nothing recommended" and leaves the ranked list it
+      // already stored alone.
+      recommendation: topPick
+        ? {
+            maskId: topPick.maskId,
+            name: topPick.name,
+            type: topPick.type,
+            top: topPick.ranked,
+          }
+        : null,
     }).catch((err) => {
       console.warn("fitter-invite transmission failed (continuing)", err);
     });
-  }, [inviteToken, measurements, topPick, fullAnswers]);
+  }, [inviteToken, measurements, topPick, fullAnswers, fittingAnswered]);
 
   const hasRequested = useRef(false);
 

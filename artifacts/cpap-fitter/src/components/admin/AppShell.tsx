@@ -1215,7 +1215,7 @@ export const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         icon: BookOpenCheck,
         href: "/admin/resources",
         matchPrefix: "/admin/resources",
-        hint: "Downloadable setup guides and documentation for your team",
+        hint: "Help Center — how-to guides, the complete user guide, FAQ, and downloadable setup guides",
       },
       {
         label: "Automation",
