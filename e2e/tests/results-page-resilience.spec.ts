@@ -96,14 +96,26 @@ async function mockCameraAndMediaPipe(page: Page, state: InterceptState) {
   });
 
   // Intercept the MediaPipe ESM module + the .task model file and
-  // serve a tiny replacement that returns deterministic, in-range
-  // landmarks. Targets (with pxPerMm ≈ 1.094 from a 12.8 px iris
-  // on a 1280×720 frame):
-  //   noseWidth ≈ 30 mm   – within [20, 60]
-  //   noseHeight ≈ 40 mm  – within [25, 70]
-  //   noseToChin ≈ 55 mm  – within [40, 90]
-  //   mouthWidth ≈ 45 mm  – within [30, 80]
-  //   faceWidth ≈ 140 mm  – within [110, 180]
+  // serve a tiny replacement that returns deterministic landmarks.
+  //
+  // These are the CANONICAL FACE — MediaPipe's own metric reference mesh
+  // — back-projected so `extractMeasurementValues` recovers its true
+  // spans (with pxPerMm ≈ 1.094 from a 12.8 px iris on a 1280×720
+  // frame):
+  //   noseWidth  35.7 mm  – alar span
+  //   noseHeight 29.4 mm  – bridge (6) → tip (4), NOT the ~50 mm
+  //                         textbook nasion→subnasale span
+  //   noseToChin 89.4 mm  – tip (4) → menton (152)
+  //   mouthWidth 49.1 mm
+  //   faceWidth 153.3 mm  – head silhouette at 234/454
+  //
+  // They used to be numbers picked to sit inside the then-current
+  // window rather than to describe a face, and the window they were
+  // fitted to was itself wrong: bridge→tip came out 58% ABOVE the
+  // average adult while every other span sat 8–29% below it. Keep this
+  // fixture anatomically consistent — /measure's plausibility gate is
+  // entitled to reject a face that isn't one. Mirrors the copy in
+  // fitter-funnel.helper.ts.
   await page.route(/(tasks-vision|mediapipe)/, async (route) => {
     // The JS module request (dev only) carries the package name
     // "tasks-vision"; the wasm/model files carry "mediapipe" and are
@@ -118,15 +130,15 @@ async function mockCameraAndMediaPipe(page: Page, state: InterceptState) {
       const FAKE_LANDMARKS = new Array(478).fill({ x: 0.5, y: 0.5 });
       FAKE_LANDMARKS[469] = { x: 0.4950, y: 0.50 };
       FAKE_LANDMARKS[471] = { x: 0.5050, y: 0.50 };
-      FAKE_LANDMARKS[129] = { x: 0.4875, y: 0.55 };
-      FAKE_LANDMARKS[358] = { x: 0.5125, y: 0.55 };
-      FAKE_LANDMARKS[6]   = { x: 0.50, y: 0.4595 };
-      FAKE_LANDMARKS[4]   = { x: 0.50, y: 0.5205 };
-      FAKE_LANDMARKS[152] = { x: 0.50, y: 0.6045 };
-      FAKE_LANDMARKS[61]  = { x: 0.48075, y: 0.575 };
-      FAKE_LANDMARKS[291] = { x: 0.51925, y: 0.575 };
-      FAKE_LANDMARKS[234] = { x: 0.440, y: 0.50 };
-      FAKE_LANDMARKS[454] = { x: 0.560, y: 0.50 };
+      FAKE_LANDMARKS[129] = { x: 0.484735, y: 0.55 };
+      FAKE_LANDMARKS[358] = { x: 0.515265, y: 0.55 };
+      FAKE_LANDMARKS[6]   = { x: 0.50, y: 0.467694 };
+      FAKE_LANDMARKS[4]   = { x: 0.50, y: 0.512306 };
+      FAKE_LANDMARKS[152] = { x: 0.50, y: 0.648146 };
+      FAKE_LANDMARKS[61]  = { x: 0.479009, y: 0.575 };
+      FAKE_LANDMARKS[291] = { x: 0.520991, y: 0.575 };
+      FAKE_LANDMARKS[234] = { x: 0.434496, y: 0.50 };
+      FAKE_LANDMARKS[454] = { x: 0.565504, y: 0.50 };
       export class FaceLandmarker {
         static async createFromOptions() { return new FaceLandmarker(); }
         detect() { return { faceLandmarks: [FAKE_LANDMARKS] }; }
