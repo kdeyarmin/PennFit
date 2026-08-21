@@ -82,7 +82,7 @@ uniqueness, that `related` and `seeAlso` cross-links resolve, that every
 category has at least one how-to, and that the routes are registered in
 the order wouter's `<Switch>` needs.
 
-Coverage today: **53 how-tos, 19 guide chapters, 59 FAQ entries.** A
+Coverage today: **55 how-tos, 19 guide chapters, 59 FAQ entries.** A
 how-to is written per _task_, not per page — many console pages are
 covered as a step inside the guide for the workflow they belong to
 (shipping labels inside "fulfill and ship", filing deadlines inside
@@ -90,9 +90,27 @@ covered as a step inside the guide for the workflow they belong to
 report"), so "no how-to whose `primaryPath` is this page" is not the
 same as "undocumented".
 
-Known staff-help gaps (candidates for future how-tos): capped-rental
-**modifier rotation** specifically (the lifecycle is covered, the
-modifier sequence is not) and inventory **reorder-point strategy**.
+The assistant knows this index. `adminAssistantKnowledge.ts` carries a
+`HELP_CENTER_SECTION` listing every how-to slug and title, with the
+instruction to summarize and hand over to the guide rather than retyping
+a procedure it already covers — so the two do not become rival sources
+of truth. `content/admin-help/assistant-index.sync.test.ts` enforces the
+two lists match **in both directions**: a renamed slug there would send
+operators to a 404, and a guide missing from it means the assistant
+silently keeps improvising. It also fails if the knowledge base grows
+past 90% of its system-prompt cap, so a growing index is caught in CI
+rather than by every admin chat request failing in production.
+
+Regenerating the index after adding a guide is mechanical — the test
+names exactly which slugs are missing or stale.
+
+No staff-help gaps are currently tracked. Two former ones are now
+covered at the level the app actually supports: reorder points are
+documented as the per-SKU low-stock threshold (`set-inventory-reorder-points`),
+and capped-rental modifiers as _how to see which rule fired_
+(`check-capped-rental-modifiers`) — deliberately not as a claimed
+modifier sequence, since that is payer policy that changes and is not
+the app's to assert.
 
 ## Other staff-facing guidance
 

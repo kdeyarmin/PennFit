@@ -325,6 +325,98 @@ SYSTEM (mostly admin / super-admin):
     Bot playground (/admin/bot-playground, admin.tools.manage).
 `;
 
+// The staff Help Center's guide index. PennPilot's job is to get an
+// operator unstuck, and for the workflows below there is already a
+// written, maintained procedure at /admin/resources — so the bot should
+// hand over to it rather than paraphrasing from prose that will drift.
+// Kept in sync with src/content/admin-help/how-tos.ts by
+// content/admin-help/assistant-index.sync.test.ts, which fails when the two
+// lists disagree in either direction (a renamed slug here would send
+// operators to a 404).
+const HELP_CENTER_SECTION = `
+STAFF HELP CENTER (/admin/resources) — the written procedures.
+
+Each how-to below lives at /admin/resources/how-to/<slug>. Write that
+full path verbatim and the app turns it into a one-click link, exactly
+like any /admin path.
+
+HOW TO USE THIS:
+  - If a guide below covers what the operator asked, give them the short
+    answer in a sentence or two AND the guide's path. The guide is
+    maintained and screenshot-accurate; your paraphrase of it is not.
+  - Do NOT retype a full multi-step procedure that a guide already
+    covers. Summarize and hand over.
+  - For anything NOT in this list, answer from the rest of your
+    knowledge as normal — most questions still work that way.
+  - Two other surfaces: /admin/resources/user-guide describes every area
+    of the console, and /admin/resources/faq holds short answers to
+    common questions.
+
+Guides (55):
+  Getting started:
+    finish-workspace-setup — Finish setting up your workspace
+    invite-your-team — Add a teammate and set their role
+    navigate-the-console — Find your way around the console
+    get-help-and-report-a-problem — Get help, report a problem, or suggest a feature
+  Patients & clinical:
+    find-and-work-a-patient — Find a patient and work their record
+    answer-a-patient-message — Answer an inbound patient message
+    send-a-fitting-invite — Send someone a mask-fitting link
+    review-a-fit-session — Review and approve a mask recommendation
+    manage-the-mask-formulary — Set which masks the fitter recommends
+    send-a-document-for-signature — Send a document out for signature
+    work-inbound-referrals — Turn an inbound referral into a patient and an order
+    schedule-a-video-visit — Run a video visit with a patient
+    monitor-therapy-adherence — Find the patients whose therapy needs attention
+    open-and-work-a-case — Open a case and drive it to closure
+    merge-duplicate-patients — Merge two records for the same patient
+    triage-inbound-faxes — Triage the inbound fax queue
+    run-an-equipment-recall — Work a manufacturer equipment recall
+    coach-a-struggling-patient — Run an adherence coaching plan
+    manage-document-retention — Place a legal hold or destroy an expired document
+  Orders & shop:
+    take-a-front-desk-order — Ring up a walk-in at the front desk
+    fulfill-and-ship-an-order — Fulfill an order and print a shipping label
+    handle-a-return — Process a return, exchange, or refund
+    manage-subscriptions — Set up and manage a resupply subscription
+    count-and-reconcile-inventory — Run an inventory count and reconcile variance
+    moderate-reviews-and-questions — Moderate product reviews and answer customer questions
+    recover-abandoned-carts — Recover abandoned carts and clear back-in-stock waitlists
+    work-insurance-leads — Work the insurance-coverage lead queue
+    recover-rental-equipment — Recover a rental device from a patient who stopped therapy
+    set-inventory-reorder-points — Set reorder points so you stop running out
+  Billing & claims:
+    verify-a-patients-insurance — Verify a patient's insurance right now
+    submit-a-claim — Take a claim from eligibility to submission
+    work-the-denials-worklist — Work denials so the winnable ones get won
+    post-an-era — Post an ERA and reconcile what the payer paid
+    collect-a-patient-balance — Collect a patient balance without losing the patient
+    respond-to-an-adr — Respond to a payer documentation request or audit
+    get-a-prior-authorization — Get a prior authorization before you supply
+    bill-a-secondary-payer — Bill the secondary payer after the primary pays
+    manage-capped-rentals — Keep capped rentals on track
+    configure-billing-rules — Configure the rules that build your claims
+    appeal-a-denial — Write and send a denial appeal
+    check-capped-rental-modifiers — Check the modifiers on a capped-rental claim
+  Outreach & automation:
+    send-a-bulk-campaign — Send a bulk SMS or email campaign
+    set-up-resupply-reminders — Turn on resupply reminders
+    build-an-automation-rule — Build an automation rule and dry-run it first
+    build-your-reply-library — Build the reply library your team actually uses
+  Analytics & reports:
+    find-and-read-a-report — Find the right report and read it correctly
+    track-team-performance — Track how the team is performing
+    act-on-customer-feedback — Read your NPS and actually act on it
+  Settings & system:
+    manage-modules-and-flags — Turn a feature or a whole section on or off
+    brand-outbound-communications — Make patient messages come from your brand
+    connect-an-integration — Connect a therapy-cloud, clearinghouse, or partner integration
+    sync-with-pacware — Exchange data with PacWare
+    check-operations-health — Check whether messages and background work are healthy
+    set-closures-and-hours — Tell the system when you are closed
+    secure-your-account — Secure your own account with multi-factor authentication
+`;
+
 const ROLES_SECTION = `
 Roles & permissions (so you can route the operator correctly):
   - Two coarse roles gate the whole console: "admin" (full access) and
@@ -546,6 +638,7 @@ export function buildAdminAssistantSystemPrompt(
     PERSONA_GUIDE,
     TOOLS_GUIDE,
     APP_MAP_SECTION,
+    HELP_CENTER_SECTION,
     ROLES_SECTION,
     WORKFLOWS_SECTION,
     BEST_PRACTICES_SECTION,

@@ -2794,4 +2794,127 @@ export const HOW_TO_GUIDES: readonly HowToGuide[] = [
       "reconsideration",
     ],
   },
+  {
+    slug: "set-inventory-reorder-points",
+    title: "Set reorder points so you stop running out",
+    category: "orders",
+    summary:
+      "Every SKU in Inventory /admin/shop/inventory carries a low-stock threshold — 5 by default until you set one. Tune it per SKU from real demand, and use Inventory turnover /admin/analytics/inventory-turnover to tell fast movers from dead stock.",
+    audience: "Warehouse or admin",
+    timeEstimate: "About an hour for a first pass",
+    primaryPath: "/admin/shop/inventory",
+    prerequisites: [
+      "The Inventory module is on.",
+      "You have a few months of order history to reason from — a threshold set on guesswork is just a different guess.",
+    ],
+    steps: [
+      {
+        title: "Know what the threshold actually does",
+        body: "Each product has its own low-stock threshold, and any SKU without one falls back to a default of 5. That default is a placeholder, not a recommendation — it is almost certainly wrong for both your fastest and your slowest movers.",
+        callout: {
+          tone: "note",
+          text: "One default across a catalog means you stock out of cushions and sit on headgear. The whole value here is that the number is per SKU.",
+        },
+      },
+      {
+        title: "Set it from demand and lead time together",
+        body: "A workable threshold covers what you expect to sell while a replacement order is in transit, plus a buffer for a bad week. A SKU you sell ten of a week with a two-week lead time needs a far higher threshold than one you sell ten of a year, even though both are ordinary items.",
+      },
+      {
+        title: "Let turnover tell you which SKUs matter",
+        body: "Inventory turnover /admin/analytics/inventory-turnover separates what is moving from what is dead stock. Spend your tuning effort on the fast movers — they are where a stockout actually costs you an order.",
+      },
+      {
+        title: "Watch what the waitlist is telling you",
+        body: "Back-in-Stock /admin/shop/back-in-stock is the honest scoreboard for this. A SKU that keeps accumulating people waiting has a threshold set too low, whatever your arithmetic said.",
+      },
+      {
+        title: "Correct against your counts",
+        body: "Reconcile /admin/shop/inventory/reconcile is where physical reality meets the recorded position. A threshold built on a stock figure that has been drifting for six months will not protect you, so keep the counts honest first.",
+      },
+      {
+        title: "Revisit after a season",
+        body: "Demand moves — a new mask you start recommending changes the cushion mix underneath it. Re-check thresholds when your formulary changes and after a seasonal swing, rather than setting them once and trusting them forever.",
+      },
+    ],
+    troubleshooting: [
+      {
+        symptom: "We keep stocking out of one item despite a threshold.",
+        fix: "Either the lead time grew or demand did. Check Inventory turnover /admin/analytics/inventory-turnover for the trend and raise the threshold to cover the real replacement window, not the one you assumed.",
+      },
+    ],
+    related: ["count-and-reconcile-inventory", "recover-abandoned-carts"],
+    keywords: [
+      "reorder point",
+      "low stock",
+      "threshold",
+      "par level",
+      "stockout",
+      "inventory",
+      "restock",
+    ],
+  },
+  {
+    slug: "check-capped-rental-modifiers",
+    title: "Check the modifiers on a capped-rental claim",
+    category: "billing",
+    summary:
+      "Modifier rules /admin/billing/config/modifier-rules is the payer-specific policy the claim builder applies, sorted so the rules that fire first show first. Use it to see which rule fired on a rental claim — the sequence itself comes from your payer's policy, not from the app.",
+    audience: "Biller",
+    timeEstimate: "About 20 minutes to investigate one claim",
+    primaryPath: "/admin/billing/config/modifier-rules",
+    prerequisites: [
+      "You have a specific rental claim that was denied or paid unexpectedly.",
+      "You have the payer's current policy for that item in front of you.",
+    ],
+    steps: [
+      {
+        title: "Start from the claim, not the rule table",
+        body: "Work from the denial on the Denials worklist /admin/billing/denials-worklist. Read what the payer actually objected to before you go looking at configuration — a modifier is only sometimes the answer.",
+      },
+      {
+        title: "See which rule fired",
+        body: "Modifier rules /admin/billing/config/modifier-rules lists the payer-specific policy by payer and HCPCS, ordered by priority so the rules that fire first appear first. That ordering is the point: it tells you which rule won when several could have applied.",
+      },
+      {
+        title: "Check the rental month the claim was billed in",
+        body: "Capped rentals /admin/billing/capped-rentals shows where that rental sits in its cycle. A modifier that is right for one month of a capped period is wrong for another, so confirm the cycle position before concluding the rule is at fault.",
+        callout: {
+          tone: "warning",
+          text: "The required modifier sequence is set by the payer's policy and changes over time. Verify it against their current published policy — do not infer it from what previous claims happened to use.",
+        },
+      },
+      {
+        title: "Know that you cannot edit these yourself",
+        body: "Modifier rules are read-only in the console and maintained centrally, unlike payer profiles and fee schedules which you edit from their own sub-pages under Config /admin/billing/config. The page exists so you can diagnose, not adjust.",
+      },
+      {
+        title: "Raise a change with evidence",
+        body: 'If the rule is genuinely wrong, file it at Support /admin/support with the claim, the rule that fired, and the payer policy that contradicts it. Those three things together get it fixed; "the modifiers are wrong" on its own does not.',
+        callout: {
+          tone: "tip",
+          text: "Check whether the same rule is about to misfire on other queued claims before you send the request — one report covering twelve claims lands very differently from twelve reports.",
+        },
+      },
+      {
+        title: "Record what you found",
+        body: "Note the finding in Billing notes /admin/billing/notes. The next person to hit the same denial should find your investigation rather than repeat it.",
+      },
+    ],
+    related: [
+      "manage-capped-rentals",
+      "configure-billing-rules",
+      "work-the-denials-worklist",
+    ],
+    keywords: [
+      "modifier",
+      "capped rental",
+      "rotation",
+      "kh",
+      "hcpcs",
+      "rule",
+      "denial",
+      "rental month",
+    ],
+  },
 ] as const;
