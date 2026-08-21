@@ -1280,7 +1280,9 @@ describe("tenant admin — patient message previews", () => {
     }>(`${A}/message-previews`);
     for (const p of body.previews) {
       const blob = `${p.email?.subject ?? ""}${p.email?.text ?? ""}${p.sms?.body ?? ""}`;
-      expect(blob, `${p.id} mentions PennPaps`).not.toContain("PennPaps");
+      expect(blob, `${p.id} mentions Penn Home Medical Supply`).not.toContain(
+        "Penn Home Medical Supply",
+      );
     }
   });
 

@@ -363,7 +363,7 @@ router.post(
     const inviteLink = `${baseUrl}/reset-password?token=${encodeURIComponent(token.raw)}`;
 
     // Brand the patient-facing invite with the INVITING tenant's own
-    // storefront/legal name (resolveBrandingByOrgId → "PennPaps"/"Penn Home
+    // storefront/legal name (resolveBrandingByOrgId → "Penn Home Medical Supply"/"Penn Home
     // Medical Supply" for the seed tenant, the neutral CareMetric Breathe
     // identity for an unconfigured tenant) so a non-seed tenant's patient
     // never sees the seed brand.

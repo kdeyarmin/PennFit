@@ -17,7 +17,7 @@ import { renderBrandedEmail } from "@workspace/resupply-email/layout";
 import { stripTrailingSlashes } from "../string-utils";
 
 export interface AuthEmailContext {
-  /** Software/product name, e.g. "PennPaps" — appears in the subject
+  /** Software/product name, e.g. "Penn Home Medical Supply" — appears in the subject
    *  line and body copy. */
   productName: string;
   /** Company name rendered as the closing signature, e.g.
@@ -378,8 +378,8 @@ export interface ProviderPortalInviteEmailArgs {
  * password). Explains what the portal is for (reviewing and e-signing
  * their patients' documents), gives them their username, and links
  * the set-password step. `ctx.productName` should be the portal's
- * display name (e.g. "PennPaps Provider Portal") — it is rendered
- * after "the", as in "invited to the PennPaps Provider Portal".
+ * display name (e.g. "Penn Home Medical Supply Provider Portal") — it is rendered
+ * after "the", as in "invited to the Penn Home Medical Supply Provider Portal".
  */
 export function renderProviderPortalInviteEmail(
   ctx: AuthEmailContext,

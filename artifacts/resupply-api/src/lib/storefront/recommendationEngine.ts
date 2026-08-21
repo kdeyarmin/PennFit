@@ -99,7 +99,7 @@ export interface RecommendationResult {
 
 /**
  * Per-manufacturer score multiplier applied at the end of `recommend()`,
- * AFTER the contraindication and pressure-rating penalties. PennPaps
+ * AFTER the contraindication and pressure-rating penalties. Penn Home Medical Supply
  * preferentially stocks the React Health line (iVolve, Numa, Viva), so
  * a viable React Health mask should out-rank an otherwise-equivalent
  * mask from another manufacturer.
@@ -443,7 +443,7 @@ export function recommendSize(
     // I/O-boundary rename (`applyCompanyIdentityToText`) that patient
     // SMS/email/PDF copy goes through — so a hardcoded brand here reaches
     // EVERY tenant's patients verbatim. It used to read "confirmed at
-    // PennPaps", which was wrong for every tenant but one. "your provider"
+    // Penn Home Medical Supply", which was wrong for every tenant but one. "your provider"
     // is accurate for all of them, Penn included, and needs no plumbing.
     rationale: `Estimated size ${sizes[idx]} from your ${axisLabel} (${value} mm) within the mask's ${min}–${max} mm range. Final fit confirmed with your provider.`,
   };

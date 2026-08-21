@@ -275,7 +275,7 @@ async function videoVisitReminderSweepForOrg(
 
   const visits = (data ?? []) as unknown as ReminderVisitRow[];
   // Brand the reminder copy with the tenant's own storefront name (G6); for
-  // the seed tenant this resolves to "PennPaps" so single-tenant copy is
+  // the seed tenant this resolves to "Penn Home Medical Supply" so single-tenant copy is
   // unchanged.
   const brand = await resolveBrandingByOrgId(orgId);
   const practiceName = brand.storefrontName;

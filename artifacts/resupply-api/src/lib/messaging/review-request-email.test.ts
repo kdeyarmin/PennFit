@@ -24,7 +24,7 @@ vi.mock("../feature-flags", () => ({
 
 // Suppress readPracticeName side effects (env read)
 vi.mock("./messaging-config", () => ({
-  readPracticeName: vi.fn(() => "PennPaps"),
+  readPracticeName: vi.fn(() => "Penn Home Medical Supply"),
 }));
 
 // ─── SUT ──────────────────────────────────────────────────────────────────

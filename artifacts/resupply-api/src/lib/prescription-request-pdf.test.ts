@@ -32,7 +32,7 @@ const SAMPLE: PrescriptionRequestInputs = {
     faxE164: "+14125550199",
   },
   supplier: {
-    practiceName: "PennPaps",
+    practiceName: "Penn Home Medical Supply",
     faxE164: "+18005550100",
     email: "orders@pennpaps.com",
   },

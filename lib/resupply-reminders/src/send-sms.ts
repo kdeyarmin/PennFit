@@ -92,7 +92,13 @@ export function defaultReminderSmsBody(
       return `Last reminder, ${firstName}. Still use your CPAP and low on supplies? Reply YES today and ${practiceName} ships your order. STOP to opt out.`;
     case "initial":
     default:
-      return `Hi ${firstName}, it's ${practiceName}. Time for your CPAP refill. Still use it and low on supplies? Reply YES to ship. EDIT to fix your address. STOP to opt out.`;
+      // Tightened when the seed tenant moved to its full registered name:
+      // the old two-sentence opener ("... Time for your CPAP refill. Still
+      // use it and ...") ran to 165 chars with a 24-char practice name,
+      // tipping every initial reminder into a SECOND GSM-7 segment (and
+      // doubling its per-send cost). Folding the refill framing into the
+      // YES call-to-action keeps the same meaning at 154.
+      return `Hi ${firstName}, it's ${practiceName}. Still use your CPAP and low on supplies? Reply YES to ship a refill. EDIT to fix your address. STOP to opt out.`;
   }
 }
 

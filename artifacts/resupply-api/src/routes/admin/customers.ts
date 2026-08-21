@@ -161,7 +161,7 @@ router.get(
     // in_app_needs_reply) are computed JS-side after small bulk
     // fetches. The candidate set is bounded by q-ilike + the implicit
     // filter "must have a shop_customers row" — admin-only path, so
-    // a full scan at PennPaps scale is acceptable.
+    // a full scan at Penn Home Medical Supply scale is acceptable.
     // Keyset-page the candidate read up to an explicit, VISIBLE cap.
     // The previous un-limited select was silently truncated at the
     // PostgREST server's max-rows (~1000 on hosted Supabase): past

@@ -20,7 +20,7 @@ vi.mock("@workspace/resupply-email", async () => {
   };
 });
 
-const brandNameRef = vi.hoisted(() => ({ value: "PennPaps" }));
+const brandNameRef = vi.hoisted(() => ({ value: "Penn Home Medical Supply" }));
 vi.mock("../tenant-branding.js", () => ({
   resolveBrandingByOrgId: vi.fn(async () => ({
     storefrontName: brandNameRef.value,
@@ -73,7 +73,7 @@ describe("sendSubscriptionBillingEmail", () => {
     for (const k of ENV_KEYS) originalEnv[k] = process.env[k];
     for (const k of ENV_KEYS) delete process.env[k];
     process.env.SHOP_PUBLIC_BASE_URL = "https://test.example.com";
-    brandNameRef.value = "PennPaps";
+    brandNameRef.value = "Penn Home Medical Supply";
     sendEmailMock.mockReset();
     createSendgridClientMock.mockReset();
     createSendgridClientMock.mockImplementation(() => ({
@@ -168,7 +168,7 @@ describe("sendSubscriptionBillingEmail", () => {
     const arg = sendEmailMock.mock.calls[0]![0];
     expect(arg.html).toContain("Acme CPAP");
     expect(arg.subject).toContain("Acme CPAP");
-    expect(arg.subject).not.toContain("PennPaps");
+    expect(arg.subject).not.toContain("Penn Home Medical Supply");
   });
 
   it("renders cleanly when the charge date is unknown", async () => {

@@ -24,7 +24,7 @@ import { formatDateTime } from "@/lib/admin/format";
 import { useAdminRole } from "@/lib/admin/role-context";
 import { useConfirmDialog } from "@/hooks/use-confirm-dialog";
 
-// PennPaps — Global frequency rules.
+// Penn Home Medical Supply — Global frequency rules.
 //
 // Rules are consulted by the eligibility engine when a patient has
 // no per-patient override. Resolution order is:

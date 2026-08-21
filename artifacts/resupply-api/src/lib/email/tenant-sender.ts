@@ -92,9 +92,9 @@ export async function resolveTenantSender(
       if (fromEmail) {
         // When a tenant overrides the From ADDRESS, also PIN the display
         // name — otherwise createSendgridClient() falls fromName back to
-        // the platform `SENDGRID_FROM_NAME` (PennPaps), leaking the seed
+        // the platform `SENDGRID_FROM_NAME` (Penn Home Medical Supply), leaking the seed
         // tenant's brand onto a non-Penn tenant's mail
-        // ("PennPaps <billing@tenant.example>"). An empty string suppresses
+        // ("Penn Home Medical Supply <billing@tenant.example>"). An empty string suppresses
         // the name entirely (address-only From) until the tenant sets one.
         value = { fromEmail, fromName: row?.from_name?.trim() || "" };
       }

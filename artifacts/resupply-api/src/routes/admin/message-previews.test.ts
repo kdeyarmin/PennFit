@@ -170,7 +170,7 @@ describe("GET /admin/message-previews", () => {
     const blob = JSON.stringify(res.body.previews);
     expect(blob).toContain("Riverside CPAP");
     // Never the seed tenant's brand on another tenant's previews.
-    expect(blob).not.toContain("PennPaps");
+    expect(blob).not.toContain("Penn Home Medical Supply");
   });
 
   it("reports which channels can actually send, and from what identity", async () => {
@@ -292,9 +292,11 @@ describe("POST /admin/message-previews/:id/send — SMS", () => {
     expect(res.body.ok).toBe(true);
     expect(res.body.delivered).toBe(true);
     expect(res.body.deliveryStatus).toBe("delivered");
-    // Two segments here because "Riverside Home Medical" is a longish
-    // practice name — see the segment tests in catalog.test.ts.
-    expect(res.body.segments).toBe(2);
+    // One segment: the initial reminder copy was tightened so it still
+    // fits GSM-7's 160 septets with a long practice name like "Riverside
+    // Home Medical". catalog.test.ts pins the spill-over case with a
+    // longer name still.
+    expect(res.body.segments).toBe(1);
 
     const sent = sendSms.mock.calls[0][0];
     expect(sent.to).toBe("+12155551234");

@@ -210,7 +210,7 @@ router.post(
     // Resolve product metadata for the email body. If Stripe isn't
     // configured we can't even render a sensible email subject, so
     // we fail loudly here — silently sending "Item is back in
-    // stock at PennPaps" with the bare prod_xxx id would be a worse
+    // stock at Penn Home Medical Supply" with the bare prod_xxx id would be a worse
     // failure mode than asking ops to set up Stripe first.
     const cfg = readStripeConfigOrNull();
     if (!cfg) {

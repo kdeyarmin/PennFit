@@ -47,7 +47,7 @@ vi.mock("@workspace/resupply-telecom", () => {
 });
 
 vi.mock("../../lib/messaging/messaging-config", () => ({
-  readPracticeName: () => "PennPaps",
+  readPracticeName: () => "Penn Home Medical Supply",
 }));
 
 import { runVideoVisitReminderSweep } from "./video-visit-reminders";

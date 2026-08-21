@@ -2,7 +2,7 @@
  * POST /api/chat — public storefront support chatbot.
  *
  * The bot answers product / insurance / replacement-schedule / FAQ
- * questions for prospective and current PennPaps patients. It is
+ * questions for prospective and current Penn Home Medical Supply patients. It is
  * grounded in the static knowledge base (`./chatbotKnowledge.ts`),
  * which embeds a generated summary of the live mask catalog, plus
  * tools (`recommend_masks`, `find_masks`, `compare_masks`,
@@ -468,8 +468,9 @@ router.post("/chat", chatRateLimit, async (req, res) => {
     // Build from the resolved tenant identity directly (not the
     // source==="database"-gated applyCompanyIdentityToText) so an
     // unconfigured non-seed tenant names ITS brand, never the literal seed
-    // "PennPaps". For the seed tenant info.name is "PennPaps" so its copy is
-    // unchanged; for the platform fallback it is "CareMetric Breathe".
+    // seed brand. The seed tenant resolves to "Penn Home Medical
+    // Supply" — the same name the source copy spells — so its wording is
+    // unchanged; the platform fallback resolves to "CareMetric Breathe".
     const offlineMessage = `The ${companyInfo.name} chat assistant is currently offline. Please reach us by phone or email — we'll respond as soon as we can.`;
     if (streaming) {
       startSseHeaders(res);
@@ -1191,7 +1192,7 @@ async function handleStreaming(
 //
 // Tool conversion: we translate the existing OpenAI-shaped tool
 // descriptors into Anthropic's `{ name, description, input_schema }`
-// shape per request so tenant branding (PennPaps / phone / assistant
+// shape per request so tenant branding (Penn Home Medical Supply / phone / assistant
 // name) is applied before the model sees the schema. Tool execution
 // is unchanged — same `executeChatTool()` dispatcher, same JSON results.
 

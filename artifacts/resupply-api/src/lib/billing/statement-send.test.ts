@@ -521,11 +521,11 @@ function stubCfg() {
   return {
     sendgridApiKey: "SG.x",
     sendgridFromEmail: "info@pennpaps.com",
-    sendgridFromName: "PennPaps",
+    sendgridFromName: "Penn Home Medical Supply",
     twilioAccountSid: null,
     twilioAuthToken: null,
     twilioPhoneNumber: null,
     twilioMessagingServiceSid: null,
-    practiceName: "PennPaps",
+    practiceName: "Penn Home Medical Supply",
   };
 }

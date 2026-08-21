@@ -5,7 +5,7 @@
 //   1. Resolve the signed token (server marks the invite "opened" and
 //      returns the recipient's email/name for prefill).
 //   2. Stash the token in the fitter store so /results can transmit
-//      the completed fitting back to PennPaps and attach it to the
+//      the completed fitting back to Penn Home Medical Supply and attach it to the
 //      patient's chart.
 //   3. Drop the patient straight into the fitter — to /capture when we
 //      already have their email (invited as a known patient), or to

@@ -177,7 +177,7 @@ export async function sendDeliveredNotificationIfNew(args: {
     );
 
     // Brand for the push title + SMS greeting fallback — never the seed
-    // tenant's "PennPaps" for another tenant's customer.
+    // tenant's "Penn Home Medical Supply" for another tenant's customer.
     const brand = await resolveBrandingByOrgId(orgId);
 
     // Best-effort push fan-out. Same news, separate channel.

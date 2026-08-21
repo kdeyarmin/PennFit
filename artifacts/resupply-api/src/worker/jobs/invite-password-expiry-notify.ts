@@ -349,7 +349,7 @@ export async function runInvitePasswordExpiryNotifySweep(
   }
 
   // Map each invited user to its tenant so the email speaks in that
-  // tenant's name and links to its own sign-in URL (seed → "PennPaps" /
+  // tenant's name and links to its own sign-in URL (seed → "Penn Home Medical Supply" /
   // platform host, unchanged). The auth users/credentials tables carry no
   // org_id; `admin_users` (org-scoped) is the user→org map, joined on
   // `auth_user_id`. The sweep is global, so read across tenants via

@@ -67,7 +67,7 @@ export async function sendReviewRequestEmail(
   if (!client) return { sent: false, reason: "email_not_configured" };
 
   // Brand with the tenant's own storefront name (G6). For the seed tenant
-  // this resolves to "PennPaps" (its stored brand), so single-tenant copy
+  // this resolves to "Penn Home Medical Supply" (its stored brand), so single-tenant copy
   // is unchanged.
   const brand = await resolveBrandingByOrgId(input.orgId);
   const practice = brand.storefrontName;

@@ -72,7 +72,10 @@ describe("planDeadlineOutreach (pure tiers)", () => {
 
   it("skips qualified patients", () => {
     expect(
-      planDeadlineOutreach({ ...base, status: "qualified" }, "PennPaps"),
+      planDeadlineOutreach(
+        { ...base, status: "qualified" },
+        "Penn Home Medical Supply",
+      ),
     ).toBeNull();
   });
 
@@ -80,7 +83,7 @@ describe("planDeadlineOutreach (pure tiers)", () => {
     expect(
       planDeadlineOutreach(
         { ...base, status: "on_track", days_remaining: 60 },
-        "PennPaps",
+        "Penn Home Medical Supply",
       ),
     ).toBeNull();
   });
@@ -89,7 +92,7 @@ describe("planDeadlineOutreach (pure tiers)", () => {
     expect(
       planDeadlineOutreach(
         { ...base, status: "on_track", nights_needed: 0 },
-        "PennPaps",
+        "Penn Home Medical Supply",
       ),
     ).toBeNull();
   });
@@ -97,7 +100,7 @@ describe("planDeadlineOutreach (pure tiers)", () => {
   it("uses the urgent tier in the final week", () => {
     const body = planDeadlineOutreach(
       { ...base, status: "on_track", days_remaining: 5, nights_needed: 3 },
-      "PennPaps",
+      "Penn Home Medical Supply",
     );
     expect(body).toContain("almost qualified");
     expect(body).toContain("3 more night(s)");
@@ -107,7 +110,7 @@ describe("planDeadlineOutreach (pure tiers)", () => {
   it("uses the two-week tier", () => {
     const body = planDeadlineOutreach(
       { ...base, status: "on_track", days_remaining: 12, nights_needed: 4 },
-      "PennPaps",
+      "Penn Home Medical Supply",
     );
     expect(body).toContain("2 weeks left");
     expect(body).toContain("4 more night(s)");
@@ -116,7 +119,7 @@ describe("planDeadlineOutreach (pure tiers)", () => {
   it("uses the early check-in tier", () => {
     const body = planDeadlineOutreach(
       { ...base, status: "on_track", days_remaining: 40, nights_needed: 9 },
-      "PennPaps",
+      "Penn Home Medical Supply",
     );
     expect(body).toContain("Quick check-in");
   });
@@ -124,7 +127,7 @@ describe("planDeadlineOutreach (pure tiers)", () => {
   it("uses a supportive (no nights-needed) body for at_risk", () => {
     const body = planDeadlineOutreach(
       { ...base, status: "at_risk", nights_needed: 40 },
-      "PennPaps",
+      "Penn Home Medical Supply",
     );
     expect(body).toContain("back on track");
     expect(body).not.toContain("more night(s)");

@@ -32,7 +32,7 @@ const baseInputs = (): SwoInputs => ({
     faxE164: null,
   },
   generatedOn: new Date("2026-05-11T00:00:00Z"),
-  supplierName: "PennPaps",
+  supplierName: "Penn Home Medical Supply",
 });
 
 describe("validateSwoInputs", () => {

@@ -580,7 +580,7 @@ export function CpapMasks() {
 
       {/* Brand FAQ — common cross-brand questions. Lives on the hub
           (not on per-brand pages) because the answers are about how
-          PennPaps stocks/ships/insures across the catalog, not about a
+          Penn Home Medical Supply stocks/ships/insures across the catalog, not about a
           specific mask. Each brand page has its own narrower FAQ. */}
       <div className="w-full mb-20">
         <div className="text-center max-w-2xl mx-auto mb-8">
@@ -647,7 +647,7 @@ export function CpapMasks() {
         </div>
       </div>
 
-      {/* Why PennPaps credentials block — five trust statements that
+      {/* Why Penn Home Medical Supply credentials block — five trust statements that
           give the marketing surface a clear "why buy here, not Amazon"
           answer. Glass tiles, gold-haloed icons. */}
       <div className="w-full mb-20">

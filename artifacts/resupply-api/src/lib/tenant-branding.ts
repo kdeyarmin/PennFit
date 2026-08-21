@@ -3,13 +3,13 @@
 // Answers "which tenant — and which storefront name / tagline / logo —
 // does a request on THIS host belong to". The public storefront calls
 // GET /api/storefront-branding on first paint; the SPA then renders the
-// resolving tenant's brand instead of the hardcoded PennPaps identity.
+// resolving tenant's brand instead of the hardcoded Penn Home Medical Supply identity.
 //
 // Resolution:
 //   * A request whose Host matches a VERIFIED custom domain resolves to
 //     that tenant's branding.
 //   * Everything else (the platform host, an unverified/none domain, any
-//     miss or error) resolves to the platform brand. PennPaps is reached
+//     miss or error) resolves to the platform brand. Penn Home Medical Supply is reached
 //     through the seed tenant's verified pennpaps.com custom domain.
 //
 // Posture mirrors lib/company-info.ts:
@@ -27,7 +27,7 @@ import {
 } from "./tenant-domain";
 
 export interface StorefrontBranding {
-  /** Short customer-facing brand shown in the header/hero (e.g. "PennPaps"). */
+  /** Short customer-facing brand shown in the header/hero (e.g. "Penn Home Medical Supply"). */
   storefrontName: string;
   /** Registered/legal company name (footer, "by …" line). */
   legalName: string;
@@ -38,7 +38,7 @@ export interface StorefrontBranding {
 }
 
 // Platform identity for hosts that are not a verified tenant custom
-// domain. PennPaps is now tenant-specific and resolves via the seed
+// domain. Penn Home Medical Supply is now tenant-specific and resolves via the seed
 // organization's verified `pennpaps.com` custom domain.
 export const DEFAULT_BRANDING: StorefrontBranding = {
   storefrontName: "CareMetric Breathe",
@@ -71,6 +71,27 @@ function mapBranding(row: OrgBrandingColumns | null): StorefrontBranding {
     tagline: trimmed(row.tagline) || DEFAULT_BRANDING.tagline,
     logoUrl: trimmed(row.logo_url) || null,
   };
+}
+
+/**
+ * How a tenant signs patient-facing copy: its storefront brand, with
+ * "by <legal name>" appended only when that is genuinely a DIFFERENT
+ * name.
+ *
+ * A tenant that trades under its registered name — as Penn Home Medical
+ * Supply does since migration 0510 retired its "PennPaps" storefront
+ * DBA — has `storefrontName === legalName`, and the unconditional
+ * two-part sign-off rendered "Penn Home Medical Supply by Penn Home
+ * Medical Supply". Callers that print both fields together must go
+ * through this instead of interpolating them side by side.
+ */
+export function formatBrandSignature(brand: StorefrontBranding): string {
+  const storefront = brand.storefrontName.trim();
+  const legal = brand.legalName.trim();
+  if (!legal || legal.toLowerCase() === storefront.toLowerCase()) {
+    return storefront;
+  }
+  return `${storefront} by ${legal}`;
 }
 
 class BrandingLookupTimeout extends Error {
@@ -214,7 +235,7 @@ async function loadBrandingForOrgId(
 /**
  * The effective storefront branding for a known tenant `orgId`. Cached ~60s
  * per org; never throws (any failure degrades to the platform/default brand).
- * For the seed tenant this returns its stored brand (e.g. "PennPaps"), so
+ * For the seed tenant this returns its stored brand (e.g. "Penn Home Medical Supply"), so
  * single-tenant copy is unchanged.
  */
 export async function resolveBrandingByOrgId(

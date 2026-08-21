@@ -1,5 +1,5 @@
 // sendOrderConfirmationEmail — single-shot SendGrid confirmation
-// for a paid PennPaps shop order.
+// for a paid Penn Home Medical Supply shop order.
 //
 // Fired from the Stripe webhook on checkout.session.completed (and
 // async_payment_succeeded). Returns a tagged-union outcome so the
@@ -28,7 +28,7 @@
 //     than on the success page they just visited.
 //
 // Template:
-//   - Subject:   "Your PennPaps order is confirmed"
+//   - Subject:   "Your Penn Home Medical Supply order is confirmed"
 //   - HTML body: brand banner ("Order confirmed"), thank-you, item
 //                table (qty × name @ unit price), total, shipping
 //                address block, "View order" CTA linking to the
@@ -181,7 +181,7 @@ export async function sendOrderConfirmationEmail(
   }
 
   // Brand the email with the tenant's own storefront name (G6). For the seed
-  // tenant this resolves to "PennPaps" (its stored brand), so single-tenant
+  // tenant this resolves to "Penn Home Medical Supply" (its stored brand), so single-tenant
   // copy is unchanged; a second tenant's order email carries ITS brand.
   const brand = await resolveBrandingByOrgId(input.orgId);
   const brandName = brand.storefrontName;

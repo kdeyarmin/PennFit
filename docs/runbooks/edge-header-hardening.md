@@ -54,7 +54,7 @@ After deploying the Cloudflare rule, from an external client:
 # Spoof attempt: the forged header must NOT change tenant resolution.
 curl -s -H 'X-Forwarded-Host: some-other-tenant.example' \
   https://pennpaps.com/api/storefront-branding | jq '.brandName, .host'
-# Expect the PennPaps tenant branding, NOT some-other-tenant's.
+# Expect the Penn Home Medical Supply tenant branding, NOT some-other-tenant's.
 ```
 
 The host-resolution path itself is covered by

@@ -3,7 +3,7 @@
 //
 // Shown on:
 //   * /order (checkout summary, so the customer sees what's about
-//     to be sent to PennPaps)
+//     to be sent to Penn Home Medical Supply)
 //   * /order-success (post-submit confirmation)
 //   * /account (signed-in customer's saved sizing)
 //   * Admin Customer 360 (CSR view via the same shape)

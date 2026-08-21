@@ -507,7 +507,7 @@ export async function runClinicalOutreachBatch(
   const baseCfg = deps.cfg ?? readOutreachMessagingConfig();
   // Brand the outreach with the tenant's own storefront name (G6) — drives
   // both the email subject and the SMS body prefix. For the seed tenant this
-  // resolves to "PennPaps", so single-tenant copy is unchanged.
+  // resolves to "Penn Home Medical Supply", so single-tenant copy is unchanged.
   const brand = await resolveBrandingByOrgId(opts.orgId);
   const tenantDeps: OutreachDeps = {
     ...deps,

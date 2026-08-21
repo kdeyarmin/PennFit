@@ -18,7 +18,7 @@
 //   * Phase A.3 — extended from 30 → 60 days to match the industry
 //     benchmark (RespShop offers 60, The CPAP Shop offers 75). Patients
 //     who try a mask risk-free are dramatically more likely to commit
-//     to PennPaps for ongoing reordering.
+//     to Penn Home Medical Supply for ongoing reordering.
 //   * No other open return exists for the same order_id (the partial
 //     index enforces this). Customers with multiple grievances about
 //     the same shipment should describe both in one return note.

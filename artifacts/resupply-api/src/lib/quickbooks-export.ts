@@ -233,7 +233,7 @@ export function renderQboCsv(input: QuickbooksExportInput): string {
 
 /**
  * Build a stable customer key from an opaque customer id (Stripe
- * customer id or PennPaps customer id). QuickBooks uses the
+ * customer id or Penn Home Medical Supply customer id). QuickBooks uses the
  * customer name to match rows to the customer list; emitting the
  * raw uuid is too unfriendly, so we emit "cust-<hash>".
  * Exported for tests + so reports.ts can share the algorithm.

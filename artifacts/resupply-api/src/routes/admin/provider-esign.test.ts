@@ -255,7 +255,7 @@ describe("POST /admin/provider-portal/accounts/invite", () => {
     const ctx = vi.mocked(renderProviderPortalInviteEmail).mock.calls[0]![0];
     expect(ctx.productName).toBe("CareMetric Breathe Provider Portal");
     expect(ctx.signatureName).toBe("CareMetric Breathe");
-    expect(ctx.productName).not.toContain("PennPaps");
+    expect(ctx.productName).not.toContain("Penn Home Medical Supply");
     expect(ctx.signatureName).not.toContain("Penn Home Medical Supply");
   });
 

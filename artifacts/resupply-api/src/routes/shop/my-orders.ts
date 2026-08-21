@@ -101,7 +101,7 @@ let productNameCache: ProductCacheEntry | null = null;
 //
 // Why we hardcode a small set rather than a generic "search the
 // internet" approach:
-//   * We control the carriers PennPaps actually uses. Anything we
+//   * We control the carriers Penn Home Medical Supply actually uses. Anything we
 //     don't recognise falls back to displaying the number with no
 //     link — safer than emitting a guessed URL that 404s.
 //   * URL formats DO change occasionally; this list is the one

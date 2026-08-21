@@ -26,7 +26,7 @@ const SRC = readFileSync(
 );
 
 const BASE_OPTS = {
-  practiceName: "PennPaps",
+  practiceName: "Penn Home Medical Supply",
   resumeUrl: "https://example.test/results",
   shopUrl: "https://example.test/shop",
   recommendedMaskName: "ResMed AirFit P30i",
@@ -239,7 +239,7 @@ describe("composeTouchpoint — branded HTML template", () => {
 
   it("places the practice-name brand bar before the body content", () => {
     const out = composeTouchpoint({ ...BASE_OPTS, touchIndex: 1 });
-    const brandPos = out.email.html.indexOf("PennPaps");
+    const brandPos = out.email.html.indexOf("Penn Home Medical Supply");
     const greetingPos = out.email.html.indexOf("Hi from");
     expect(brandPos).toBeGreaterThan(0);
     expect(greetingPos).toBeGreaterThan(brandPos);
@@ -272,7 +272,7 @@ describe("composeTouchpoint — personalization", () => {
       touchIndex: 7,
       firstName: null,
     });
-    expect(out.email.text).toContain("Hi from PennPaps,");
+    expect(out.email.text).toContain("Hi from Penn Home Medical Supply,");
     expect(out.email.subject).not.toContain("null");
   });
 

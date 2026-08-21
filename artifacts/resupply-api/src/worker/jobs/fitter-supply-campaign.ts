@@ -968,7 +968,7 @@ async function fitterSupplyCampaignSweepForOrg(
   const sendgrid = await tryCreateSendgrid(orgId);
   const twilioSms = await tryCreateTwilioSms(orgId);
   // Brand the copy with the tenant's own storefront name (G6); for the seed
-  // tenant this resolves to "PennPaps" so single-tenant copy is unchanged.
+  // tenant this resolves to "Penn Home Medical Supply" so single-tenant copy is unchanged.
   const brand = await resolveBrandingByOrgId(orgId);
   const practiceName = brand.storefrontName;
   // Build patient links from the tenant's own storefront origin (its verified

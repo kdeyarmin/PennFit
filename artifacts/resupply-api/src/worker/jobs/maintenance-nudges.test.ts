@@ -19,7 +19,7 @@ import {
 // The per-org body now builds its email client via createTenantSendgridClient
 // and brands copy via resolveBrandingByOrgId. Mock both so the fan-out
 // proceeds to the roster scan (the client no longer comes from cfg) and the
-// brand is deterministic (seed → "PennPaps").
+// brand is deterministic (seed → "Penn Home Medical Supply").
 vi.mock("../../lib/email/tenant-sender.js", () => ({
   createTenantSendgridClient: vi.fn(async () => ({
     sendEmail: vi.fn().mockResolvedValue({ messageId: "m_test" }),
@@ -27,7 +27,7 @@ vi.mock("../../lib/email/tenant-sender.js", () => ({
 }));
 vi.mock("../../lib/tenant-branding.js", () => ({
   resolveBrandingByOrgId: vi.fn(async () => ({
-    storefrontName: "PennPaps",
+    storefrontName: "Penn Home Medical Supply",
     legalName: "Penn Home Medical Supply",
     tagline: "tagline",
     logoUrl: null,
@@ -48,8 +48,8 @@ const SRC = readFileSync(path.join(__dirname, "maintenance-nudges.ts"), "utf8");
 const FULL_CFG = {
   sendgridApiKey: "SG.unit-test",
   sendgridFromEmail: "info@pennpaps.example",
-  sendgridFromName: "PennPaps",
-  practiceName: "PennPaps",
+  sendgridFromName: "Penn Home Medical Supply",
+  practiceName: "Penn Home Medical Supply",
   publicBaseUrl: "https://pennfit.example",
 };
 

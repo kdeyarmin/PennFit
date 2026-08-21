@@ -1,8 +1,8 @@
 // The demo sandbox's tenant identity — one source of truth.
 //
 // The public sandbox is the PLATFORM's showcase, not the Penn Home
-// Medical Supply tenant. Penn's brand ("PennPaps", "Penn Home Medical
-// Supply", pennpaps.com, PennBot/PennPilot) is that ONE tenant's data
+// Medical Supply tenant. Penn's brand ("Penn Home Medical Supply",
+// pennpaps.com, PennBot/PennPilot) is that ONE tenant's data
 // and must never appear here: a prospect clicking "Start demo" from
 // cmbreathe.com would otherwise be shown another customer's company as
 // though it were the product.

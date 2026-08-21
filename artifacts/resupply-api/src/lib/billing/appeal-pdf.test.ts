@@ -13,7 +13,7 @@ import { describe, it, expect } from "vitest";
 import { renderAppealPdf } from "./appeal-pdf";
 
 const ORG = {
-  legalName: "PennPaps Inc",
+  legalName: "Penn Home Medical Supply Inc",
   addressLine1: "1 Penn Plaza",
   city: "Philadelphia",
   state: "PA",

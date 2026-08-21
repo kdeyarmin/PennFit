@@ -13,7 +13,7 @@ import { useSyncExternalStore } from "react";
 
 // These compile-time fallbacks ship in the tenant-AGNOSTIC SPA bundle, so
 // they must be the neutral PLATFORM identity (CareMetric Breathe), never the
-// seed tenant's (PennPaps) — otherwise every tenant's first paint would flash
+// seed tenant's (Penn Home Medical Supply) — otherwise every tenant's first paint would flash
 // Penn's brand/phone before /api/company-info resolves the real tenant. The
 // platform has no patient support phone, so the phone fallback is blank until
 // the tenant's own number loads.
@@ -29,8 +29,8 @@ export const SUPPORT_HOURS = "Mon–Fri 9a–5p ET";
 
 /**
  * CareMetric platform defaults for the two in-app AI assistants. The
- * platform is CareMetric Breathe; PennPaps (Penn Home Medical Supply) is
- * one tenant operating on it. A tenant owner can rename the assistants
+ * platform is CareMetric Breathe; Penn Home Medical Supply is one tenant
+ * operating on it. A tenant owner can rename the assistants
  * from System Configuration; the live values arrive with /api/company-info.
  */
 export const DEFAULT_STOREFRONT_ASSISTANT_NAME = "CareMetric Assistant";

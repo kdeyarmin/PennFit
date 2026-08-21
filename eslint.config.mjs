@@ -1,6 +1,6 @@
 // Repo-wide ESLint flat config — scoped to the resupply tree only.
 //
-// The PennPaps fitter predates this config and is intentionally NOT linted
+// The cpap-fitter app predates this config and is intentionally NOT linted
 // here. If/when the fitter adopts ESLint, expand the `files` globs below; do
 // not add a per-package eslint config (this is the single source of
 // truth so the resupply-check validation step can call `eslint`

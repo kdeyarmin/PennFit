@@ -12,7 +12,7 @@
 //
 // The email is intentionally educational, not salesy: the patient
 // just took a self-triage and the most useful next step for them
-// is to share the result with a physician. We mention PennPaps only
+// is to share the result with a physician. We mention Penn Home Medical Supply only
 // in the footer + the optional "if you've already been prescribed
 // CPAP, here's how we can help" tail.
 
@@ -119,7 +119,7 @@ export async function sendQuizResultsEmail(
   }
 
   // Brand the email with the tenant's own storefront name (G6). For the seed
-  // tenant this resolves to "PennPaps" (its stored brand), so single-tenant
+  // tenant this resolves to "Penn Home Medical Supply" (its stored brand), so single-tenant
   // copy is unchanged; a second tenant's email carries ITS brand.
   const brand = await resolveBrandingByOrgId(input.orgId);
   const brandName = brand.storefrontName;

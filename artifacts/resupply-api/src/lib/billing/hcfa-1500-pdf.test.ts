@@ -60,7 +60,7 @@ const BASE: Hcfa1500Input = {
   taxId: "999999999",
   totalChargeCents: 12500,
   signatureOnFile: "SIGNATURE ON FILE",
-  billingProviderName: "PennPaps Inc",
+  billingProviderName: "Penn Home Medical Supply Inc",
   billingProviderAddress: BILLING_ADDRESS,
   billingProviderNpi: "1234567890",
   billingProviderPhoneE164: "+18001234567",

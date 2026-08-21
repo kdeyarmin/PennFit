@@ -42,9 +42,9 @@ describe("use-document-title — per-tenant title suffix", () => {
   });
 
   it("does NOT hardcode the seed tenant brand in the title suffix", () => {
-    // The seed tenant ("PennPaps" / "Penn Home Medical Supply") must not be
+    // The seed tenant ("Penn Home Medical Supply" / "Penn Home Medical Supply") must not be
     // baked into the shared bundle as the title suffix for every tenant.
-    expect(SRC).not.toContain(" — PennPaps");
+    expect(SRC).not.toContain(" — Penn Home Medical Supply");
     expect(SRC).not.toContain("Penn Home Medical Supply");
   });
 });

@@ -75,8 +75,8 @@ const SAFE_MARGIN_MS = 6 * 3_600_000; // 6 hours
 const FULL_CFG = {
   sendgridApiKey: "SG.integration-test",
   sendgridFromEmail: "info@pennpaps.example",
-  sendgridFromName: "PennPaps",
-  practiceName: "PennPaps",
+  sendgridFromName: "Penn Home Medical Supply",
+  practiceName: "Penn Home Medical Supply",
   publicBaseUrl: "https://pennfit.example",
 };
 

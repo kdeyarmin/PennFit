@@ -1,4 +1,4 @@
-// seed-stripe-products — idempotently provisions PennPaps shop catalog
+// seed-stripe-products — idempotently provisions Penn Home Medical Supply shop catalog
 // in the configured Stripe account.
 //
 // Run with:

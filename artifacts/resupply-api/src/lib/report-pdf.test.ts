@@ -25,7 +25,7 @@ function sampleInput(rowCount: number): PdfReportInput {
   return {
     title: "Cash-pay orders",
     range: "2026-04-01 to 2026-04-30",
-    practiceName: "PennPaps",
+    practiceName: "Penn Home Medical Supply",
     columns: [
       { label: "Order #", width: 100 },
       { label: "Date", width: 70 },

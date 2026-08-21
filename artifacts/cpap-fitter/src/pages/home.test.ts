@@ -100,7 +100,7 @@ describe("home — hero body copy text colours", () => {
 
   it("storefront-name bold span uses text-foreground (was text-white)", () => {
     // The bold span now wraps the per-tenant storefront name binding
-    // instead of the literal "PennPaps.com"; the colour class is the
+    // instead of the literal "pennpaps.com"; the colour class is the
     // invariant under test.
     const storefrontMatch = SRC.match(
       /className="font-semibold text-foreground"[^>]*>\s*\{branding\.storefrontName\}/,

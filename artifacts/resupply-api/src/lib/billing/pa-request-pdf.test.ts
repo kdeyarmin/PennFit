@@ -9,7 +9,7 @@ const base: PaRequestInput = {
   payerPriorAuthPhoneE164: "+18664887443",
   payerSubmissionMethod: "fax",
   payerTurnaroundBusinessDays: 7,
-  supplierName: "PennPaps Inc",
+  supplierName: "Penn Home Medical Supply Inc",
   supplierNpi: "1234567893",
   supplierTaxId: "12-3456789",
   supplierAddress: {
@@ -75,7 +75,7 @@ describe("renderPaRequestPdf", () => {
     const sparse: PaRequestInput = {
       generatedOn: new Date("2026-06-01T12:00:00Z"),
       payerDisplayName: "PA Health & Wellness",
-      supplierName: "PennPaps Inc",
+      supplierName: "Penn Home Medical Supply Inc",
       patientLastName: "Roe",
       patientFirstName: "John",
       patientDateOfBirth: "1955-01-01",

@@ -354,7 +354,7 @@ async function recallSendSweepForOrg(
   const cfg = await applyTenantSmsFrom(orgId, baseCfg);
 
   // Brand the notice copy with the tenant's own storefront name (G6); for the
-  // seed tenant this resolves to "PennPaps" so single-tenant copy is
+  // seed tenant this resolves to "Penn Home Medical Supply" so single-tenant copy is
   // unchanged. The email From identity is applied inside
   // sendRecallNotification via the orgId we thread through below.
   const brand = await resolveBrandingByOrgId(orgId);

@@ -1,5 +1,5 @@
 // Reusable star-rating display + clickable rating input for the
-// PennPaps shop. Two modes:
+// Penn Home Medical Supply shop. Two modes:
 //
 //   * <StarRating value=4.6 count=24 />  — read-only display (compact
 //     by default; use `size="lg"` on product detail).

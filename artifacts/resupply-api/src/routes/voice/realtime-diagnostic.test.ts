@@ -153,7 +153,7 @@ describe("POST /voice/realtime-diagnostic", () => {
     expect(entry!.callContext!.length).toBeLessThanOrEqual(250);
     expect(() =>
       buildSystemPrompt({
-        practiceName: "PennPaps",
+        practiceName: "Penn Home Medical Supply",
         callContext: entry!.callContext!,
         ...(entry!.greeting ? { greeting: entry!.greeting } : {}),
       }),

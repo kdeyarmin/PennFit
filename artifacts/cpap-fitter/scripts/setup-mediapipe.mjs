@@ -1,7 +1,7 @@
 /**
  * Setup script: vendor MediaPipe assets locally.
  *
- * The PennPaps app advertises "100% private — your face never leaves your
+ * The storefront app advertises "100% private — your face never leaves your
  * device." That promise is undermined if the WASM runtime + face landmark
  * model are fetched from third-party CDNs at runtime (every visit pings
  * jsdelivr.net and storage.googleapis.com). This script:

@@ -1,6 +1,6 @@
 // Native-runtime feature detection (Phase D / feature #6).
 //
-// The same Vite bundle ships to both web (PennPaps.com) and the
+// The same Vite bundle ships to both web (pennpaps.com) and the
 // Capacitor-wrapped iOS / Android apps. Rather than scatter
 // `if (Capacitor)` checks across the codebase, this module:
 //
@@ -109,7 +109,7 @@ export async function isNativeApp(): Promise<boolean> {
  * password sign-in UI in that case.
  *
  * `reason` is a static label rendered to the user when the prompt
- * appears (e.g. "Unlock PennPaps"). Keep it short — Face ID and
+ * appears (e.g. "Unlock Penn Home Medical Supply"). Keep it short — Face ID and
  * Touch ID truncate aggressively.
  */
 export async function promptBiometric(

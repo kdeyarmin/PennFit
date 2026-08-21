@@ -1,7 +1,7 @@
 // Insurance lead-capture emails — sends two SendGrid messages per
 // submission of the public /insurance lead form:
 //
-//   1. A NOTIFICATION email to the PennPaps team (the verifications
+//   1. A NOTIFICATION email to the Penn Home Medical Supply team (the verifications
 //      mailbox) containing the full form payload so a CSR can call
 //      back within one business day.
 //   2. A CONFIRMATION email to the patient acknowledging receipt and
@@ -228,7 +228,7 @@ export async function sendInsuranceLeadEmails(
     throw err;
   }
 
-  // Brand the copy with the tenant's storefront name (seed → "PennPaps").
+  // Brand the copy with the tenant's storefront name (seed → "Penn Home Medical Supply").
   const brandName = (await resolveBrandingByOrgId(payload.orgId))
     .storefrontName;
   // Point the /insurance + /faq links at the tenant's own verified custom

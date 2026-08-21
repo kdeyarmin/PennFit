@@ -187,7 +187,7 @@ async function buildSuggestionEmail(
   const subject = `PennPilot feature suggestion: ${args.title}`;
 
   const text = [
-    `A new feature suggestion was submitted from the PennPaps admin console via PennPilot.`,
+    `A new feature suggestion was submitted from the Penn Home Medical Supply admin console via PennPilot.`,
     ``,
     `Title:    ${args.title}`,
     `Area:     ${area}`,
@@ -205,7 +205,7 @@ async function buildSuggestionEmail(
 
   const html = [
     `<div style="font-family:system-ui,Segoe UI,Helvetica,Arial,sans-serif;color:#0f172a;line-height:1.5">`,
-    `<p>A new feature suggestion was submitted from the PennPaps admin console via <strong>PennPilot</strong>.</p>`,
+    `<p>A new feature suggestion was submitted from the Penn Home Medical Supply admin console via <strong>PennPilot</strong>.</p>`,
     `<table style="border-collapse:collapse;margin:12px 0">`,
     `<tr><td style="padding:2px 12px 2px 0;color:#64748b">Title</td><td><strong>${escapeHtml(args.title)}</strong></td></tr>`,
     `<tr><td style="padding:2px 12px 2px 0;color:#64748b">Area</td><td>${escapeHtml(area)}</td></tr>`,
@@ -223,7 +223,7 @@ async function buildSuggestionEmail(
 
   // Normalize platform/assistant brand tokens (PennPilot → the tenant's
   // admin-assistant name, PennFit → CareMetric Breathe) and the tenant's
-  // own brand (PennPaps → saved company name). Resolve THIS tenant's
+  // own brand (Penn Home Medical Supply → saved company name). Resolve THIS tenant's
   // identity so a second tenant's suggestion email carries its own
   // company name, not the seed's. No-ops for the Penn Home Medical
   // Supply tenant, whose configured names are the originals.

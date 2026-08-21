@@ -115,7 +115,7 @@ router.post("/shop/fitter-leads", async (req, res) => {
   const data = parse.data;
 
   // The frontend will only call this endpoint after the patient
-  // explicitly checks "I agree to receive emails from PennPaps", so
+  // explicitly checks "I agree to receive emails from Penn Home Medical Supply", so
   // an explicit opt-OUT here means the request came from outside the
   // expected flow. Reject loudly rather than silently storing a row
   // with marketing_opt_in=false (which the re-engagement dispatcher

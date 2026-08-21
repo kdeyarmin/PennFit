@@ -238,7 +238,7 @@ async function inviteProviderUser(
   const inviteLink = `${baseUrl}/reset-password?token=${encodeURIComponent(token.raw)}`;
 
   // Brand the external clinician's invite with the inviting tenant's own
-  // identity (resolveBrandingByOrgId → the seed tenant's "PennPaps"/"Penn
+  // identity (resolveBrandingByOrgId → the seed tenant's "Penn Home Medical Supply"/"Penn
   // Home Medical Supply", the neutral CareMetric Breathe identity for an
   // unconfigured tenant) so a non-seed tenant's provider never sees the
   // seed brand. Resolved here rather than below because the attached PDFs

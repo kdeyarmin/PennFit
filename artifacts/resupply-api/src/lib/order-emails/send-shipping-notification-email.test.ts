@@ -24,8 +24,8 @@ vi.mock("@workspace/resupply-email", async () => {
 
 // The shipping email brands itself with the tenant's storefront name (G6).
 // Control it here so the copy assertions are deterministic; defaults to the
-// seed tenant's "PennPaps".
-const brandNameRef = vi.hoisted(() => ({ value: "PennPaps" }));
+// seed tenant's "Penn Home Medical Supply".
+const brandNameRef = vi.hoisted(() => ({ value: "Penn Home Medical Supply" }));
 vi.mock("../tenant-branding.js", () => ({
   resolveBrandingByOrgId: vi.fn(async () => ({
     storefrontName: brandNameRef.value,
@@ -106,7 +106,7 @@ describe("sendShippingNotificationEmail", () => {
     for (const k of ENV_KEYS) originalEnv[k] = process.env[k];
     for (const k of ENV_KEYS) delete process.env[k];
     process.env.SHOP_PUBLIC_BASE_URL = "https://test.example.com";
-    brandNameRef.value = "PennPaps";
+    brandNameRef.value = "Penn Home Medical Supply";
     sendEmailMock.mockReset();
     createSendgridClientMock.mockReset();
     createSendgridClientMock.mockImplementation(() => ({
@@ -155,7 +155,7 @@ describe("sendShippingNotificationEmail", () => {
       messageId: "msg_ship_1",
     });
     const arg = sendEmailMock.mock.calls[0]![0];
-    expect(arg.subject).toBe("Your PennPaps order has shipped");
+    expect(arg.subject).toBe("Your Penn Home Medical Supply order has shipped");
     expect(arg.html).toContain("ups.com/track");
     expect(arg.html).toContain("1Z999AA10123456784");
     expect(arg.html).toContain("Apt 4B");
@@ -186,7 +186,7 @@ describe("sendShippingNotificationEmail", () => {
     expect(arg.subject).toBe("Your Acme CPAP order has shipped");
     expect(arg.text).toContain("your Acme CPAP order has shipped");
     expect(arg.html).toContain("Acme CPAP");
-    expect(arg.subject).not.toContain("PennPaps");
+    expect(arg.subject).not.toContain("Penn Home Medical Supply");
   });
 
   it("falls back to bare tracking number when carrier is unknown", async () => {

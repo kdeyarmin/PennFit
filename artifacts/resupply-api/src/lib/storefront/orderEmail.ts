@@ -269,7 +269,7 @@ export async function sendOrderToPenn(
   }
 
   // Brand the notification with the tenant's storefront name (seed →
-  // "PennPaps", unchanged).
+  // "Penn Home Medical Supply", unchanged).
   const brandName = (await resolveBrandingByOrgId(options.orgId))
     .storefrontName;
   const body = composeEmailBody(order, orderReference, brandName);

@@ -74,7 +74,7 @@ const INBOUND_SHOP_CALL_CONTEXT =
   "recent order and subscription status. For any change, hand off to a human.";
 
 const INBOUND_SHOP_GREETING =
-  "Hi there, thanks for calling PennPaps! I can help you check on your " +
+  "Hi there, thanks for calling Penn Home Medical Supply! I can help you check on your " +
   "account today.";
 
 // Human fallback number, shared by the unidentified and no-actionable-
@@ -144,14 +144,14 @@ router.post("/voice/inbound-reorder", signatureMiddleware, async (req, res) => {
   const supabase = getOrgScopedClient(orgId);
 
   // Resolve the tenant's storefront brand once. The greeting + human-transfer
-  // copy is brand-literal ("PennPaps"); rewrite it to this tenant's storefront
+  // copy is brand-literal ("Penn Home Medical Supply"); rewrite it to this tenant's storefront
   // name so a non-seed tenant's caller never hears the seed brand. Uses the
   // same resolver as the check-in voice/SMS copy (resolveBrandingByOrgId) so
   // all patient-facing voice/storefront copy reads ONE brand field. Seed →
-  // "PennPaps" (a no-op for the substitution); fail-soft to the platform brand.
+  // "Penn Home Medical Supply" (a no-op for the substitution); fail-soft to the platform brand.
   const brandName = (await resolveBrandingByOrgId(orgId)).storefrontName;
   const brand = (text: string): string =>
-    text.split("PennPaps").join(brandName);
+    text.split("Penn Home Medical Supply").join(brandName);
 
   // Human-transfer dial target for THIS tenant. A non-seed tenant's caller
   // must reach that tenant's own support line, not the seed (Penn) number.
@@ -248,7 +248,7 @@ router.post("/voice/inbound-reorder", signatureMiddleware, async (req, res) => {
         [
           '<?xml version="1.0" encoding="UTF-8"?>',
           "<Response>",
-          `<Say>${escapeXmlText(brand("Hi! Welcome to your PennPaps reorder line. "))}`,
+          `<Say>${escapeXmlText(brand("Hi! Welcome to your Penn Home Medical Supply reorder line. "))}`,
           "Connecting you to our team now.</Say>",
           `<Dial timeout="20">${dialNumber}</Dial>`,
           "</Response>",

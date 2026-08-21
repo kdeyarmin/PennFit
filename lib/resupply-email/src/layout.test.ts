@@ -21,10 +21,10 @@ describe("renderBrandedEmail", () => {
 
   it("uses the caller's brand name in the header and copyright (escaped)", () => {
     const html = renderBrandedEmail({
-      brandName: "PennPaps",
+      brandName: "Penn Home Medical Supply",
       contentHtml: paragraph("Hi"),
     });
-    expect(html).toContain("PennPaps");
+    expect(html).toContain("Penn Home Medical Supply");
     expect(html).not.toContain("CareMetric Breathe");
   });
 

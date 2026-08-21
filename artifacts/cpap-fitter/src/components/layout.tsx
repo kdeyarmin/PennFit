@@ -9,7 +9,11 @@ import {
   ChevronDown,
 } from "lucide-react";
 import { SignedIn } from "@/lib/identity";
-import { PLATFORM_LOGO_URL, useStorefrontBranding } from "@/lib/branding";
+import {
+  PLATFORM_LOGO_URL,
+  hasDistinctStorefrontName,
+  useStorefrontBranding,
+} from "@/lib/branding";
 import { UserMenu } from "@/components/user-menu";
 import { FitFlowStepper } from "@/components/fit-flow-stepper";
 import { MobileCtaBar } from "@/components/mobile-cta-bar";
@@ -283,9 +287,11 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 <span className="font-semibold tracking-tight text-base text-primary">
                   {branding.storefrontName}
                 </span>
-                <span className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
-                  by {branding.legalName}
-                </span>
+                {hasDistinctStorefrontName(branding) && (
+                  <span className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+                    by {branding.legalName}
+                  </span>
+                )}
               </div>
             </Link>
 
@@ -502,7 +508,9 @@ export function Layout({ children }: { children: React.ReactNode }) {
                     {branding.legalName}
                   </div>
                   <div className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
-                    {branding.storefrontName} — Fit · Shop · Resupply
+                    {hasDistinctStorefrontName(branding)
+                      ? `${branding.storefrontName} — Fit · Shop · Resupply`
+                      : "Fit · Shop · Resupply"}
                   </div>
                 </div>
               </div>

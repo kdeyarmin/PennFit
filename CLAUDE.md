@@ -12,27 +12,44 @@ There are two distinct layers, and they must not be conflated:
   repository **codename**; user-facing and self-referential copy says
   **CareMetric Breathe**. The canonical platform name lives in code as
   `PLATFORM_NAME` (`artifacts/resupply-api/src/lib/company-info.ts`).
-- **Penn Home Medical Supply** — storefront brand **"PennPaps"**
-  (`pennpaps.com`) — is **one tenant** operating on the platform, not the
-  platform itself. The platform/home domain is **`cmbreathe.com`**;
-  `pennpaps.com` must route only to the Penn Home Medical Supply tenant.
-  Its brand, `info@pennpaps.com` From address, storefront
-  SEO, and practice-name default are **tenant data** and stay as-is. Other
-  tenants are onboarded with `tenant:onboard` and carry their own brand.
+- **Penn Home Medical Supply** (`pennpaps.com`) is **one tenant**
+  operating on the platform, not the platform itself. The platform/home
+  domain is **`cmbreathe.com`**; `pennpaps.com` must route only to the
+  Penn Home Medical Supply tenant. Its brand, `info@pennpaps.com` From
+  address, storefront SEO, and practice-name default are **tenant data**
+  and stay as-is. Other tenants are onboarded with `tenant:onboard` and
+  carry their own brand.
+- **This tenant trades under ONE name.** It used to carry a
+  storefront-only DBA, **"PennPaps"**, layered over its registered name;
+  migration **0510** retired it (`organizations.storefront_name` →
+  `Penn Home Medical Supply`, `dme_organization.dba_name` → `NULL`), so
+  `CompanyInfo.name === CompanyInfo.legalName` and every patient-facing
+  surface reads the official company name. **`pennpaps.com` and
+  `info@pennpaps.com` are unchanged** — they are addresses, not names,
+  and the tenant keeps them. Do NOT reintroduce "PennPaps" as a display
+  name anywhere; the only surviving in-source uses are the legacy
+  `identityReplacements()` needles in `company-info.ts` (which rewrite
+  content _persisted_ under the old brand) and the two brand-leak guard
+  specs, whose patterns must keep matching the old spelling.
 
 Practical rules:
 
 - When the app refers to **itself** (the software/deployment/platform),
-  use **CareMetric Breathe**, not "PennFit" or "PennPaps".
-- Tenant-specific copy (the PennPaps storefront, contact addresses) stays
-  tenant-branded — don't globally rename "PennPaps" to "CareMetric".
+  use **CareMetric Breathe**, not "PennFit" or a tenant's name.
+- Tenant-specific copy (the Penn storefront, contact addresses) stays
+  tenant-branded — don't globally rename it to "CareMetric".
+- **A surface that prints both a storefront brand and a legal name must
+  collapse them when they match**, or a one-name tenant reads "X by X".
+  Use `formatBrandSignature()` (`lib/tenant-branding.ts`) server-side and
+  `hasDistinctStorefrontName()` (`cpap-fitter/src/lib/branding.ts`) in
+  the SPA rather than interpolating the two fields side by side.
 - **The storefront's compile-time default is the platform, not a tenant.**
   `DEFAULT_BRANDING` in `artifacts/cpap-fitter/src/lib/branding.ts` is the
   **CareMetric** identity (and the logo fallback is `PLATFORM_LOGO_URL`
   → `/breathe/caremetric-logo.png`), so a brand-new / unconfigured tenant —
   and the pre-fetch first paint / fetch-failure state — never flashes the
-  Penn brand. Do NOT set it back to "PennPaps". The Penn tenant still
-  renders PennPaps via the host-resolved `GET /api/storefront-branding`
+  Penn brand. Do NOT set it to a tenant's name. The Penn tenant still
+  renders its own brand via the host-resolved `GET /api/storefront-branding`
   (`resolveBrandingByHost`, pennpaps.com → verified custom domain), and its
   logo is **tenant data**: `organizations.logo_url` points at the served
   asset `/penn/pennpaps-logo.jpeg` (migration 0466), so Penn no longer
@@ -289,7 +306,7 @@ correctness, not style:
   at the I/O boundary via `applyCompanyIdentityToText(text,
 getCompanyInfo(orgId))` / `resolveBrandingByOrgId(orgId)`. The unconfigured
   fallback identity in `company-info.ts` is the **platform** (CareMetric
-  Breathe / `cmbreathe.com`), not PennPaps. Patient-facing link fallbacks
+  Breathe / `cmbreathe.com`), not any tenant's. Patient-facing link fallbacks
   default to `https://cmbreathe.com`, overridden by the tenant's verified
   custom domain (`resolveTenantBaseUrl`).
 - **Admin theme stays scoped.** Admin tokens (`--penn-navy`, etc.) live
