@@ -84,9 +84,10 @@ describe("FitWithheld — scan-driven outcomes end with a named DME referral", (
   it("refers to the resolved DME by name, with no retake loop", () => {
     render(<FitWithheld assessment={assessment("low_confidence")} />);
 
-    expect(
-      screen.getByText("We couldn't size you confidently from that photo"),
-    ).toBeTruthy();
+    // Title stays cause-neutral: low confidence can come from the photo,
+    // a weak match, or a sparse profile — the copy must be true for all
+    // three, so it owns the refusal ("rather not guess"), not a cause.
+    expect(screen.getByText("We'd rather not guess")).toBeTruthy();
     // The body names the resolved tenant, not a hardcoded brand.
     expect(screen.getByTestId("withheld-guidance").textContent).toContain(
       "Acme Home Medical",
@@ -133,9 +134,12 @@ describe("FitWithheld — scan-driven outcomes end with a named DME referral", (
     expect(
       screen.getByText("Your measurements sit outside our sizing range"),
     ).toBeTruthy();
-    expect(screen.getByTestId("withheld-guidance").textContent).toContain(
-      "Acme Home Medical",
-    );
+    const body = screen.getByTestId("withheld-guidance").textContent ?? "";
+    expect(body).toContain("Acme Home Medical");
+    // This outcome can be a perfectly good scan of a face outside the
+    // sizing data — the body must blame the RANGE, never the photo.
+    expect(body).toContain("outside the range");
+    expect(body).not.toMatch(/photo/i);
     expect(screen.queryByTestId("withheld-retake")).toBeNull();
   });
 });

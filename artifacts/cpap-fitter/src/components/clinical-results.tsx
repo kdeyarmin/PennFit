@@ -336,8 +336,12 @@ function Provenance({ assessment }: { assessment: FitAssessment }) {
  */
 export function FitWithheld({ assessment }: { assessment: FitAssessment }) {
   const contact = useCompanyContact();
-  // The two scan-driven outcomes: the photo (not the patient's answers)
-  // is why there is no recommendation, so the copy owns that plainly.
+  // The two non-contraindicated withholds share the ending (stop + named
+  // referral) but NOT one explanation: `low_confidence` can come from the
+  // photo, a weak match, or a sparse profile, and `outside_validated_range`
+  // can be a perfectly good scan of a face outside the sizing data — so
+  // neither body may claim "the photo failed" as fact. Each outcome gets
+  // copy that is true for every path that produces it.
   const scanLimited =
     assessment.outcome === "low_confidence" ||
     assessment.outcome === "outside_validated_range";
@@ -346,10 +350,13 @@ export function FitWithheld({ assessment }: { assessment: FitAssessment }) {
       ? "This one needs a person, not an algorithm"
       : assessment.outcome === "outside_validated_range"
         ? "Your measurements sit outside our sizing range"
-        : "We couldn't size you confidently from that photo";
-  const body = scanLimited
-    ? `We couldn't determine your mask sizing from the photo with enough confidence, and we'd rather stop than guess. This is where ${contact.name} takes over — a member of the team will fit you personally and make sure the mask is right.`
-    : assessment.guidance;
+        : "We'd rather not guess";
+  const body =
+    assessment.outcome === "low_confidence"
+      ? `We couldn't reach a confident enough match from your scan and answers, and we'd rather stop than guess. This is where ${contact.name} takes over — a member of the team will fit you personally and make sure the mask is right.`
+      : assessment.outcome === "outside_validated_range"
+        ? `Your measurements fall outside the range our sizing data covers, so we're not going to guess. This is where ${contact.name} takes over — a member of the team will fit you personally.`
+        : assessment.guidance;
 
   return (
     <div className="container max-w-2xl mx-auto px-4 py-12">

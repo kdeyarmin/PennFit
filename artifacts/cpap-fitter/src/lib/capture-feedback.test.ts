@@ -63,6 +63,7 @@ describe("createCaptureFeedback", () => {
   it("constructs and runs every channel without any browser API", () => {
     const feedback = createCaptureFeedback();
     expect(feedback.enabled).toBe(true); // eyes-free default is ON
+    expect(() => feedback.prime()).not.toThrow();
     expect(() => feedback.frameCaptured()).not.toThrow();
     expect(() => feedback.allDone()).not.toThrow();
     expect(() => feedback.speak("Look straight at the camera.")).not.toThrow();

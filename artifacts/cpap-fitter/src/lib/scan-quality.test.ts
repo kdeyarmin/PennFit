@@ -99,6 +99,22 @@ describe("frame quality gates", () => {
     ).toBe(true);
   });
 
+  it("refuses a near-frontal frame as a turn, however level the head", () => {
+    // Perfect pitch/roll must not lift the composite over the bar at ~1°
+    // of real yaw — that would auto-capture a straight-on frame as a
+    // completed turn angle. A turn frame has to clear the near-frontal
+    // measurement window (MEASUREMENT_YAW_LIMIT_DEG) to count.
+    for (const yawDeg of [1, 5, 10]) {
+      const result = assessFrameQuality(input({ yawDeg, pose: "turn_right" }));
+      expect(result.acceptable).toBe(false);
+      expect(result.failing).toContain("pose");
+    }
+    // Just past the window, the turn is real and acceptance resumes.
+    expect(
+      assessFrameQuality(input({ yawDeg: 14, pose: "turn_right" })).acceptable,
+    ).toBe(true);
+  });
+
   it("tolerates the self-shadow a turn manufactures, but only at a turn pose", () => {
     // Turning the head in even light rotates the far cheek into its own
     // shadow — the imbalance is caused by the pose the flow asked for.
@@ -113,6 +129,15 @@ describe("frame quality gates", () => {
     );
     expect(turned.failing).not.toContain("lighting");
     expect(turned.acceptable).toBe(true);
+    // The leniency keys to the ACTUAL yaw, not the nominal step: a frame
+    // still inside the near-frontal measurement window would contribute
+    // measurement samples, so it keeps the strict frontal balance bar
+    // even while the flow is on a turn step.
+    expect(
+      assessFrameQuality(
+        input({ ...sideShadow, pose: "turn_right", yawDeg: 6 }),
+      ).failing,
+    ).toContain("lighting");
   });
 
   it("rejects a blurred frame", () => {
@@ -236,6 +261,11 @@ describe("turn coach nudges", () => {
   it("asks for more turn when the head is barely turned", () => {
     expect(turnCoachNudge(3, "turn_right", false)).toMatch(/further/i);
     expect(turnCoachNudge(-3, "turn_left", false)).toMatch(/further/i);
+    // The nudge covers the whole refusal zone, including the hard
+    // minimum-turn floor at the near-frontal cutoff — anywhere the gate
+    // would refuse the frame as "not a turn", the coach asks for more.
+    expect(turnCoachNudge(9, "turn_right", false)).toMatch(/further/i);
+    expect(turnCoachNudge(10, "turn_right", false)).toMatch(/further/i);
   });
 
   it("asks for less when the head is turned past the window", () => {

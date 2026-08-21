@@ -347,7 +347,9 @@ export function GuidedCapture({ onFallback }: { onFallback: () => void }) {
         ? "Got it — one more straight on. Hold steady."
         : `Got it. ${nextPrompt}`;
       feedback.speak(spoken, { interrupt: true });
-      lastSpokenCoachRef.current = { text: spoken, atMs: performance.now() };
+      if (feedback.enabled) {
+        lastSpokenCoachRef.current = { text: spoken, atMs: performance.now() };
+      }
     }
     return true;
   };
@@ -358,6 +360,10 @@ export function GuidedCapture({ onFallback }: { onFallback: () => void }) {
     setCoach({ message: "Look straight at the camera.", struggling: false });
     if (!introSpokenRef.current) {
       introSpokenRef.current = true;
+      // Warm the audio path while sticky activation from the tap that
+      // navigated here is still fresh — the first auto-capture fires from
+      // a timer, where a suspended AudioContext cannot resume itself.
+      feedbackRef.current!.prime();
       feedbackRef.current!.speak("Look straight at the camera.");
     }
 
@@ -518,8 +524,11 @@ export function GuidedCapture({ onFallback }: { onFallback: () => void }) {
           // patient's eyes are off the screen and the on-screen coach is
           // unreadable. (Front-pose coaching stays visual; narrating it
           // would be noise.) Throttled so the voice never chases the
-          // ~180ms assessment cadence.
-          if (machinePose !== "front") {
+          // ~180ms assessment cadence. The bookkeeping advances ONLY when
+          // sound is on: a muted speak() is a no-op, and recording it as
+          // spoken would leave a patient who unmutes mid-struggle waiting
+          // out a throttle on words they never heard.
+          if (machinePose !== "front" && feedback.enabled) {
             const nowMs = performance.now();
             if (
               shouldSpeakCoachLine(lastSpokenCoachRef.current, message, nowMs)
@@ -530,9 +539,11 @@ export function GuidedCapture({ onFallback }: { onFallback: () => void }) {
           }
           // One spoken pointer at the escape hatches, per pose — the
           // buttons appear silently below an eyes-off-screen patient
-          // otherwise.
+          // otherwise. Same rule: only marked delivered when it could
+          // actually be heard.
           if (
             action.struggling &&
+            feedback.enabled &&
             struggleSpokenForPoseRef.current !== machineRef.current.poseIndex
           ) {
             struggleSpokenForPoseRef.current = machineRef.current.poseIndex;
@@ -577,10 +588,12 @@ export function GuidedCapture({ onFallback }: { onFallback: () => void }) {
     setPrompt(nextPrompt);
     setSkippable(canSkipPose(machineRef.current));
     feedbackRef.current!.speak(nextPrompt, { interrupt: true });
-    lastSpokenCoachRef.current = {
-      text: nextPrompt,
-      atMs: performance.now(),
-    };
+    if (feedbackRef.current!.enabled) {
+      lastSpokenCoachRef.current = {
+        text: nextPrompt,
+        atMs: performance.now(),
+      };
+    }
   };
 
   const toggleAudio = () => {
@@ -588,6 +601,13 @@ export function GuidedCapture({ onFallback }: { onFallback: () => void }) {
     const next = !feedback.enabled;
     feedback.setEnabled(next);
     setAudioOn(next);
+    if (next) {
+      // Sound just came on: clear the speech bookkeeping so the current
+      // guidance (and this pose's struggle pointer) speaks promptly
+      // instead of waiting out a throttle recorded while muted.
+      lastSpokenCoachRef.current = null;
+      struggleSpokenForPoseRef.current = -1;
+    }
   };
 
   const ready = videoReady && landmarkerReady;

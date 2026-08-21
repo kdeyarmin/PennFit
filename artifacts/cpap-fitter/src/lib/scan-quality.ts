@@ -248,9 +248,17 @@ export function assessFrameQuality(input: QualityInput): QualityResult {
   // ordinary rooms — and the measurement risk the strict gate guards
   // against (one warped half of a horizontal span) does not apply to
   // frames that contribute no measurement samples (see
-  // MEASUREMENT_YAW_LIMIT_DEG). Front keeps the strict gate.
-  const sideAllowance =
-    input.pose === "front" ? MAX_LUMA_SIDE_DELTA : MAX_LUMA_SIDE_DELTA * 2;
+  // MEASUREMENT_YAW_LIMIT_DEG). The leniency is therefore keyed to the
+  // ACTUAL yaw, not the nominal pose: a frame still inside the
+  // near-frontal measurement window WOULD contribute samples, so it is
+  // held to the frontal bar even at a turn step — the relaxed gate and
+  // the measurement set can never overlap.
+  const turnedPastFrontal =
+    input.pose !== "front" &&
+    Math.abs(input.yawDeg) > MEASUREMENT_YAW_LIMIT_DEG;
+  const sideAllowance = turnedPastFrontal
+    ? MAX_LUMA_SIDE_DELTA * 2
+    : MAX_LUMA_SIDE_DELTA;
   const balance = clamp01(1 - sideDelta / (sideAllowance * 2));
   scores.lighting = clamp01(exposure * (0.5 + 0.5 * balance));
 
@@ -265,7 +273,17 @@ export function assessFrameQuality(input: QualityInput): QualityResult {
   // ── Head position against this pose's target. ──
   const target = POSE_TARGETS[input.pose];
   const yawError = Math.abs(input.yawDeg - target.yaw);
-  const yawScore = clamp01(1 - yawError / (target.yawTolerance * 2));
+  let yawScore = clamp01(1 - yawError / (target.yawTolerance * 2));
+  // Hard minimum turn: a "turn" frame must actually be past the
+  // near-frontal measurement window. Without this floor, good pitch/roll
+  // could lift the composite pose score over the acceptance bar at ~1° of
+  // real yaw — auto-capturing a straight-on frame as a completed turn
+  // angle, which defeats the cross-angle evidence the step exists to
+  // collect. Capped low enough that the composite cannot clear 0.6, so
+  // the coach keeps saying "turn a little further" instead.
+  if (input.pose !== "front" && !turnedPastFrontal) {
+    yawScore = Math.min(yawScore, 0.1);
+  }
   const pitchScore = clamp01(
     1 -
       Math.max(0, Math.abs(input.pitchDeg) - PITCH_GRACE_DEG) /
@@ -398,7 +416,14 @@ export function turnCoachNudge(
   }
   const magnitude = Math.abs(yawDeg);
   const targetMagnitude = Math.abs(target.yaw);
-  if (magnitude < targetMagnitude - target.yawTolerance) {
+  // Under-turned covers BOTH the tolerance window's low edge and the
+  // hard minimum-turn floor (a frame inside the near-frontal measurement
+  // window never counts as a turn — see assessFrameQuality), so the
+  // coach keeps asking for more turn everywhere the gate would refuse.
+  if (
+    magnitude <= MEASUREMENT_YAW_LIMIT_DEG ||
+    magnitude < targetMagnitude - target.yawTolerance
+  ) {
     return "Turn a little further…";
   }
   if (magnitude > targetMagnitude + target.yawTolerance) {

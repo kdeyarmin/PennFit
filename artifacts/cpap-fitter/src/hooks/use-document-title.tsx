@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 
+import { PLATFORM_NAME } from "@/lib/branding";
 import { useCompanyContact } from "@/lib/contact";
 
 // Helper — find an existing meta tag by name OR property, or create
@@ -64,14 +65,35 @@ export function useDocumentTitle(
   // name, "CareMetric Breathe" as the platform default) instead of hardcoding
   // the seed tenant. The live value arrives with /api/company-info.
   const company = useCompanyContact();
-  const siteTitleSuffix = ` — ${company.name}`;
-  const publisherName = company.legalName || company.name;
-  // The tenant-branded site defaults, used when the page asks for "the
+  // …EXCEPT on the platform marketing routes. Everything under /breathe/*
+  // describes CareMetric Breathe, the SaaS product itself, and those pages
+  // stay reachable on tenant hosts — where /api/company-info resolves to
+  // the TENANT. Stamping a tenant's name onto the platform's own product
+  // pages inverts the brand architecture (see lib/branding.ts), so the
+  // marketing surface pins the platform identity regardless of host.
+  // Mirrors the canonical-path logic below: strip the artifact basePath
+  // first so subpath previews classify the same way.
+  const basePathPrefix = import.meta.env.BASE_URL.replace(/\/$/, "");
+  const currentRawPath =
+    typeof window !== "undefined" ? window.location.pathname : "/";
+  const currentPath =
+    basePathPrefix && currentRawPath.startsWith(basePathPrefix)
+      ? currentRawPath.slice(basePathPrefix.length) || "/"
+      : currentRawPath;
+  const isPlatformSurface =
+    currentPath === "/breathe" || currentPath.startsWith("/breathe/");
+  const brandName = isPlatformSurface ? PLATFORM_NAME : company.name;
+  const brandPublisher = isPlatformSurface
+    ? PLATFORM_NAME
+    : company.legalName || company.name;
+  const siteTitleSuffix = ` — ${brandName}`;
+  const publisherName = brandPublisher;
+  // The brand-resolved site defaults, used when the page asks for "the
   // site default" (empty pageTitle / no description). See the module doc:
   // the static shell's values are platform placeholders, never a brand a
   // tenant's patient should see.
-  const siteDefaultTitle = `${company.name} — CPAP Fitter, Shop & Resupply`;
-  const siteDefaultDescription = `Get fitted for a CPAP mask in minutes with ${company.name}: shop cushions, filters, and tubing direct, and let us handle insurance and resupply. Privacy-first, on-device fitting.`;
+  const siteDefaultTitle = `${brandName} — CPAP Fitter, Shop & Resupply`;
+  const siteDefaultDescription = `Get fitted for a CPAP mask in minutes with ${brandName}: shop cushions, filters, and tubing direct, and let us handle insurance and resupply. Privacy-first, on-device fitting.`;
 
   useEffect(() => {
     const previousTitle = document.title;
@@ -165,12 +187,13 @@ export function useDocumentTitle(
       fullTitle,
     );
     // og:site_name is static platform copy in the shell; re-point it at
-    // the resolving tenant on every route.
+    // the resolved brand on every route (the tenant on storefront pages,
+    // the platform on /breathe/* — see brandName above).
     setMeta(
       'meta[property="og:site_name"]',
       { property: "og:site_name" },
       "content",
-      company.name,
+      brandName,
     );
     setMeta(
       'meta[property="og:url"]',
@@ -272,7 +295,7 @@ export function useDocumentTitle(
     options?.schema,
     siteTitleSuffix,
     publisherName,
-    company.name,
+    brandName,
     siteDefaultTitle,
     siteDefaultDescription,
   ]);

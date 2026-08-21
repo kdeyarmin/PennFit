@@ -76,6 +76,13 @@ export interface CaptureFeedback {
   readonly enabled: boolean;
   /** Flip the preference; persisted so a retake keeps the choice. */
   setEnabled(on: boolean): void;
+  /**
+   * Warm the audio path: create the AudioContext and attempt a resume.
+   * Call it from real interaction points (page ready, the sound toggle)
+   * so the context is running BEFORE the first timer-driven auto-capture
+   * needs it — `resume()` succeeds most reliably inside a gesture.
+   */
+  prime(): void;
   /** One frame captured — the shutter-confirm chime + a short pulse. */
   frameCaptured(): void;
   /** Every angle captured — the longer "all done" chime + double pulse. */
@@ -97,7 +104,7 @@ function audioContextCtor(): AudioContextCtor | null {
 }
 
 let sharedContext: AudioContext | null = null;
-let resumeListenerArmed = false;
+let resumeListenersArmed = false;
 
 function getAudioContext(): AudioContext | null {
   const Ctor = audioContextCtor();
@@ -112,15 +119,21 @@ function getAudioContext(): AudioContext | null {
     void ctx.resume().catch(() => {
       /* stays suspended until a user gesture */
     });
-    if (!resumeListenerArmed) {
-      resumeListenerArmed = true;
+    if (!resumeListenersArmed) {
+      resumeListenersArmed = true;
+      // PERSISTENT listeners, not `once`: a single early tap can fire
+      // while the browser still refuses the resume, and a once-listener
+      // would then be spent — leaving every later chime silently dropped.
+      // Re-trying on each interaction costs nothing once running.
       const resume = () => {
-        void ctx.resume().catch(() => {
-          /* best-effort */
-        });
+        if (ctx.state === "suspended") {
+          void ctx.resume().catch(() => {
+            /* best-effort */
+          });
+        }
       };
-      window.addEventListener("pointerdown", resume, { once: true });
-      window.addEventListener("keydown", resume, { once: true });
+      window.addEventListener("pointerdown", resume);
+      window.addEventListener("keydown", resume);
     }
   }
   return ctx;
@@ -135,7 +148,33 @@ interface ChimeNote {
 
 function playNotes(notes: ChimeNote[]): void {
   const ctx = getAudioContext();
-  if (!ctx || ctx.state !== "running") return;
+  if (!ctx) return;
+  if (ctx.state !== "running") {
+    // Auto-captures fire from a timer, outside any user-gesture handler,
+    // so the context can still be suspended here even though the patient
+    // tapped their way onto this page. `resume()` is asynchronous — on
+    // permissive browsers (sticky activation) it resolves almost
+    // immediately, so chase it and play a slightly-late chime rather
+    // than dropping the confirmation entirely. The deadline keeps a
+    // resume that only unblocks on some much-later tap from replaying a
+    // stale chime that would read as a phantom capture.
+    const requestedAt = Date.now();
+    void ctx
+      .resume()
+      .then(() => {
+        if (ctx.state === "running" && Date.now() - requestedAt <= 1_500) {
+          scheduleNotes(ctx, notes);
+        }
+      })
+      .catch(() => {
+        /* stays suspended — this chime is lost, the next tap re-arms */
+      });
+    return;
+  }
+  scheduleNotes(ctx, notes);
+}
+
+function scheduleNotes(ctx: AudioContext, notes: ChimeNote[]): void {
   try {
     const now = ctx.currentTime;
     for (const note of notes) {
@@ -217,13 +256,20 @@ export function createCaptureFeedback(): CaptureFeedback {
     setEnabled(on: boolean) {
       enabled = on;
       writeSoundPref(on);
-      if (!on) {
+      if (on) {
+        // The toggle tap is a guaranteed user gesture — the one moment a
+        // suspended context is certain to be allowed to resume.
+        void getAudioContext();
+      } else {
         try {
           speechAvailable()?.cancel();
         } catch {
           /* best-effort */
         }
       }
+    },
+    prime() {
+      if (enabled) void getAudioContext();
     },
     frameCaptured() {
       // Vibration first: it is silent, so it ignores the sound preference

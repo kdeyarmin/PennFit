@@ -32,7 +32,9 @@ describe("use-document-title — per-tenant title suffix", () => {
     // (useCompanyContact), not a hardcoded constant.
     expect(SRC).toContain("useCompanyContact");
     expect(SRC).toContain("siteTitleSuffix");
-    expect(SRC).toContain("` — ${company.name}`");
+    // brandName = the resolved tenant everywhere except the /breathe/*
+    // platform surface (see the platform-identity test below).
+    expect(SRC).toContain("` — ${brandName}`");
   });
 
   it("uses an em-dash separator", () => {
@@ -93,14 +95,23 @@ describe("use-document-title — title building logic", () => {
     // of the DME's own name.
     expect(SRC).toContain(": siteDefaultTitle");
     expect(SRC).not.toContain(": previousTitle;");
-    expect(SRC).toContain("`${company.name} — CPAP Fitter, Shop & Resupply`");
+    expect(SRC).toContain("`${brandName} — CPAP Fitter, Shop & Resupply`");
     // The ternary produces the full title when pageTitle is truthy.
     expect(SRC).toContain("? `${pageTitle}${siteTitleSuffix}`");
   });
 
-  it("re-points og:site_name at the resolving tenant on every route", () => {
+  it("re-points og:site_name at the resolved brand on every route", () => {
     expect(SRC).toContain('meta[property="og:site_name"]');
-    expect(SRC).toContain("company.name,");
+    expect(SRC).toContain("brandName,");
+  });
+
+  it("pins the PLATFORM identity on the /breathe/* marketing routes", () => {
+    // /breathe/* describes CareMetric Breathe, the SaaS product itself,
+    // and stays reachable on tenant hosts — a tenant's name must never be
+    // stamped onto the platform's own product pages (nor vice versa).
+    expect(SRC).toContain('import { PLATFORM_NAME } from "@/lib/branding"');
+    expect(SRC).toContain('currentPath.startsWith("/breathe/")');
+    expect(SRC).toContain("isPlatformSurface ? PLATFORM_NAME : company.name");
   });
 
   it("replaces the shell's platform description on the landing page", () => {
