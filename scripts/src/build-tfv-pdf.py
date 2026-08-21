@@ -333,13 +333,14 @@ checklist = [
      "profile still names a customer, fix it before submitting. The message bodies staying "
      "supplier-branded is expected and is explained in the use-case description; that is the "
      "normal platform-sending-for-a-customer shape, not a mismatch."),
-    ("Reconcile the quoted consent text with the live form",
-     "The \"Additional information\" answer quotes a long authorization sentence, but the "
-     "storefront checkbox currently reads \"I agree to receive text messages from <brand>\" "
-     "with a shorter sub-line, and the full disclosure lives on /terms. A reviewer who cannot "
-     "find the quoted sentence on the page is a common rejection. Either quote the checkbox "
-     "and its sub-line as they actually appear, or update the form to the longer language "
-     "before submitting — but make the two match."),
+    ("Check the reviewer can FIND the consent language on the site",
+     "The wording itself is settled — this is about findability, not phrasing. The "
+     "\"Additional information\" answer quotes a long authorization sentence; the storefront "
+     "checkbox reads \"I agree to receive text messages from <brand>\" with a shorter "
+     "sub-line, and the SMS program disclosure lives in /terms section 04. A Twilio reviewer "
+     "who cannot locate the quoted language anywhere on the public site is a common rejection "
+     "cause, so before submitting, open /order and /terms in an incognito window and confirm "
+     "the consent story you are describing is actually visible there."),
     ("Decide imported-patient policy",
      "Your TFV promises every recipient opted in via the web form. If you import existing "
      "patients via the dashboard CSV importer, those patients did NOT check this checkbox. "
