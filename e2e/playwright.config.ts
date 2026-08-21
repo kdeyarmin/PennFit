@@ -92,6 +92,20 @@ export default defineConfig({
     },
   },
 
+  // Playwright's default expect timeout is 5s. Nearly every route in this
+  // SPA is lazy-loaded behind a Suspense fallback, and the `e2e-dev` job
+  // drives the suite against the Vite *dev* server, which transforms a route
+  // chunk on first request. A cold route can therefore take ~5s to paint —
+  // right on the default — so an assertion that follows a redirect into an
+  // unvisited route is a coin flip on a slow runner. That is a dev-server
+  // cost, not a product one: production ships prebuilt chunks that load in
+  // milliseconds, so waiting longer here hides nothing a user would feel.
+  //
+  // This only changes how long a FAILING assertion waits before giving up;
+  // an assertion that will pass still resolves as soon as the element
+  // appears, so the suite is no slower in the green case.
+  expect: { timeout: 10_000 },
+
   use: {
     baseURL: BASE_URL,
     trace: "on-first-retry",

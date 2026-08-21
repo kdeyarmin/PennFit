@@ -1,17 +1,33 @@
-// Host-aware platform sitemap + robots for the Breathe marketing site.
+// Host-aware sitemap + robots. One SPA bundle is served to every host, so
+// `/sitemap.xml` and `/robots.txt` must be resolved per request — a static
+// file cannot be correct for more than one of them.
 //
-// The Breathe marketing pages live on the platform apex (cmbreathe.com) — a
-// different host from any tenant storefront. The static public/sitemap.xml is
-// the TENANT (pennpaps.com) sitemap and must never list cross-domain URLs, so
-// the /breathe pages get their own apex-served sitemap here. These handlers
-// are mounted AHEAD of express.static in app.ts; on any non-apex host they
-// fall through (next()) so the tenant's static sitemap.xml / robots.txt are
-// served unchanged.
+// Three host classes, dispatched in app.ts ahead of express.static:
 //
-// Indexability: only the canonical apex is served — this mirrors the frontend
-// `isPlatformApexHost()` noindex gate (cpap-fitter/src/lib/platform-host.ts).
-// The Railway `*.up.railway.app` preview host is deliberately NOT served: its
-// pages are noindex (staging / duplicate content), so it gets no sitemap.
+//   1. Platform apex (cmbreathe.com) — the CareMetric Breathe marketing
+//      site. Gets the generated /breathe sitemap below. Mirrors the
+//      frontend `isPlatformApexHost()` noindex gate
+//      (cpap-fitter/src/lib/platform-host.ts).
+//
+//   2. Platform deploy/preview hosts (*.up.railway.app) — the same content
+//      on a non-canonical hostname, i.e. duplicate content. The SPA already
+//      marks these `noindex`; robots.txt says `Disallow: /` to match and no
+//      sitemap is served.
+//
+//   3. Everything else — a TENANT storefront, reached through a verified
+//      custom domain (pennpaps.com) or a <slug>.cmbreathe.com subdomain.
+//      Served the hand-maintained public/sitemap.xml and public/robots.txt
+//      with every URL rewritten to the requesting host's own origin.
+//
+// Why (3) rewrites rather than serving the file as-is: the static files are
+// checked in with one tenant's domain baked into them (they predate
+// multi-tenancy). Served verbatim, the SECOND tenant's domain would publish
+// the FIRST tenant's URLs and advertise `Sitemap: https://<other-tenant>/
+// sitemap.xml` — a cross-domain sitemap that search engines discard, and a
+// brand leak between competitors on one platform. Rewriting the origin makes
+// each host authoritative for itself while keeping public/sitemap.xml the
+// single hand-maintained source of the PATH list (guarded against route
+// drift by cpap-fitter/src/sitemap.drift.test.ts).
 
 /** The canonical platform apex host (mirrors platform-host.ts on the SPA). */
 export const PLATFORM_APEX_HOST = "cmbreathe.com";
@@ -103,4 +119,119 @@ export function buildPlatformRobotsTxt(origin = PLATFORM_APEX_ORIGIN): string {
     `Sitemap: ${origin}/sitemap.xml`,
     "",
   ].join("\n");
+}
+
+// ────────────────────────────────────────────────────────────────────
+// Host class 2 + 3: preview hosts and tenant storefronts.
+// ────────────────────────────────────────────────────────────────────
+
+/**
+ * True for the platform's own Railway deploy/preview hostnames. A tenant can
+ * never claim one — `normalizeCustomDomain` rejects `*.up.railway.app`
+ * outright (tenant-domain.ts) — so any such host is the platform serving
+ * duplicate content on a non-canonical name.
+ */
+export function isPlatformPreviewHost(
+  host: string | null | undefined,
+): boolean {
+  const bare = (host ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/:\d+$/, "")
+    .replace(/\.$/, "");
+  return bare === "up.railway.app" || bare.endsWith(".up.railway.app");
+}
+
+/**
+ * `robots.txt` for a platform-owned host that must not be indexed. Kept in
+ * step with the SPA's `useNoIndexExceptApex` hook: the canonical apex is the
+ * only platform host search engines should see.
+ */
+export function buildNoindexRobotsTxt(): string {
+  return [
+    "# Non-canonical deploy host — not indexed.",
+    `# The canonical platform site is ${PLATFORM_APEX_ORIGIN}.`,
+    "User-agent: *",
+    "Disallow: /",
+    "",
+  ].join("\n");
+}
+
+/**
+ * A `scheme://host` origin for the request, or null when the host is missing
+ * or not shaped like a hostname.
+ *
+ * The host is attacker-influenced in principle (it is read from `Host` /
+ * `X-Forwarded-Host`), so it is validated here rather than interpolated
+ * blindly into XML. `requestHost()` has already gated `X-Forwarded-Host` on
+ * the trusted-proxy chain and stripped any port. Returning null makes the
+ * caller fall through to the static file instead of emitting a document
+ * built from a junk host.
+ *
+ * A forged host can at worst make THAT response advertise itself, which is
+ * the same thing the crawler already believes by having fetched it there —
+ * no other host's content is affected.
+ */
+export function resolvePublicOrigin(
+  host: string | null | undefined,
+  protocol: string,
+): string | null {
+  const bare = (host ?? "").trim().toLowerCase().replace(/\.$/, "");
+  if (!bare) return null;
+  // Hostname shape only: letters/digits/dots/hyphens, at least one dot or
+  // the bare `localhost`. Anything with a slash, space, quote, or angle
+  // bracket (i.e. anything that could break out of an XML text node or a
+  // robots directive) is rejected.
+  const looksLikeHost =
+    /^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$/.test(bare) &&
+    (bare.includes(".") || bare === "localhost");
+  if (!looksLikeHost) return null;
+
+  // Public hosts are always https. These origins become canonical URLs in a
+  // sitemap, and every production hostname is HTTPS-only (securityHeaders'
+  // HSTS, and preflight:prod rejects non-HTTPS public URLs) — so deriving the
+  // scheme from `req.protocol` would only ever be a liability: a trust-proxy
+  // misconfiguration that left `X-Forwarded-Proto` unread would publish a
+  // whole sitemap of `http://` URLs to search engines. Loopback dev hosts are
+  // the one case where http is real, and there `protocol` decides.
+  const isLoopback =
+    bare === "localhost" || bare === "127.0.0.1" || bare.endsWith(".localhost");
+  const scheme = isLoopback && protocol !== "https" ? "http" : "https";
+  return `${scheme}://${bare}`;
+}
+
+/**
+ * Rewrite every `<loc>` in a sitemap document so its origin is `origin`,
+ * preserving each URL's path/query and the rest of the document (comments,
+ * `changefreq`, `priority`) byte for byte.
+ *
+ * A `<loc>` that isn't an absolute URL is left alone — better to ship the
+ * author's literal text than to silently drop a route from the sitemap.
+ */
+export function rewriteSitemapOrigin(xml: string, origin: string): string {
+  return xml.replace(/<loc>([^<]*)<\/loc>/g, (whole, raw: string) => {
+    let parsed: URL;
+    try {
+      parsed = new URL(raw.trim());
+    } catch {
+      return whole;
+    }
+    return `<loc>${escapeXml(`${origin}${parsed.pathname}${parsed.search}`)}</loc>`;
+  });
+}
+
+/**
+ * Point a `robots.txt`'s `Sitemap:` directive at `origin`. Every other line
+ * (the `Disallow` list, which is host-independent) is preserved. A file with
+ * no `Sitemap:` line gains one, so the directive can't go missing.
+ */
+export function rewriteRobotsSitemapUrl(txt: string, origin: string): string {
+  const sitemapLine = `Sitemap: ${origin}/sitemap.xml`;
+  let replaced = false;
+  const out = txt.replace(/^[ \t]*Sitemap:.*$/gim, () => {
+    replaced = true;
+    return sitemapLine;
+  });
+  if (replaced) return out;
+  return `${out.replace(/\s*$/, "")}\n\n${sitemapLine}\n`;
 }

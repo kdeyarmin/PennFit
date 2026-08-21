@@ -31,6 +31,10 @@ const SITEMAP = readFileSync(
   "utf8",
 );
 
+// The origin literal in public/sitemap.xml is only a template: resupply-api
+// rewrites every <loc> to the requesting host before serving it, so one file
+// serves every tenant domain (see resupply-api/src/lib/platform-sitemap.ts).
+// What this test guards is the PATH set, which is host-independent.
 const ORIGIN = "https://pennpaps.com";
 const ORIGIN_URL = new URL(ORIGIN);
 
