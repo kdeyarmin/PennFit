@@ -643,8 +643,8 @@ export function Results() {
           <AlertTitle>We couldn&apos;t finish your fitting just now</AlertTitle>
           <AlertDescription>
             The clinical fitting service didn&apos;t respond, so we held the
-            recommendation rather than skipping safety checks. Please try
-            again in a moment.
+            recommendation rather than skipping safety checks. Please try again
+            in a moment.
           </AlertDescription>
         </Alert>
         <div className="mt-6 flex flex-wrap gap-3">

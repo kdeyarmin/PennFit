@@ -165,9 +165,7 @@ describe("results — magnet screening is not skipped on clinical outage", () =>
   });
 
   it("does not treat a network/HTTP miss as a reason to skip magnet screening", () => {
-    expect(SRC).not.toContain(
-      "Flag off, unresolvable tenant, network failure",
-    );
+    expect(SRC).not.toContain("Flag off, unresolvable tenant, network failure");
   });
 });
 

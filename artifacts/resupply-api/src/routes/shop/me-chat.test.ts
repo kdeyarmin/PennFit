@@ -240,7 +240,9 @@ describe("POST /shop/me/chat — branded tool schemas", () => {
       fileURLToPath(new URL("./me-chat.ts", import.meta.url)),
       "utf8",
     );
-    expect(src).toContain("brandToolDescriptors(CUSTOMER_CHAT_TOOLS, companyInfo)");
+    expect(src).toContain(
+      "brandToolDescriptors(CUSTOMER_CHAT_TOOLS, companyInfo)",
+    );
     expect(src).toContain("toolsForCustomerChat(toolCtx)");
     expect(src).toContain("anthropicToolsForCustomerChat(toolCtx)");
     expect(src).not.toMatch(/const ANTHROPIC_TOOLS/);

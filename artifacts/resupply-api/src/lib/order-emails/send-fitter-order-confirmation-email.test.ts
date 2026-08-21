@@ -6,11 +6,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const sendEmailMock = vi.fn();
-const createTenantSendgridClientMock = vi.fn(
-  async (_orgId?: string) => ({
-    sendEmail: sendEmailMock,
-  }),
-);
+const createTenantSendgridClientMock = vi.fn(async (_orgId?: string) => ({
+  sendEmail: sendEmailMock,
+}));
 vi.mock("../email/tenant-sender.js", () => ({
   createTenantSendgridClient: (orgId?: string) =>
     createTenantSendgridClientMock(orgId),
@@ -42,9 +40,11 @@ describe("sendFitterOrderConfirmationEmail", () => {
     brandNameRef.value = "PennPaps";
     sendEmailMock.mockReset();
     createTenantSendgridClientMock.mockReset();
-    createTenantSendgridClientMock.mockImplementation(async (_orgId?: string) => ({
-      sendEmail: sendEmailMock,
-    }));
+    createTenantSendgridClientMock.mockImplementation(
+      async (_orgId?: string) => ({
+        sendEmail: sendEmailMock,
+      }),
+    );
   });
   afterEach(() => {
     for (const k of ENV_KEYS) {
