@@ -11,7 +11,16 @@ import { describe, expect, it, vi } from "vitest";
 // when the test wants a specific row back.
 function makeQuery(result: { data: unknown; error?: unknown }) {
   const q: Record<string, (..._args: unknown[]) => unknown> = {};
-  for (const m of ["select", "eq", "order", "limit", "in", "gte", "lte"]) {
+  for (const m of [
+    "select",
+    "eq",
+    "not",
+    "order",
+    "limit",
+    "in",
+    "gte",
+    "lte",
+  ]) {
     q[m] = () => q;
   }
   q.maybeSingle = () => Promise.resolve(result);
@@ -135,7 +144,41 @@ describe("buildPrescriptionRequestPacketFromRx", () => {
     expect(result.kind).toBe("rx_missing_hcpcs");
   });
 
-  it("builds a packet with G47.33 default when no sleep study exists", async () => {
+  it("builds a complete packet when a valid diagnosis is on file", async () => {
+    setStub({
+      prescriptions: {
+        data: {
+          id: "rx-1",
+          patient_id: "p-1",
+          provider_id: "prov-1",
+          hcpcs_code: "E0601",
+          item_sku: "CPAP device",
+          cadence_days: 0,
+          valid_until: "2026-08-01",
+        },
+      },
+      sleep_studies: { data: { diagnosis_icd10: "G47.33" } },
+      providers: { data: { id: "prov-1", fax_e164: "+18005550100" } },
+    });
+    const result = await buildPrescriptionRequestPacketFromRx({
+      orgId: "00000000-0000-0000-0000-000000000001",
+      patientId: "p-1",
+      prescriptionId: "rx-1",
+      createdByEmail: "csr@example.com",
+    });
+    expect(result.kind).toBe("ok");
+    if (result.kind !== "ok") return;
+    expect(result.insert.patient_id).toBe("p-1");
+    expect(result.insert.provider_id).toBe("prov-1");
+    expect(result.insert.source_prescription_id).toBe("rx-1");
+    expect(result.insert.icd10_codes_json).toEqual(["G47.33"]);
+    expect(result.insert.return_fax_e164).toBe("+18005550100");
+    expect(result.insert.status).toBe("draft");
+    expect(result.insert.created_by_email).toBe("csr@example.com");
+    expect(result.insert.length_of_need_months).toBe(99);
+  });
+
+  it("refuses to build a packet when no sleep study exists (no assumed G47.33)", async () => {
     setStub({
       prescriptions: {
         data: {
@@ -157,16 +200,10 @@ describe("buildPrescriptionRequestPacketFromRx", () => {
       prescriptionId: "rx-1",
       createdByEmail: "csr@example.com",
     });
-    expect(result.kind).toBe("ok");
-    if (result.kind !== "ok") return;
-    expect(result.insert.patient_id).toBe("p-1");
-    expect(result.insert.provider_id).toBe("prov-1");
-    expect(result.insert.source_prescription_id).toBe("rx-1");
-    expect(result.insert.icd10_codes_json).toEqual(["G47.33"]);
-    expect(result.insert.return_fax_e164).toBe("+18005550100");
-    expect(result.insert.status).toBe("draft");
-    expect(result.insert.created_by_email).toBe("csr@example.com");
-    expect(result.insert.length_of_need_months).toBe(99);
+    // Previously this stamped an ASSUMED G47.33 onto a packet that gets
+    // faxed to a prescriber to SIGN. Refuse instead: an unsourced diagnosis
+    // must not become attested clinical documentation.
+    expect(result.kind).toBe("rx_missing_diagnosis");
   });
 
   it("uses the latest sleep_studies.diagnosis_icd10 when present and valid", async () => {
@@ -202,7 +239,7 @@ describe("buildPrescriptionRequestPacketFromRx", () => {
     expect(lines[0]?.cadenceDays).toBe(90);
   });
 
-  it("falls back to G47.33 when sleep study has malformed icd10", async () => {
+  it("refuses to build a packet when the sleep study icd10 is malformed", async () => {
     setStub({
       prescriptions: {
         data: {
@@ -224,9 +261,10 @@ describe("buildPrescriptionRequestPacketFromRx", () => {
       prescriptionId: "rx-1",
       createdByEmail: "csr@example.com",
     });
-    expect(result.kind).toBe("ok");
-    if (result.kind !== "ok") return;
-    expect(result.insert.icd10_codes_json).toEqual(["G47.33"]);
+    // An unparseable code is no better than a missing one — it can't be
+    // billed and it can't be attested, so don't paper over it with the
+    // population's most likely diagnosis.
+    expect(result.kind).toBe("rx_missing_diagnosis");
   });
 
   it("sets cadenceDays to null when cadence_days is 0", async () => {
@@ -242,7 +280,7 @@ describe("buildPrescriptionRequestPacketFromRx", () => {
           valid_until: null,
         },
       },
-      sleep_studies: { data: null },
+      sleep_studies: { data: { diagnosis_icd10: "G47.33" } },
       providers: { data: { id: "prov-1", fax_e164: null } },
     });
     const result = await buildPrescriptionRequestPacketFromRx({

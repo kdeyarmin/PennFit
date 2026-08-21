@@ -49,6 +49,7 @@ import {
   resolveBillingIdentity,
   resolveClearinghouse,
 } from "./identity-resolver";
+import { parseRecordedIcd10 } from "./coverage-diagnosis";
 import { isFeatureEnabled } from "../feature-flags";
 import { reserveIsa13Value } from "./isa13-counter";
 import { logger } from "../logger";
@@ -121,6 +122,50 @@ export type BatchSubmitResult =
         | "location_billing_mismatch";
       detail: Record<string, unknown>;
     };
+
+/**
+ * The diagnosis 837P claims were stamped with before the assumed-diagnosis
+ * guard landed. It exists for exactly one purpose: regenerating a submission
+ * that was already transmitted carrying it. Building a NEW claim with this is
+ * the bug the guard prevents.
+ */
+const HISTORICAL_ASSUMED_DIAGNOSIS = "G47.33";
+
+/**
+ * Turn the field name `buildOneDetail` reported into something an operator
+ * can act on. A claim that silently refuses to submit is a support ticket;
+ * naming the missing record turns it into a two-minute fix.
+ */
+function missingFieldMessage(field: string | null): string {
+  switch (field) {
+    case "diagnosis_lookup_failed":
+      return (
+        "the diagnosis lookup failed — this is a transient system error, not " +
+        "missing paperwork. Retry the submission; if it persists, check the " +
+        "database/PostgREST health before touching the patient record."
+      );
+    case "diagnosis_icd10":
+      return (
+        "no diagnosis on file for this claim — attach the sleep study (or " +
+        "record the diagnosis) before submitting. The claim is not sent " +
+        "with an assumed diagnosis."
+      );
+    case "insurance_coverage_id":
+    case "insurance_coverage":
+      return "the claim has no insurance coverage attached.";
+    case "patient":
+      return "the claim's patient record could not be loaded.";
+    case "patient_address":
+      return (
+        "the patient's address is incomplete — street, city, state, and " +
+        "ZIP are all required on an 837P."
+      );
+    case "service_lines":
+      return "the claim has no service lines.";
+    default:
+      return "the claim is missing data required to build an 837P.";
+  }
+}
 
 /**
  * Release claimed claims back to 'draft' (conflict loser, or transport
@@ -609,17 +654,30 @@ export async function executeOfficeAllyBatchSubmit(
 
   const detailEntries: ClaimDetail[] = [];
   for (const claim of claims) {
+    // Both submit routes spread `detail` straight into the HTTP body, so
+    // naming the missing field here is the difference between "this claim
+    // won't submit" and "attach the sleep study to this claim".
+    let missingField: string | null = null;
     const detail = await buildOneDetail(
       supabase,
       claim,
       payer.payer_legal_name,
       payer.office_ally_payer_id,
+      {
+        onMissing: (field) => {
+          missingField ??= field;
+        },
+      },
     );
     if (!detail) {
       return {
         ok: false,
         kind: "claim_missing_required_data",
-        detail: { claimId: claim.id },
+        detail: {
+          claimId: claim.id,
+          missing: missingField,
+          message: missingFieldMessage(missingField),
+        },
       };
     }
     detailEntries.push(detail);
@@ -993,6 +1051,11 @@ export async function buildEdiPayloadForSubmission(
       claim,
       payer.payer_legal_name,
       payer.office_ally_payer_id,
+      // Reproduction, not a new claim — see the option's docblock. A
+      // submission transmitted before the assumed-diagnosis guard existed
+      // must stay downloadable, and must show the code the payer actually
+      // received.
+      { reproduceHistoricalDiagnosis: true },
     );
     if (!d) return null;
     details.push(d);
@@ -1191,13 +1254,43 @@ export async function buildOneDetail(
   claim: ClaimRow,
   payerLegalName: string,
   payerId: string,
+  opts?: {
+    /**
+     * Optional sink for WHY this claim can't be built. Every `return null`
+     * below names the field it is missing, so the caller can tell the
+     * operator what to fix instead of surfacing a bare claim id. Optional on
+     * purpose: the contract stays `ClaimDetail | null` for the callers (and
+     * the ~25 tests) that only care whether the claim is billable.
+     */
+    onMissing?: (field: string) => void;
+    /**
+     * Reproduce a file that ALREADY WENT OUT under the old assumed-diagnosis
+     * default, instead of refusing to build it.
+     *
+     * Only `buildEdiPayloadForSubmission` sets this. That path regenerates
+     * the 837P for a submission that was already transmitted, under its
+     * original ISA/GS control numbers, so support and reconciliation can see
+     * what the payer actually received. Applying today's stricter rule there
+     * would 404 every historical submission built before the rule existed —
+     * and would be dishonest even if it didn't, because the transmitted file
+     * really did carry this code.
+     *
+     * NEVER set this when building a NEW claim: that is the bug the guard
+     * exists to prevent.
+     */
+    reproduceHistoricalDiagnosis?: boolean;
+  },
 ): Promise<ClaimDetail | null> {
-  if (!claim.insurance_coverage_id) return null;
+  const missing = (field: string): null => {
+    opts?.onMissing?.(field);
+    return null;
+  };
+  if (!claim.insurance_coverage_id) return missing("insurance_coverage_id");
   const [
     { data: coverage },
     { data: patient },
     { data: lines },
-    { data: sleep },
+    { data: sleep, error: sleepErr },
     { data: renderingProvider },
     { data: referringProvider },
     { data: secondaryCoverage },
@@ -1256,15 +1349,46 @@ export async function buildOneDetail(
           .maybeSingle()
       : Promise.resolve({ data: null }),
   ]);
-  if (!coverage || !patient || !lines || lines.length === 0) return null;
+  if (!coverage) return missing("insurance_coverage");
+  if (!patient) return missing("patient");
+  if (!lines || lines.length === 0) return missing("service_lines");
   const addr = patient.address as {
     line1?: string;
     city?: string;
     state?: string;
     zip?: string;
   } | null;
-  if (!addr?.line1 || !addr.city || !addr.state || !addr.zip) return null;
-  const primaryDx = sleep?.diagnosis_icd10 ?? "G47.33";
+  if (!addr?.line1 || !addr.city || !addr.state || !addr.zip) {
+    return missing("patient_address");
+  }
+
+  // The diagnosis must come from the patient's record. This used to fall back
+  // to `?? "G47.33"` (obstructive sleep apnea) when no sleep study was on
+  // file, which put an ASSUMED diagnosis on a claim sent to a payer: the most
+  // common dx for this population, so it would often be right, and silently
+  // wrong the rest of the time. Wrong-or-unsupported diagnoses drive denials
+  // exactly like wrong modifiers do, and a payer reading it has no way to
+  // know the code was inferred rather than documented.
+  //
+  // Fail the preflight instead (docs/launch-triage-2026-06-24.md, gap 3B).
+  // Refusing to build the claim is the conservative direction: the operator
+  // attaches the sleep study — or records the real dx — and resubmits, which
+  // is strictly cheaper than a denial or a corrected claim after the fact.
+  // A FAILED lookup is not the same as an absent diagnosis. If the
+  // sleep_studies read errored (PostgREST hiccup, pool exhaustion) `sleep` is
+  // null, and reporting "attach the sleep study" would send the operator to
+  // fix a record that is already correct while the real problem is
+  // availability. Report it as its own retryable field instead.
+  if (sleepErr) return missing("diagnosis_lookup_failed");
+
+  // `diagnosis_icd10` is free-form at the HTTP boundary, so presence is not
+  // enough — see parseRecordedIcd10. An unusable value is treated exactly
+  // like a missing one: it can be neither billed nor defended.
+  const recordedDx =
+    parseRecordedIcd10(sleep?.diagnosis_icd10) ??
+    (opts?.reproduceHistoricalDiagnosis ? HISTORICAL_ASSUMED_DIAGNOSIS : null);
+  if (!recordedDx) return missing("diagnosis_icd10");
+  const primaryDx = recordedDx;
   const subscriberAddress = {
     line1: addr.line1,
     city: addr.city,

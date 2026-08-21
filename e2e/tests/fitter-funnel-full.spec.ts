@@ -443,13 +443,25 @@ test("permanent legacy failure (4xx) explains itself without a retry", async ({
   await expect(page.getByRole("button", { name: /start over/i })).toBeVisible();
 });
 
-test("malformed clinical 200 (no primary) falls back to the legacy engine instead of stranding", async ({
+test("malformed clinical 200 (no primary) holds the fitting instead of falling back to the unscreened legacy engine", async ({
   page,
 }) => {
   // A non-withheld outcome with no primary violates the /api/fit/assess
-  // contract. The client must treat it as malformed and fall back to
-  // the legacy engine — the failure mode this locks out is an endless
-  // skeleton screen with no retry.
+  // contract, so the client treats it as malformed → `unavailable`.
+  //
+  // This test used to assert the opposite — that a malformed clinical
+  // response fell through to /api/recommend — because the only failure
+  // mode it was written to lock out was an endless skeleton with no
+  // retry. #1289 changed that on purpose: the legacy engine has NO
+  // implant/magnet filter, and after migration 0500 every tenant screens
+  // for magnets, so silently falling back would hand an implant patient a
+  // magnetic-clip mask whenever /api/fit/assess hiccuped. Only
+  // `not_enabled` (the tenant genuinely doesn't run clinical assessment)
+  // still routes to the legacy engine — see the 404 cases above, which
+  // still expect it.
+  //
+  // The original intent is preserved and still asserted: the patient is
+  // never stranded. They get an explicit explanation and a retry.
   await page.route("**/api/fit/assess", (route) =>
     route.fulfill({
       status: 200,
@@ -457,18 +469,36 @@ test("malformed clinical 200 (no primary) falls back to the legacy engine instea
       body: JSON.stringify({ outcome: "high_confidence" }),
     }),
   );
-  await page.route("**/api/recommend", (route) =>
-    route.fulfill({
+  // Staged so that a regression which reinstates the fallback FAILS here
+  // rather than quietly passing: if the page ever calls /api/recommend on
+  // this path again, it would render choose-buttons and trip the
+  // assertion below.
+  let legacyEngineCalled = false;
+  await page.route("**/api/recommend", (route) => {
+    legacyEngineCalled = true;
+    return route.fulfill({
       status: 200,
       contentType: "application/json",
       body: JSON.stringify(LEGACY_RECOMMENDATION),
-    }),
-  );
+    });
+  });
   await gotoResultsWithState(page);
 
+  // Not stranded: an explicit, actionable state.
+  await expect(page.getByTestId("results-clinical-unavailable")).toBeVisible({
+    timeout: 10_000,
+  });
+  await expect(page.getByRole("button", { name: /try again/i })).toBeVisible();
   await expect(
-    page.locator('[data-testid^="button-choose-"]').first(),
-  ).toBeVisible({ timeout: 10_000 });
+    page.getByRole("button", { name: /retake photo/i }),
+  ).toBeVisible();
+
+  // The safety property: no unscreened recommendation reaches the patient.
+  await expect(page.locator('[data-testid^="button-choose-"]')).toHaveCount(0);
+  expect(
+    legacyEngineCalled,
+    "the magnet-unscreened legacy engine must not be consulted when the clinical assessment fails",
+  ).toBe(false);
 });
 
 // ────────────────────────────────────────────────────────────────────

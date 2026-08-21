@@ -8,6 +8,11 @@
   Kept in lockstep with the route map in src/App.tsx by
   src/sitemap.drift.test.ts — adding a new public content route without a
   sitemap entry fails CI.
+
+  The origin below is a TEMPLATE. One bundle serves every tenant domain, so
+  resupply-api rewrites each <loc> to the requesting host before serving this
+  file (artifacts/resupply-api/src/lib/platform-sitemap.ts). Edit the paths
+  here; do not worry about the hostname.
 -->
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>

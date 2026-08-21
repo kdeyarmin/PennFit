@@ -208,6 +208,9 @@ jobs:
       # scenario 9 also had a self-inflicted bug (an in-repo stderr sink
       # the lib correctly swept), fixed in the same change that wired it
       # in. See docs/workflow-efficiency-audit-2026-06-04.md (W5).
+      - name: Skipped-test guard self-test
+        run: node scripts/ci/assert-no-skipped-tests.mjs --self-test
+
       - name: Staged-snapshot library self-test
         run: bash scripts/git-hooks/lib-staged-snapshot.test
 
@@ -336,10 +339,14 @@ jobs:
     # /rest/v1 path proxy is enough for what these tests exercise. The
     # bootstrap lives in scripts/ci/start-test-postgrest.sh.
     #
-    # continue-on-error while the harness proves itself in CI (mirrors the
-    # a11y job). The test itself is validated; the soft gate covers
-    # setup flakiness (PostgREST binary download, daemon startup). Flip to
-    # required once it has been green across a few runs.
+    # Deliberately advisory, and NOT for the reason the a11y job used to be:
+    # this soft gate is not a "prove itself" window that expires, it covers a
+    # standing environmental risk. The job downloads a PostgREST binary from
+    # a third-party release host and starts it as a daemon, so a bad mirror
+    # or a slow runner can redden it on a commit that touches nothing it
+    # tests. The assertions themselves are validated and expected to pass —
+    # treat a failure here as a real signal worth reading, just not one that
+    # blocks a merge on someone else's infrastructure.
     continue-on-error: true
 
     services:
@@ -410,12 +417,18 @@ jobs:
     # the bar after the noisier findings are addressed is a one-line
     # change in e2e/tests/a11y.spec.ts).
     #
-    # Marked continue-on-error so the FIRST failing finding doesn't
-    # immediately gate every PR — the team needs a window to triage
-    # baseline violations on the existing pages before flipping this
-    # to required. Mirrors the drift-check pattern (P0.1 in
-    # docs/codebase-enhancements-2026-05-08.md).
-    continue-on-error: true
+    # REQUIRED (not continue-on-error). The soft gate existed to give the
+    # team a window to triage baseline violations before flipping this to
+    # required; that window is closed — the sweep is green on every public
+    # route it covers. Leaving it advisory now buys nothing and costs the
+    # signal: an a11y regression on a patient-facing health app would merge
+    # with a green check. Patients using this storefront are
+    # disproportionately older and low-vision (the same reason index.html
+    # deliberately allows pinch-zoom), so this is a product requirement,
+    # not a lint.
+    #
+    # The fitter funnel's own axe sweep (fitter-funnel-a11y.spec.ts) needs
+    # the unbundled dev server, so it runs in the e2e-dev job instead.
 
     steps:
       - uses: actions/checkout@v5
@@ -507,7 +520,12 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: playwright-a11y-report
-          path: playwright-report/
+          # Both: the html report (readable summary) and test-results/
+          # (traces from `trace: on-first-retry`, plus failure screenshots).
+          # The trace is what makes a CI-only failure diagnosable.
+          path: |
+            playwright-report/
+            test-results/
           retention-days: 14
 
   smoke:
@@ -604,7 +622,12 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: playwright-smoke-report
-          path: playwright-report/
+          # Both: the html report (readable summary) and test-results/
+          # (traces from `trace: on-first-retry`, plus failure screenshots).
+          # The trace is what makes a CI-only failure diagnosable.
+          path: |
+            playwright-report/
+            test-results/
           retention-days: 14
 
   e2e-dev:
@@ -612,21 +635,32 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
-    # results-page-resilience.spec.ts is a regression test that REQUIRES
-    # the Vite *dev* server: it stubs @mediapipe/tasks-vision by
-    # intercepting the ES-module request, which only exists as a separate
-    # fetch when modules are served unbundled (dev). Under `vite preview`
-    # (what the smoke/a11y jobs use) the module is bundled and the spec
-    # self-skips — so it ran in NO CI job until now (see
-    # docs/workflow-efficiency-audit-2026-06-04.md, W4). This job boots
-    # the dev server so the spec runs for real.
+    # The dev-server half of the storefront suite, and the only job that
+    # runs the WHOLE default Playwright project.
     #
-    # continue-on-error while the harness proves itself in CI — this spec
-    # has never run here, and a full mocked-camera fitter walk is the
-    # most timing-sensitive thing in the suite. Mirrors the soft-gate
-    # pattern of the integration + a11y jobs; flip to required once it's
-    # been green across a few runs.
-    continue-on-error: true
+    # Several specs stub @mediapipe/tasks-vision by intercepting the
+    # ES-module request, which only exists as a separate fetch when modules
+    # are served unbundled (dev). Under `vite preview` (what the smoke/a11y
+    # jobs use) the module is bundled, so those specs self-skip — a silent
+    # pass. results-page-resilience.spec.ts hit exactly that and ran in NO
+    # CI job until it was wired in here (docs/workflow-efficiency-audit-
+    # 2026-06-04.md, W4).
+    #
+    # This job runs `playwright test` with NO file filter so that class of
+    # gap cannot come back: the dev server satisfies every spec's harness
+    # requirement, so a new spec is covered the moment it lands instead of
+    # waiting for someone to remember to add a `run:` line. Naming one file
+    # here is what let fitter-funnel-full.spec.ts (the entire virtual mask
+    # fitter funnel — consent → capture → measure → questionnaire →
+    # results → order, plus every camera/vision/storage failure path),
+    # fitter-funnel-a11y.spec.ts, and home-trust-signals.spec.ts sit
+    # unrun in any job.
+    #
+    # The default project excludes the admin specs + auth setup (they need
+    # the backend-backed stack — see the e2e-admin job), so this is the
+    # storefront suite: ~24 tests, ~1 min. CI retries twice
+    # (e2e/playwright.config.ts), which absorbs the timing jitter of the
+    # mocked-camera walks.
 
     steps:
       - uses: actions/checkout@v5
@@ -694,18 +728,40 @@ jobs:
           echo "vite dev did not respond on :5173 within 60s"
           exit 1
 
-      - name: Run results-page resilience spec
+      # No file filter on purpose — see the job comment. Every storefront
+      # spec runs here, including the ones that only work unbundled.
+      - name: Run storefront E2E suite (dev server)
         env:
           E2E_BASE_URL: http://127.0.0.1:5173
           CI: "true"
-        run: pnpm exec playwright test --config e2e/playwright.config.ts e2e/tests/results-page-resilience.spec.ts
+        run: pnpm exec playwright test --config e2e/playwright.config.ts
+
+      # Playwright exits 0 when a test calls test.skip(), so "green" does not
+      # mean "ran". Several specs skip themselves when the
+      # @mediapipe/tasks-vision module stub fails to intercept — which is
+      # correct under `vite preview` but never expected here, against the dev
+      # server. Without this the job would keep passing while quietly covering
+      # less, which is the exact gap this job was added to close.
+      #
+      # --min guards the other direction: a filter or config change that
+      # narrows the suite toward zero.
+      - name: Assert nothing was skipped
+        if: always()
+        run: >
+          node scripts/ci/assert-no-skipped-tests.mjs
+          playwright-report/results.json --min 20
 
       - name: Upload Playwright report on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: playwright-e2e-dev-report
-          path: playwright-report/
+          # Both: the html report (readable summary) and test-results/
+          # (traces from `trace: on-first-retry`, plus failure screenshots).
+          # The trace is what makes a CI-only failure diagnosable.
+          path: |
+            playwright-report/
+            test-results/
           retention-days: 14
 
   railway-build:
@@ -775,9 +831,10 @@ jobs:
     # Reuses the same building blocks as the `integration` job (Postgres
     # service + platform roles + migrate.mjs + start-test-postgrest.sh).
     #
-    # continue-on-error while the harness proves itself in CI (mirrors the
-    # integration + a11y soft-gate). Flip to required once green across a
-    # few runs.
+    # Advisory for the same standing reason as the `integration` job (see
+    # its comment): this stack pulls the same third-party PostgREST binary,
+    # so an external outage could block merges on a commit it doesn't test.
+    # The storefront half of the suite IS gated — see e2e-dev.
     continue-on-error: true
 
     services:
@@ -945,7 +1002,12 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: playwright-admin-report
-          path: playwright-report/
+          # Both: the html report (readable summary) and test-results/
+          # (traces from `trace: on-first-retry`, plus failure screenshots).
+          # The trace is what makes a CI-only failure diagnosable.
+          path: |
+            playwright-report/
+            test-results/
           retention-days: 14
 
   audit:

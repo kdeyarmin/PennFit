@@ -1,8 +1,13 @@
-# PennPaps — Production-readiness checklist
+# CareMetric Breathe — Production-readiness checklist
 
 This file documents the deploy-side gates that the application code
 itself can't enforce. Tick every box before flipping a public DNS
 record at the resupply-api or rolling a customer-facing release.
+
+This is a **platform** document and applies to every tenant deploy —
+it is not specific to Penn Home Medical Supply / PennPaps, which is one
+tenant on the platform (see the brand architecture section of
+`CLAUDE.md`). Work through it once per environment.
 
 The list is deliberately short — runtime guards already cover most
 classes of misconfiguration (the `assertRequiredEnv` boot check,
@@ -190,10 +195,29 @@ the `pf_session` cookie and respect `SameSite=Lax` / `Secure`.
 
 ## 6. Build / CI
 
-- [ ] `pnpm build` runs in CI on every PR.
-- [ ] `pnpm typecheck` runs in CI on every PR.
-- [ ] `pnpm run lint:resupply` runs in CI on every PR.
-- [ ] `pnpm --filter @workspace/resupply-api run test` runs in CI.
+Unlike the rest of this file, these are facts about the **repository**,
+not about an environment — they are satisfied by `.github/workflows/ci.yml`
+and stay satisfied for every PR, so they need no per-environment action.
+They are recorded here (rather than deleted) because a future change to
+CI could silently un-satisfy them.
+
+- [x] `pnpm build` runs in CI on every PR — the `railway-build` job runs
+      the exact `railway.json` buildCommand on Node 24 with
+      `NODE_ENV=production`, and `a11y`/`smoke` build the SPA.
+- [x] `pnpm typecheck` runs in CI on every PR — `lint-typecheck` job.
+- [x] `pnpm run lint:resupply` runs in CI on every PR — `lint-typecheck`
+      job, `--max-warnings 0`. `pnpm format:check` gates there too.
+- [x] `pnpm --filter @workspace/resupply-api run test` runs in CI — the
+      `test` job runs `pnpm -r --if-present run test` (every workspace,
+      not just the API).
+
+Also gating, beyond what this list originally asked for: migration replay
+from scratch against real Postgres, a PostgREST integration job, the
+architecture / tenant-isolation / raw-org-scope drift checks, an axe
+accessibility sweep, and the full Playwright storefront suite against a
+dev server. The `integration` and `e2e-admin` jobs are advisory by
+design — they pull a third-party PostgREST binary, so an outage there
+must not block a merge.
 
 ---
 
@@ -239,9 +263,14 @@ catches drift:
 
 ## 9. Dependency hygiene
 
-- [ ] `pnpm audit --audit-level=high` is clean (or every flagged
+- [x] `pnpm audit --audit-level=high` is clean (or every flagged
       advisory is documented as non-applicable in
-      `pnpm.overrides` with a comment explaining why).
+      `pnpm.overrides` with a comment explaining why). Gated by the
+      `audit` CI job. As of the last check the tree is clean at **every**
+      severity, not just high: the one outstanding advisory
+      (GHSA-v422-hmwv-36x6, body-parser) is pinned forward via an
+      `overrides` entry in `pnpm-workspace.yaml` with the rationale
+      inline. Re-run `pnpm audit --audit-level=low` to confirm.
 - [ ] No deps pinned to a major version that has been EOL'd (Node
       24, Postgres ≥ 14, etc).
 

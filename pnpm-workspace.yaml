@@ -57,6 +57,16 @@ overrides:
   "@tailwindcss/oxide>@tailwindcss/oxide-linux-arm64-musl": "-"
   "@tailwindcss/oxide>@tailwindcss/oxide-linux-x64-musl": "-"
   "@tailwindcss/oxide>@tailwindcss/oxide-win32-arm64-msvc": "-"
+  # GHSA-v422-hmwv-36x6: body-parser < 2.3.0 silently disables request-size
+  # enforcement when handed an invalid `limit`, turning a typo into an
+  # unbounded-body DoS. Every callsite here passes a valid literal ("256kb",
+  # "1mb", …) so the app is not exploitable today, but this API accepts PHI
+  # uploads and the guard should not depend on nobody ever fat-fingering a
+  # limit. express@5 already declares ^2.2.1, so this only forces the
+  # resolution forward inside that range — pinned rather than `pnpm update`d
+  # because the recursive update also dragged vite/rolldown forward, which
+  # has no business in a security patch.
+  body-parser: ^2.3.0
   esbuild: ^0.28.1
   esbuild>@esbuild/aix-ppc64: "-"
   esbuild>@esbuild/android-arm: "-"

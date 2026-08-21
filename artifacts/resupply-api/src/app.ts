@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -48,8 +48,13 @@ import carrierTrackingWebhookRouter from "./routes/webhooks/carrier-tracking";
 import { createTrustProxyFn } from "./lib/trusted-proxies";
 import {
   buildBreatheSitemapXml,
+  buildNoindexRobotsTxt,
   buildPlatformRobotsTxt,
   isPlatformApexHost,
+  isPlatformPreviewHost,
+  resolvePublicOrigin,
+  rewriteRobotsSitemapUrl,
+  rewriteSitemapOrigin,
 } from "./lib/platform-sitemap";
 
 // Register the audit lib's request-id bridge once at import time so
@@ -755,27 +760,6 @@ app.use("/api", storefrontRouter);
 //      `artifacts/resupply-api/dist/index.mjs` AND from src in dev,
 //      two parent dirs up reaches `artifacts/`.
 //
-// Host-aware platform sitemap + robots, for the Breathe marketing site on
-// the platform apex (cmbreathe.com). Registered BEFORE express.static so the
-// apex gets the dynamically-built /breathe sitemap; every other host
-// (tenant custom domains, subdomains, the Railway preview host, localhost)
-// falls through to the static tenant sitemap.xml / robots.txt below. See
-// lib/platform-sitemap.ts.
-app.get("/sitemap.xml", (req, res, next) => {
-  if (!isPlatformApexHost(req.hostname)) return next();
-  res
-    .type("application/xml")
-    .set("Cache-Control", "public, max-age=3600")
-    .send(buildBreatheSitemapXml());
-});
-app.get("/robots.txt", (req, res, next) => {
-  if (!isPlatformApexHost(req.hostname)) return next();
-  res
-    .type("text/plain")
-    .set("Cache-Control", "public, max-age=3600")
-    .send(buildPlatformRobotsTxt());
-});
-
 // We guard on index.html presence so a dev session running only the API
 // (with Vite serving the SPA on a separate port) skips the wiring
 // gracefully — the API still works, the SPA just isn't co-served.
@@ -790,6 +774,94 @@ const SPA_DIST =
   SPA_DIST_CANDIDATES.find((dir) => existsSync(path.join(dir, "index.html"))) ??
   SPA_DIST_CANDIDATES[1]!;
 const SPA_INDEX_HTML = path.join(SPA_DIST, "index.html");
+
+// Host-aware /sitemap.xml + /robots.txt. Registered BEFORE express.static so
+// these win over the checked-in files, which carry one tenant's domain baked
+// in and would otherwise be served verbatim to every other host. The three
+// host classes (platform apex, non-canonical deploy host, tenant storefront)
+// are documented in lib/platform-sitemap.ts.
+//
+// The tenant branch re-serves the static files with their origin rewritten to
+// the requesting host, so public/sitemap.xml stays the single hand-maintained
+// list of indexable paths (drift-guarded by cpap-fitter's
+// sitemap.drift.test.ts) while each tenant domain publishes only its own URLs.
+const readSpaFile = (() => {
+  // Read-once memo, null included: these files ship with the build and
+  // cannot change while the process is alive.
+  const cache = new Map<string, string | null>();
+  return (name: string): string | null => {
+    const hit = cache.get(name);
+    if (hit !== undefined) return hit;
+    let value: string | null;
+    try {
+      value = readFileSync(path.join(SPA_DIST, name), "utf8");
+    } catch {
+      value = null;
+    }
+    cache.set(name, value);
+    return value;
+  };
+})();
+
+const SEO_CACHE_CONTROL = "public, max-age=3600";
+
+app.get("/sitemap.xml", (req, res, next) => {
+  const host = requestHost(req);
+  if (isPlatformApexHost(host)) {
+    return res
+      .type("application/xml")
+      .set("Cache-Control", SEO_CACHE_CONTROL)
+      .send(buildBreatheSitemapXml());
+  }
+  // Non-canonical deploy host: duplicate content, so advertise nothing.
+  if (isPlatformPreviewHost(host)) return res.status(404).end();
+
+  // An unusable host must NOT fall through: express.static below would serve
+  // the checked-in template verbatim, and that template carries the launch
+  // tenant's URLs. A request with an odd host shape (IPv6 literal, a
+  // single-label name) would then be handed pennpaps.com's sitemap — exactly
+  // the cross-tenant leak this handler exists to prevent. Refuse instead.
+  const origin = resolvePublicOrigin(host, req.protocol);
+  if (origin === null) return res.status(404).end();
+
+  // No SPA build co-served (API-only dev) — fall through; there is nothing
+  // tenant-specific to leak and the static handler may still have a file.
+  const raw = readSpaFile("sitemap.xml");
+  if (raw === null) return next();
+  return res
+    .type("application/xml")
+    .set("Cache-Control", SEO_CACHE_CONTROL)
+    .send(rewriteSitemapOrigin(raw, origin));
+});
+
+app.get("/robots.txt", (req, res, next) => {
+  const host = requestHost(req);
+  if (isPlatformApexHost(host)) {
+    return res
+      .type("text/plain")
+      .set("Cache-Control", SEO_CACHE_CONTROL)
+      .send(buildPlatformRobotsTxt());
+  }
+  if (isPlatformPreviewHost(host)) {
+    return res
+      .type("text/plain")
+      .set("Cache-Control", SEO_CACHE_CONTROL)
+      .send(buildNoindexRobotsTxt());
+  }
+
+  // Same reasoning as /sitemap.xml above: falling through on an unusable host
+  // would serve the template's `Sitemap: https://<launch tenant>/sitemap.xml`
+  // line from a host that has no business advertising it.
+  const origin = resolvePublicOrigin(host, req.protocol);
+  if (origin === null) return res.status(404).end();
+
+  const raw = readSpaFile("robots.txt");
+  if (raw === null) return next();
+  return res
+    .type("text/plain")
+    .set("Cache-Control", SEO_CACHE_CONTROL)
+    .send(rewriteRobotsSitemapUrl(raw, origin));
+});
 
 if (existsSync(SPA_INDEX_HTML)) {
   // Vite emits content-hashed filenames under `assets/` (e.g.

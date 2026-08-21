@@ -2,9 +2,14 @@
 //
 // Scope: Storefront/admin SPA E2E. Current specs under tests/:
 //   * storefront-loads.spec.ts      — SPA boots, landing nav renders
+//   * home-trust-signals.spec.ts    — on-device privacy badge is present
+//   * fitter-funnel-full.spec.ts    — the whole virtual mask fitter, happy
+//                                     path + every recoverable failure
 //   * results-page-resilience.spec.ts — measure/results page degrades
 //                                       gracefully
 //   * a11y.spec.ts                  — axe a11y sweep of public routes
+//   * fitter-funnel-a11y.spec.ts    — axe sweep across the fitter funnel
+//   * admin/*.admin.spec.ts         — authenticated admin (opt-in, E2E_ADMIN)
 //
 // Running the suite locally:
 //   1. Install browser binaries once:
@@ -17,12 +22,20 @@
 // the cpap-fitter Vite config, which intentionally requires PORT + BASE_PATH
 // in non-build modes.
 //
-// CI integration is wired in .github/workflows/ci.yml: the `smoke`
-// job runs storefront-loads.spec.ts against a `vite preview` build
-// and is REQUIRED; the `a11y` job runs a11y.spec.ts and is currently
-// `continue-on-error` (non-gating) while baseline violations are
-// triaged. results-page-resilience.spec.ts is not yet wired into a
-// CI job.
+// CI integration is wired in .github/workflows/ci.yml, and every
+// storefront spec is gated:
+//   * `smoke`   — storefront-loads.spec.ts against a `vite preview`
+//                 build. Catches "the production bundle doesn't boot".
+//   * `a11y`    — a11y.spec.ts against `vite preview`.
+//   * `e2e-dev` — the WHOLE default project against `vite dev`, with no
+//                 file filter. Specs that stub the @mediapipe/tasks-vision
+//                 ES module only work unbundled, so they self-skip under
+//                 preview; this job is where they actually execute. Adding
+//                 a spec file under tests/ needs no CI change — which is
+//                 the point, since naming files one at a time is what left
+//                 three specs running in no job at all.
+//   * `e2e-admin` — the `admin` project against the full backend stack
+//                 (advisory; it pulls a third-party PostgREST binary).
 
 import { defineConfig, devices } from "@playwright/test";
 
@@ -58,7 +71,41 @@ export default defineConfig({
   // network jitter; locally, fail fast.
   retries: process.env["CI"] ? 2 : 0,
   workers: process.env["CI"] ? 1 : undefined,
-  reporter: process.env["CI"] ? "github" : "list",
+  // In CI, "github" alone annotates the run summary but writes NOTHING to
+  // disk — so the `Upload Playwright report on failure` steps in ci.yml found
+  // no `playwright-report/` and silently uploaded nothing. Four Playwright
+  // jobs (two of them required) could fail with no artifact to open. Pair it
+  // with the html reporter so a failure leaves something to read; `open:
+  // "never"` keeps it from trying to launch a browser on a runner.
+  //
+  // Traces and screenshots land under `test-results/` (see `trace` and
+  // `screenshot` below) and ci.yml uploads that directory too — the trace is
+  // usually the thing worth having for a failure that won't reproduce
+  // locally.
+  reporter: process.env["CI"]
+    ? [
+        ["github"],
+        ["html", { open: "never" }],
+        // Machine-readable run summary. scripts/ci/assert-no-skipped-tests.mjs
+        // reads this in the e2e-dev job: against the dev server every spec's
+        // harness requirement is met, so a skipped test means the harness
+        // broke rather than that the test was inapplicable — and Playwright
+        // exits 0 on a skip, which is how three specs went uncovered for
+        // months.
+        //
+        // The `../` is load-bearing and not a typo. The json reporter
+        // resolves `outputFile` relative to THIS FILE's directory (e2e/),
+        // while the html reporter above resolves its folder relative to the
+        // cwd Playwright is launched from (the repo root — see e2e/README.md
+        // and the CI jobs). Left as a bare "playwright-report/..." the two
+        // reports split across e2e/playwright-report/ and ./playwright-report/,
+        // so the ci.yml upload step captured only half and the skip guard hit
+        // ENOENT. Verified empirically, not assumed. Deliberately a plain
+        // string: computing it via node:path would break this config's ESM
+        // load (see the ADMIN_STORAGE_STATE note above).
+        ["json", { outputFile: "../playwright-report/results.json" }],
+      ]
+    : "list",
 
   webServer: {
     command: "pnpm --filter @workspace/cpap-fitter dev",
@@ -78,6 +125,20 @@ export default defineConfig({
       API_PROXY_TARGET,
     },
   },
+
+  // Playwright's default expect timeout is 5s. Nearly every route in this
+  // SPA is lazy-loaded behind a Suspense fallback, and the `e2e-dev` job
+  // drives the suite against the Vite *dev* server, which transforms a route
+  // chunk on first request. A cold route can therefore take ~5s to paint —
+  // right on the default — so an assertion that follows a redirect into an
+  // unvisited route is a coin flip on a slow runner. That is a dev-server
+  // cost, not a product one: production ships prebuilt chunks that load in
+  // milliseconds, so waiting longer here hides nothing a user would feel.
+  //
+  // This only changes how long a FAILING assertion waits before giving up;
+  // an assertion that will pass still resolves as soon as the element
+  // appears, so the suite is no slower in the green case.
+  expect: { timeout: 10_000 },
 
   use: {
     baseURL: BASE_URL,
@@ -116,9 +177,9 @@ export default defineConfig({
       : []),
   ],
 
-  // The dev server is not auto-started; tests assume it's already
-  // running on `BASE_URL`. Auto-starting it from Playwright would
-  // duplicate the `pnpm dev` scripts already documented in the
-  // README and tangle CI startup ordering. Document this in the
-  // README when the suite grows beyond smoke tests.
+  // The dev server is auto-started by the `webServer` block above, not
+  // assumed to be running. `reuseExistingServer: true` keeps that from
+  // being disruptive: Playwright only launches vite when nothing already
+  // answers at BASE_URL, so a local `pnpm dev` session is reused, and CI
+  // — which starts vite itself and passes E2E_BASE_URL — is left alone.
 });

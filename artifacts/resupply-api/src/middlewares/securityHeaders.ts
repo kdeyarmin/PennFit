@@ -1,5 +1,8 @@
 import type { NextFunction, Request, Response } from "express";
 
+import { isPlatformPreviewHost } from "../lib/platform-sitemap";
+import { requestHost } from "../lib/request-host";
+
 /**
  * Tight security-headers middleware for the resupply API.
  *
@@ -84,5 +87,17 @@ export function securityHeaders(
     "geolocation=(), microphone=(self), camera=(self), payment=(), usb=()",
   );
   res.setHeader("X-DNS-Prefetch-Control", "off");
+
+  // Non-canonical deploy hosts (the Railway *.up.railway.app names) serve the
+  // same content as the canonical domains, so anything indexed from them is
+  // duplicate content. The SPA already sets a noindex meta tag there, but
+  // that needs the crawler to run JavaScript; this header states it up front
+  // and covers non-HTML responses too. robots.txt on these hosts
+  // deliberately allows crawling so this is actually read — see
+  // buildNoindexRobotsTxt in lib/platform-sitemap.ts.
+  if (isPlatformPreviewHost(requestHost(req))) {
+    res.setHeader("X-Robots-Tag", "noindex");
+  }
+
   next();
 }

@@ -63,6 +63,7 @@ export interface AutoDraftStats {
   skipped_recent: number;
   skipped_no_provider: number;
   skipped_no_hcpcs: number;
+  skipped_no_diagnosis: number;
   failed: number;
 }
 
@@ -146,6 +147,15 @@ async function prescriptionRequestAutoDraftForOrg(
         stats.skipped_no_provider += 1;
       } else if (built.kind === "rx_missing_hcpcs") {
         stats.skipped_no_hcpcs += 1;
+      } else if (built.kind === "rx_diagnosis_lookup_failed") {
+        // An outage, not a chart gap — belongs in `failed` so it shows up as
+        // something to investigate rather than as patients needing paperwork.
+        stats.failed += 1;
+      } else if (built.kind === "rx_missing_diagnosis") {
+        // Not a failure — a packet we deliberately refuse to mint because
+        // no diagnosis is on file. Its own bucket so the daily count reads
+        // as "N patients need a sleep study attached", not "N errors".
+        stats.skipped_no_diagnosis += 1;
       } else {
         stats.failed += 1;
       }
@@ -203,6 +213,7 @@ export async function runPrescriptionRequestAutoDraft(): Promise<AutoDraftStats>
     skipped_recent: 0,
     skipped_no_provider: 0,
     skipped_no_hcpcs: 0,
+    skipped_no_diagnosis: 0,
     failed: 0,
   };
 

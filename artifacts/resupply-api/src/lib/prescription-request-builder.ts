@@ -19,13 +19,20 @@ import {
   getOrgScopedClient,
 } from "@workspace/resupply-db";
 
+import { parseRecordedIcd10 } from "./billing/coverage-diagnosis";
+
 type SupabaseClient = ReturnType<typeof getOrgScopedClient>;
 
 export type BuildPacketOutcome =
   | { kind: "ok"; insert: PacketInsert }
   | { kind: "rx_not_found" }
   | { kind: "rx_missing_provider" }
-  | { kind: "rx_missing_hcpcs" };
+  | { kind: "rx_missing_hcpcs" }
+  | { kind: "rx_missing_diagnosis" }
+  /** The sleep-study lookup itself failed. Distinct from "no diagnosis on
+   *  file" so a transient outage is counted as an error to retry, not as a
+   *  patient whose chart needs paperwork. */
+  | { kind: "rx_diagnosis_lookup_failed" };
 
 export type PacketInsert =
   Database["resupply"]["Tables"]["prescription_request_packets"]["Insert"];
@@ -76,19 +83,46 @@ export async function buildPrescriptionRequestPacketFromRx(
   if (!rx.provider_id) return { kind: "rx_missing_provider" };
   if (!rx.hcpcs_code) return { kind: "rx_missing_hcpcs" };
 
-  const { data: study } = await supabase
+  // `.not(... is null)` before ordering, matching the claim builder
+  // (office-ally-batch.ts). Without it, a newer study row that records no
+  // diagnosis — a titration study, or a partial EHR import — hides an older
+  // study that does have one, and the packet is refused as
+  // `rx_missing_diagnosis` even though a diagnosis IS on file. Under the old
+  // `?? "G47.33"` default that misread was invisible; now it would stall the
+  // auto-draft worker on that patient every night.
+  const { data: study, error: studyErr } = await supabase
     .from("sleep_studies")
     .select("diagnosis_icd10")
     .eq("patient_id", input.patientId)
+    .not("diagnosis_icd10", "is", null)
     .order("study_date", { ascending: false })
     .limit(1)
     .maybeSingle();
-  // Normalise to upper case BEFORE validating — sleep_studies rows
-  // come from CSR input + EHR snapshots and can ship lowercase
-  // ("g47.30") even when the format is otherwise valid.
-  const rawIcd = study?.diagnosis_icd10?.toUpperCase() ?? null;
-  const icd10 =
-    rawIcd && /^[A-Z]\d{2}(\.\d{1,4})?$/.test(rawIcd) ? [rawIcd] : ["G47.33"];
+  // A failed lookup is not an absent diagnosis. Collapsing the two would file
+  // a database outage under "N patients need a sleep study attached" and send
+  // someone to fix a chart that is already correct.
+  if (studyErr) return { kind: "rx_diagnosis_lookup_failed" };
+  // Shared validator — see parseRecordedIcd10. It handles the lowercase that
+  // CSR input and EHR snapshots ship ("g47.30"), the alphanumeric extension
+  // real codes carry ("S06.0X0A"), and the undotted spelling ("G4733"). The
+  // local regex this replaced accepted only digits after the dot and only the
+  // dotted form, so it refused legitimate diagnoses.
+  const rawIcd = parseRecordedIcd10(study?.diagnosis_icd10);
+  // No usable diagnosis on file → refuse to build the packet.
+  //
+  // This used to fall back to ["G47.33"] (obstructive sleep apnea). That is
+  // the right answer for most CPAP patients, which is exactly what made it
+  // dangerous: this packet is FAXED TO A PRESCRIBER TO SIGN, so an assumed
+  // diagnosis becomes attested clinical documentation — and that document is
+  // then what justifies billing. A prescriber skimming a pre-filled form is
+  // unlikely to catch a code nobody sourced from the chart.
+  //
+  // Same rule the 837P builder now applies (office-ally-batch.ts): a
+  // diagnosis is either in the record or the paperwork doesn't go out.
+  if (!rawIcd) {
+    return { kind: "rx_missing_diagnosis" };
+  }
+  const icd10 = [rawIcd];
 
   // `providers` is a GLOBAL (non-org-scoped) table — use the unscoped
   // client via `.raw()`.

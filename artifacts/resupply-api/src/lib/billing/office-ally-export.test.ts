@@ -50,7 +50,9 @@ function makeClaim(overrides: Record<string, unknown> = {}) {
 }
 
 // Stage the reads buildOneDetail performs for one claim (coverage, patient,
-// line items). sleep_studies / providers stay unstaged → defaults.
+// line items, sleep study). The sleep study is required: the diagnosis no
+// longer defaults to G47.33, so a claim without one is refused as
+// `claim_missing_required_data`. (providers stays unstaged → default.)
 function stageClaimDetail() {
   stageSupabaseResponse("insurance_coverages", "select", {
     data: { member_id: "MBR-1", policyholder_relationship: "self" },
@@ -74,6 +76,10 @@ function stageClaimDetail() {
     data: [
       { hcpcs_code: "A4604", modifier: null, billed_cents: 2500, quantity: 1 },
     ],
+    error: null,
+  });
+  stageSupabaseResponse("sleep_studies", "select", {
+    data: { diagnosis_icd10: "G47.33" },
     error: null,
   });
 }

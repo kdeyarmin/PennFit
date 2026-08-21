@@ -1,6 +1,11 @@
-# PennPaps.com — robots.txt
+# Tenant storefront robots.txt.
 # Allow public crawl of the storefront and informational pages.
 # Block guarded fitter steps, admin, auth, and shop API surfaces.
+#
+# The `Sitemap:` line below is rewritten to the requesting host's own
+# origin before this file is served (see resupply-api's
+# lib/platform-sitemap.ts) — one bundle serves every tenant domain, so the
+# literal value here is only a fallback for a static-only deploy.
 
 User-agent: *
 Allow: /

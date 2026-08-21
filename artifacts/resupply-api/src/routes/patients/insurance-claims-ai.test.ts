@@ -606,6 +606,12 @@ describe("auto-fix-and-resubmit", () => {
         address: { line1: "1 Main", city: "Phila", state: "PA", zip: "19101" },
       },
     });
+    // The recorded diagnosis. This path used to hardcode G47.33; it now
+    // resolves the real code and refuses the resubmit without one, so a
+    // billable claim has to have a sleep study on file.
+    stageSupabaseResponse("sleep_studies", "select", {
+      data: { diagnosis_icd10: "G47.33" },
+    });
     // 10) prior-highest control number lookup
     stageSupabaseResponse("office_ally_submissions", "select", {
       data: { isa_control_number: "000000100" },
