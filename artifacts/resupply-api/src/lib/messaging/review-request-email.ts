@@ -14,7 +14,6 @@ import {
   escapeHtml,
   paragraph,
   renderBrandedEmail,
-  textParagraph,
   type SendgridClient,
 } from "@workspace/resupply-email";
 
@@ -143,12 +142,4 @@ function renderText(input: {
     "",
     `You can stop these emails anytime from your account → Communication preferences.`,
   ].join("\n");
-}
-
-function escape(s: string): string {
-  return String(s)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
 }

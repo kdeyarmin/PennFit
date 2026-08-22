@@ -34,6 +34,7 @@ vi.mock("@workspace/resupply-email", async (importOriginal) => {
     await importOriginal<typeof import("@workspace/resupply-email")>();
   class EmailConfigError extends Error {}
   return {
+    ...actual,
     createSendgridClient: () => ({ sendEmail: sendEmailMock }),
     EmailConfigError,
   };

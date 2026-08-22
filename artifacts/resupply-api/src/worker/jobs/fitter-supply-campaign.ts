@@ -106,6 +106,11 @@ import {
   signClickTrackingToken,
   pickSubjectVariant,
 } from "../../routes/shop/fitter-complete";
+import {
+  BREATHE_COLORS,
+  brandedButton,
+  renderBrandedEmail,
+} from "@workspace/resupply-email";
 
 const JOB_NAME = "fitter-lead.supply-campaign";
 /** Minimum spacing between consecutive touches to the same lead when
@@ -224,21 +229,15 @@ function escapeHtml(s: string): string {
 // because it gives the patient a SECOND hook beyond the subject
 // line.
 
-const BRAND_NAVY = "#1F3A5C";
-const BRAND_GOLD = "#F4B942";
-const BG = "#f4f6f8";
-const CARD_BG = "#ffffff";
-const TEXT = "#1f2a37";
-const MUTED = "#6b7280";
-const BORDER = "#e5e7eb";
+const BRAND_NAVY = BREATHE_COLORS.blue;
+const BRAND_GOLD = BREATHE_COLORS.gold;
+const MUTED = BREATHE_COLORS.muted;
 
 /** Render a single CTA button as a table (Outlook-safe). */
 function renderCtaButton(label: string, href: string): string {
-  return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:16px 0;">
-    <tr><td style="border-radius:6px;background:${BRAND_NAVY};">
-      <a href="${href}" style="display:inline-block;padding:13px 26px;font-family:-apple-system,Segoe UI,Roboto,sans-serif;font-size:15px;font-weight:600;color:#fff;text-decoration:none;border-radius:6px;">${escapeHtml(label)}</a>
-    </td></tr>
-  </table>`;
+  // The shared bulletproof button: a real filled button in Outlook via
+  // the MSO/VML fallback, not the bare anchor this used to emit.
+  return brandedButton(label, href);
 }
 
 /** Render the full responsive email shell around the per-touch
@@ -268,34 +267,21 @@ function renderBrandedHtml(opts: {
   // the preheader and showing it as part of the preview snippet.
   // The exact tail length is tuned to keep total preview-content
   // under 100 chars for most clients.
-  const previewPad = "&zwnj;&nbsp;".repeat(30);
-  return `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>${escapeHtml(practiceName)}</title>
-</head><body style="margin:0;padding:0;background:${BG};font-family:-apple-system,Segoe UI,Roboto,sans-serif;color:${TEXT};">
-<div style="display:none;max-height:0;overflow:hidden;font-size:1px;line-height:1px;color:${BG};opacity:0;">${escapeHtml(preheader)}${previewPad}</div>
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:${BG};">
-  <tr><td align="center" style="padding:24px 12px;">
-    <table role="presentation" width="560" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:560px;background:${CARD_BG};border:1px solid ${BORDER};border-radius:8px;overflow:hidden;">
-      <tr><td style="background:${BRAND_NAVY};padding:16px 24px;">
-        <div style="font-size:13px;letter-spacing:1px;text-transform:uppercase;color:#fff;font-weight:600;">${escapeHtml(practiceName)}</div>
-        <div style="height:3px;width:48px;background:${BRAND_GOLD};margin-top:8px;border-radius:2px;"></div>
-      </td></tr>
-      <tr><td style="padding:28px 28px 8px 28px;font-size:15px;line-height:1.55;color:${TEXT};">
-        ${bodyHtml}
-      </td></tr>
-      <tr><td style="padding:0 28px 28px 28px;">
-        <hr style="border:none;border-top:1px solid ${BORDER};margin:12px 0;"/>
-        <p style="color:${MUTED};font-size:12px;line-height:1.5;margin:0;">
-          ${escapeHtml(practiceName)} · <a href="${unsubscribeUrl}" style="color:${MUTED};text-decoration:underline;">Unsubscribe from these emails</a>
-        </p>
-      </td></tr>
-    </table>
-  </td></tr>
-</table>
-${trackingPixelUrl ? `<img src="${trackingPixelUrl}" alt="" width="1" height="1" border="0" style="display:block;width:1px;height:1px;border:0;" />` : ""}
-</body></html>`;
+  // Chrome comes from the shared CareMetric Breathe email design system.
+  // The 1x1 open-tracking pixel rides in the footer HTML — it is
+  // invisible, so its exact position in the document does not matter.
+  return renderBrandedEmail({
+    brandName: practiceName,
+    preheader,
+    contentHtml: bodyHtml,
+    footerHtml:
+      `<a href="${unsubscribeUrl}" style="color:${BREATHE_COLORS.faint};text-decoration:underline;">Unsubscribe from these emails</a>` +
+      (trackingPixelUrl
+        ? `<img src="${trackingPixelUrl}" alt="" width="1" height="1" border="0" style="display:block;width:1px;height:1px;border:0;" />`
+        : ""),
+    footerLines: [practiceName],
+    copyrightName: practiceName,
+  });
 }
 
 // ---------------------------------------------------------------

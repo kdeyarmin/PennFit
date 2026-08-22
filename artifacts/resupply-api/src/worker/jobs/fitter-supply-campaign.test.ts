@@ -202,11 +202,13 @@ describe("composeTouchpoint — branded HTML template", () => {
       expect(out.email.html, `T${i} html should use table layout`).toContain(
         '<table role="presentation"',
       );
-      // Branded navy color band.
+      // Branded header band, in the shared design system's deep navy
+      // (BREATHE_COLORS.ink) — the campaign's own #1f3a5c was retired
+      // when this email moved onto renderBrandedEmail.
       expect(
         out.email.html.toLowerCase(),
-        `T${i} html should carry brand navy header`,
-      ).toContain("#1f3a5c");
+        `T${i} html should carry the branded header band`,
+      ).toContain("#0b1426");
       // <!doctype html> marker so clients render in standards mode.
       expect(out.email.html.toLowerCase().startsWith("<!doctype html>")).toBe(
         true,

@@ -50,6 +50,7 @@ import {
   renderPacketInviteHtml,
   renderPacketInviteText,
 } from "../patient-packet/invite-email";
+import { BREATHE_COLORS, renderBrandedEmail } from "@workspace/resupply-email";
 
 export type PreviewGroup = "resupply" | "orders" | "clinical" | "billing";
 
@@ -184,28 +185,26 @@ function escapeHtml(s: string): string {
 }
 
 /**
- * The shared shell the mirrored emails render into. It intentionally
- * matches the plain, table-based, inline-styled structure the production
- * senders use — a preview in a prettier shell than production would be
- * lying about what lands in the inbox.
+ * The shared shell the mirrored emails render into: the SAME
+ * `renderBrandedEmail` chrome the production senders use, so a preview
+ * cannot flatter what actually lands in the inbox.
  */
 function shell(brand: PreviewBrand, bodyHtml: string): string {
-  return `<!doctype html>
-<html><body style="font-family: -apple-system, system-ui, sans-serif; background:#f8fafc; padding:24px; margin:0;">
-  <table cellpadding="0" cellspacing="0" border="0" style="max-width:560px;margin:0 auto;background:#ffffff;border-radius:8px;border:1px solid #e2e8f0;">
-    <tr><td style="padding:24px;">
-${bodyHtml}
-      <p style="margin:24px 0 0;color:#6b7280;font-size:12px;line-height:1.5;">
-        ${escapeHtml(brand.legalName)}<br/>
-        Questions? Call ${escapeHtml(brand.supportPhoneDisplay)} or reply to this email.
-      </p>
-    </td></tr>
-  </table>
-</body></html>`;
+  // Same branded shell the real senders use, so an "approximate" preview
+  // still shows staff the chrome a patient actually receives.
+  return renderBrandedEmail({
+    brandName: brand.brandName,
+    contentHtml: bodyHtml,
+    footerLines: [
+      brand.legalName,
+      `Questions? Call ${brand.supportPhoneDisplay} or reply to this email.`,
+    ],
+    copyrightName: brand.legalName,
+  });
 }
 
 function p(text: string): string {
-  return `      <p style="margin:0 0 12px;color:#0a1f44;font-size:14px;line-height:1.55;">${text}</p>`;
+  return `<p style="margin:0 0 16px;font-family:Arial,Helvetica,sans-serif;color:${BREATHE_COLORS.body};font-size:16px;line-height:1.6;">${text}</p>`;
 }
 
 function itemsText(): string {
@@ -213,7 +212,7 @@ function itemsText(): string {
 }
 
 function itemsHtml(): string {
-  return `      <ul style="margin:0 0 12px;padding-left:20px;color:#0a1f44;font-size:14px;line-height:1.55;">${SAMPLE.items
+  return `      <ul style="margin:0 0 12px;padding-left:20px;color:${BREATHE_COLORS.body};font-size:14px;line-height:1.55;">${SAMPLE.items
     .map((i) => `<li>${i.quantity} &times; ${escapeHtml(i.name)}</li>`)
     .join("")}</ul>`;
 }

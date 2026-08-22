@@ -23,7 +23,6 @@ import {
   EmailApiError,
   EmailConfigError,
   escapeHtml,
-  infoPanel,
   paragraph,
   renderBrandedEmail,
   textParagraph,
