@@ -58,6 +58,12 @@ import {
   providerMayReferTo,
   recordReferralEvent,
 } from "./referral-shared.js";
+import {
+  escapeHtml,
+  paragraph,
+  renderBrandedEmail,
+  textParagraph,
+} from "@workspace/resupply-email";
 
 const router: IRouter = Router();
 
@@ -1149,19 +1155,26 @@ async function deliverFittingLink(opts: {
       to: opts.email,
       // No PHI in the subject line.
       subject: `Find your best CPAP mask fit with ${safeBrand}`,
-      html: `<!doctype html><html><body style="font-family:Arial,Helvetica,sans-serif;color:#1f2937;line-height:1.5">
-  <p>Hi ${escapeHtml(greeting)},</p>
-  <p>Your doctor has asked <strong>${escapeHtml(safeBrand)}</strong> to help
-  you find the CPAP mask that fits you best. It takes about two minutes and
-  runs entirely on your own phone or computer.</p>
-  <p style="margin:24px 0">
-    <a href="${escapeHtml(opts.link)}" style="background:#0b2a4a;color:#fff;text-decoration:none;padding:12px 20px;border-radius:8px;display:inline-block">Start your mask fitting</a>
-  </p>
-  <p style="font-size:13px;color:#6b7280">Your camera images never leave your
-  device — only the numeric measurements are shared with your care team.</p>
-  <p style="font-size:13px;color:#6b7280">If the button doesn't work, copy and
-  paste this link into your browser:<br>${escapeHtml(opts.link)}</p>
-  </body></html>`,
+      // Chrome comes from the shared CareMetric Breathe email design system.
+      html: renderBrandedEmail({
+        brandName: safeBrand,
+        heading: "Find your best-fitting mask",
+        preheader: `Your doctor has asked ${safeBrand} to help you find the right CPAP mask.`,
+        contentHtml: [
+          textParagraph(`Hi ${greeting},`),
+          paragraph(
+            `Your doctor has asked <strong>${escapeHtml(
+              safeBrand,
+            )}</strong> to help you find the CPAP mask that fits you best. It takes about two minutes and runs entirely on your own phone or computer.`,
+          ),
+        ].join("\n"),
+        button: { label: "Start your mask fitting", url: opts.link },
+        footerLines: [
+          "Your camera images never leave your device — only the numeric measurements are shared with your care team.",
+          `If the button doesn't work, copy and paste this link into your browser: ${opts.link}`,
+        ],
+        copyrightName: safeBrand,
+      }),
       text: [
         `Hi ${greeting},`,
         "",
@@ -1186,14 +1199,6 @@ async function deliverFittingLink(opts: {
     );
     return { delivered: false, reason: "send_failed" };
   }
-}
-
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
 }
 
 export default router;

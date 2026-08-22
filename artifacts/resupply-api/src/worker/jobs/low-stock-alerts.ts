@@ -53,6 +53,11 @@ import {
   type ShopProductView,
 } from "../../lib/stripe/products-meta";
 import { PLATFORM_NAME } from "../../lib/company-info.js";
+import {
+  BREATHE_COLORS,
+  renderBrandedEmail,
+  textParagraph,
+} from "@workspace/resupply-email";
 
 const ALERT_JOB = "shop-inventory.low-stock-alerts";
 // Every 6 hours at :13 to dodge the top-of-hour cron stampede.
@@ -129,29 +134,28 @@ function renderDigest(
     )
     .join("");
 
-  const html = `<!doctype html><html><body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#111827;background:#f9fafb;margin:0;padding:24px;">
-  <table style="max-width:560px;margin:0 auto;background:#ffffff;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;border-collapse:collapse;">
-    <tr><td style="padding:20px 24px;background:#0a1f44;color:#ffffff;">
-      <h1 style="margin:0;font-size:18px;font-weight:600;">Inventory alert</h1>
-      <p style="margin:4px 0 0;font-size:13px;color:#cbd5e1;">${skus.length} product${
-        skus.length === 1 ? "" : "s"
-      } at or below threshold</p>
-    </td></tr>
-    <tr><td style="padding:0;">
-      <table style="width:100%;border-collapse:collapse;">
-        <thead><tr style="background:#f9fafb;">
-          <th style="padding:8px 12px;text-align:left;font-size:12px;color:#6b7280;font-weight:600;">Product</th>
-          <th style="padding:8px 12px;text-align:right;font-size:12px;color:#6b7280;font-weight:600;">On hand</th>
-          <th style="padding:8px 12px;text-align:right;font-size:12px;color:#6b7280;font-weight:600;">Threshold</th>
-        </tr></thead>
-        <tbody>${rows}</tbody>
-      </table>
-    </td></tr>
-    <tr><td style="padding:16px 24px;background:#f9fafb;font-size:12px;color:#6b7280;">
-      Adjust stock or thresholds in the admin inventory page.
-    </td></tr>
-  </table>
-</body></html>`;
+  // Chrome comes from the shared CareMetric Breathe email design system.
+  const html = renderBrandedEmail({
+    brandTagline: "Inventory",
+    heading: "Inventory alert",
+    preheader: `${skus.length} product${
+      skus.length === 1 ? "" : "s"
+    } at or below threshold.`,
+    contentHtml: [
+      textParagraph(
+        `${skus.length} product${skus.length === 1 ? "" : "s"} at or below threshold.`,
+      ),
+      `<table role="presentation" width="100%" style="border-collapse:collapse;font-family:Arial,Helvetica,sans-serif;">
+<thead><tr>
+<th style="padding:8px 12px;text-align:left;font-size:12px;color:${BREATHE_COLORS.muted};font-weight:600;border-bottom:1px solid ${BREATHE_COLORS.hairline};">Product</th>
+<th style="padding:8px 12px;text-align:right;font-size:12px;color:${BREATHE_COLORS.muted};font-weight:600;border-bottom:1px solid ${BREATHE_COLORS.hairline};">On hand</th>
+<th style="padding:8px 12px;text-align:right;font-size:12px;color:${BREATHE_COLORS.muted};font-weight:600;border-bottom:1px solid ${BREATHE_COLORS.hairline};">Threshold</th>
+</tr></thead>
+<tbody>${rows}</tbody>
+</table>`,
+    ].join("\n"),
+    footerLines: ["Adjust stock or thresholds in the admin inventory page."],
+  });
   return { subject, html, text };
 }
 

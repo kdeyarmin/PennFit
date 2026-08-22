@@ -38,7 +38,9 @@ import {
 const sendEmailMock = vi.fn(
   async (..._args: unknown[]) => undefined as unknown,
 );
-vi.mock("@workspace/resupply-email", () => {
+vi.mock("@workspace/resupply-email", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("@workspace/resupply-email")>();
   class EmailConfigError extends Error {}
   return {
     createSendgridClient: () => ({ sendEmail: sendEmailMock }),

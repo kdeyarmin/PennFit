@@ -8,7 +8,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const sendEmail = vi.fn();
-vi.mock("@workspace/resupply-email", () => ({
+vi.mock("@workspace/resupply-email", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@workspace/resupply-email")>()),
   createSendgridClient: () => ({ sendEmail }),
   EmailConfigError: class EmailConfigError extends Error {},
 }));

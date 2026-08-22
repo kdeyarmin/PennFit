@@ -14,6 +14,8 @@
 // PHI: no patient identifiers, no therapy values. Greeting + first
 // name are passed by the caller after sanitization.
 
+import { BREATHE_COLORS, renderBrandedEmail } from "@workspace/resupply-email";
+
 import { type TriggerKind } from "./index";
 
 /**
@@ -98,20 +100,18 @@ export function htmlBody(
     .split("\n\n")
     .map(
       (p) =>
-        `<p style="margin:0 0 12px;font-size:14px;line-height:1.55;color:#0a1f44;">${p
+        `<p style="margin:0 0 16px;font-family:Arial,Helvetica,sans-serif;font-size:16px;line-height:1.6;color:${BREATHE_COLORS.body};">${p
           .replace(/[<>&]/g, "")
           .replace(/\n/g, "<br>")}</p>`,
     )
     .join("");
-  return `<!doctype html>
-<html><body style="font-family: -apple-system, system-ui, sans-serif; background: #f8fafc; padding: 24px;">
-  <table cellpadding="0" cellspacing="0" border="0" style="max-width:560px;margin:0 auto;background:#ffffff;border-radius:8px;border:1px solid #e2e8f0;">
-    <tr><td style="padding:24px;">
-      <h2 style="margin:0 0 16px;color:#0a1f44;font-size:18px;">${heading}</h2>
-      ${paragraphs}
-    </td></tr>
-  </table>
-</body></html>`;
+  // Chrome comes from the shared CareMetric Breathe email design system.
+  return renderBrandedEmail({
+    brandName: brand,
+    heading,
+    contentHtml: paragraphs,
+    copyrightName: brand,
+  });
 }
 
 /**

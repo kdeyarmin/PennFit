@@ -46,7 +46,8 @@ const { sendEmailMock, sendgridShouldThrow, FakeEmailConfigError } = vi.hoisted(
     };
   },
 );
-vi.mock("@workspace/resupply-email", () => ({
+vi.mock("@workspace/resupply-email", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@workspace/resupply-email")>()),
   EmailConfigError: FakeEmailConfigError,
   createSendgridClient: () => {
     if (sendgridShouldThrow.current) {

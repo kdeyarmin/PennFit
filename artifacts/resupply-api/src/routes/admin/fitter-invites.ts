@@ -26,7 +26,13 @@ import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
 import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
-import { EmailConfigError } from "@workspace/resupply-email";
+import {
+  EmailConfigError,
+  escapeHtml,
+  paragraph,
+  renderBrandedEmail,
+  textParagraph,
+} from "@workspace/resupply-email";
 import {
   createTwilioSmsClient,
   TwilioConfigError,
@@ -183,21 +189,27 @@ function renderInviteEmailHtml(
   link: string,
   brandName: string,
 ): string {
-  return `<!doctype html><html><body style="font-family:Arial,Helvetica,sans-serif;color:#1f2937;line-height:1.5">
-  <p>Hi ${escapeHtml(greeting)},</p>
-  <p>Your care team at <strong>${escapeHtml(brandName)}</strong> invites you to use our AI mask
-  fitter to find the CPAP mask that fits you best. It takes about two minutes
-  and runs entirely on your own phone or computer.</p>
-  <p style="margin:24px 0">
-    <a href="${escapeHtml(link)}" style="background:#0b2a4a;color:#fff;text-decoration:none;padding:12px 20px;border-radius:8px;display:inline-block">Start your mask fitting</a>
-  </p>
-  <p style="font-size:13px;color:#6b7280">Your camera images never leave your
-  device — only the numeric measurements are shared with our team so we can
-  follow up on your fit.</p>
-  <p style="font-size:13px;color:#6b7280">If the button doesn't work, copy and
-  paste this link:<br>${escapeHtml(link)}</p>
-  <p>— The ${escapeHtml(brandName)} team</p>
-  </body></html>`;
+  // Chrome comes from the shared CareMetric Breathe email design system.
+  return renderBrandedEmail({
+    brandName,
+    heading: "Find your best-fitting mask",
+    preheader: `${brandName} invites you to use the AI mask fitter — about two minutes.`,
+    contentHtml: [
+      textParagraph(`Hi ${greeting},`),
+      paragraph(
+        `Your care team at <strong>${escapeHtml(
+          brandName,
+        )}</strong> invites you to use our AI mask fitter to find the CPAP mask that fits you best. It takes about two minutes and runs entirely on your own phone or computer.`,
+      ),
+    ].join("\n"),
+    button: { label: "Start your mask fitting", url: link },
+    footerLines: [
+      "Your camera images never leave your device — only the numeric measurements are shared with our team so we can follow up on your fit.",
+      `If the button doesn't work, copy and paste this link: ${link}`,
+      `— The ${brandName} team`,
+    ],
+    copyrightName: brandName,
+  });
 }
 
 function renderInviteEmailText(
@@ -219,14 +231,6 @@ function renderInviteEmailText(
     "",
     `— The ${brandName} team`,
   ].join("\n");
-}
-
-function escapeHtml(s: string): string {
-  return s
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;");
 }
 
 const E164_RE = /^\+\d{10,15}$/;

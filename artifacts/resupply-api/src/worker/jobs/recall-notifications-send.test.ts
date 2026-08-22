@@ -15,7 +15,8 @@ const { sendEmailMock, sendSmsMock } = vi.hoisted(() => ({
   sendSmsMock: vi.fn(async () => ({ messageSid: "SM_test_sid" })),
 }));
 
-vi.mock("@workspace/resupply-email", () => ({
+vi.mock("@workspace/resupply-email", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@workspace/resupply-email")>()),
   createSendgridClient: vi.fn(() => ({
     sendEmail: sendEmailMock,
   })),

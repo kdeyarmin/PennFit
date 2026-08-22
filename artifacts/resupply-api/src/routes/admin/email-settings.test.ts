@@ -69,7 +69,8 @@ vi.mock("@workspace/resupply-db", () => ({
   }),
 }));
 
-vi.mock("@workspace/resupply-email", () => ({
+vi.mock("@workspace/resupply-email", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@workspace/resupply-email")>()),
   DEFAULT_SENDGRID_FROM_EMAIL: "noreply@cmbreathe.com",
   DEFAULT_SENDGRID_FROM_NAME: "CareMetric Breathe",
 }));
