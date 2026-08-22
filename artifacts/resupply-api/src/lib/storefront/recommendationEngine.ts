@@ -16,10 +16,12 @@
  */
 
 import {
+  MAGNETIC_MASK_IDS,
   maskCatalog,
   type MaskEntry,
   type MaskType,
 } from "../../data/maskCatalog.js";
+import { resolveSizeRunBuckets } from "../size-run.js";
 
 export interface FacialMeasurements {
   noseWidth: number;
@@ -430,12 +432,27 @@ export function recommendSize(
     };
   }
 
-  // Linear partition: divide [min, max] into sizes.length equal buckets.
-  // The boundary case `value === max` rounds the index down to the last
-  // bucket so we never overflow.
+  // Partition [min, max] into buckets over the size run. NOT a plain
+  // linear ladder: "wide" codes are width variants, not the next size up
+  // (migration 0511 — a linear S < SW < M < W ladder puts a small-wide
+  // patient two sizes off), so the run is bucketed by
+  // `resolveSizeRunBuckets` — a wide code shares/steps from its plain
+  // base's bucket, and where a wide and its base share a bucket the
+  // plain base is recommended (indistinguishable on one axis; the base
+  // cut fits more faces). The boundary case `value === max` rounds the
+  // index down to the last bucket so we never overflow.
+  const isNoseAxis = !(mask.type === "fullFace" || mask.type === "hybrid");
+  const run = resolveSizeRunBuckets(sizes, isNoseAxis ? "width" : "height");
   const fraction = (value - min) / range;
-  const rawIdx = Math.floor(fraction * sizes.length);
-  const idx = Math.min(rawIdx, sizes.length - 1);
+  const bucket = Math.min(
+    Math.floor(fraction * run.bucketCount),
+    run.bucketCount - 1,
+  );
+  const inBucket = sizes
+    .map((_, i) => i)
+    .filter((i) => run.bucketOf[i] === bucket);
+  const idx =
+    inBucket.find((i) => !run.isWideStep[i]) ?? inBucket[0] ?? sizes.length - 1;
   return {
     size: sizes[idx],
     // Tenant-neutral on purpose. This is shared platform code with no
@@ -745,11 +762,37 @@ function generateSummary(
 }
 
 export function maskHasMagneticHardware(mask: MaskEntry): boolean {
+  // The audited list first: four genuinely magnetic masks (F30, F40,
+  // Amara View, DreamWear FF) carry no "magnetic" marketing copy at all,
+  // so the text check alone let them through every consumer that fails
+  // closed on magnets (the chatbot's compare/find tools among them). The
+  // text check stays as belt-and-braces for entries added after the
+  // audit.
+  if (MAGNETIC_MASK_IDS.has(mask.id)) return true;
   const haystack = [mask.headgearStyle, ...mask.features]
     .join(" ")
     .toLowerCase();
   return haystack.includes("magnetic");
 }
+
+/**
+ * The LOWEST prescribed pressure each questionnaire band can represent,
+ * in cmH₂O — the only thing a coarse band tells us for certain about a
+ * patient. `unknown` yields null: an unanswered question must never be
+ * read as a pressure claim in either direction.
+ *
+ * Mirrors the band boundaries `toLegacyAnswers` applies
+ * (cpap-fitter/src/lib/fit-profile.ts): 15+ high, 10-14 medium, <10 low.
+ */
+const PRESSURE_BAND_FLOOR_CM_H2O: Record<
+  QuestionnaireAnswers["cpapPressureSetting"],
+  number | null
+> = {
+  high: 15,
+  medium: 10,
+  low: 0,
+  unknown: null,
+};
 
 /**
  * Check if a mask is contraindicated for this patient.
@@ -794,6 +837,54 @@ export function getActiveContraindications(
         lower.includes("congested")) &&
       answers.frequentCongestion === true
     ) {
+      triggered.push(contra);
+    }
+    // High-pressure advisories ("High pressures above 15 cmH₂O"). These
+    // catalog entries previously matched NO branch at all, so a mask the
+    // catalog itself flags for high pressure was never contraindicated —
+    // and the separate pressure-rating penalty only fires below a rated
+    // max of 20, so a 20-rated pillow (AirFit P10) with an explicit
+    // high-pressure advisory topped a high-pressure patient's list with
+    // no penalty and no note.
+    //
+    // The advisory's OWN threshold decides, because the questionnaire
+    // only yields a coarse band: "high" means 15+, so it tells us the
+    // patient clears 15 and nothing more. Firing every "pressure …
+    // above N" advisory for that band contraindicated masks the patient
+    // is nowhere near the limit of — the Pilairo Q and Nova Micro
+    // ("Pressures above 25 cmH₂O", both rated to 25) would be crushed by
+    // the 0.15 contraindication multiplier for a patient prescribed 16.
+    // A false contraindication is its own patient harm: it steers them
+    // off a mask that fits.
+    //
+    // So an advisory fires only when the band's FLOOR already clears its
+    // threshold — i.e. when every patient in the band exceeds it. An
+    // advisory with no number ("High pressures") is qualitative and
+    // fires on the high band alone. Masks whose MECHANICAL rating can't
+    // hold the prescription are demoted independently by
+    // `pressureMultiplier` in `recommend()`, so nothing under-rated
+    // slips through on the strength of this narrowing.
+    if (
+      lower.includes("pressure") &&
+      (lower.includes("high") || lower.includes("above"))
+    ) {
+      const advisoryThreshold = /(\d+(?:\.\d+)?)/.exec(contra);
+      const bandFloor = PRESSURE_BAND_FLOOR_CM_H2O[answers.cpapPressureSetting];
+      const qualifies = advisoryThreshold
+        ? // Numbered: every patient in the band clears the threshold.
+          bandFloor !== null && bandFloor >= Number(advisoryThreshold[1])
+        : // Unnumbered ("High pressures") — qualitative, so it applies to
+          // exactly the band that reports itself as high.
+          answers.cpapPressureSetting === "high";
+      if (qualifies) {
+        triggered.push(contra);
+      }
+    }
+    // Adhesive-sealed masks ("Sensitive skin reactions to adhesive").
+    // Previously unmatched, so a sensitive-skin patient not only escaped
+    // the contraindication — the sensitive-skin answer's nasal-pillow
+    // bonus actively boosted the adhesive mask.
+    if (lower.includes("adhesive") && answers.sensitiveSkin === true) {
       triggered.push(contra);
     }
   }

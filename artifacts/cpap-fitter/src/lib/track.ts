@@ -81,6 +81,7 @@ export type TrackStep =
   | "fit_safety_screen_shown"
   | "fit_invite_invalid"
   | "guided_capture_ready"
+  | "guided_capture_dead_loop_fallback"
   | "guided_capture_manual"
   | "guided_capture_skip"
   | "web_vital";

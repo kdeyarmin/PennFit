@@ -59,6 +59,19 @@ import {
   requirePermission,
 } from "../../middlewares/requireAdmin";
 import { invalidateFittingContext } from "../../lib/fitting/catalog-store";
+import {
+  UNION_PLAUSIBILITY_BOUNDS,
+  type PlausibilityField,
+} from "../../lib/fitting/confidence";
+
+/** Which plausibility window governs each band column pair. */
+const PLAUSIBILITY_FIELD_OF_COLUMN: Record<string, PlausibilityField> = {
+  nose_width_min_mm: "noseWidth",
+  nose_height_min_mm: "noseHeight",
+  nose_to_chin_min_mm: "noseToChin",
+  mouth_width_min_mm: "mouthWidth",
+  face_width_min_mm: "faceWidthAtCheekbones",
+};
 
 const router: IRouter = Router();
 
@@ -80,8 +93,17 @@ const listQuery = z
       .optional(),
     serviceLine: z.enum(["adult", "pediatric", "both"]).optional(),
     status: z.enum(["current", "discontinued", "pre_release"]).optional(),
-    needsReview: z.coerce.boolean().optional(),
-    dispensedOnly: z.coerce.boolean().optional(),
+    // NOT z.coerce.boolean(): query params arrive as strings and
+    // Boolean("false") is true, so `?needsReview=false` used to turn the
+    // filter ON. Parse the literal spellings instead.
+    needsReview: z
+      .enum(["true", "false", "1", "0"])
+      .transform((v) => v === "true" || v === "1")
+      .optional(),
+    dispensedOnly: z
+      .enum(["true", "false", "1", "0"])
+      .transform((v) => v === "true" || v === "1")
+      .optional(),
     search: z.string().trim().max(120).optional(),
     limit: z.coerce.number().int().min(1).max(300).default(100),
     offset: z.coerce.number().int().min(0).default(0),
@@ -810,6 +832,35 @@ router.patch(
             "is above its maximum matches no patient at all.",
         });
         return;
+      }
+      // Plausibility: a band entirely outside the window any face
+      // measurement can produce (the classic slip is centimetres typed
+      // into a millimetre field — 3.2–4.1 instead of 32–41) is never
+      // rejected downstream. The engine still scores it: every patient
+      // lands far outside, the size scores ~0 with inBand=false, and the
+      // mask is silently de-ranked for everyone with nothing telling the
+      // operator the band is physically unreachable.
+      const [windowLo, windowHi] =
+        UNION_PLAUSIBILITY_BOUNDS[PLAUSIBILITY_FIELD_OF_COLUMN[minCol]];
+      for (const [col, value] of [
+        [minCol, min],
+        [maxCol, max],
+      ] as const) {
+        if (value !== null && (value < windowLo || value > windowHi)) {
+          res.status(422).json({
+            error: "implausible_band",
+            field: col,
+            message:
+              `${col.replace(/_/g, " ")} (${value} mm) is outside the ` +
+              `${windowLo}–${windowHi} mm range any face measurement can ` +
+              "produce" +
+              (value > 0 && value < windowLo / 2
+                ? " — the value looks like centimetres typed into a millimetre field"
+                : "") +
+              ".",
+          });
+          return;
+        }
       }
     }
 

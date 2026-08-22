@@ -258,13 +258,17 @@ async function recordCompletion(
     recommended_mask_type: input.primary?.type ?? null,
     updated_at: nowIso,
   };
-  // The ranked list the patient actually saw — written only when there IS
-  // one. An empty list carries no information, and both writers run for a
-  // clinical fitting: the assess path ranks the alternatives it considered
-  // even when it names no primary, while the page has nothing to send for
-  // that case. Writing `[]` unconditionally would let whichever fires
-  // second blank out the list the first one recorded.
-  if (input.ranked.length > 0) {
+  // The ranked list the patient actually saw. The ASSESS path is
+  // authoritative for its own fitting — it carries the full ranked truth,
+  // including a genuinely empty list when tiers 1-2 excluded everything —
+  // so it always writes, letting a contraindicated re-fitting CLEAR the
+  // previous run's stale list (a staff worklist showing last week's
+  // magnetic mask against this week's "everything excluded" session is a
+  // wrong clinical record). The PAGE's transmission still skips an empty
+  // list: it sends `ranked: []` whenever it has no topPick, and letting
+  // that blank the assess path's list within one fitting is exactly the
+  // two-writer race this guard exists for.
+  if (input.ranked.length > 0 || input.source === "fitter.assess.complete") {
     update.recommendations =
       input.ranked as unknown as FitterInvitesRow["recommendations"];
   }

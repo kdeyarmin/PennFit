@@ -72,6 +72,15 @@ export interface QualityResult {
   overall: number;
 }
 
+/**
+ * How fast the nose-between-cheeks asymmetry grows with true head yaw:
+ * asymmetry ≈ gain · tan(yaw). Derived from the canonical face model —
+ * the nose tip (landmark 1, z ≈ +75 mm) sits ~99 mm in front of the
+ * cheek outline points 234/454 (z ≈ −24 mm) whose half-span is ~77 mm,
+ * giving 99.1 / 76.6 ≈ 1.293 under orthographic projection.
+ */
+export const YAW_ASYMMETRY_TAN_GAIN = 1.293;
+
 // MediaPipe FaceMesh landmark indices used by the checks.
 const NOSE_TIP = 1;
 const LEFT_CHEEK = 234;
@@ -167,11 +176,30 @@ export function estimatePoseFromLandmarks(landmarks: Point2D[]): {
   }
 
   // Yaw: the nose sits mid-way between the cheeks head-on, and drifts
-  // toward one as the head turns.
+  // toward one as the head turns — because the nose tip rides far in
+  // FRONT of the cheek outline. On the canonical face model that depth
+  // lever is ~99 mm against a ~77 mm cheek half-span, so the projected
+  // asymmetry grows as ≈ YAW_ASYMMETRY_TAN_GAIN · tan(yaw); inverting
+  // that maps the estimate back to (approximately) true degrees.
+  //
+  // The previous `asymmetry * 90` linearization over-reported true yaw
+  // ~2–2.7x (a true 10° turn read as ~27° at arm's length — verified
+  // against pinhole projections of the canonical model, see the
+  // calibration test in face-measurements.accuracy.test.ts). Every
+  // consumer is written in true-degree physics, so the mis-scale
+  // mis-aimed all of them at once: poseCorrect's cos() over-corrected
+  // vertical spans from turned frames by up to ~12%,
+  // MEASUREMENT_YAW_LIMIT_DEG=10 actually cut at ~3.7° true, and the
+  // "20°" turn targets accepted only ~4–13° true turns while telling a
+  // patient at a genuine 20° "too far — come back". Perspective at close
+  // range still inflates the inverted estimate somewhat (~+30% at
+  // 40 cm) — the conservative direction for every gate that excludes
+  // high-yaw frames from measuring.
   const dLeft = Math.abs(nose.x - left.x);
   const dRight = Math.abs(right.x - nose.x);
   const asymmetry = (dRight - dLeft) / Math.max(1e-6, dRight + dLeft);
-  const yawDeg = asymmetry * 90;
+  const yawDeg =
+    (Math.atan(asymmetry / YAW_ASYMMETRY_TAN_GAIN) * 180) / Math.PI;
 
   // Roll: the tilt of the eye line.
   const rollDeg =
@@ -567,7 +595,17 @@ export function aggregateFrames(frames: FrameMeasurement[]): AggregateResult {
   const nearFrontal = frames.filter(
     (f) => Math.abs(f.yawDeg) <= MEASUREMENT_YAW_LIMIT_DEG,
   );
-  const usable = nearFrontal.length > 0 ? nearFrontal : frames;
+  // The all-turned fallback MEASURES rather than failing — but it
+  // measures from frames this module's own analysis says cannot be
+  // measured reliably (gaze-ambiguous widths ~6% either way, vertical
+  // spans with residual error past the cos model), and both turn frames
+  // carry the SAME systematic bias, so cross-frame agreement scores near
+  // 1 and none of the ordinary caps fire. The band cap below keeps the
+  // fallback honest: the values still come back, labelled `low`, which
+  // routes the fitting to a fresh scan / human fit instead of shipping
+  // a systematically biased set as a high-confidence recommendation.
+  const fellBackToTurned = nearFrontal.length === 0;
+  const usable = fellBackToTurned ? frames : nearFrontal;
 
   for (const key of keys) {
     const corrected = usable
@@ -663,7 +701,7 @@ export function aggregateFrames(frames: FrameMeasurement[]): AggregateResult {
   // frame still lands around 0.55 and reads as "moderate".
   const anyUnacceptable = usable.some((f) => !f.quality.acceptable);
   const anySingleSampled = keys.some((k) => (sampleCounts[k] ?? 0) < 2);
-  if (anyUnacceptable) {
+  if (anyUnacceptable || fellBackToTurned) {
     band = "low";
   } else if (band === "high" && anySingleSampled) {
     band = "moderate";

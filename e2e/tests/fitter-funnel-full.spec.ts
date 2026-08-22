@@ -56,12 +56,15 @@ async function seedInviteToken(page: Page): Promise<void> {
   });
 }
 
-/** Seed a completed consent step (email gate). */
+/** Seed a completed consent step (email + the camera-consent flag the
+ *  /consent Continue handler writes — the gate keys on the flag, not on
+ *  the mere presence of an email). */
 async function seedConsentedEmail(page: Page): Promise<void> {
   await page.addInitScript(() => {
     try {
       sessionStorage.setItem("fitter_email", "e2e@example.com");
       sessionStorage.setItem("fitter_email_consent", "0");
+      sessionStorage.setItem("fitter_camera_consent", "1");
     } catch {
       /* ignore */
     }
@@ -265,6 +268,33 @@ test("invited but unconsented deep link bounces to /consent", async ({
   // page copy plus the email gate the redirect exists to enforce.
   await expect(page.getByText(/privacy & consent/i).first()).toBeVisible();
   await expect(page.getByLabel(/email/i).first()).toBeVisible();
+});
+
+test("a prefilled invite email is not consent — /capture still bounces to /consent", async ({
+  page,
+}) => {
+  // A staff invite carries a KNOWN email, and /fitter-invite prefills it
+  // when the patient taps Start. The camera gate used to be
+  // `Boolean(email)`, so that prefill alone marked them consented: they
+  // could type /capture (or press Back out of /consent) into
+  // getUserMedia having never seen the biometric disclosure or ticked
+  // the box. Seed exactly that state — invite + email, no consent flag.
+  await seedInviteToken(page);
+  await page.addInitScript(() => {
+    try {
+      sessionStorage.setItem("fitter_email", "known-patient@example.com");
+    } catch {
+      /* ignore */
+    }
+  });
+
+  await page.goto("/capture");
+  await page.waitForURL(/\/consent/, { timeout: 5_000 });
+  await expect(page.getByText(/privacy & consent/i).first()).toBeVisible();
+
+  // …and the same for the rest of the camera-bearing flow.
+  await page.goto("/measure");
+  await page.waitForURL(/\/consent/, { timeout: 5_000 });
 });
 
 test("consented /results without measurements goes home; /order without a mask returns to /results", async ({

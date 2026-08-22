@@ -36,6 +36,10 @@ const featureFlags = vi.hoisted(() => ({
 }));
 vi.mock("../../lib/feature-flags.js", () => ({
   isFeatureEnabled: vi.fn(async (key: string) => featureFlags.enabled.has(key)),
+  getFeatureFlagState: vi.fn(async (key: string) => ({
+    enabled: featureFlags.enabled.has(key),
+    degraded: false,
+  })),
 }));
 
 // The org-scoped client backs two things here: the STATEFUL invite check
@@ -51,6 +55,8 @@ const db = vi.hoisted(() => ({
     status: "sent",
     expires_at: null as string | null,
   } as Record<string, unknown> | null,
+  /** Make the fitter_invites read FAIL (vs. return no row). */
+  inviteReadFails: false,
   /** Per-table maybeSingle rows for reads beyond fitter_invites (patients,
    *  insurance_coverages, payer_profiles) — unset tables resolve null. */
   rows: {} as Record<string, Record<string, unknown> | null>,
@@ -98,7 +104,9 @@ vi.mock("@workspace/resupply-db", () => {
     }
     chain.maybeSingle = async () =>
       table === "fitter_invites"
-        ? { data: db.invite, error: null }
+        ? db.inviteReadFails
+          ? { data: null, error: { message: "db unreachable" } }
+          : { data: db.invite, error: null }
         : { data: db.rows[table] ?? null, error: null };
     chain.single = async () => {
       throw new Error("no database in tests");
@@ -159,7 +167,10 @@ vi.mock("@workspace/resupply-db", () => {
   };
 });
 
-const catalogStore = vi.hoisted(() => ({ degraded: false }));
+const catalogStore = vi.hoisted(() => ({
+  degraded: false,
+  safetyScreen: null as unknown,
+}));
 vi.mock("../../lib/fitting/catalog-store.js", async () => {
   const actual = await vi.importActual<
     typeof import("../../lib/fitting/catalog-store")
@@ -173,7 +184,7 @@ vi.mock("../../lib/fitting/catalog-store.js", async () => {
       catalog: actual.staticCatalogAsMasks(),
       formulary: OPEN_FORMULARY,
       availability: {},
-      safetyScreen: null,
+      safetyScreen: catalogStore.safetyScreen ?? null,
       degraded: catalogStore.degraded,
     })),
   };
@@ -200,11 +211,13 @@ afterAll(() => {
 });
 afterEach(() => {
   catalogStore.degraded = false;
+  catalogStore.safetyScreen = null;
   featureFlags.enabled = new Set([
     "fitter.clinical_assessment",
     "fitter.confidence_gating",
   ]);
   db.invite = { patient_id: null, status: "sent", expires_at: null };
+  db.inviteReadFails = false;
   db.rows = {};
   db.calls = [];
   db.inserts = [];
@@ -568,6 +581,22 @@ describe("POST /fit/assess — stateful invite checks", () => {
     expect(res.body).toEqual({ valid: false, reason: "invite_not_found" });
   });
 
+  it("a FAILED invite lookup is retryable, never 'invite not found'", async () => {
+    // A DB blip must not tell the patient their invite is dead ("ask
+    // your DME company to resend it") — that reads as permanent and ends
+    // fittings that a retry would have finished.
+    db.inviteReadFails = true;
+    const res = await post({
+      measurements: VALID_MEASUREMENTS,
+      profile: VALID_PROFILE,
+    });
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({
+      valid: false,
+      reason: "invite_lookup_unavailable",
+    });
+  });
+
   it("accepts an invite that is live and not yet expired", async () => {
     db.invite = {
       patient_id: null,
@@ -814,6 +843,77 @@ describe("POST /api/fit/assess — the invite records the fitting", () => {
       .payload as Record<string, unknown>;
     const primary = row.primary_recommendation as { name?: string } | null;
     expect(upd!.recommended_mask_name).toBe(primary?.name ?? null);
+  });
+
+  it("an everything-excluded re-fitting clears the invite's stale ranked list", async () => {
+    // A patient with a still-valid link can rescan after a completed
+    // fitting. When the re-run excludes every mask (here: a prescribed
+    // pressure above every catalog rating), the assess path must write
+    // its (empty) ranked list so the staff worklist doesn't keep showing
+    // the PREVIOUS fitting's recommendations against the new
+    // contraindicated session.
+    db.persistOk = true;
+    db.invite = { patient_id: null, status: "completed", expires_at: null };
+
+    const res = await post({
+      measurements: VALID_MEASUREMENTS,
+      profile: { ...VALID_PROFILE, pressureCmH2O: 40 },
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body.outcome).toBe("contraindicated");
+    const upd = inviteUpdate();
+    expect(upd).toBeDefined();
+    expect(upd!.recommendations).toEqual([]);
+    expect(upd!.recommended_mask_id).toBeNull();
+  });
+
+  it("stores the subject the safety screen declares, not a key-prefix guess", async () => {
+    // Tenant-authored screens may use any question key; a household
+    // question without the `household_` prefix used to be persisted —
+    // and printed on the signed fit report — as the PATIENT's own
+    // implant answer.
+    db.persistOk = true;
+    catalogStore.safetyScreen = {
+      slug: "magnetic_implant",
+      version: "magnetic_implant@v2",
+      title: "Implanted device check",
+      introCopy: null,
+      attestationCopy: "I confirm these answers are accurate.",
+      questions: [
+        {
+          questionKey: "bed_partner_pacemaker",
+          prompt: "Does anyone who shares your bed have a pacemaker?",
+          helpText: null,
+          subject: "household",
+          sortOrder: 0,
+          riskFlag: "magnet_implant_household",
+          disqualifiesAttribute: "has_magnetic_components",
+          severity: "exclude",
+          unsureBehavesAs: "exclude",
+        },
+      ],
+    };
+
+    const res = await post({
+      measurements: VALID_MEASUREMENTS,
+      profile: VALID_PROFILE,
+      safety: {
+        screenVersion: "magnetic_implant@v2",
+        attestedAt: new Date().toISOString(),
+        responses: [{ questionKey: "bed_partner_pacemaker", answer: "no" }],
+      },
+    });
+
+    expect(res.status).toBe(200);
+    const ins = db.inserts.find(
+      (i) => i.table === "fit_session_safety_responses",
+    );
+    expect(ins).toBeDefined();
+    const rows = ins!.payload as Array<Record<string, unknown>>;
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.question_key).toBe("bed_partner_pacemaker");
+    expect(rows[0]!.subject).toBe("household");
   });
 
   it("never costs the session write its id when the invite update fails", async () => {

@@ -42,7 +42,7 @@ import { getOrgScopedClient } from "@workspace/resupply-db";
 import { logger } from "../../lib/logger";
 import { verifyFitterInviteToken } from "../../lib/fitter-invite-token.js";
 import { resolveOrgIdForSignedRecord } from "../../lib/storefront/signed-link-org.js";
-import { isFeatureEnabled } from "../../lib/feature-flags.js";
+import { getFeatureFlagState } from "../../lib/feature-flags.js";
 import {
   loadFitAdjustments,
   loadFittingContext,
@@ -334,6 +334,13 @@ router.post("/fit/assess", assessLimiter, async (req, res) => {
   // (easily reachable from a tab left open when the revoke happened).
   // /shop/fitter-invite/resolve already enforces this; so must we.
   const invite = await loadInvite(orgId, verification.inviteId);
+  if (invite === "unavailable") {
+    // A DB blip, not a dead invite — the SPA maps this to its retryable
+    // "couldn't finish your fitting just now" screen, never the
+    // permanent "ask your DME to resend it" dead end.
+    res.json({ valid: false, reason: "invite_lookup_unavailable" });
+    return;
+  }
   if (!invite) {
     res.json({ valid: false, reason: "invite_not_found" });
     return;
@@ -384,15 +391,24 @@ router.post("/fit/assess", assessLimiter, async (req, res) => {
     }
   }
 
-  const [enabled, gating, magnets] = await Promise.all([
-    isFeatureEnabled("fitter.clinical_assessment", orgId).catch(() => false),
-    isFeatureEnabled("fitter.confidence_gating", orgId).catch(() => false),
-    // Fail CLOSED on the safety flag: if the flag store can't be read,
-    // assume screening is required. The cost of a wrong "true" is an
-    // unnecessary safety question; the cost of a wrong "false" is a
-    // magnetic mask reaching an unscreened implant patient.
-    isFeatureEnabled("fitter.magnet_screening", orgId).catch(() => true),
+  // Fail toward SAFETY on all three flags: `isFeatureEnabled` never
+  // rejects (it absorbs every failure into its own fail-closed-to-false
+  // posture), so the old `.catch(() => true)` on the magnet flag was dead
+  // code and a production flag-store blip silently resolved
+  // `fitter.magnet_screening` to false — disabling the implant screen for
+  // the very requests it was supposed to protect. `getFeatureFlagState`
+  // surfaces the degradation explicitly; `enabled || degraded` means a
+  // failed lookup runs the SAFEST configuration (clinical path on, gating
+  // on, screening required) while a tenant's explicit opt-out — a real
+  // row that read false — is still honored.
+  const [enabledState, gatingState, magnetState] = await Promise.all([
+    getFeatureFlagState("fitter.clinical_assessment", orgId),
+    getFeatureFlagState("fitter.confidence_gating", orgId),
+    getFeatureFlagState("fitter.magnet_screening", orgId),
   ]);
+  const enabled = enabledState.enabled || enabledState.degraded;
+  const gating = gatingState.enabled || gatingState.degraded;
+  const magnets = magnetState.enabled || magnetState.degraded;
   if (!enabled) {
     res.status(404).json({
       error:
@@ -595,6 +611,10 @@ router.get("/fit/catalog", async (req, res) => {
   // record is missing — a validly-signed token whose invite row is gone
   // must not be handed the seed tenant's private catalog.
   const invite = await loadInvite(orgId, verification.inviteId);
+  if (invite === "unavailable") {
+    res.json({ valid: false, reason: "invite_lookup_unavailable" });
+    return;
+  }
   if (!invite) {
     res.json({ valid: false, reason: "invite_not_found" });
     return;
@@ -672,13 +692,19 @@ interface InviteContext {
  *
  * Supplies three things the stateless HMAC cannot: whether the invite is
  * still live, which chart it belongs to, and the location/payer that scope
- * the tenant's formulary rules. Returns null on any failure so the caller
- * fails soft rather than 500ing a patient mid-fitting.
+ * the tenant's formulary rules.
+ *
+ * A FAILED lookup is not a MISSING row: returning null for both used to
+ * tell a patient mid-fitting that their invite "couldn't be found" — a
+ * permanent-sounding dead end ("ask your DME company to resend it") —
+ * whenever the database blinked, when the truth was "try again in a
+ * moment". `"unavailable"` routes to the retryable screen instead. Never
+ * throws, so the caller still can't 500 a patient.
  */
 async function loadInvite(
   orgId: string,
   inviteId: string,
-): Promise<InviteContext | null> {
+): Promise<InviteContext | null | "unavailable"> {
   try {
     const supabase = getOrgScopedClient(orgId);
     const { data, error } = (await supabase
@@ -690,7 +716,8 @@ async function loadInvite(
       data: Record<string, unknown> | null;
       error: { message: string } | null;
     };
-    if (error || !data) return null;
+    if (error) return "unavailable";
+    if (!data) return null;
 
     // The patient's own chart carries the branch and the payer the
     // formulary is scoped by. Best-effort: an unattached prospect simply
@@ -765,7 +792,7 @@ async function loadInvite(
       chartPopulation,
     };
   } catch {
-    return null;
+    return "unavailable";
   }
 }
 
@@ -917,43 +944,76 @@ async function persistSession(input: PersistInput): Promise<string | null> {
     const sessionId = String((data as { id: string }).id);
 
     if (input.safety && input.safety.responses.length > 0) {
-      await supabase.from("fit_session_safety_responses").insert(
-        input.safety.responses.map((r) => ({
-          fit_session_id: sessionId,
-          screen_version: input.safety!.screenVersion,
-          question_key: r.questionKey,
-          // The screen declares each question's subject; we record what the
-          // patient answered against and let the report render the split.
-          subject: r.questionKey.startsWith("household_")
-            ? "household"
-            : "patient",
-          answer: r.answer,
-        })),
+      // The screen declares each question's subject — record THAT, not a
+      // guess from the key's spelling. Tenant-authored screens are free to
+      // use any question key (`bed_partner_pacemaker`), and the exclusion
+      // logic already honors the declared subject/riskFlag; deriving the
+      // stored subject from a `household_` prefix mislabelled every
+      // non-prefixed household question as the patient's own implant on
+      // the signed fit report. The prefix heuristic survives only as the
+      // fallback for a response whose key isn't in the snapshot.
+      const snapshot = input.safety.snapshot as {
+        questions?: Array<{ questionKey: string; subject: string }>;
+      } | null;
+      const subjectByKey = new Map(
+        (snapshot?.questions ?? []).map((q) => [q.questionKey, q.subject]),
       );
+      const { error: safetyErr } = await supabase
+        .from("fit_session_safety_responses")
+        .insert(
+          input.safety.responses.map((r) => ({
+            fit_session_id: sessionId,
+            screen_version: input.safety!.screenVersion,
+            question_key: r.questionKey,
+            subject:
+              subjectByKey.get(r.questionKey) ??
+              (r.questionKey.startsWith("household_")
+                ? "household"
+                : "patient"),
+            answer: r.answer,
+          })),
+        );
+      // PostgREST failures resolve as `{ error }` without throwing, so the
+      // surrounding try/catch never sees them. Message only — the rows
+      // carry safety answers, which are PHI.
+      if (safetyErr) {
+        logger.warn(
+          { fitSessionId: sessionId, message: safetyErr.message },
+          "fit session safety responses persistence failed",
+        );
+      }
     }
 
     // Provenance trail. `detail` carries codes and counts only — never
     // free-text PHI.
-    await supabase.from("fit_session_events").insert([
-      {
-        fit_session_id: sessionId,
-        event_type: "session.started",
-        actor_kind: "patient",
-        detail: { entryPoint: input.entryPoint },
-      },
-      {
-        fit_session_id: sessionId,
-        event_type: "recommendation.generated",
-        actor_kind: "system",
-        detail: {
-          outcome: input.assessment.outcome,
-          candidateCount: input.assessment.alternatives.length,
-          excludedCount: input.assessment.excluded.length,
-          rulesEngineVersion: RULES_ENGINE_VERSION,
-          degraded: input.assessment.provenance.degraded,
+    const { error: eventsErr } = await supabase
+      .from("fit_session_events")
+      .insert([
+        {
+          fit_session_id: sessionId,
+          event_type: "session.started",
+          actor_kind: "patient",
+          detail: { entryPoint: input.entryPoint },
         },
-      },
-    ]);
+        {
+          fit_session_id: sessionId,
+          event_type: "recommendation.generated",
+          actor_kind: "system",
+          detail: {
+            outcome: input.assessment.outcome,
+            candidateCount: input.assessment.alternatives.length,
+            excludedCount: input.assessment.excluded.length,
+            rulesEngineVersion: RULES_ENGINE_VERSION,
+            degraded: input.assessment.provenance.degraded,
+          },
+        },
+      ]);
+    if (eventsErr) {
+      logger.warn(
+        { fitSessionId: sessionId, message: eventsErr.message },
+        "fit session provenance events persistence failed",
+      );
+    }
 
     // Record the completed fitting on the invite — the row the STAFF
     // worklist reads — and link it to this session so the worklist can

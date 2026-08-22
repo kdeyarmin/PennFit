@@ -73,6 +73,18 @@ const FAIL_HINTS: Record<ExtractionFailReason, string[]> = {
   ],
 };
 
+/** Whether /measure will render the "taken a little far away" retake
+ *  hint for these signals — the same predicate the JSX uses, so the
+ *  auto-advance can hold the page while the hint is on screen. */
+function showsDistanceHint(
+  signals: { quality: { distance?: number } } | null,
+): boolean {
+  return (
+    typeof signals?.quality.distance === "number" &&
+    signals.quality.distance < 0.6
+  );
+}
+
 /** Bounded image decode — a hung decode must never strand the patient. */
 function decodeImage(dataUrl: string): Promise<HTMLImageElement> {
   const img = new Image();
@@ -301,10 +313,13 @@ export function Measure() {
         //    fatal — fewer frames is an honest degradation the confidence
         //    model already prices in. ──
         if (capturedFrames && capturedFrames.length > 0) {
-          // A burst is a run of same-pose frames; the guided capture
-          // mixes poses. The distinction drives the status copy and the
+          // Provenance, not pose inference: a guided run whose turn
+          // angles were both skipped is all-front too, and reading it as
+          // a burst applied the hold-still motion penalty to two frames
+          // taken seconds apart while the flow itself told the patient
+          // to move. The distinction drives the status copy and the
           // motion check below.
-          const isBurst = capturedFrames.every((f) => f.pose === "front");
+          const isBurst = capturedFrames.every((f) => f.source === "burst");
           const perFrame: FrameMeasurement[] = [];
           // Motion baseline for bursts: the IMMEDIATELY PRECEDING frame's
           // centroid only. Judging against the worst of ALL prior
@@ -424,14 +439,20 @@ export function Measure() {
           if (!isMountedRef.current) return;
           setProgress(100);
           setStatus("Analysis complete.");
-          setMeasurements(measurements, payloadFromAggregate(aggregate));
+          const aggregatePayload = payloadFromAggregate(aggregate);
+          setMeasurements(measurements, aggregatePayload);
           track("measurements_extracted", {
             frames: usedFrames.length,
             framesCaptured: capturedFrames.length,
             guided: !isBurst,
             burst: isBurst,
           });
-          setTimeout(goToQuestionnaire, AUTO_ADVANCE_MS);
+          // Hold the page when the distance hint will show (see below) —
+          // auto-advancing 2.6s after rendering "you can retake this"
+          // takes the choice away right as it's offered.
+          if (!showsDistanceHint(aggregatePayload)) {
+            setTimeout(goToQuestionnaire, AUTO_ADVANCE_MS);
+          }
           return;
         }
 
@@ -494,8 +515,12 @@ export function Measure() {
           // Auto-advance after a short delay so users can register the
           // extracted measurements; the manual "Continue" button below
           // calls the same goToQuestionnaire() handler for users who
-          // want to skip the wait.
-          setTimeout(goToQuestionnaire, AUTO_ADVANCE_MS);
+          // want to skip the wait. Held when the distance hint renders —
+          // navigating away 2.6s after offering a retake takes the
+          // choice away right as it's offered.
+          if (!showsDistanceHint(scanSignals)) {
+            setTimeout(goToQuestionnaire, AUTO_ADVANCE_MS);
+          }
         } else {
           throw new ExtractionError(
             "no_face",

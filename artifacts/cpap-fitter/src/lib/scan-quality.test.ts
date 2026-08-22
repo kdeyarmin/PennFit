@@ -411,6 +411,29 @@ describe("multi-frame aggregation", () => {
     expect(result.measurements.noseToChin).toBeLessThan(70);
   });
 
+  it("caps an all-turned fallback at 'low' however good the frames look", () => {
+    // Both turned frames carry the SAME systematic bias (gaze-ambiguous
+    // widths, residual vertical error past the cos model), so they agree
+    // near-perfectly with each other and none of the ordinary caps
+    // fire — the score alone read this set as high-band. Values are
+    // still measured; the band routes the fitting to a fresh scan or a
+    // human instead of shipping the bias as a confident recommendation.
+    const good = assessFrameQuality(input({ yawDeg: 20, pose: "turn_right" }));
+    expect(good.acceptable).toBe(true);
+    const result = aggregateFrames([
+      frame(
+        { noseToChin: 70 },
+        { pose: "turn_left", yawDeg: -20, quality: good },
+      ),
+      frame(
+        { noseToChin: 70 },
+        { pose: "turn_right", yawDeg: 20, quality: good },
+      ),
+    ]);
+    expect(result.measurements.noseToChin).toBeGreaterThan(0);
+    expect(result.band).toBe("low");
+  });
+
   it("drags confidence down when the frames themselves were poor", () => {
     const poor = assessFrameQuality(input({ faceLuma: 30, sharpness: 5 }));
     const result = aggregateFrames([

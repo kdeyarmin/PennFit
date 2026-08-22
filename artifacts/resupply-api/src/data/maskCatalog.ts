@@ -1202,7 +1202,12 @@ export const maskCatalog: MaskEntry[] = [
       "Under-nose seal eliminates nasal-bridge pressure points",
       "Compact frame preserves line of sight",
       "ErgoForm headgear with stretch crown panel",
-      "Quick-release magnetic-style clips",
+      // NOT "magnetic-style": Fisher & Paykel state publicly that their
+      // entire range is magnet-free, and the old wording false-positived
+      // every text-based magnet check — excluding the safest option for
+      // implant patients (the exact miscue migration 0492 corrected in
+      // the DB catalog).
+      "Quick-release headgear clips",
       "Dead space ~162-165 cm³ across sizes",
     ],
     contraindications: [
@@ -1541,3 +1546,51 @@ export const maskCatalog: MaskEntry[] = [
     imageUrl: null,
   },
 ];
+
+/**
+ * Masks whose headgear contains magnets, per the manufacturers' own
+ * recall and field-safety notices — the audited list migration 0492
+ * established for the DB catalog, restated for this static one:
+ * the ResMed AirFit/AirTouch F20, N20, F30, F30i families and the F40
+ * (FDA Class I recall list / ResMed IFU), and Philips' Amara View,
+ * DreamWear Full Face and DreamWisp (6 Sep 2022 field safety notice).
+ * React Health publish no magnet statement either way that could be
+ * found; on a safety attribute an unverified inclusion is the side to
+ * err on. Fisher & Paykel state publicly their entire range is
+ * magnet-free.
+ */
+export const MAGNETIC_MASK_IDS: ReadonlySet<string> = new Set([
+  "resmed-airfit-f20",
+  "resmed-airtouch-f20",
+  "resmed-airfit-f30",
+  "resmed-airfit-f30i",
+  "resmed-airfit-n20",
+  "resmed-airtouch-n20",
+  "resmed-airfit-f40",
+  "philips-amara-view",
+  "philips-dreamwear-ff",
+  "philips-dreamwisp",
+  "react-health-numa-full-face",
+]);
+
+/**
+ * Appended to every magnetic mask's contraindications at module load, so
+ * EVERY consumer of this catalog — the legacy results cards, the chatbot
+ * compare payloads, /api/masks — displays the manufacturer-flagged
+ * warning. The legacy recommendation path cannot run the clinical magnet
+ * screen (its questionnaire has no implant question), and before this no
+ * catalog entry mentioned magnets in its contraindications at all: the
+ * FDA-recalled masks were recommended with zero warning.
+ */
+const MAGNET_WARNING =
+  "Uses magnetic headgear clips — not suitable for patients or household " +
+  "members with pacemakers, defibrillators, neurostimulators, cochlear " +
+  "implants, aneurysm clips, or other implanted metallic medical devices";
+for (const mask of maskCatalog) {
+  if (
+    MAGNETIC_MASK_IDS.has(mask.id) &&
+    !mask.contraindications.some((c) => /magnet/i.test(c))
+  ) {
+    mask.contraindications.push(MAGNET_WARNING);
+  }
+}

@@ -16,6 +16,15 @@ import type { CapturePose } from "@/lib/scan-quality";
 export interface CapturedFrame {
   dataUrl: string;
   pose: CapturePose;
+  /**
+   * Which capture flow produced the frame. /measure keys the motion
+   * check and its status copy on this — a guided run whose turn angles
+   * were both skipped is still a guided run (two front frames taken
+   * seconds apart, moving between poses in between), and treating it as
+   * a one-tap burst would apply the hold-still motion penalty to
+   * movement the flow itself instructed.
+   */
+  source: "burst" | "guided";
 }
 
 export interface ChosenMask {
@@ -75,11 +84,21 @@ interface FitterState {
    * /questionnaire, /results, /order) refuse to render until the email
    * is set, so the email backs every recommendation the patient sees.
    * `emailConsent` is the OPTIONAL marketing opt-in — it does not gate
-   * the flow (see useFitterEmailGate in App.tsx); its only consumer is
+   * the flow (see useFitterConsentGate in App.tsx); its only consumer is
    * the marketing-gated completion ping in results.tsx.
    */
   email: string | null;
   emailConsent: boolean;
+  /**
+   * Whether the patient actually SUBMITTED the /consent step — the
+   * affirmative camera/biometric checkbox, not merely having an email on
+   * file. The two are distinct: a staff invite carries a known email, and
+   * prefilling it must never stand in for the patient's own consent to
+   * use their camera. Set ONLY by the consent page's Continue handler
+   * (which requires the checkbox), and it is what gates every
+   * camera-bearing route — see useFitterConsentGate in App.tsx.
+   */
+  cameraConsentGiven: boolean;
   /**
    * Signed token from a staff-initiated AI-fitter invite
    * (`/fitter-invite?t=…`). When present, the /results page transmits
@@ -115,6 +134,10 @@ interface FitterContextType extends FitterState {
     measurements: FacialMeasurements,
     scanSignals?: ScanSignalsPayload | null,
   ) => void;
+  /** Drop the previous scan's persisted measurements + signals — called
+   *  when a new capture is committed, so a reload mid-analysis can't
+   *  resurrect the scan the patient just replaced. */
+  clearMeasurements: () => void;
   updateAnswers: (answers: Partial<QuestionnaireAnswers>) => void;
   updateFitAnswers: (answers: FitAnswers) => void;
   /** Replace the WHOLE v2 answer set. The merge-based updater above can
@@ -127,6 +150,9 @@ interface FitterContextType extends FitterState {
   setCapturedFrames: (frames: CapturedFrame[] | null) => void;
   setChosenMask: (mask: ChosenMask | null) => void;
   setEmailConsent: (email: string, consent: boolean) => void;
+  /** Record that the patient submitted /consent (the camera/biometric
+   *  checkbox). Called only from that page's Continue handler. */
+  setCameraConsentGiven: () => void;
   setInviteToken: (token: string | null) => void;
   /** Re-anchor the entry channel when a NEW invite resolves — see the
    *  implementation note in the provider. */
@@ -202,9 +228,12 @@ function readStoredMeasurements(): FacialMeasurements | null {
 /**
  * Restore the persisted scan signals.
  *
- * Validated loosely on purpose: the API re-validates with a strict Zod
- * schema, and a malformed blob here should degrade to "no signals"
- * (the server's neutral default) rather than throw mid-flow.
+ * Validated to the SERVER's contract, not loosely: the API's `scan`
+ * schema is `.strict()` with per-field 0..1 ranges, so a stale or
+ * hand-edited blob that merely LOOKED right used to be posted verbatim
+ * and 400 the entire assessment — a dead end that survives retries,
+ * because the bad blob is re-read on every attempt. Anything off-shape
+ * degrades to "no signals" (the server's neutral default) instead.
  */
 function readStoredScanSignals(): ScanSignalsPayload | null {
   try {
@@ -213,12 +242,55 @@ function readStoredScanSignals(): ScanSignalsPayload | null {
     const parsed: unknown = JSON.parse(stored);
     if (!parsed || typeof parsed !== "object") return null;
     const r = parsed as Record<string, unknown>;
-    if (typeof r.measurementConfidence !== "number") return null;
     if (r.band !== "high" && r.band !== "moderate" && r.band !== "low") {
       return null;
     }
-    if (typeof r.frameCount !== "number") return null;
-    return parsed as ScanSignalsPayload;
+    const unit = (v: unknown): v is number =>
+      typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= 1;
+    if (!unit(r.measurementConfidence)) return null;
+    if (
+      typeof r.frameCount !== "number" ||
+      !Number.isInteger(r.frameCount) ||
+      r.frameCount < 1 ||
+      r.frameCount > 10
+    ) {
+      return null;
+    }
+    const QUALITY_KEYS = [
+      "lighting",
+      "distance",
+      "pose",
+      "occlusion",
+      "motion",
+      "framing",
+    ];
+    const AGREEMENT_KEYS = [
+      "noseWidth",
+      "noseHeight",
+      "noseToChin",
+      "mouthWidth",
+      "faceWidthAtCheekbones",
+    ];
+    const objectOfUnits = (
+      value: unknown,
+      allowedKeys: string[],
+    ): value is Record<string, number> =>
+      typeof value === "object" &&
+      value !== null &&
+      Object.entries(value).every(
+        ([k, v]) => allowedKeys.includes(k) && unit(v),
+      );
+    if (!objectOfUnits(r.quality, QUALITY_KEYS)) return null;
+    if (!objectOfUnits(r.agreement, AGREEMENT_KEYS)) return null;
+    // Rebuild rather than pass through: an extra top-level key would
+    // fail the server's `.strict()` even with every known field valid.
+    return {
+      frameCount: r.frameCount,
+      quality: r.quality,
+      agreement: r.agreement,
+      measurementConfidence: r.measurementConfidence,
+      band: r.band,
+    } as ScanSignalsPayload;
   } catch {
     return null;
   }
@@ -293,6 +365,18 @@ export function FitterProvider({ children }: { children: ReactNode }) {
       return false;
     }
   });
+  // Deliberately its own key rather than inferred from `email`: a
+  // patient mid-flow when this shipped has an email but no flag, and
+  // re-showing them the consent step is the safe direction.
+  const [cameraConsentGiven, setCameraConsentGivenState] = useState<boolean>(
+    () => {
+      try {
+        return sessionStorage.getItem("fitter_camera_consent") === "1";
+      } catch {
+        return false;
+      }
+    },
+  );
 
   // Staff-invite token. Persisted in sessionStorage so it survives the
   // multi-page fitter flow (and a mid-flow refresh) and is still
@@ -427,6 +511,15 @@ export function FitterProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const setCameraConsentGiven = () => {
+    setCameraConsentGivenState(true);
+    try {
+      sessionStorage.setItem("fitter_camera_consent", "1");
+    } catch (e) {
+      console.error("Failed to persist fitter camera consent", e);
+    }
+  };
+
   const setInviteToken = (token: string | null) => {
     setInviteTokenState(token);
     try {
@@ -493,6 +586,26 @@ export function FitterProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  /**
+   * Invalidate the previous scan the moment a NEW capture is committed.
+   * The photo lives in memory only, but the measurements it produced are
+   * persisted — so a reload during the retake's analysis used to lose
+   * the new photo, rehydrate the OLD measurements, and silently forward
+   * the patient with the scan they had just chosen to replace. Called at
+   * capture-commit time (not when a retake button is clicked, which
+   * would un-gate the flow behind the Back button).
+   */
+  const clearMeasurements = () => {
+    setMeasurementsState(null);
+    setScanSignalsState(null);
+    try {
+      sessionStorage.removeItem(MEASUREMENTS_STORAGE_KEY);
+      sessionStorage.removeItem(SCAN_SIGNALS_STORAGE_KEY);
+    } catch {
+      // Storage unusable — nothing was persisted, nothing to clear.
+    }
+  };
+
   /** Clear the fitting DATA but keep identity + invite context. */
   const resetForNewFitting = () => {
     setMeasurementsState(null);
@@ -519,7 +632,15 @@ export function FitterProvider({ children }: { children: ReactNode }) {
     setMultiframeCaptureState(false);
     setEmail(null);
     setEmailConsentState(false);
+    // A different patient (a new invite in this tab, a shared kiosk)
+    // must give their OWN camera consent — never inherit the last
+    // patient's. `resetForNewFitting` deliberately keeps it: that is the
+    // same patient re-scanning within one consented session.
+    setCameraConsentGivenState(false);
     setInviteTokenState(null);
+    // Clear the in-memory channel along with its storage key below — a
+    // later fitting in the same tab must not inherit this one's channel.
+    setEntryPointState(null);
     try {
       // Measurements + scan signals were already cleared by
       // resetForNewFitting() above (via the storage-key constants).
@@ -527,6 +648,7 @@ export function FitterProvider({ children }: { children: ReactNode }) {
       sessionStorage.removeItem("fitter_multiframe");
       sessionStorage.removeItem("fitter_email");
       sessionStorage.removeItem("fitter_email_consent");
+      sessionStorage.removeItem("fitter_camera_consent");
       sessionStorage.removeItem("fitter_invite_token");
       sessionStorage.removeItem("fitter_entry_point");
     } catch {
@@ -548,10 +670,12 @@ export function FitterProvider({ children }: { children: ReactNode }) {
         chosenMask,
         email,
         emailConsent,
+        cameraConsentGiven,
         inviteToken,
         entryPoint,
         storagePersisted,
         setMeasurements,
+        clearMeasurements,
         updateAnswers,
         updateFitAnswers,
         replaceFitAnswers,
@@ -561,6 +685,7 @@ export function FitterProvider({ children }: { children: ReactNode }) {
         setCapturedFrames,
         setChosenMask,
         setEmailConsent,
+        setCameraConsentGiven,
         setInviteToken,
         setEntryPoint,
         reset,

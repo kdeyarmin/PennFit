@@ -15,6 +15,7 @@
 import { describe, it, expect } from "vitest";
 import type { MaskEntry } from "../../data/maskCatalog";
 import {
+  getActiveContraindications,
   recommend,
   recommendSize,
   scoreAnswers,
@@ -143,6 +144,130 @@ describe("recommendSize", () => {
     // 4 sizes → middle idx = 2 → "M"
     expect(r.size).toBe("M");
     expect(r.rationale).toMatch(/too narrow|middle/i);
+  });
+
+  it("treats wide codes as width variants, not the next size up (0511)", () => {
+    // ["S","SW","M","W"] over noseWidth 20..36 is a THREE-bucket run —
+    // plain ladder S, M with SW sharing M's width bucket and W stepping
+    // above M — not a four-step ladder. Buckets: S [20,25.3),
+    // SW/M [25.3,30.7), W [30.7,36]. A linear ladder would call 28 mm
+    // "SW" and 33 mm "M": one physical size off in each case.
+    const m = maskFixture({ sizesAvailable: ["S", "SW", "M", "W"] });
+    expect(recommendSize(m, { ...M, noseWidth: 22 }).size).toBe("S");
+    // Mid-bucket prefers the plain base over the wide cut.
+    expect(recommendSize(m, { ...M, noseWidth: 28 }).size).toBe("M");
+    expect(recommendSize(m, { ...M, noseWidth: 33 }).size).toBe("W");
+  });
+
+  it("a wide code with no plain base stays an ordinary ladder step (F40 rule)", () => {
+    // ["SW","M","L"] ships no plain Small — 0511: an ordinary three-step
+    // ladder whose smallest size merely has "wide" in its name.
+    const m = maskFixture({
+      type: "fullFace",
+      sizesAvailable: ["SW", "M", "L"],
+    });
+    expect(recommendSize(m, { ...M, noseToChin: 38 }).size).toBe("SW");
+    expect(recommendSize(m, { ...M, noseToChin: 50 }).size).toBe("M");
+    expect(recommendSize(m, { ...M, noseToChin: 62 }).size).toBe("L");
+  });
+});
+
+describe("getActiveContraindications — catalog advisories actually fire", () => {
+  it("triggers a high-pressure advisory for a high-pressure patient", () => {
+    // "High pressures above 15 cmH₂O" matched no branch at all, so a
+    // 20-rated mask carrying the advisory escaped both the
+    // contraindication AND the <20 pressure-rating penalty.
+    const m = maskFixture({
+      contraindications: [
+        "High CPAP pressures above 15 cmH₂O — clinical advisory",
+      ],
+    });
+    expect(
+      getActiveContraindications(m, answers({ cpapPressureSetting: "high" })),
+    ).toHaveLength(1);
+    expect(
+      getActiveContraindications(m, answers({ cpapPressureSetting: "low" })),
+    ).toHaveLength(0);
+  });
+
+  it("respects each advisory's own threshold, not just the band", () => {
+    // The band only says "15 or above", so an advisory the patient
+    // cannot be shown to exceed must NOT fire: the Pilairo Q and Nova
+    // Micro carry "Pressures above 25 cmH₂O" and are rated to 25, and
+    // firing for a patient prescribed 16 crushed a perfectly suitable
+    // mask by the 0.15 contraindication multiplier.
+    const farAbove = maskFixture({
+      contraindications: ["Pressures above 25 cmH₂O"],
+    });
+    expect(
+      getActiveContraindications(
+        farAbove,
+        answers({ cpapPressureSetting: "high" }),
+      ),
+    ).toHaveLength(0);
+
+    // One cmH₂O above the band floor is still unproven — 16 sits inside
+    // the same "high" band as 15.
+    const justAbove = maskFixture({
+      contraindications: ["High pressures above 16 cmH₂O — clinical advisory"],
+    });
+    expect(
+      getActiveContraindications(
+        justAbove,
+        answers({ cpapPressureSetting: "high" }),
+      ),
+    ).toHaveLength(0);
+
+    // An advisory with no number is qualitative: "high pressures" is
+    // exactly what the high band reports, so it still fires.
+    const unnumbered = maskFixture({
+      contraindications: ["High pressures"],
+    });
+    expect(
+      getActiveContraindications(
+        unnumbered,
+        answers({ cpapPressureSetting: "high" }),
+      ),
+    ).toHaveLength(1);
+    expect(
+      getActiveContraindications(
+        unnumbered,
+        answers({ cpapPressureSetting: "medium" }),
+      ),
+    ).toHaveLength(0);
+  });
+
+  it("never reads an unanswered pressure question as a pressure claim", () => {
+    const m = maskFixture({ contraindications: ["High pressures"] });
+    expect(
+      getActiveContraindications(
+        m,
+        answers({ cpapPressureSetting: "unknown" }),
+      ),
+    ).toHaveLength(0);
+  });
+
+  it("leaves non-threshold 'pressure' wording alone", () => {
+    // "Sensitivity to nostril pressure" (AirFit P30i) is about comfort,
+    // not therapy pressure — it must not be swept up by the branch.
+    const m = maskFixture({
+      contraindications: ["Sensitivity to nostril pressure"],
+    });
+    expect(
+      getActiveContraindications(m, answers({ cpapPressureSetting: "high" })),
+    ).toHaveLength(0);
+  });
+
+  it("triggers an adhesive advisory for a sensitive-skin patient", () => {
+    const m = maskFixture({
+      contraindications: ["Sensitive skin reactions to adhesive"],
+    });
+    expect(
+      getActiveContraindications(m, answers({ sensitiveSkin: true })),
+    ).toHaveLength(1);
+    expect(
+      getActiveContraindications(m, answers({ sensitiveSkin: false })),
+    ).toHaveLength(0);
   });
 });
 

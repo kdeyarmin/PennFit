@@ -210,12 +210,20 @@ test("Results page never trips the ErrorBoundary when /api/masks returns non-JSO
   await page.waitForTimeout(800);
   await page.getByTestId("button-capture").click({ timeout: 10_000 });
 
-  // /measure → /questionnaire — MediaPipe runs, measurements
-  // extract, the page auto-advances. If the MediaPipe module was
+  // /measure → /questionnaire — MediaPipe runs, measurements extract.
+  // The stubbed capture reads as farther than the coached arm's-length
+  // window (12.8 px iris → px/mm below the distance band), so /measure
+  // shows the distance-retake hint and HOLDS instead of auto-advancing;
+  // continue explicitly, as a patient would. If the MediaPipe module was
   // never intercepted (a bundled `vite preview`/prod build), the
   // real WASM landmarker runs against stubbed bytes and never
   // advances — skip with a clear note rather than time out as a
   // failure, since this spec requires the unbundled dev server.
+  try {
+    await page.getByTestId("measure-continue").click({ timeout: 15_000 });
+  } catch {
+    /* no hold — either auto-advance ran or the stub didn't take */
+  }
   try {
     await page.waitForURL(/\/questionnaire/, { timeout: 15_000 });
   } catch (err) {

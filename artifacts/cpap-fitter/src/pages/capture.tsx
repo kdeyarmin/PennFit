@@ -38,7 +38,8 @@ export function Capture() {
 
 function SingleFrameCapture() {
   const [, setLocation] = useLocation();
-  const { setCapturedImage, setCapturedFrames } = useFitterStore();
+  const { setCapturedImage, setCapturedFrames, clearMeasurements } =
+    useFitterStore();
   const visionHealth = useVisionRuntimeHealth();
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -208,7 +209,7 @@ function SingleFrameCapture() {
         return false;
       }
 
-      const frames: { dataUrl: string; pose: "front" }[] = [];
+      const frames: { dataUrl: string; pose: "front"; source: "burst" }[] = [];
       for (let i = 0; i < BURST_FRAME_COUNT; i += 1) {
         // The camera can die mid-burst (tab switch, OS revoking the
         // stream, unmount) — ship whatever was captured so far rather
@@ -229,7 +230,7 @@ function SingleFrameCapture() {
         // frames distinct); a fully frozen feed degrades to one frame,
         // which the aggregate honestly caps below high confidence.
         if (dataUrl !== frames[frames.length - 1]?.dataUrl) {
-          frames.push({ dataUrl, pose: "front" });
+          frames.push({ dataUrl, pose: "front", source: "burst" });
         }
         if (i < BURST_FRAME_COUNT - 1) {
           await new Promise((resolve) =>
@@ -261,6 +262,10 @@ function SingleFrameCapture() {
         // (e.g. guided → fallback → retake). Stale frames left in the
         // store would measure photos the patient just replaced.
         setCapturedFrames(frames);
+        // …and the previous scan's persisted numbers go with them: a
+        // reload during THIS capture's analysis must land back here, not
+        // silently resurrect the measurements being replaced.
+        clearMeasurements();
       });
       stopCamera();
       track("capture_taken", { frames: frames.length, burst: true });

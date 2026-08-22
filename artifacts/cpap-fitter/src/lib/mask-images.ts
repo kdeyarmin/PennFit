@@ -17,10 +17,29 @@ export const maskTypeLabels: Record<string, string> = {
   hybrid: "Hybrid",
 };
 
+/**
+ * The clinical engine's interface types, mapped onto the legacy asset /
+ * label keys. Without this, every clinical candidate fell through both
+ * maps: the card showed the FULL-FACE stock photo for a nasal pillow
+ * (the `?? fullFaceImg` fallback) and printed the raw enum
+ * ("nasal_pillow") as its type.
+ */
+const CLINICAL_TO_LEGACY: Record<string, string> = {
+  full_face: "fullFace",
+  total_face: "fullFace",
+  nasal: "nasal",
+  nasal_cradle: "nasal",
+  nasal_pillow: "nasalPillow",
+  hybrid: "hybrid",
+  oral: "hybrid",
+};
+
 export function getMaskImage(type: string): string {
-  return maskTypeImages[type] ?? fullFaceImg;
+  const key = type in maskTypeImages ? type : CLINICAL_TO_LEGACY[type];
+  return maskTypeImages[key ?? ""] ?? fullFaceImg;
 }
 
 export function formatMaskType(type: string): string {
-  return maskTypeLabels[type] ?? type;
+  const key = type in maskTypeLabels ? type : CLINICAL_TO_LEGACY[type];
+  return maskTypeLabels[key ?? ""] ?? type.replace(/_/g, " ");
 }

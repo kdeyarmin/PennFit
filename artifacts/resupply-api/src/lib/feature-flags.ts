@@ -165,6 +165,11 @@ const LOOKUP_TIMEOUT_MS = 1_500;
 
 interface CacheEntry {
   value: boolean;
+  /** True when `value` is a fail-open/closed fallback from a FAILED
+   *  lookup, not a value actually read from the flag table. Cached so a
+   *  state-aware caller inside the short failure window still sees the
+   *  degradation instead of mistaking the fallback for a tenant choice. */
+  degraded: boolean;
   expiresAt: number;
 }
 
@@ -254,6 +259,33 @@ export async function isFeatureEnabled(
   key: FeatureFlagKey,
   orgId?: string,
 ): Promise<boolean> {
+  return (await getFeatureFlagState(key, orgId)).enabled;
+}
+
+/**
+ * The lookup result WITH its provenance: `degraded` is true when the
+ * boolean is a fail-open/closed fallback (DB error, timeout, no tenant
+ * resolvable) rather than a value actually read for the tenant.
+ *
+ * Why this exists: `isFeatureEnabled` never rejects — every failure is
+ * absorbed into its fail-open (non-prod) / fail-closed (prod) posture —
+ * so a caller's `.catch(() => true)` around it is dead code. A SAFETY
+ * flag (e.g. `fitter.magnet_screening`) must fail toward "screening
+ * required", which for that flag means treating a failed lookup as ON:
+ * resolve it as `state.enabled || state.degraded`. A tenant's explicit
+ * opt-out still reads as `{ enabled: false, degraded: false }` and is
+ * honored; only a lookup that never reached the tenant's row is
+ * overridden. Never rejects, same as `isFeatureEnabled`.
+ */
+export interface FeatureFlagState {
+  enabled: boolean;
+  degraded: boolean;
+}
+
+export async function getFeatureFlagState(
+  key: FeatureFlagKey,
+  orgId?: string,
+): Promise<FeatureFlagState> {
   const now = Date.now();
   // Built per (org, key). Hoisted so the catch block caches a failure
   // under the same entry a retry will read.
@@ -289,11 +321,17 @@ export async function isFeatureEnabled(
 
     cacheKey = `${effectiveOrgId}:${key}`;
     const cached = cache.get(cacheKey);
-    if (cached && cached.expiresAt > now) return cached.value;
+    if (cached && cached.expiresAt > now) {
+      return { enabled: cached.value, degraded: cached.degraded };
+    }
 
     const value = await lookupEnabled(effectiveOrgId, key, seedOrgId);
-    cache.set(cacheKey, { value, expiresAt: now + CACHE_TTL_MS });
-    return value;
+    cache.set(cacheKey, {
+      value,
+      degraded: false,
+      expiresAt: now + CACHE_TTL_MS,
+    });
+    return { enabled: value, degraded: false };
   } catch (err) {
     // The supabase client throws plain Error subclasses for missing
     // env vars; PostgREST errors arrive as `{ message, code }`
@@ -336,8 +374,12 @@ export async function isFeatureEnabled(
       // we still fail CLOSED on the off-chance the boot-time gate
       // was bypassed or regressed — silently running with every
       // feature enabled is worse than disabled.
-      cache.set(cacheKey, { value: true, expiresAt: now + CACHE_TTL_MS });
-      return true;
+      cache.set(cacheKey, {
+        value: true,
+        degraded: true,
+        expiresAt: now + CACHE_TTL_MS,
+      });
+      return { enabled: true, degraded: true };
     }
     if (isUnreachable && process.env.NODE_ENV !== "production") {
       // Supabase is configured but unreachable AND we're not in
@@ -346,8 +388,12 @@ export async function isFeatureEnabled(
       // In production an unreachable DB is a real outage; the file
       // header pins fail-CLOSED posture, so we fall through to the
       // fail-closed branch below instead.
-      cache.set(cacheKey, { value: true, expiresAt: now + CACHE_TTL_MS });
-      return true;
+      cache.set(cacheKey, {
+        value: true,
+        degraded: true,
+        expiresAt: now + CACHE_TTL_MS,
+      });
+      return { enabled: true, degraded: true };
     }
     logger.warn(
       {
@@ -360,8 +406,12 @@ export async function isFeatureEnabled(
     // Cache the failure for a SHORT window so a downed DB doesn't
     // turn into a per-request 503 storm. The next request after the
     // TTL expires tries again.
-    cache.set(cacheKey, { value: false, expiresAt: now + 1_000 });
-    return false;
+    cache.set(cacheKey, {
+      value: false,
+      degraded: true,
+      expiresAt: now + 1_000,
+    });
+    return { enabled: false, degraded: true };
   }
 }
 

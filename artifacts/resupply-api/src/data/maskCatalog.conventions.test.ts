@@ -27,8 +27,10 @@
 
 import { describe, expect, it } from "vitest";
 
-import { maskCatalog } from "./maskCatalog.js";
+import { MAGNETIC_MASK_IDS, maskCatalog } from "./maskCatalog.js";
+import { resolveSizeRunBuckets } from "../lib/size-run.js";
 import {
+  maskHasMagneticHardware,
   recommendSize,
   type FacialMeasurements,
 } from "../lib/storefront/recommendationEngine.js";
@@ -84,15 +86,26 @@ describe("legacy catalog fit ranges", () => {
   });
 
   it("an average adult lands mid-run, not clamped to an end size", () => {
-    // For every mask with 3+ sizes, the canonical face must NOT resolve
-    // to the last size — that is the clamp the broken axis produced. (The
-    // first size is legitimate for 2-size runs whose split straddles the
-    // average.)
+    // For every mask whose run spans 3+ PARTITION BUCKETS, the canonical
+    // face must NOT resolve into the last bucket — that is the clamp the
+    // broken axis produced. Buckets, not array positions: recommendSize
+    // follows 0511's wide-code convention, so a run like the N30's
+    // [S, SW, M] is a TWO-bucket ladder (SW shares M's width bucket) and
+    // its plain Medium — the semantically right size for an average
+    // face — sits last in the array without being an end size. (The
+    // first bucket is legitimate for 2-bucket runs whose split straddles
+    // the average.)
     for (const mask of maskCatalog) {
       const sizes = mask.sizesAvailable;
       if (sizes.length < 3) continue;
+      const run = resolveSizeRunBuckets(
+        sizes,
+        mask.type === "fullFace" || mask.type === "hybrid" ? "height" : "width",
+      );
+      if (run.bucketCount < 3) continue;
       const { size } = recommendSize(mask, CANONICAL_ADULT);
-      expect(size, mask.id).not.toBe(sizes[sizes.length - 1]);
+      const chosenBucket = run.bucketOf[sizes.indexOf(size!)];
+      expect(chosenBucket, mask.id).not.toBe(run.bucketCount - 1);
     }
   });
 });
@@ -138,5 +151,40 @@ describe("legacy catalog size runs", () => {
     // absent here is fine, but one that IS here must carry the real run.
     if (!mask) return;
     expect(mask.sizesAvailable).toEqual(VERIFIED_RUNS[id]!);
+  });
+});
+
+describe("magnet safety on the legacy catalog", () => {
+  const byId = new Map(maskCatalog.map((m) => [m.id, m]));
+
+  it("every audited magnetic mask exists and warns about implanted devices", () => {
+    // The legacy path cannot run the clinical magnet screen (its
+    // questionnaire has no implant question), so the manufacturer-flagged
+    // warning in `contraindications` is the one surface every consumer
+    // of this catalog shows. Before this, the FDA-recalled masks carried
+    // no magnet mention in their contraindications at all.
+    expect(MAGNETIC_MASK_IDS.size).toBeGreaterThan(0);
+    for (const id of MAGNETIC_MASK_IDS) {
+      const mask = byId.get(id);
+      expect(mask, `${id} missing from the catalog`).toBeDefined();
+      expect(
+        mask!.contraindications.some((c) => /magnet/i.test(c)),
+        `${id} has no magnet warning`,
+      ).toBe(true);
+      expect(maskHasMagneticHardware(mask!), id).toBe(true);
+    }
+  });
+
+  it("the Fisher & Paykel range is magnet-free and no longer false-positives the text checks", () => {
+    // F&P state publicly that their entire range is magnet-free; the
+    // Evora Full's old "magnetic-style clips" copy false-positived every
+    // text-based magnet check, excluding the safest option for implant
+    // patients (the miscue 0492 corrected in the DB catalog).
+    const fp = maskCatalog.filter((m) => m.id.startsWith("fisher-paykel-"));
+    expect(fp.length).toBeGreaterThan(0);
+    for (const mask of fp) {
+      expect(MAGNETIC_MASK_IDS.has(mask.id), mask.id).toBe(false);
+      expect(maskHasMagneticHardware(mask), mask.id).toBe(false);
+    }
   });
 });

@@ -68,6 +68,8 @@ export function FitterInvite() {
   useDocumentTitle("Your mask-fitting invite");
   const [, setLocation] = useLocation();
   const {
+    inviteToken: storedInviteToken,
+    reset,
     setEmailConsent,
     setInviteToken,
     setFitProfileV2,
@@ -97,6 +99,17 @@ export function FitterInvite() {
         if (!res.valid) {
           setState({ kind: "invalid", reason: res.reason ?? "error" });
           return;
+        }
+        // A DIFFERENT invite than the one this tab was fitting: wipe the
+        // previous fitting entirely — measurements, answers, chosen mask,
+        // email, entry channel — before stashing the new context. The
+        // store persists per tab (sessionStorage), so on a shared device
+        // (a clinic kiosk, a family phone) the previous patient's face
+        // measurements and email would otherwise carry into the next
+        // patient's fitting and could be transmitted to THEIR chart.
+        // Same-token re-landings (a refresh mid-flow) keep everything.
+        if (storedInviteToken !== null && storedInviteToken !== token) {
+          reset();
         }
         // Stash the token now so it survives the multi-step flow even
         // if the patient navigates away before clicking start.
@@ -134,28 +147,39 @@ export function FitterInvite() {
     return () => {
       cancelled = true;
     };
-  }, [setInviteToken, setFitProfileV2, setMultiframeCapture, setEntryPoint]);
+  }, [
+    storedInviteToken,
+    reset,
+    setInviteToken,
+    setFitProfileV2,
+    setMultiframeCapture,
+    setEntryPoint,
+  ]);
 
   const handleStart = (email: string | null) => {
     track("fitter_invite_started");
     if (email) {
-      // Known patient — prefill the email gate and head straight into
-      // the camera step. Marketing consent stays FALSE: this patient
-      // skips /consent entirely, so they never see the optional
-      // marketing opt-in checkbox, and granting it for them here
-      // auto-enrolled every invited patient in the nurture campaign
-      // without consent. The flow gate reads only the email
-      // (useFitterEmailGate in App.tsx); the consent flag's sole
-      // consumer is the marketing-gated completion ping on /results.
-      // The staff-chart transmission is invite-token-gated and is not
-      // affected by this flag.
+      // Known patient — prefill the email so /consent only asks for the
+      // checkbox. This is a PREFILL and nothing more: the camera gate
+      // keys on `cameraConsentGiven`, which only /consent's Continue
+      // handler sets, so an invite carrying an email can no longer walk
+      // a patient past the disclosure they never saw
+      // (useFitterConsentGate in App.tsx).
+      //
+      // Marketing consent stays FALSE here: granting it for them would
+      // auto-enroll every invited patient in the nurture campaign
+      // without consent; the optional opt-in is theirs to check on
+      // /consent.
       setEmailConsent(email, false);
-      setLocation("/capture");
-    } else {
-      // No email on file (SMS-only prospect) — collect one on /consent
-      // first. The invite token is already stashed.
-      setLocation("/consent");
     }
+    // EVERY invitee goes through /consent — including known-email ones.
+    // The biometric-information disclosure and the affirmative
+    // camera-consent checkbox live ONLY there; the old known-email
+    // shortcut to /capture rested on a (since-deleted) comment claiming
+    // the disclosure "still renders in-flow", which was never true, so
+    // invited patients reached getUserMedia without ever being shown the
+    // disclosure or recording a consent_given.
+    setLocation("/consent");
   };
 
   const firstName =

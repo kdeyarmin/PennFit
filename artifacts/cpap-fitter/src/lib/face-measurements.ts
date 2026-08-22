@@ -191,9 +191,20 @@ export function extractMeasurementValues(
   // ── Depth-correction inputs (all optional — see header). ──
   const irisZ = meanFiniteZ(landmarks, IRIS_INDICES);
   // Estimated camera→eye distance from the iris angular size under the
-  // assumed FOV: f_px = width / (2·tan(hfov/2)); D = f_px·11.7 / irisPix.
+  // assumed FOV: f_px = longAxis / (2·tan(hfov/2)); D = f_px·11.7 / irisPix.
+  //
+  // The LONG axis, deliberately: focal length in pixels is
+  // axis-independent (square pixels), so anchoring the population FOV
+  // constant to the sensor's long axis gives the SAME focal estimate
+  // whether the frame arrives landscape or portrait. Anchoring it to
+  // `img.width` — whichever axis that happened to be — under-estimated
+  // the focal (and thus the distance) by ~44% on portrait captures, the
+  // posture phones actually use, dragging nose height ~-8% and pushing
+  // clamp-limited face width ~+9% (verified against pinhole projections;
+  // see the portrait fixture in face-measurements.accuracy.test.ts).
   const focalPx =
-    img.width / (2 * Math.tan((ASSUMED_HFOV_DEG / 2) * (Math.PI / 180)));
+    Math.max(img.width, img.height) /
+    (2 * Math.tan((ASSUMED_HFOV_DEG / 2) * (Math.PI / 180)));
   const estimatedDistanceMm = (focalPx * IRIS_DIAMETER_MM) / irisPix;
 
   let depthCorrected = false;

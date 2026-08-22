@@ -20,7 +20,12 @@
 import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../logger";
-import { maskCatalog, type MaskEntry } from "../../data/maskCatalog.js";
+import { resolveSizeRunBuckets } from "../size-run.js";
+import {
+  MAGNETIC_MASK_IDS,
+  maskCatalog,
+  type MaskEntry,
+} from "../../data/maskCatalog.js";
 import {
   computeFitAdjustments,
   tallyOutcomesByMask,
@@ -79,6 +84,12 @@ const LEGACY_INTERFACE: Record<string, InterfaceType> = {
   hybrid: "hybrid",
 };
 
+// (The audited magnetic-model list lives with the catalog itself —
+// `MAGNETIC_MASK_IDS` in data/maskCatalog.ts, mirroring migration 0492's
+// manufacturer-sourced corrections — so the degraded-path flags, the
+// legacy engine's maskHasMagneticHardware, and the patient-facing magnet
+// warnings all read ONE source and cannot drift.)
+
 /**
  * Project the built-in TypeScript catalog into the engine's shape.
  *
@@ -110,18 +121,35 @@ export function staticCatalogAsMasks(
       ? ADULT_PLAUSIBILITY_BOUNDS.noseWidth
       : ADULT_PLAUSIBILITY_BOUNDS.noseToChin;
 
+    // "Wide sizes are not simply bigger" (migration 0511): a wide code
+    // whose plain base is in the run shares the base's bucket on the
+    // HEIGHT axis (wide is not taller) and steps one bucket up on the
+    // WIDTH axis; a wide code with no plain base is an ordinary ladder
+    // step. See lib/size-run.ts. Where a wide and its base share a
+    // bucket, the base sorts first so the picker's tie-break recommends
+    // the plain size — without a second axis the two are
+    // indistinguishable here, and the base cut fits more faces.
+    const run = resolveSizeRunBuckets(sizes, axisIsNose ? "width" : "height");
+
     const variants: SizeVariant[] = sizes.map((size, i) => {
-      const width = (range[1] - range[0]) / sizes.length;
+      const bucket = run.bucketOf[i]!;
+      const width = (range[1] - range[0]) / run.bucketCount;
       // Edge sizes run out to the plausibility window (see the header):
       // any value the gate admits lands in some band.
-      const lo = i === 0 ? windowLo : range[0] + width * i;
-      const hi = i === sizes.length - 1 ? windowHi : range[0] + width * (i + 1);
+      const lo = bucket === 0 ? windowLo : range[0] + width * bucket;
+      const hi =
+        bucket === run.bucketCount - 1
+          ? windowHi
+          : range[0] + width * (bucket + 1);
       return {
         id: `${e.id}:${size}`,
         component: interfaceType === "nasal_pillow" ? "pillow" : "cushion",
         sizeCode: size,
         sizeLabel: size,
-        sortOrder: i * 10,
+        // Bucket-major so the picker walks base sizes ahead of the wide
+        // cut sharing their bucket (see above); display order elsewhere
+        // comes from the array, which keeps the catalog's own order.
+        sortOrder: bucket * 10 + (run.isWideStep[i] ? 5 : 0),
         noseWidthMin: axisIsNose ? round1(lo) : null,
         noseWidthMax: axisIsNose ? round1(hi) : null,
         noseHeightMin: null,
@@ -143,9 +171,14 @@ export function staticCatalogAsMasks(
       } as SizeVariant;
     });
 
-    const hasMagnets = /magnet/i.test(
-      [e.headgearStyle, ...(e.features ?? [])].join(" "),
-    );
+    // The audited list first (marketing copy is NOT a safety record —
+    // four genuinely magnetic masks carry no "magnet" wording at all);
+    // the text heuristic stays only as belt-and-braces for a future
+    // entry added without updating the audit, where erring toward
+    // exclusion is the safe direction.
+    const hasMagnets =
+      MAGNETIC_MASK_IDS.has(e.id) ||
+      /magnet/i.test([e.headgearStyle, ...(e.features ?? [])].join(" "));
 
     return {
       id: e.id,

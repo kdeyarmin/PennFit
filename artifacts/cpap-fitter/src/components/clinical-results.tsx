@@ -70,6 +70,17 @@ export function ClinicalResults({
 
   const confidencePct = Math.round(assessment.recommendationConfidence * 100);
   const needsReview = assessment.outcome === "moderate_confidence";
+  // The headline number is scan- and profile-weighted; each candidate's
+  // own `confidence` is the raw clinical blend, a systematically HIGHER
+  // scale. Shown side by side, every alternative out-scored "your best
+  // match" purely by unit mismatch. Re-express the alternatives on the
+  // headline's scale so the percentages are actually comparable.
+  const confidenceScale =
+    primary.confidence > 0
+      ? assessment.recommendationConfidence / primary.confidence
+      : 1;
+  const scaledPct = (c: FitCandidate) =>
+    Math.round(Math.min(1, c.confidence * confidenceScale) * 100);
 
   return (
     <div className="space-y-6">
@@ -116,7 +127,7 @@ export function ClinicalResults({
               key={c.maskSlug}
               candidate={c}
               isPrimary={false}
-              confidencePct={Math.round(c.confidence * 100)}
+              confidencePct={scaledPct(c)}
               onChoose={() => onChoose(c)}
               cashPay={cashPayFor?.(c)}
             />
@@ -177,7 +188,7 @@ function CandidateCard({
     >
       <div className="flex flex-col sm:flex-row gap-5">
         <img
-          src={candidate.imageUrl ?? getMaskImage(candidate.maskSlug)}
+          src={candidate.imageUrl ?? getMaskImage(candidate.interfaceType)}
           alt=""
           className="w-full sm:w-40 h-32 object-contain rounded-xl bg-white/50"
           loading="lazy"
