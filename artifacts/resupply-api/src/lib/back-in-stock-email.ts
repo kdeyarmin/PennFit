@@ -63,7 +63,7 @@ export interface BackInStockEmailResult {
  * `{{image_block_html}}` as a single token rather than carry
  * conditional logic.
  */
-function renderImageBlockHtml(productImageUrl: string | null): string {
+export function renderImageBlockHtml(productImageUrl: string | null): string {
   if (!productImageUrl) return "";
   return `<div style="text-align:center;padding:0 0 18px;"><img src="${escapeHtml(
     productImageUrl,
@@ -74,7 +74,7 @@ function renderImageBlockHtml(productImageUrl: string | null): string {
  * The HTML price fragment when a label is present, empty string
  * otherwise. Same shape as `renderImageBlockHtml`.
  */
-function renderPriceBlockHtml(priceLabel: string | null): string {
+export function renderPriceBlockHtml(priceLabel: string | null): string {
   if (!priceLabel) return "";
   return `<div style="font-size:18px;font-weight:700;color:#0b1426;margin-top:6px;">${escapeHtml(priceLabel)}</div>`;
 }

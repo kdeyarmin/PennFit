@@ -53,6 +53,10 @@ import {
 import { BREATHE_COLORS, renderBrandedEmail } from "@workspace/resupply-email";
 
 import { stripHtmlUnsafe } from "../rx-renewal/renderers";
+import {
+  renderImageBlockHtml,
+  renderPriceBlockHtml,
+} from "../back-in-stock-email";
 
 export type PreviewGroup = "resupply" | "orders" | "clinical" | "billing";
 
@@ -523,10 +527,15 @@ export function buildMessagePreviews(brand: PreviewBrand): MessagePreview[] {
     product_url_html: `${baseUrl}/shop`.replace(/"/g, "&quot;"),
     price_label: money(2400),
     price_line_text: `Price: ${money(2400)}`,
-    // The two `*_block_html` variables are pre-rendered markup the sender
-    // supplies; empty is a valid value (no image, no price block).
-    image_block_html: "",
-    price_block_html: `<div style="padding-top:10px;font-weight:700;color:#0b1426;">${money(2400)}</div>`,
+    // These `*_block_html` variables are pre-rendered markup the sender
+    // supplies. Call the PRODUCTION fragment renderers rather than
+    // re-typing their markup here — hand-copied versions drifted (the
+    // preview had padding-top:10px and no font-size), which quietly made
+    // an "exact" preview differ from the email that ships. The sample has
+    // no image, and renderImageBlockHtml(null) is how production spells
+    // that.
+    image_block_html: renderImageBlockHtml(null),
+    price_block_html: renderPriceBlockHtml(money(2400)),
     brand_name: brandName,
     brand_name_html: escapeHtml(brandName),
     copyright_year: PREVIEW_YEAR,
