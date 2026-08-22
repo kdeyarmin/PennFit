@@ -61,9 +61,25 @@ take either side verbatim (see `CLAUDE.md`).
 
 ## Immutability
 
-A migration that exists on `main` must never be edited, deleted, or renamed —
-add a new, higher-numbered, idempotent corrective migration instead. Enforced
-by `scripts/check-resupply-migration-immutability.sh` (pre-commit + CI); the
-narrow escape hatch is `.migration-edit-allowlist` in this directory. The
-full incident history is in
+A migration that exists on `main` must never be edited or deleted — add a new,
+higher-numbered, idempotent corrective migration instead. The rule is about
+CONTENT, not the filename: `migrate.mjs` dedups by each file's sha256, so
+anything that moves that hash makes the deploy-time migrator treat the file as
+pending and re-apply it against production.
+
+Renumbering off a prefix collision is therefore allowed, but **only with the
+bytes untouched** — move the file and change nothing inside it, not even a
+comment cross-referencing its own number. Commit `8f2106d` renumbered two mask
+migrations and rewrote their header cross-references in the same move; both
+hashes shifted, both files re-applied, and 0512's non-idempotent Amara cascade
+gated every deploy on a duplicate key until it was patched in place. If the
+stale numbers left in a renumbered file's comments bother you, correct them in
+a follow-up commit that touches no migration — a stale number in a SQL comment
+is harmless, a moved hash is not.
+
+Enforced by `scripts/check-resupply-migration-immutability.sh` (pre-commit +
+CI). It diffs with `--no-renames` so a renumber decomposes into a delete plus
+an add, then pairs the two by content and passes only when they are
+byte-identical; the narrow escape hatch is `.migration-edit-allowlist` in this
+directory. The full incident history is in
 [`docs/migration-state-investigation-2026-05-08.md`](../../../docs/migration-state-investigation-2026-05-08.md).

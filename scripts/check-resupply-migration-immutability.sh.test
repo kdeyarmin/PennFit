@@ -15,6 +15,18 @@
 #   F. unrelated edit                                         — pass
 #   G. working-tree mode (DIFF_TARGET="") detects a modify    — fail
 #   H. edit the allowlist file itself (non-.sql)              — pass
+#   I. renumber, byte-identical content                       — pass
+#   J. renumber that ALSO edits content (the 8f2106d trap)    — fail
+#   K. content-changing renumber, old name allowlisted        — pass
+#   L. working-tree mode (the CI path) on a committed
+#      content-changing renumber                              — fail
+#   M. working-tree mode on a committed byte-identical
+#      renumber                                               — pass
+#
+# I/J/L/M are the regression cases for the renumber blind spot: git's
+# rename detection is on by default and is not disabled by --name-only,
+# so before --no-renames was passed the checker saw an EMPTY change set
+# for every renumber and passed clean on commit 8f2106d.
 
 set -euo pipefail
 
@@ -38,6 +50,10 @@ git config user.name "Test"
 # locally so the harness is hermetic everywhere.
 git config commit.gpgsign false
 git config tag.gpgsign false
+# Rename detection is a global/user config in some environments. The
+# checker must behave identically either way, so pin it ON here — that is
+# the default, and it is the setting that used to hide renumbers.
+git config diff.renames true
 git commit -q --allow-empty -m "init"
 
 mkdir -p lib/resupply-db/migrations/meta
@@ -48,6 +64,7 @@ printf '# edit allowlist (see check-resupply-migration-immutability.sh)\n' \
   > lib/resupply-db/migrations/.migration-edit-allowlist
 git add .
 git commit -q -m "baseline"
+BASELINE="$(git rev-parse HEAD)"
 
 mkdir -p scripts
 cp "$SCRIPT" scripts/check-resupply-migration-immutability.sh
@@ -58,23 +75,28 @@ run_check() {
     bash scripts/check-resupply-migration-immutability.sh
 }
 
+# Restore to the pristine baseline: index, tracked worktree files, and any
+# file a scenario added (reset --hard leaves those behind as untracked).
+reset_fixture() {
+  git reset -q --hard "$BASELINE"
+  git clean -qfd lib/resupply-db/migrations
+}
+
+fail() {
+  echo "[self-test] FAIL: $1" >&2
+  exit 1
+}
+
 # --- A: clean staged index --------------------------------------------------
 echo "[self-test] scenario A: clean staged index should pass"
-if ! run_check >/dev/null 2>&1; then
-  echo "[self-test] FAIL: A (clean tree should have passed)" >&2
-  exit 1
-fi
+run_check >/dev/null 2>&1 || fail "A (clean tree should have passed)"
 
 # --- B: modify a shipped migration ------------------------------------------
 echo "[self-test] scenario B: modifying a shipped migration should fail"
 echo "-- edited in place" >> lib/resupply-db/migrations/0049_existing.sql
 git add lib/resupply-db/migrations/0049_existing.sql
-if run_check >/dev/null 2>&1; then
-  echo "[self-test] FAIL: B (in-place edit should have failed)" >&2
-  exit 1
-fi
-git restore --staged lib/resupply-db/migrations/0049_existing.sql >/dev/null 2>&1 || true
-git checkout -- lib/resupply-db/migrations/0049_existing.sql
+run_check >/dev/null 2>&1 && fail "B (in-place edit should have failed)"
+reset_fixture
 
 # --- C: modify a shipped migration that is allowlisted ----------------------
 echo "[self-test] scenario C: modifying an allowlisted migration should pass"
@@ -83,45 +105,28 @@ printf '0049_existing.sql  # emergency idempotency hotfix\n' \
   >> lib/resupply-db/migrations/.migration-edit-allowlist
 git add lib/resupply-db/migrations/0049_existing.sql \
         lib/resupply-db/migrations/.migration-edit-allowlist
-if ! run_check >/dev/null 2>&1; then
-  echo "[self-test] FAIL: C (allowlisted edit should have passed)" >&2
-  exit 1
-fi
-git restore --staged lib/resupply-db/migrations/0049_existing.sql \
-                     lib/resupply-db/migrations/.migration-edit-allowlist >/dev/null 2>&1 || true
-git checkout -- lib/resupply-db/migrations/0049_existing.sql \
-                lib/resupply-db/migrations/.migration-edit-allowlist
+run_check >/dev/null 2>&1 || fail "C (allowlisted edit should have passed)"
+reset_fixture
 
 # --- D: add a NEW migration -------------------------------------------------
 echo "[self-test] scenario D: adding a new migration should pass (not our concern)"
 echo "-- brand new" > lib/resupply-db/migrations/0100_new.sql
 git add lib/resupply-db/migrations/0100_new.sql
-if ! run_check >/dev/null 2>&1; then
-  echo "[self-test] FAIL: D (a new migration add should have passed)" >&2
-  exit 1
-fi
-git restore --staged lib/resupply-db/migrations/0100_new.sql >/dev/null 2>&1 || true
-rm -f lib/resupply-db/migrations/0100_new.sql
+run_check >/dev/null 2>&1 || fail "D (a new migration add should have passed)"
+reset_fixture
 
 # --- E: delete a shipped migration ------------------------------------------
 echo "[self-test] scenario E: deleting a shipped migration should fail"
 git rm -q lib/resupply-db/migrations/0049_existing.sql
-if run_check >/dev/null 2>&1; then
-  echo "[self-test] FAIL: E (deleting a shipped migration should have failed)" >&2
-  exit 1
-fi
-git restore --staged lib/resupply-db/migrations/0049_existing.sql >/dev/null 2>&1 || true
-git checkout -- lib/resupply-db/migrations/0049_existing.sql
+run_check >/dev/null 2>&1 && fail "E (deleting a shipped migration should have failed)"
+reset_fixture
 
 # --- F: unrelated edit ------------------------------------------------------
 echo "[self-test] scenario F: unrelated edit should pass"
 mkdir -p artifacts/cpap-fitter/src
 echo "// no migration involvement" > artifacts/cpap-fitter/src/index.ts
 git add artifacts/cpap-fitter/src/index.ts
-if ! run_check >/dev/null 2>&1; then
-  echo "[self-test] FAIL: F (unrelated edit should have passed)" >&2
-  exit 1
-fi
+run_check >/dev/null 2>&1 || fail "F (unrelated edit should have passed)"
 git restore --staged artifacts/cpap-fitter/src/index.ts >/dev/null 2>&1 || true
 rm -rf artifacts
 
@@ -130,20 +135,84 @@ echo "[self-test] scenario G: DIFF_TARGET= mode should fail on an unstaged modif
 echo "-- unstaged edit" >> lib/resupply-db/migrations/0049_existing.sql
 if BASE_REF=HEAD DIFF_TARGET= bash scripts/check-resupply-migration-immutability.sh \
    >/dev/null 2>&1; then
-  echo "[self-test] FAIL: G (working-tree mode should have detected the modify)" >&2
-  exit 1
+  fail "G (working-tree mode should have detected the modify)"
 fi
-git checkout -- lib/resupply-db/migrations/0049_existing.sql
+reset_fixture
 
 # --- H: edit the allowlist file itself (non-.sql) ---------------------------
 echo "[self-test] scenario H: editing the allowlist file (non-.sql) should pass"
 printf '# touched\n' >> lib/resupply-db/migrations/.migration-edit-allowlist
 git add lib/resupply-db/migrations/.migration-edit-allowlist
-if ! run_check >/dev/null 2>&1; then
-  echo "[self-test] FAIL: H (allowlist-file edit should have passed)" >&2
-  exit 1
+run_check >/dev/null 2>&1 || fail "H (allowlist-file edit should have passed)"
+reset_fixture
+
+# --- I: byte-identical renumber ---------------------------------------------
+# The safe case: migrate.mjs dedups by content sha256, so a pure rename
+# leaves the applied hash untouched and re-applies nothing.
+echo "[self-test] scenario I: a byte-identical renumber should pass"
+git mv lib/resupply-db/migrations/0049_existing.sql \
+       lib/resupply-db/migrations/0050_existing.sql
+run_check >/dev/null 2>&1 || fail "I (byte-identical renumber should have passed)"
+reset_fixture
+
+# --- J: renumber that also edits content (the 8f2106d trap) -----------------
+echo "[self-test] scenario J: a renumber that also edits content should fail"
+git mv lib/resupply-db/migrations/0049_existing.sql \
+       lib/resupply-db/migrations/0050_existing.sql
+echo "-- cross-reference updated to 0050" >> lib/resupply-db/migrations/0050_existing.sql
+git add lib/resupply-db/migrations/0050_existing.sql
+run_check >/dev/null 2>&1 && fail "J (content-changing renumber should have failed)"
+# The message must name the rename partner, not just say "deleted" — that
+# hint is the whole point of pairing by stem. Capture the output rather
+# than piping: `set -o pipefail` would otherwise see run_check's expected
+# exit 1 and fail the pipeline regardless of what grep matched.
+j_msg="$(run_check 2>&1 || true)"
+case "$j_msg" in
+  *0050_existing.sql*) ;;
+  *) fail "J (failure message should name the renumber partner)" ;;
+esac
+case "$j_msg" in
+  *"CONTENT ALSO CHANGED"*) ;;
+  *) fail "J (failure message should say the content changed, not just 'deleted')" ;;
+esac
+reset_fixture
+
+# --- K: content-changing renumber, old name allowlisted ---------------------
+echo "[self-test] scenario K: an allowlisted content-changing renumber should pass"
+git mv lib/resupply-db/migrations/0049_existing.sql \
+       lib/resupply-db/migrations/0050_existing.sql
+echo "-- cross-reference updated to 0050" >> lib/resupply-db/migrations/0050_existing.sql
+printf '0049_existing.sql  # emergency renumber + idempotency fix\n' \
+  >> lib/resupply-db/migrations/.migration-edit-allowlist
+git add lib/resupply-db/migrations/0050_existing.sql \
+        lib/resupply-db/migrations/.migration-edit-allowlist
+run_check >/dev/null 2>&1 || fail "K (allowlisted renumber+edit should have passed)"
+reset_fixture
+
+# --- L: CI path — committed renumber that also edits content ----------------
+# This is the exact shape of commit 8f2106d as CI sees it: BASE_REF is the
+# PR base, DIFF_TARGET is empty, and the rename is already committed.
+echo "[self-test] scenario L: working-tree mode should fail on a committed content-changing renumber"
+git mv lib/resupply-db/migrations/0049_existing.sql \
+       lib/resupply-db/migrations/0050_existing.sql
+echo "-- cross-reference updated to 0050" >> lib/resupply-db/migrations/0050_existing.sql
+git add -A lib/resupply-db/migrations
+git commit -q -m "renumber with a content edit"
+if BASE_REF="$BASELINE" DIFF_TARGET= \
+   bash scripts/check-resupply-migration-immutability.sh >/dev/null 2>&1; then
+  fail "L (CI path should have caught the content-changing renumber)"
 fi
-git restore --staged lib/resupply-db/migrations/.migration-edit-allowlist >/dev/null 2>&1 || true
-git checkout -- lib/resupply-db/migrations/.migration-edit-allowlist
+reset_fixture
+
+# --- M: CI path — committed byte-identical renumber -------------------------
+echo "[self-test] scenario M: working-tree mode should pass a committed byte-identical renumber"
+git mv lib/resupply-db/migrations/0049_existing.sql \
+       lib/resupply-db/migrations/0050_existing.sql
+git commit -q -m "renumber, content untouched"
+if ! BASE_REF="$BASELINE" DIFF_TARGET= \
+     bash scripts/check-resupply-migration-immutability.sh >/dev/null 2>&1; then
+  fail "M (CI path should have passed the byte-identical renumber)"
+fi
+reset_fixture
 
 echo "[self-test] all scenarios passed"
