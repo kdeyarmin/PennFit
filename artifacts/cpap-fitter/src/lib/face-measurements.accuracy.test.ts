@@ -445,7 +445,10 @@ describe("geometric pose estimator calibration", () => {
     // compares magnitudes, but requiredTurn's direction lock depends on
     // opposite turns reading with opposite signs.
     const one = estimatePoseFromLandmarks(
-      project(yawedScene(15), { D: 400, fovDeg: ASSUMED_HFOV_DEG }) as Point2D[],
+      project(yawedScene(15), {
+        D: 400,
+        fovDeg: ASSUMED_HFOV_DEG,
+      }) as Point2D[],
     ).yawDeg;
     const other = estimatePoseFromLandmarks(
       project(yawedScene(-15), {

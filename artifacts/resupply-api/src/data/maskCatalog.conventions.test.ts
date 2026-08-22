@@ -100,9 +100,7 @@ describe("legacy catalog fit ranges", () => {
       if (sizes.length < 3) continue;
       const run = resolveSizeRunBuckets(
         sizes,
-        mask.type === "fullFace" || mask.type === "hybrid"
-          ? "height"
-          : "width",
+        mask.type === "fullFace" || mask.type === "hybrid" ? "height" : "width",
       );
       if (run.bucketCount < 3) continue;
       const { size } = recommendSize(mask, CANONICAL_ADULT);

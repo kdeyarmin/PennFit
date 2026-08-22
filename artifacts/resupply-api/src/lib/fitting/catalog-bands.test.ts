@@ -414,7 +414,11 @@ describe("the size run tiles its population window with no gaps", () => {
         ? Math.min(hi, Math.max(...spans.map(([, b]) => b)))
         : hi;
       const gaps: number[] = [];
-      for (let x = lo; x <= hiBound + 1e-9; x = Math.round((x + 0.1) * 10) / 10) {
+      for (
+        let x = lo;
+        x <= hiBound + 1e-9;
+        x = Math.round((x + 0.1) * 10) / 10
+      ) {
         if (!spans.some(([a, b]) => a - 1e-9 <= x && x <= b + 1e-9))
           gaps.push(x);
       }

@@ -421,8 +421,14 @@ describe("multi-frame aggregation", () => {
     const good = assessFrameQuality(input({ yawDeg: 20, pose: "turn_right" }));
     expect(good.acceptable).toBe(true);
     const result = aggregateFrames([
-      frame({ noseToChin: 70 }, { pose: "turn_left", yawDeg: -20, quality: good }),
-      frame({ noseToChin: 70 }, { pose: "turn_right", yawDeg: 20, quality: good }),
+      frame(
+        { noseToChin: 70 },
+        { pose: "turn_left", yawDeg: -20, quality: good },
+      ),
+      frame(
+        { noseToChin: 70 },
+        { pose: "turn_right", yawDeg: 20, quality: good },
+      ),
     ]);
     expect(result.measurements.noseToChin).toBeGreaterThan(0);
     expect(result.band).toBe("low");

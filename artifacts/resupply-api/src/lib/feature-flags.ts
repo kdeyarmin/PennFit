@@ -406,7 +406,11 @@ export async function getFeatureFlagState(
     // Cache the failure for a SHORT window so a downed DB doesn't
     // turn into a per-request 503 storm. The next request after the
     // TTL expires tries again.
-    cache.set(cacheKey, { value: false, degraded: true, expiresAt: now + 1_000 });
+    cache.set(cacheKey, {
+      value: false,
+      degraded: true,
+      expiresAt: now + 1_000,
+    });
     return { enabled: false, degraded: true };
   }
 }

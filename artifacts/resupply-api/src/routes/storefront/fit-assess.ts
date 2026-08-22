@@ -986,26 +986,28 @@ async function persistSession(input: PersistInput): Promise<string | null> {
 
     // Provenance trail. `detail` carries codes and counts only — never
     // free-text PHI.
-    const { error: eventsErr } = await supabase.from("fit_session_events").insert([
-      {
-        fit_session_id: sessionId,
-        event_type: "session.started",
-        actor_kind: "patient",
-        detail: { entryPoint: input.entryPoint },
-      },
-      {
-        fit_session_id: sessionId,
-        event_type: "recommendation.generated",
-        actor_kind: "system",
-        detail: {
-          outcome: input.assessment.outcome,
-          candidateCount: input.assessment.alternatives.length,
-          excludedCount: input.assessment.excluded.length,
-          rulesEngineVersion: RULES_ENGINE_VERSION,
-          degraded: input.assessment.provenance.degraded,
+    const { error: eventsErr } = await supabase
+      .from("fit_session_events")
+      .insert([
+        {
+          fit_session_id: sessionId,
+          event_type: "session.started",
+          actor_kind: "patient",
+          detail: { entryPoint: input.entryPoint },
         },
-      },
-    ]);
+        {
+          fit_session_id: sessionId,
+          event_type: "recommendation.generated",
+          actor_kind: "system",
+          detail: {
+            outcome: input.assessment.outcome,
+            candidateCount: input.assessment.alternatives.length,
+            excludedCount: input.assessment.excluded.length,
+            rulesEngineVersion: RULES_ENGINE_VERSION,
+            degraded: input.assessment.provenance.degraded,
+          },
+        },
+      ]);
     if (eventsErr) {
       logger.warn(
         { fitSessionId: sessionId, message: eventsErr.message },
