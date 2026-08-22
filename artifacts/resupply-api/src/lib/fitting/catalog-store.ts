@@ -20,6 +20,7 @@
 import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../logger";
+import { resolveSizeRunBuckets } from "../size-run.js";
 import { maskCatalog, type MaskEntry } from "../../data/maskCatalog.js";
 import {
   computeFitAdjustments,
@@ -80,6 +81,43 @@ const LEGACY_INTERFACE: Record<string, InterfaceType> = {
 };
 
 /**
+ * Audited magnet flags for the static catalog, mirroring migration 0492's
+ * manufacturer-sourced corrections (FDA Class I recall list, ResMed IFU,
+ * Philips' 6 Sep 2022 field safety notice, Fisher & Paykel's magnet-free
+ * statement). The legacy entries' marketing text is NOT a safety record:
+ * four genuinely magnetic masks carry no "magnet" wording at all, and the
+ * Evora Full's "magnetic-style clips" copy describes a magnet-free clasp
+ * — so deriving `hasMagneticComponents` from a text match re-broke, on
+ * the degraded path, both directions of the correction 0492 shipped for
+ * the DB catalog. `true` = magnetic, `false` = audited magnet-free; an id
+ * absent here falls back to the text heuristic, which errs toward
+ * exclusion — the safe direction for an unaudited future entry.
+ * `catalog-store.static.test.ts` pins these against the 0492 slug list.
+ */
+const STATIC_MAGNET_OVERRIDES: Readonly<Record<string, boolean>> = {
+  // FDA Class I recall list (magnetic headgear clips).
+  "resmed-airfit-f20": true,
+  "resmed-airtouch-f20": true,
+  "resmed-airfit-f30": true,
+  "resmed-airfit-f30i": true,
+  "resmed-airfit-n20": true,
+  "resmed-airtouch-n20": true,
+  // ResMed IFU: magnets in the frame and lower headgear clips.
+  "resmed-airfit-f40": true,
+  // Philips' 6 Sep 2022 field safety notice.
+  "philips-amara-view": true,
+  "philips-dreamwear-ff": true,
+  "philips-dreamwisp": true,
+  // No manufacturer magnet statement found either way; on a safety
+  // filter an unverified exclusion is the side to err on (0492).
+  "react-health-numa-full-face": true,
+  // Fisher & Paykel state publicly that their entire range is
+  // magnet-free; the entry's "magnetic-style clips" copy is a clasp
+  // description, not a magnet.
+  "fisher-paykel-evora-full": false,
+};
+
+/**
  * Project the built-in TypeScript catalog into the engine's shape.
  *
  * Used when the database is unreachable, and when a tenant has not turned
@@ -110,18 +148,35 @@ export function staticCatalogAsMasks(
       ? ADULT_PLAUSIBILITY_BOUNDS.noseWidth
       : ADULT_PLAUSIBILITY_BOUNDS.noseToChin;
 
+    // "Wide sizes are not simply bigger" (migration 0511): a wide code
+    // whose plain base is in the run shares the base's bucket on the
+    // HEIGHT axis (wide is not taller) and steps one bucket up on the
+    // WIDTH axis; a wide code with no plain base is an ordinary ladder
+    // step. See lib/size-run.ts. Where a wide and its base share a
+    // bucket, the base sorts first so the picker's tie-break recommends
+    // the plain size — without a second axis the two are
+    // indistinguishable here, and the base cut fits more faces.
+    const run = resolveSizeRunBuckets(sizes, axisIsNose ? "width" : "height");
+
     const variants: SizeVariant[] = sizes.map((size, i) => {
-      const width = (range[1] - range[0]) / sizes.length;
+      const bucket = run.bucketOf[i]!;
+      const width = (range[1] - range[0]) / run.bucketCount;
       // Edge sizes run out to the plausibility window (see the header):
       // any value the gate admits lands in some band.
-      const lo = i === 0 ? windowLo : range[0] + width * i;
-      const hi = i === sizes.length - 1 ? windowHi : range[0] + width * (i + 1);
+      const lo = bucket === 0 ? windowLo : range[0] + width * bucket;
+      const hi =
+        bucket === run.bucketCount - 1
+          ? windowHi
+          : range[0] + width * (bucket + 1);
       return {
         id: `${e.id}:${size}`,
         component: interfaceType === "nasal_pillow" ? "pillow" : "cushion",
         sizeCode: size,
         sizeLabel: size,
-        sortOrder: i * 10,
+        // Bucket-major so the picker walks base sizes ahead of the wide
+        // cut sharing their bucket (see above); display order elsewhere
+        // comes from the array, which keeps the catalog's own order.
+        sortOrder: bucket * 10 + (run.isWideStep[i] ? 5 : 0),
         noseWidthMin: axisIsNose ? round1(lo) : null,
         noseWidthMax: axisIsNose ? round1(hi) : null,
         noseHeightMin: null,
@@ -143,9 +198,9 @@ export function staticCatalogAsMasks(
       } as SizeVariant;
     });
 
-    const hasMagnets = /magnet/i.test(
-      [e.headgearStyle, ...(e.features ?? [])].join(" "),
-    );
+    const hasMagnets =
+      STATIC_MAGNET_OVERRIDES[e.id] ??
+      /magnet/i.test([e.headgearStyle, ...(e.features ?? [])].join(" "));
 
     return {
       id: e.id,

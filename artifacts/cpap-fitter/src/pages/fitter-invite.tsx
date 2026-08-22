@@ -68,6 +68,8 @@ export function FitterInvite() {
   useDocumentTitle("Your mask-fitting invite");
   const [, setLocation] = useLocation();
   const {
+    inviteToken: storedInviteToken,
+    reset,
     setEmailConsent,
     setInviteToken,
     setFitProfileV2,
@@ -97,6 +99,17 @@ export function FitterInvite() {
         if (!res.valid) {
           setState({ kind: "invalid", reason: res.reason ?? "error" });
           return;
+        }
+        // A DIFFERENT invite than the one this tab was fitting: wipe the
+        // previous fitting entirely — measurements, answers, chosen mask,
+        // email, entry channel — before stashing the new context. The
+        // store persists per tab (sessionStorage), so on a shared device
+        // (a clinic kiosk, a family phone) the previous patient's face
+        // measurements and email would otherwise carry into the next
+        // patient's fitting and could be transmitted to THEIR chart.
+        // Same-token re-landings (a refresh mid-flow) keep everything.
+        if (storedInviteToken !== null && storedInviteToken !== token) {
+          reset();
         }
         // Stash the token now so it survives the multi-step flow even
         // if the patient navigates away before clicking start.
@@ -134,7 +147,14 @@ export function FitterInvite() {
     return () => {
       cancelled = true;
     };
-  }, [setInviteToken, setFitProfileV2, setMultiframeCapture, setEntryPoint]);
+  }, [
+    storedInviteToken,
+    reset,
+    setInviteToken,
+    setFitProfileV2,
+    setMultiframeCapture,
+    setEntryPoint,
+  ]);
 
   const handleStart = (email: string | null) => {
     track("fitter_invite_started");

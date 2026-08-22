@@ -606,10 +606,16 @@ export function toLegacyAnswers(answers: FitAnswers): Record<string, unknown> {
       claustrophobia === undefined || claustrophobia === null
         ? null
         : claustrophobia !== "none",
+    // "mixed" ("I move around a lot") counts as side/stomach sleeping —
+    // part of the night is spent on the side, and the legacy engine's
+    // side-sleeper weighting exists for exactly that. Mirrors the tiered
+    // engine's own reading of "mixed" (tiers.ts profileFactors).
     sideOrStomachSleeper:
       positions.length === 0
         ? null
-        : positions.includes("side") || positions.includes("stomach"),
+        : positions.includes("side") ||
+          positions.includes("stomach") ||
+          positions.includes("mixed"),
     heavyFacialHair:
       facialHair === undefined || facialHair === null
         ? null

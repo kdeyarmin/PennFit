@@ -208,7 +208,7 @@ function SingleFrameCapture() {
         return false;
       }
 
-      const frames: { dataUrl: string; pose: "front" }[] = [];
+      const frames: { dataUrl: string; pose: "front"; source: "burst" }[] = [];
       for (let i = 0; i < BURST_FRAME_COUNT; i += 1) {
         // The camera can die mid-burst (tab switch, OS revoking the
         // stream, unmount) — ship whatever was captured so far rather
@@ -229,7 +229,7 @@ function SingleFrameCapture() {
         // frames distinct); a fully frozen feed degrades to one frame,
         // which the aggregate honestly caps below high confidence.
         if (dataUrl !== frames[frames.length - 1]?.dataUrl) {
-          frames.push({ dataUrl, pose: "front" });
+          frames.push({ dataUrl, pose: "front", source: "burst" });
         }
         if (i < BURST_FRAME_COUNT - 1) {
           await new Promise((resolve) =>

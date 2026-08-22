@@ -154,7 +154,11 @@ export function profileCompleteness(profile: FitProfile): number {
     profile.claustrophobia !== null,
     profile.facialHair !== null,
     profile.skinIrritation !== null || profile.sensitiveSkin !== null,
-    profile.priorMaskExperience !== undefined,
+    // priorMaskExperience is deliberately NOT counted: the field is
+    // non-nullable ("none" doubles as both "no prior mask" and "not
+    // asked"), so a skipped question is indistinguishable from an answer
+    // and the old `!== undefined` check was always true — inflating an
+    // entirely unanswered profile above the documented 0.6 floor.
     profile.handDexterity !== null || profile.headgearDifficulty !== null,
     profile.pressureCmH2O !== null || profile.pressureBand !== "unknown",
   ];

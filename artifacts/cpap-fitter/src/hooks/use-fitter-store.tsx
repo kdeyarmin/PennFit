@@ -16,6 +16,15 @@ import type { CapturePose } from "@/lib/scan-quality";
 export interface CapturedFrame {
   dataUrl: string;
   pose: CapturePose;
+  /**
+   * Which capture flow produced the frame. /measure keys the motion
+   * check and its status copy on this — a guided run whose turn angles
+   * were both skipped is still a guided run (two front frames taken
+   * seconds apart, moving between poses in between), and treating it as
+   * a one-tap burst would apply the hold-still motion penalty to
+   * movement the flow itself instructed.
+   */
+  source: "burst" | "guided";
 }
 
 export interface ChosenMask {
@@ -202,9 +211,12 @@ function readStoredMeasurements(): FacialMeasurements | null {
 /**
  * Restore the persisted scan signals.
  *
- * Validated loosely on purpose: the API re-validates with a strict Zod
- * schema, and a malformed blob here should degrade to "no signals"
- * (the server's neutral default) rather than throw mid-flow.
+ * Validated to the SERVER's contract, not loosely: the API's `scan`
+ * schema is `.strict()` with per-field 0..1 ranges, so a stale or
+ * hand-edited blob that merely LOOKED right used to be posted verbatim
+ * and 400 the entire assessment — a dead end that survives retries,
+ * because the bad blob is re-read on every attempt. Anything off-shape
+ * degrades to "no signals" (the server's neutral default) instead.
  */
 function readStoredScanSignals(): ScanSignalsPayload | null {
   try {
@@ -213,12 +225,55 @@ function readStoredScanSignals(): ScanSignalsPayload | null {
     const parsed: unknown = JSON.parse(stored);
     if (!parsed || typeof parsed !== "object") return null;
     const r = parsed as Record<string, unknown>;
-    if (typeof r.measurementConfidence !== "number") return null;
     if (r.band !== "high" && r.band !== "moderate" && r.band !== "low") {
       return null;
     }
-    if (typeof r.frameCount !== "number") return null;
-    return parsed as ScanSignalsPayload;
+    const unit = (v: unknown): v is number =>
+      typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= 1;
+    if (!unit(r.measurementConfidence)) return null;
+    if (
+      typeof r.frameCount !== "number" ||
+      !Number.isInteger(r.frameCount) ||
+      r.frameCount < 1 ||
+      r.frameCount > 10
+    ) {
+      return null;
+    }
+    const QUALITY_KEYS = [
+      "lighting",
+      "distance",
+      "pose",
+      "occlusion",
+      "motion",
+      "framing",
+    ];
+    const AGREEMENT_KEYS = [
+      "noseWidth",
+      "noseHeight",
+      "noseToChin",
+      "mouthWidth",
+      "faceWidthAtCheekbones",
+    ];
+    const objectOfUnits = (
+      value: unknown,
+      allowedKeys: string[],
+    ): value is Record<string, number> =>
+      typeof value === "object" &&
+      value !== null &&
+      Object.entries(value).every(
+        ([k, v]) => allowedKeys.includes(k) && unit(v),
+      );
+    if (!objectOfUnits(r.quality, QUALITY_KEYS)) return null;
+    if (!objectOfUnits(r.agreement, AGREEMENT_KEYS)) return null;
+    // Rebuild rather than pass through: an extra top-level key would
+    // fail the server's `.strict()` even with every known field valid.
+    return {
+      frameCount: r.frameCount,
+      quality: r.quality,
+      agreement: r.agreement,
+      measurementConfidence: r.measurementConfidence,
+      band: r.band,
+    } as ScanSignalsPayload;
   } catch {
     return null;
   }
@@ -520,6 +575,9 @@ export function FitterProvider({ children }: { children: ReactNode }) {
     setEmail(null);
     setEmailConsentState(false);
     setInviteTokenState(null);
+    // Clear the in-memory channel along with its storage key below — a
+    // later fitting in the same tab must not inherit this one's channel.
+    setEntryPointState(null);
     try {
       // Measurements + scan signals were already cleared by
       // resetForNewFitting() above (via the storage-key constants).

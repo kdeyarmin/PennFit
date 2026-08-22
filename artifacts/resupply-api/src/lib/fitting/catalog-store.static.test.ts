@@ -20,7 +20,7 @@ import { describe, expect, it } from "vitest";
 
 import { staticCatalogAsMasks } from "./catalog-store.js";
 import { ADULT_PLAUSIBILITY_BOUNDS } from "./confidence.js";
-import { scoreVariant } from "./tiers.js";
+import { scoreFacialFit, scoreVariant } from "./tiers.js";
 import type { FitMeasurements } from "./types.js";
 
 const MASKS = staticCatalogAsMasks();
@@ -81,5 +81,116 @@ describe("static fallback bands run out to the plausibility window", () => {
         expect(covered, `${mask.slug} ${axis} at ${x}`).toBe(true);
       }
     }
+  });
+});
+
+describe("static fallback magnet flags mirror the 0492 audit", () => {
+  // Migration 0492's manufacturer-sourced corrections, restated for the
+  // static catalog's id space. Deriving `hasMagneticComponents` from the
+  // entries' marketing text got BOTH directions wrong: these four
+  // magnetic masks carry no "magnet" wording at all…
+  const MAGNETIC_WITHOUT_MAGNET_COPY = [
+    "resmed-airfit-f30", // FDA Class I recall list
+    "resmed-airfit-f40", // ResMed IFU: magnets in frame + lower clips
+    "philips-amara-view", // Philips 6 Sep 2022 field safety notice
+    "philips-dreamwear-ff", // Philips 6 Sep 2022 field safety notice
+  ];
+  // …and these are flagged magnetic by their own copy, correctly.
+  const MAGNETIC_WITH_MAGNET_COPY = [
+    "resmed-airfit-f20",
+    "resmed-airtouch-f20",
+    "resmed-airfit-n20",
+    "resmed-airtouch-n20",
+    "resmed-airfit-f30i",
+    "philips-dreamwisp",
+    "react-health-numa-full-face", // unverified — err toward exclusion
+  ];
+
+  const bySlug = new Map(MASKS.map((m) => [m.slug, m]));
+
+  it.each([...MAGNETIC_WITHOUT_MAGNET_COPY, ...MAGNETIC_WITH_MAGNET_COPY])(
+    "%s is flagged magnetic",
+    (slug) => {
+      const mask = bySlug.get(slug);
+      // Existence is part of the pin: a typo in the override map must
+      // fail here, not silently guard nothing.
+      expect(mask, `${slug} missing from the static catalog`).toBeDefined();
+      expect(mask!.hasMagneticComponents).toBe(true);
+    },
+  );
+
+  it("the whole Fisher & Paykel range is magnet-free (their public statement)", () => {
+    // Including the Evora Full, whose "magnetic-style clips" copy is a
+    // clasp description that used to false-positive the text heuristic —
+    // excluding the safest option for implant patients precisely when
+    // screening is down.
+    const fp = MASKS.filter((m) => m.slug.startsWith("fisher-paykel-"));
+    expect(fp.length).toBeGreaterThan(0);
+    for (const mask of fp) {
+      expect(mask.hasMagneticComponents, mask.slug).toBe(false);
+    }
+  });
+});
+
+describe("static fallback wide sizes follow the 0511 convention", () => {
+  const bySlug = new Map(MASKS.map((m) => [m.slug, m]));
+  const bands = (
+    mask: (typeof MASKS)[number],
+    axis: "noseWidth" | "noseToChin",
+  ) =>
+    Object.fromEntries(
+      mask.variants.map((v) => [
+        v.sizeCode,
+        axis === "noseWidth"
+          ? [v.noseWidthMin, v.noseWidthMax]
+          : [v.noseToChinMin, v.noseToChinMax],
+      ]),
+    );
+
+  it("N30i: SW shares M's width band and W steps one bucket above M", () => {
+    // 0511: "Small Wide" is a small nose height with a WIDER nose — the
+    // linear ladder S < SW < M < W put a small-wide patient two sizes
+    // off. On the static width-only axis, SW takes M's width bucket and
+    // W the bucket above it.
+    const n30i = bySlug.get("resmed-airfit-n30i")!;
+    const b = bands(n30i, "noseWidth");
+    expect(b.SW).toEqual(b.M);
+    expect(b.W![0]).toBe(b.M![1]);
+    expect(b.S![1]).toBe(b.M![0]);
+  });
+
+  it("N30i: the plain base size wins the shared bucket", () => {
+    // SW and M are indistinguishable on a single width axis; the picker
+    // must deterministically prefer the base cut, not depend on array
+    // order.
+    const n30i = bySlug.get("resmed-airfit-n30i")!;
+    const mBand = bands(n30i, "noseWidth").M!;
+    const mid = (mBand[0]! + mBand[1]!) / 2;
+    const fit = scoreFacialFit(n30i, {
+      noseWidth: mid,
+      noseHeight: 29,
+      noseToChin: 89,
+      mouthWidth: 49,
+      faceWidthAtCheekbones: 153,
+    });
+    expect(fit.cushion?.sizeCode).toBe("M");
+    expect(fit.cushion?.inBand).toBe(true);
+  });
+
+  it("F40: Small Wide with no plain Small is an ordinary ladder step", () => {
+    // 0511: "the AirFit F40 ships Small Wide / Medium / Large with no
+    // plain Small, so it is an ordinary three-step ladder whose smallest
+    // size merely has 'wide' in its name."
+    const f40 = bySlug.get("resmed-airfit-f40")!;
+    const b = bands(f40, "noseToChin");
+    expect(b.SW![1]).toBe(b.M![0]);
+    expect(b.M![1]).toBe(b.L![0]);
+  });
+
+  it("DreamWear FF: MW shares M's nose-to-chin band — wide is not taller", () => {
+    const dreamwearFf = bySlug.get("philips-dreamwear-ff")!;
+    const b = bands(dreamwearFf, "noseToChin");
+    expect(b.MW).toEqual(b.M);
+    expect(b.M![1]).toBe(b.L![0]);
   });
 });

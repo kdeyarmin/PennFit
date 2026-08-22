@@ -81,6 +81,10 @@ const MODEL_LOAD_TIMEOUT_MS = 20_000;
 /** Recent-centroid window for the movement check. */
 const MOTION_WINDOW = 3;
 
+/** With no successful assessment for this long after the loop was live,
+ *  treat the pipeline as dead and fall back to the single-frame page. */
+const DEAD_LOOP_FALLBACK_MS = 10_000;
+
 /**
  * The turn direction the CURRENT turn step must produce, or null when
  * either direction is acceptable.
@@ -125,6 +129,12 @@ export function GuidedCapture({ onFallback }: { onFallback: () => void }) {
   const tickBusyRef = useRef(false);
   const finalizedRef = useRef(false);
   const unmountedRef = useRef(false);
+  // Last time the live loop completed a real assessment. A stream that
+  // dies AFTER setup (device unplugged, OS revoking the camera) or a
+  // landmarker that starts throwing every tick would otherwise leave the
+  // page frozen on its last coach line forever — fail open to the
+  // single-frame page instead, per the header.
+  const lastLiveTickMsRef = useRef(0);
 
   // Eyes-free feedback: a chime + vibration the instant a frame is taken,
   // and spoken coaching while the patient's head (and eyes) are turned
@@ -308,7 +318,19 @@ export function GuidedCapture({ onFallback }: { onFallback: () => void }) {
     if (!ctx) return false;
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     const dataUrl = canvas.toDataURL("image/jpeg", 0.92);
-    framesRef.current = [...framesRef.current, { dataUrl, pose }];
+    // Same frozen-feed dedup as the one-tap burst: a stalled camera can
+    // present one still across poses, and byte-identical captures are
+    // ONE observation — recording them as two would fabricate the exact
+    // cross-frame agreement this flow exists to earn. The pose still
+    // advances (holding the patient on a frozen feed helps nobody); the
+    // aggregate honestly caps confidence on the frames that remain.
+    const previous = framesRef.current[framesRef.current.length - 1];
+    if (!previous || previous.dataUrl !== dataUrl) {
+      framesRef.current = [
+        ...framesRef.current,
+        { dataUrl, pose, source: "guided" },
+      ];
+    }
     machineRef.current = advancePose(machineRef.current, performance.now());
     centroidsRef.current = [];
     lastMatchedTurnRef.current = null;
@@ -367,6 +389,19 @@ export function GuidedCapture({ onFallback }: { onFallback: () => void }) {
   // ── The live loop ──
   useEffect(() => {
     if (!videoReady || !landmarkerReady) return;
+    // Start the pose clock NOW. The machine is constructed with epoch 0
+    // while every tick passes performance.now() — which counts from page
+    // navigation, so by the time camera + model were ready the 8s
+    // struggle window read as long elapsed and the "take it anyway" /
+    // "skip this angle" escape hatches (and their spoken pointer) fired
+    // on the very first assessment, before the patient had tried at all.
+    if (
+      framesRef.current.length === 0 &&
+      machineRef.current.captured.length === 0
+    ) {
+      machineRef.current = initialGuidedState(performance.now());
+    }
+    lastLiveTickMsRef.current = performance.now();
     setCoach({ message: "Look straight at the camera.", struggling: false });
     if (!introSpokenRef.current) {
       introSpokenRef.current = true;
@@ -377,11 +412,25 @@ export function GuidedCapture({ onFallback }: { onFallback: () => void }) {
       feedbackRef.current!.speak("Look straight at the camera.");
     }
 
+    const deadLoopCheck = () => {
+      if (
+        !finalizedRef.current &&
+        !unmountedRef.current &&
+        performance.now() - lastLiveTickMsRef.current > DEAD_LOOP_FALLBACK_MS
+      ) {
+        track("guided_capture_dead_loop_fallback");
+        onFallback();
+      }
+    };
+
     const tick = () => {
       if (tickBusyRef.current || finalizedRef.current) return;
       const video = videoRef.current;
       const landmarker = landmarkerRef.current;
       if (!video || !landmarker || !video.videoWidth || !video.videoHeight) {
+        // The stream died after setup — zero-size feed, refs gone. Wait
+        // out the grace window, then fail open.
+        deadLoopCheck();
         return;
       }
       tickBusyRef.current = true;
@@ -567,9 +616,14 @@ export function GuidedCapture({ onFallback }: { onFallback: () => void }) {
             );
           }
         }
+        lastLiveTickMsRef.current = performance.now();
       } catch {
         // A single failed assessment is not a failed capture — skip the
-        // tick and let the next one try again.
+        // tick and let the next one try again. A landmarker that throws
+        // EVERY tick, though, is a dead pipeline: fail open once the
+        // grace window passes rather than coaching a frozen preview
+        // forever.
+        deadLoopCheck();
       } finally {
         tickBusyRef.current = false;
       }

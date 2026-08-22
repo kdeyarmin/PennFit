@@ -35,6 +35,7 @@ import {
 import { useCart } from "@/hooks/use-cart";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { MaskRecommendationCard } from "@/components/mask-recommendation-card";
+import { formatMaskType } from "@/lib/mask-images";
 import { ComfortGuarantee } from "@/components/comfort-guarantee";
 import { BrandName } from "@/components/company-contact";
 import {
@@ -850,9 +851,12 @@ export function Results() {
   const topConfidencePct = Math.round(
     (data.topRecommendations[0]?.confidence ?? 0) * 100,
   );
-  const topMaskTypeLabel = (
-    data.topRecommendations[0]?.type ?? "recommended"
-  ).replace(/_/g, " ");
+  // formatMaskType, not a bare underscore-replace: the legacy engine's
+  // types are camelCase ("fullFace", "nasalPillow"), which the replace
+  // passed through verbatim — "a fullFace mask style" in patient copy.
+  const topMaskTypeLabel = data.topRecommendations[0]?.type
+    ? formatMaskType(data.topRecommendations[0].type).toLowerCase()
+    : "recommended";
   const confidenceBand =
     topConfidencePct >= 85
       ? "strong"
@@ -909,9 +913,11 @@ export function Results() {
               Retake photo for a stronger match
             </Button>
             <p className="text-xs text-muted-foreground max-w-md mx-auto">
-              Optional — these recommendations are solid and you can order with
-              confidence below. A retake can sharpen the fit if you have a
-              moment.
+              {confidenceBand === "low"
+                ? // A LOW match must not be sold as solid — say plainly that
+                  // the scan is the weak link and a retake is the fix.
+                  "This match is a rough guide only — the scan didn't give us enough to be sure. A fresh photo in even light usually makes a real difference."
+                : "Optional — these recommendations are solid and you can order with confidence below. A retake can sharpen the fit if you have a moment."}
             </p>
           </div>
         )}

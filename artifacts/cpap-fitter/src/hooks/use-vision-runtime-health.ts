@@ -33,7 +33,14 @@ export function useVisionRuntimeHealth() {
     // responds) would otherwise leave health at "checking" forever — the
     // capture button stays disabled AND the "degraded" escape hatches
     // never render, the exact dead-end this probe exists to prevent.
-    fetch(modelUrl, { method: "HEAD", signal: AbortSignal.timeout(8_000) })
+    // AbortController rather than AbortSignal.timeout(): the static
+    // helper is a 2022 addition, and on the older phones this fitter is
+    // MOST likely to meet it throws synchronously — crashing the whole
+    // capture page to set a timeout on an advisory probe.
+    const probeController = new AbortController();
+    const probeTimer = setTimeout(() => probeController.abort(), 8_000);
+    fetch(modelUrl, { method: "HEAD", signal: probeController.signal })
+      .finally(() => clearTimeout(probeTimer))
       .then((r) => {
         if (!active) return;
         if (r.ok) {

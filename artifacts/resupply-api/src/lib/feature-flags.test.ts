@@ -18,7 +18,11 @@ import {
 
 const supabaseMock = installSupabaseMock();
 
-import { isFeatureEnabled, invalidateFeatureFlagCache } from "./feature-flags";
+import {
+  getFeatureFlagState,
+  isFeatureEnabled,
+  invalidateFeatureFlagCache,
+} from "./feature-flags";
 
 beforeEach(() => {
   supabaseMock.reset();
@@ -132,6 +136,56 @@ describe("isFeatureEnabled", () => {
       data: { enabled: true },
     });
     expect(await isFeatureEnabled("sms.reminders")).toBe(true);
+  });
+});
+
+describe("getFeatureFlagState — degradation surfaced to safety-flag callers", () => {
+  // Why this API exists: `isFeatureEnabled` never rejects (its failures
+  // are absorbed into fail-open/closed booleans), so a route-level
+  // `.catch(() => true)` around a SAFETY flag was dead code — a flag
+  // store blip silently resolved `fitter.magnet_screening` to false and
+  // disabled the implant screen. Callers that must fail toward safety
+  // read `enabled || degraded` instead.
+
+  it("a value actually read from the row is not degraded", async () => {
+    stageSupabaseResponse("feature_flags", "select", {
+      data: { enabled: false },
+    });
+    expect(await getFeatureFlagState("fitter.magnet_screening")).toEqual({
+      enabled: false,
+      degraded: false,
+    });
+  });
+
+  it("a DB read error reports degraded alongside the fail-closed false", async () => {
+    stageSupabaseResponse("feature_flags", "select", {
+      error: { message: "supabase down" },
+    });
+    expect(await getFeatureFlagState("fitter.magnet_screening")).toEqual({
+      enabled: false,
+      degraded: true,
+    });
+  });
+
+  it("the degraded marker survives the failure cache window", async () => {
+    stageSupabaseResponse("feature_flags", "select", {
+      error: { message: "supabase down" },
+    });
+    await getFeatureFlagState("fitter.magnet_screening");
+    // Second read inside the short failure-cache TTL: still degraded —
+    // a cached fallback must not masquerade as a tenant's explicit off.
+    expect(await getFeatureFlagState("fitter.magnet_screening")).toEqual({
+      enabled: false,
+      degraded: true,
+    });
+  });
+
+  it("the missing-row default counts as resolved, not degraded", async () => {
+    stageSupabaseResponse("feature_flags", "select", { data: null });
+    expect(await getFeatureFlagState("fitter.confidence_gating")).toEqual({
+      enabled: true,
+      degraded: false,
+    });
   });
 });
 

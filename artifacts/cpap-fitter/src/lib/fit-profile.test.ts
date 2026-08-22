@@ -232,6 +232,15 @@ describe("legacy projection", () => {
     ).toBe(false);
   });
 
+  it("counts 'mixed' ('I move around a lot') as side/stomach sleeping", () => {
+    // Part of a restless night is spent on the side; reading "mixed" as
+    // "not a side sleeper" silently discarded the answer (and disagreed
+    // with the tiered engine, which counts it).
+    expect(
+      toLegacyAnswers({ sleepPositions: ["mixed"] }).sideOrStomachSleeper,
+    ).toBe(true);
+  });
+
   it("reads a moustache as facial hair but not as a heavy beard", () => {
     expect(toLegacyAnswers({ facialHair: "moustache" }).heavyFacialHair).toBe(
       false,

@@ -20,6 +20,7 @@ import {
   type MaskEntry,
   type MaskType,
 } from "../../data/maskCatalog.js";
+import { resolveSizeRunBuckets } from "../size-run.js";
 
 export interface FacialMeasurements {
   noseWidth: number;
@@ -430,12 +431,27 @@ export function recommendSize(
     };
   }
 
-  // Linear partition: divide [min, max] into sizes.length equal buckets.
-  // The boundary case `value === max` rounds the index down to the last
-  // bucket so we never overflow.
+  // Partition [min, max] into buckets over the size run. NOT a plain
+  // linear ladder: "wide" codes are width variants, not the next size up
+  // (migration 0511 — a linear S < SW < M < W ladder puts a small-wide
+  // patient two sizes off), so the run is bucketed by
+  // `resolveSizeRunBuckets` — a wide code shares/steps from its plain
+  // base's bucket, and where a wide and its base share a bucket the
+  // plain base is recommended (indistinguishable on one axis; the base
+  // cut fits more faces). The boundary case `value === max` rounds the
+  // index down to the last bucket so we never overflow.
+  const isNoseAxis = !(mask.type === "fullFace" || mask.type === "hybrid");
+  const run = resolveSizeRunBuckets(sizes, isNoseAxis ? "width" : "height");
   const fraction = (value - min) / range;
-  const rawIdx = Math.floor(fraction * sizes.length);
-  const idx = Math.min(rawIdx, sizes.length - 1);
+  const bucket = Math.min(
+    Math.floor(fraction * run.bucketCount),
+    run.bucketCount - 1,
+  );
+  const inBucket = sizes
+    .map((_, i) => i)
+    .filter((i) => run.bucketOf[i] === bucket);
+  const idx =
+    inBucket.find((i) => !run.isWideStep[i]) ?? inBucket[0] ?? sizes.length - 1;
   return {
     size: sizes[idx],
     // Tenant-neutral on purpose. This is shared platform code with no
@@ -794,6 +810,27 @@ export function getActiveContraindications(
         lower.includes("congested")) &&
       answers.frequentCongestion === true
     ) {
+      triggered.push(contra);
+    }
+    // High-pressure advisories ("High pressures above 15 cmH₂O"). These
+    // catalog entries previously matched NO branch at all, so a mask the
+    // catalog itself flags for high pressure was never contraindicated —
+    // and the separate pressure-rating penalty only fires below a rated
+    // max of 20, so a 20-rated pillow (AirFit P10) with an explicit
+    // high-pressure advisory topped a high-pressure patient's list with
+    // no penalty and no note.
+    if (
+      lower.includes("pressure") &&
+      (lower.includes("high") || lower.includes("above")) &&
+      answers.cpapPressureSetting === "high"
+    ) {
+      triggered.push(contra);
+    }
+    // Adhesive-sealed masks ("Sensitive skin reactions to adhesive").
+    // Previously unmatched, so a sensitive-skin patient not only escaped
+    // the contraindication — the sensitive-skin answer's nasal-pillow
+    // bonus actively boosted the adhesive mask.
+    if (lower.includes("adhesive") && answers.sensitiveSkin === true) {
       triggered.push(contra);
     }
   }

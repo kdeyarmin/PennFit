@@ -108,7 +108,13 @@ router.post("/recommend", (req, res) => {
     const value = measurements[field];
     if (!Number.isFinite(value) || value < min || value > max) {
       res.status(400).json({
-        error: "Invalid input",
+        // The SPA renders this `error` string verbatim as the permanent
+        // failure message — a smaller-than-adult face (a teenager on the
+        // legacy path) used to dead-end on a bare "Invalid input" with no
+        // idea what to do next.
+        error:
+          "These measurements fall outside the range this fitting tool can size. " +
+          "Retaking the photo sometimes helps; otherwise ask your provider to fit you in person.",
         details: [
           `measurements.${field}: must be a number between ${min} and ${max} mm`,
         ],

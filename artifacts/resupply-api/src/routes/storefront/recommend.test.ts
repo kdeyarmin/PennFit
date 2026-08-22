@@ -183,7 +183,9 @@ describe("POST /recommend — plausibility guard", () => {
       answers: VALID_ANSWERS,
     });
     expect(res.status).toBe(400);
-    expect(res.body.error).toBe("Invalid input");
+    // The SPA shows this string verbatim as the failure message, so it
+    // must tell the patient what to DO, not just that input was invalid.
+    expect(res.body.error).toMatch(/outside the range|fit you in person/i);
     expect(res.body.details.join(" ")).toContain("noseWidth");
   });
 

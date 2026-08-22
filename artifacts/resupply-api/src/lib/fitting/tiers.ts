@@ -110,9 +110,12 @@ function profileFactors(profile: FitProfile): Set<ContraindicationFactor> {
   if (profile.visionOrCognitiveLimitation === true) {
     active.add("vision_cognitive");
   }
+  // "mixed" ("I move around a lot") includes time on the side/stomach —
+  // an answer must never be silently read as "no" (see profile.ts).
   if (
     profile.sleepPositions.includes("side") ||
-    profile.sleepPositions.includes("stomach")
+    profile.sleepPositions.includes("stomach") ||
+    profile.sleepPositions.includes("mixed")
   ) {
     active.add("side_sleeping");
   }
@@ -235,7 +238,6 @@ export interface TherapyResult {
 export function applyTherapyCompatibility(
   catalog: CatalogMask[],
   profile: FitProfile,
-  strictPressure: boolean,
 ): TherapyResult {
   const survivors: CatalogMask[] = [];
   const excluded: ExclusionRecord[] = [];
@@ -282,13 +284,17 @@ export function applyTherapyCompatibility(
       continue;
     }
 
-    // Prescribed pressure above the mask's rated maximum. Under strict
-    // gating this is an exclusion rather than the old 0.5 score penalty —
-    // a mask rated to 20 cmH2O cannot hold a 25 cmH2O prescription, and
-    // scoring that down still lets it win a weak field.
+    // Prescribed pressure above the mask's rated maximum. Unconditional:
+    // a mask rated to 20 cmH2O cannot hold a 25 cmH2O prescription — a
+    // therapy-compatibility fact, not a confidence question. This used to
+    // run only under `fitter.confidence_gating` on the stated assumption
+    // that the "old 0.5 score penalty" applied otherwise, but no such
+    // penalty exists anywhere in the tiered pipeline (pressureMax is read
+    // nowhere else), so with gating off a mask that cannot deliver the
+    // prescribed therapy survived with no exclusion, no caution, and no
+    // demotion at all.
     const prescribed = profile.pressureCmH2O;
     if (
-      strictPressure &&
       prescribed !== null &&
       mask.pressureMax !== null &&
       prescribed > mask.pressureMax
@@ -672,10 +678,13 @@ export function scorePatientFactors(
     }
   }
 
-  // Sleep position.
+  // Sleep position. "mixed" counts: a patient who moves around all night
+  // spends part of it on their side, so a pillow-vulnerable frame is a
+  // problem for them too (same rule as profileFactors above).
   if (
     profile.sleepPositions.includes("side") ||
-    profile.sleepPositions.includes("stomach")
+    profile.sleepPositions.includes("stomach") ||
+    profile.sleepPositions.includes("mixed")
   ) {
     if (mask.sideSleepingTolerance === "good") {
       bump(
@@ -927,11 +936,7 @@ export function runTiers(input: FitEngineInput): RankedResult {
     input.magnetScreening,
     input.magnetScreenUnavailable ?? false,
   );
-  const therapy = applyTherapyCompatibility(
-    safety.survivors,
-    input.profile,
-    input.confidenceGating,
-  );
+  const therapy = applyTherapyCompatibility(safety.survivors, input.profile);
 
   const formularyRulesMatched: Record<string, string[]> = {};
   const candidates: FitCandidate[] = [];
@@ -1016,11 +1021,16 @@ export function runTiers(input: FitEngineInput): RankedResult {
       reasons: factors.reasons,
       cautions,
       outsideFormulary: !decision.allowed,
+      // Patient-safe fixed copy only. The operator's free-text
+      // `reasonCode` used to be interpolated here, and this string flows
+      // verbatim to /results and the fit report (fit-report.ts lists
+      // outsideFormularyReason among PATIENT_REDACTED_FIELDS for exactly
+      // that reason) — an internal code like "low_margin" must never
+      // reach a patient. Clinicians still see WHICH rule fired via
+      // `formularyRulesMatched` in the stored provenance.
       outsideFormularyReason: decision.allowed
         ? null
-        : decision.denyReasonCode === "not_in_closed_formulary"
-          ? "Not on your provider's formulary."
-          : `Excluded by your provider's formulary${decision.denyReasonCode ? ` (${decision.denyReasonCode})` : ""}.`,
+        : "Not part of your provider's usual selection.",
       availability: availability?.availability ?? null,
       magnetFreeVariantOf: magnetFreeVariantOf.get(mask.slug) ?? null,
       rankedBelowBecause: null,

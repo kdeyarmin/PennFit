@@ -401,4 +401,14 @@ describe("profile completeness", () => {
     expect(profileCompleteness(emptyProfile())).toBeGreaterThanOrEqual(0.6);
     expect(profileCompleteness(fullProfile())).toBeLessThanOrEqual(1);
   });
+
+  it("an entirely unanswered profile sits exactly at the documented floor", () => {
+    // Regression pin: `priorMaskExperience !== undefined` used to count
+    // as an answered question on every profile (the field is
+    // non-nullable, so a skipped question is indistinguishable from
+    // "none"), quietly lifting an unanswered profile to 0.64 — enough to
+    // convert a low-confidence withhold into a moderate recommendation
+    // near the threshold. The undetectable question is no longer scored.
+    expect(profileCompleteness(emptyProfile())).toBeCloseTo(0.6, 10);
+  });
 });

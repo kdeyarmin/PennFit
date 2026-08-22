@@ -13,8 +13,10 @@ import { emptyProfile } from "./profile";
 import {
   applySafetyExclusions,
   applyTherapyCompatibility,
+  profileFactors,
   resolveSafetyFlags,
   scoreFacialFit,
+  scorePatientFactors,
   scoreVariant,
   supplyMultiplier,
 } from "./tiers";
@@ -516,49 +518,41 @@ describe("tier 2 — therapy compatibility", () => {
       therapyModes: ["pap", "niv"],
     });
 
-    const onPap = applyTherapyCompatibility(
-      [vented, nonVented],
-      { ...emptyProfile(), therapyMode: "pap" },
-      true,
-    );
+    const onPap = applyTherapyCompatibility([vented, nonVented], {
+      ...emptyProfile(),
+      therapyMode: "pap",
+    });
     expect(onPap.survivors.map((m) => m.slug)).toEqual(["vented"]);
     expect(onPap.excluded[0]!.code).toBe("vent_incompatible");
 
-    const onNiv = applyTherapyCompatibility(
-      [vented, nonVented],
-      { ...emptyProfile(), therapyMode: "niv" },
-      true,
-    );
+    const onNiv = applyTherapyCompatibility([vented, nonVented], {
+      ...emptyProfile(),
+      therapyMode: "niv",
+    });
     expect(onNiv.survivors.map((m) => m.slug)).toEqual(["non-vented"]);
   });
 
-  it("excludes a mask rated below the prescribed pressure — a filter, not a penalty", () => {
+  it("excludes a mask rated below the prescribed pressure — a filter, not a penalty, and not gated", () => {
+    // Unconditional on purpose: a mask that cannot hold the prescribed
+    // pressure is therapy-incompatible whatever the confidence-gating
+    // flag says. The historical strictPressure parameter claimed a
+    // legacy soft-penalty fallback that never existed in this pipeline
+    // (pressureMax is read nowhere else), so "lenient" mode was a
+    // silent no-op that let a 20-rated mask carry a 25 cmH2O
+    // prescription with no demotion at all.
     const lowRated = mask({ slug: "low", pressureMax: 20 });
     const highRated = mask({ slug: "high", pressureMax: 30 });
     const profile = { ...emptyProfile(), pressureCmH2O: 25 };
 
-    const strict = applyTherapyCompatibility(
-      [lowRated, highRated],
-      profile,
-      true,
-    );
-    expect(strict.survivors.map((m) => m.slug)).toEqual(["high"]);
-    expect(strict.excluded[0]!.code).toBe("pressure_rating_exceeded");
-
-    // With gating off the legacy soft behaviour is preserved.
-    const lenient = applyTherapyCompatibility(
-      [lowRated, highRated],
-      profile,
-      false,
-    );
-    expect(lenient.survivors).toHaveLength(2);
+    const result = applyTherapyCompatibility([lowRated, highRated], profile);
+    expect(result.survivors.map((m) => m.slug)).toEqual(["high"]);
+    expect(result.excluded[0]!.code).toBe("pressure_rating_exceeded");
   });
 
   it("rejects a mask that cannot take supplemental oxygen when the patient uses it", () => {
     const result = applyTherapyCompatibility(
       [mask({ slug: "m", supportsSupplementalOxygen: false })],
       { ...emptyProfile(), supplementalOxygen: true },
-      true,
     );
     expect(result.survivors).toHaveLength(0);
     expect(result.excluded[0]!.code).toBe("oxygen_entrainment_unsupported");
@@ -700,6 +694,25 @@ describe("tier 3 — facial fit", () => {
 });
 
 // ── Tier 6: supply ───────────────────────────────────────────────────
+
+describe("tier 4 — patient characteristics", () => {
+  it("'mixed' sleep position counts as side/stomach sleeping", () => {
+    // "I move around a lot" spends part of the night on the side; the
+    // answer must never be silently read as "no" (profile.ts). A
+    // ['mixed']-only profile used to activate neither the side-sleeping
+    // contraindication factor nor the tolerance scoring.
+    const mixed = { ...emptyProfile(), sleepPositions: ["mixed" as const] };
+
+    expect(profileFactors(mixed).has("side_sleeping")).toBe(true);
+
+    const pillowVulnerable = mask({ sideSleepingTolerance: "poor" });
+    const pillowStable = mask({ sideSleepingTolerance: "good" });
+    const vulnerable = scorePatientFactors(pillowVulnerable, mixed);
+    const stable = scorePatientFactors(pillowStable, mixed);
+    expect(stable.score).toBeGreaterThan(vulnerable.score);
+    expect(vulnerable.cautions.length).toBeGreaterThan(0);
+  });
+});
 
 describe("tier 6 — supply is bounded and never excludes", () => {
   it("keeps the multiplier inside its declared band even at the extremes", () => {

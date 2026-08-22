@@ -80,8 +80,17 @@ const listQuery = z
       .optional(),
     serviceLine: z.enum(["adult", "pediatric", "both"]).optional(),
     status: z.enum(["current", "discontinued", "pre_release"]).optional(),
-    needsReview: z.coerce.boolean().optional(),
-    dispensedOnly: z.coerce.boolean().optional(),
+    // NOT z.coerce.boolean(): query params arrive as strings and
+    // Boolean("false") is true, so `?needsReview=false` used to turn the
+    // filter ON. Parse the literal spellings instead.
+    needsReview: z
+      .enum(["true", "false", "1", "0"])
+      .transform((v) => v === "true" || v === "1")
+      .optional(),
+    dispensedOnly: z
+      .enum(["true", "false", "1", "0"])
+      .transform((v) => v === "true" || v === "1")
+      .optional(),
     search: z.string().trim().max(120).optional(),
     limit: z.coerce.number().int().min(1).max(300).default(100),
     offset: z.coerce.number().int().min(0).default(0),
