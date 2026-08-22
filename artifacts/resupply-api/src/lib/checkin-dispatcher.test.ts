@@ -14,6 +14,7 @@ import {
   smsBodyForDay,
   stampFieldForDay,
   subjectForDay,
+  textBodyForDay,
   voiceScriptForDay,
 } from "./checkin-dispatcher";
 import type { OnboardingDayLabel } from "@workspace/resupply-db";
@@ -147,6 +148,23 @@ describe("rendered scripts", () => {
     expect(
       subjectForDay("day90").split("Penn Home Medical Supply").join(brandName),
     ).toContain("Smith & Sons CPAP");
+  });
+
+  it("entity-escapes an ampersand in the greeting rather than deleting it", () => {
+    // Regression: htmlBodyForDay used to DELETE [<>&] from the greeting
+    // and from every paragraph, so a patient greeted as "Hi Ben & Co"
+    // received "Hi Ben  Co" with the ampersand silently removed.
+    const html = htmlBodyForDay("day90", "Hi Ben & Co");
+    expect(html).toContain("Hi Ben &amp; Co");
+    expect(html).not.toContain("Hi Ben  Co");
+  });
+
+  it("keeps the plain-text day copy free of HTML entities", () => {
+    // textBodyForDay feeds text/plain; escaping there would leak "&amp;"
+    // into the patient's inbox.
+    const text = textBodyForDay("day90", "Hi Ben & Co");
+    expect(text).toContain("Hi Ben & Co");
+    expect(text).not.toContain("&amp;");
   });
 });
 

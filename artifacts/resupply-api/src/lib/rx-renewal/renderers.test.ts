@@ -135,4 +135,18 @@ describe("rxRenewalHtml", () => {
     expect(html).toContain("just expired");
     expect(html).not.toContain("<strong>0");
   });
+
+  it("entity-escapes the sign-off brand rather than deleting characters", () => {
+    // Regression: this module used to STRIP [<>&] before handing the name
+    // to the layout, so "R&R <Medical>" reached the patient as
+    // "RR Medical" in the wordmark, footer and copyright line.
+    const html = rxRenewalHtml("Hi Anna", 7, "R&R <Medical>");
+    expect(html).toContain("R&amp;R &lt;Medical&gt;");
+    expect(html).not.toContain("RR Medical");
+  });
+
+  it("entity-escapes an ampersand in the greeting", () => {
+    const html = rxRenewalHtml("Hi Ben & Co", 7);
+    expect(html).toContain("Hi Ben &amp; Co");
+  });
 });

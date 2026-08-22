@@ -11,10 +11,23 @@
 // copy. Future A/B testing of subject lines / CTAs lands here as
 // a single edit that both surfaces pick up.
 //
-// PHI: no patient identifiers, no therapy values. Greeting + first
-// name are passed by the caller after sanitization.
+// PHI: no patient identifiers, no therapy values.
+//
+// Markup safety: `textBody` is plain text and transforms nothing — a
+// brand or a name legitimately containing an ampersand or angle bracket
+// must survive intact. `htmlBody` entity-escapes each paragraph on the
+// way into the HTML, which is what makes the caller-supplied `greeting`
+// and `brand` safe in an HTML context. Both used to DELETE those three
+// characters instead — `textBody` from the greeting, `htmlBody` from
+// every assembled paragraph, brand and account URL included — so a
+// tenant trading as "R&R Medical" reached the patient as "RR Medical"
+// in the HTML body and the wordmark.
 
-import { BREATHE_COLORS, renderBrandedEmail } from "@workspace/resupply-email";
+import {
+  BREATHE_COLORS,
+  escapeHtml,
+  renderBrandedEmail,
+} from "@workspace/resupply-email";
 
 import { type TriggerKind } from "./index";
 
@@ -69,16 +82,15 @@ export function textBody(
   brand: string,
   accountUrl: string,
 ): string {
-  const safeGreeting = greeting.replace(/[<>&]/g, "");
   switch (kind) {
     case "leak_rising":
-      return `${safeGreeting},\n\nYour mask leak rate has trended up over the last two weeks. The most common cause is a worn cushion seal — replacing it usually solves it overnight. If your insurance is on file, a replacement is already eligible.\n\nReply YES and we'll ship a fresh one. Or sign in at ${accountUrl} to review options.\n\n— ${brand}\n`;
+      return `${greeting},\n\nYour mask leak rate has trended up over the last two weeks. The most common cause is a worn cushion seal — replacing it usually solves it overnight. If your insurance is on file, a replacement is already eligible.\n\nReply YES and we'll ship a fresh one. Or sign in at ${accountUrl} to review options.\n\n— ${brand}\n`;
     case "usage_dropping":
-      return `${safeGreeting},\n\nWe noticed your therapy hours have dropped over the last couple of weeks. That's the most common point where patients quietly stop using CPAP — and it's also the one where small changes (mask refit, ramp tweak, humidifier nudge) make the biggest difference.\n\nReply to this email and we'll set up a quick call. No charge, no pressure.\n\n— ${brand}\n`;
+      return `${greeting},\n\nWe noticed your therapy hours have dropped over the last couple of weeks. That's the most common point where patients quietly stop using CPAP — and it's also the one where small changes (mask refit, ramp tweak, humidifier nudge) make the biggest difference.\n\nReply to this email and we'll set up a quick call. No charge, no pressure.\n\n— ${brand}\n`;
     case "cushion_wear":
-      return `${safeGreeting},\n\nYour AHI and leak rate have both ticked up over the last two weeks — usually a sign your mask cushion is at the end of its life. A replacement cushion takes about 5 minutes to swap and typically clears both readings.\n\nReply YES to ship a fresh cushion (no charge if you're on insurance through us).\n\n— ${brand}\n`;
+      return `${greeting},\n\nYour AHI and leak rate have both ticked up over the last two weeks — usually a sign your mask cushion is at the end of its life. A replacement cushion takes about 5 minutes to swap and typically clears both readings.\n\nReply YES to ship a fresh cushion (no charge if you're on insurance through us).\n\n— ${brand}\n`;
     case "humidifier_drop":
-      return `${safeGreeting},\n\nWith warmer weather your tubing may be due for a refresh — older tubing collects condensation and reduces airflow, which can make therapy feel less comfortable in the summer.\n\nReply YES and we'll ship a fresh hose.\n\n— ${brand}\n`;
+      return `${greeting},\n\nWith warmer weather your tubing may be due for a refresh — older tubing collects condensation and reduces airflow, which can make therapy feel less comfortable in the summer.\n\nReply YES and we'll ship a fresh hose.\n\n— ${brand}\n`;
     case "ahi_elevated":
     case "non_adherent_30d":
     case "pressure_at_max":
@@ -94,15 +106,14 @@ export function htmlBody(
   brand: string,
   accountUrl: string,
 ): string {
-  const safeGreeting = greeting.replace(/[<>&]/g, "");
   const heading = subjectForKind(kind);
-  const paragraphs = textBody(safeGreeting, kind, brand, accountUrl)
+  const paragraphs = textBody(greeting, kind, brand, accountUrl)
     .split("\n\n")
     .map(
       (p) =>
-        `<p style="margin:0 0 16px;font-family:Arial,Helvetica,sans-serif;font-size:16px;line-height:1.6;color:${BREATHE_COLORS.body};">${p
-          .replace(/[<>&]/g, "")
-          .replace(/\n/g, "<br>")}</p>`,
+        `<p style="margin:0 0 16px;font-family:Arial,Helvetica,sans-serif;font-size:16px;line-height:1.6;color:${BREATHE_COLORS.body};">${escapeHtml(
+          p,
+        ).replace(/\n/g, "<br>")}</p>`,
     )
     .join("");
   // Chrome comes from the shared CareMetric Breathe email design system.
