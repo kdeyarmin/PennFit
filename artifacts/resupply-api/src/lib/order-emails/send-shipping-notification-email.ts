@@ -26,12 +26,22 @@
 //
 // Template:
 //   - Subject:   "Your Penn Home Medical Supply order has shipped"
-//   - HTML body: brand banner ("On its way"), short note, tracking
-//                box (carrier + number, with a public carrier-tracking
-//                link when the carrier is known), shipping address
-//                summary, "View order" CTA, support footer.
+//   - HTML body: rendered through the shared branded email layout
+//                (`renderBrandedEmail`) so it matches every other
+//                platform email. Copy: short note, tracking panel
+//                (carrier + number, with a public carrier-tracking
+//                link when the carrier is known), shipping-address
+//                panel, "Track package"/"View order" CTA, support footer.
 
-import { EmailApiError, EmailConfigError } from "@workspace/resupply-email";
+import {
+  EmailApiError,
+  EmailConfigError,
+  escapeHtml,
+  infoPanel,
+  renderBrandedEmail,
+  secondaryLink,
+  textParagraph,
+} from "@workspace/resupply-email";
 
 import type { SavedShippingAddress } from "@workspace/resupply-db";
 
@@ -78,15 +88,6 @@ export interface SendShippingNotificationEmailResult {
   delivered: boolean;
   error?: string;
   messageId?: string;
-}
-
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
 }
 
 function publicBaseUrl(override?: string): string {
@@ -212,88 +213,46 @@ export async function sendShippingNotificationEmail(
   const text = textLines.join("\n");
 
   // ---------- html body ----------
-  const trackingButton = trackingUrl
-    ? `
-          <tr>
-            <td align="center" style="padding-top:24px;">
-              <a href="${escapeHtml(trackingUrl)}" style="display:inline-block;background:#c9a227;color:#1a1a1a;text-decoration:none;padding:14px 28px;border-radius:8px;font-weight:700;">Track package</a>
-            </td>
-          </tr>
-          <tr>
-            <td align="center" style="padding-top:8px;">
-              <a href="${escapeHtml(orderUrl)}" style="color:#7a5d00;font-size:13px;text-decoration:underline;">or view your full order</a>
-            </td>
-          </tr>`
-    : `
-          <tr>
-            <td align="center" style="padding-top:24px;">
-              <a href="${escapeHtml(orderUrl)}" style="display:inline-block;background:#c9a227;color:#1a1a1a;text-decoration:none;padding:14px 28px;border-radius:8px;font-weight:700;">View order</a>
-            </td>
-          </tr>`;
-
-  const addressBlock = shippingAddress
-    ? `
-          <tr>
-            <td style="padding-top:24px;color:#1a1a1a;font-weight:700;">Shipping to</td>
-          </tr>
-          <tr>
-            <td style="padding-top:6px;color:#444;font-size:14px;line-height:1.5;">
-              ${renderAddressHtml(shippingAddress)}
-            </td>
-          </tr>`
+  // Chrome comes from the shared CareMetric Breathe email design system;
+  // this builder supplies only copy + data. The wordmark is the TENANT's
+  // storefront brand (see CLAUDE.md brand architecture).
+  const addressPanel = shippingAddress
+    ? infoPanel({
+        title: "Shipping to",
+        html: renderAddressHtml(shippingAddress),
+      })
     : "";
 
-  const html = `<!DOCTYPE html>
-<html>
-<body style="margin:0;padding:0;background:#f7f4ec;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;">
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f7f4ec;padding:24px 0;">
-    <tr>
-      <td align="center">
-        <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;padding:32px;max-width:560px;">
-          <tr>
-            <td style="padding-bottom:16px;border-bottom:2px solid #c9a227;">
-              <div style="font-size:14px;letter-spacing:0.08em;color:#7a5d00;text-transform:uppercase;font-weight:600;">${escapeHtml(brandName)}</div>
-              <div style="font-size:22px;color:#1a1a1a;font-weight:700;margin-top:4px;">On its way</div>
-            </td>
-          </tr>
-          <tr>
-            <td style="padding-top:20px;color:#333;font-size:15px;line-height:1.5;">
-              Good news &mdash; your ${escapeHtml(brandName)} order has shipped.
-            </td>
-          </tr>
-          <tr>
-            <td style="padding-top:20px;">
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#fbf7e8;border:1px solid #ecdfa6;border-radius:8px;">
-                <tr>
-                  <td style="padding:14px 16px;color:#5a4400;font-size:13px;letter-spacing:0.04em;text-transform:uppercase;font-weight:700;">Tracking</td>
-                </tr>
-                <tr>
-                  <td style="padding:0 16px 14px 16px;color:#1a1a1a;font-size:15px;line-height:1.5;">
-                    <div><strong>${escapeHtml(carrier)}</strong></div>
-                    <div style="font-family:Menlo,Consolas,monospace;font-size:14px;color:#333;margin-top:2px;">${escapeHtml(trackingNumber)}</div>
-                  </td>
-                </tr>
-              </table>
-            </td>
-          </tr>
-          <tr>
-            <td>
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
-                ${addressBlock}
-              </table>
-            </td>
-          </tr>${trackingButton}
-          <tr>
-            <td style="padding-top:28px;border-top:1px solid #eee;color:#888;font-size:12px;line-height:1.4;">
-              If anything looks off &mdash; wrong address, wrong items &mdash; reply to this message right away and we'll sort it out.
-            </td>
-          </tr>
-        </table>
-      </td>
-    </tr>
-  </table>
-</body>
-</html>`;
+  const trackingPanel = infoPanel({
+    title: "Tracking",
+    tone: "info",
+    html:
+      `<div style="font-weight:700;color:#0b1426;">${escapeHtml(carrier)}</div>` +
+      `<div style="font-family:Menlo,Consolas,monospace;font-size:14px;margin-top:2px;">${escapeHtml(
+        trackingNumber,
+      )}</div>`,
+  });
+
+  const html = renderBrandedEmail({
+    brandName,
+    heading: "On its way",
+    preheader: `Your order has shipped via ${carrier} — tracking ${trackingNumber}.`,
+    contentHtml: [
+      textParagraph(`Good news — your ${brandName} order has shipped.`),
+      trackingPanel,
+      addressPanel,
+      trackingUrl ? secondaryLink("Or view your full order", orderUrl) : "",
+    ]
+      .filter(Boolean)
+      .join("\n"),
+    button: trackingUrl
+      ? { label: "Track package", url: trackingUrl }
+      : { label: "View order", url: orderUrl },
+    footerLines: [
+      "If anything looks off — wrong address, wrong items — reply to this message right away and we'll sort it out.",
+    ],
+    copyrightName: brandName,
+  });
 
   try {
     const { messageId } = await client.sendEmail({

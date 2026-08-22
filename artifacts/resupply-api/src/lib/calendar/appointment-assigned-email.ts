@@ -14,7 +14,14 @@
 // the fallback strings below are used verbatim when no template row exists
 // (the row is optional — there is no seed for this key).
 
-import { EmailApiError, EmailConfigError } from "@workspace/resupply-email";
+import {
+  BREATHE_COLORS,
+  EmailApiError,
+  EmailConfigError,
+  escapeHtml,
+  renderBrandedEmail,
+  textParagraph,
+} from "@workspace/resupply-email";
 import { renderMessage } from "@workspace/resupply-templates";
 
 import { messageTemplateLookup } from "../message-templates/lookup";
@@ -57,15 +64,6 @@ const TIME_FMT_NO_TZ = new Intl.DateTimeFormat("en-US", {
   hour: "numeric",
   minute: "2-digit",
 });
-
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
 
 export interface AppointmentAssignedEmailInput {
   toEmail: string;
@@ -130,12 +128,18 @@ function buildTemplateVariables(
     appointment_type: fields.type,
     appointment_type_html: escapeHtml(fields.type),
     when_html: escapeHtml(`${fields.date}, ${fields.time}`),
+    // Plain (unescaped) "date, time" for the preheader slot, which the
+    // layout escapes itself — `when_html` would double-escape there.
+    when_plain: `${fields.date}, ${fields.time}`,
     location: fields.location,
     assigned_by: fields.assignedBy,
     dashboard_url: input.dashboardUrl,
-    dashboard_url_html: escapeHtml(input.dashboardUrl),
+    // Href slot: `brandedButton` only quote-escapes, so this must too —
+    // a full escapeHtml would turn `&` into `&amp;` and break parity.
+    dashboard_url_html: input.dashboardUrl.replace(/"/g, "&quot;"),
     brand_name: brandName,
     brand_name_html: escapeHtml(brandName),
+    copyright_year: String(new Date().getFullYear()),
     location_line_text: fields.location ? `Where: ${fields.location}\n` : "",
     assigned_by_line_text: fields.assignedBy
       ? `Assigned by: ${fields.assignedBy}\n`
@@ -176,7 +180,7 @@ function renderText(
 // to the fallback renderer.
 function locationRowHtml(location: string): string {
   return location
-    ? `<tr><td style="padding:2px 0;color:#888;">Where</td><td style="padding:2px 0 2px 16px;color:#0a1f44;font-weight:600;">${escapeHtml(
+    ? `<tr><td style="padding:2px 0;color:${BREATHE_COLORS.muted};">Where</td><td style="padding:2px 0 2px 16px;color:${BREATHE_COLORS.ink};font-weight:600;">${escapeHtml(
         location,
       )}</td></tr>`
     : "";
@@ -184,10 +188,63 @@ function locationRowHtml(location: string): string {
 
 function assignedByRowHtml(assignedBy: string): string {
   return assignedBy
-    ? `<tr><td style="padding:2px 0;color:#888;">Assigned by</td><td style="padding:2px 0 2px 16px;color:#0a1f44;">${escapeHtml(
+    ? `<tr><td style="padding:2px 0;color:${BREATHE_COLORS.muted};">Assigned by</td><td style="padding:2px 0 2px 16px;color:${BREATHE_COLORS.ink};">${escapeHtml(
         assignedBy,
       )}</td></tr>`
     : "";
+}
+
+/**
+ * Assemble the branded body. Shared with the SEEDED template row
+ * (`seed-bodies.ts`), which calls this with `{{...}}` placeholders in
+ * place of the real values — that is what keeps the seeded output
+ * byte-identical to this fallback path. The optional rows are
+ * concatenated directly (no `filter`/`join`) so an absent row collapses
+ * to the same bytes on both paths.
+ */
+export function appointmentAssignedBrandedHtml(parts: {
+  /** Escaped slot. Seed passes `{{brand_name_html}}`. */
+  brandName: string;
+  /** Escaped slot (inside textParagraph). Seed passes `{{assignee_name_html}}`. */
+  greetingName: string;
+  /** Pre-escaped for a verbatim slot. Seed passes `{{appointment_type_html}}`. */
+  typeHtml: string;
+  /** Pre-escaped for a verbatim slot. Seed passes `{{when_html}}`. */
+  whenHtml: string;
+  /** Escaped slot. Seed passes `{{appointment_type}}`. */
+  preheaderType: string;
+  /** Escaped slot. Seed passes `{{when_plain}}`. */
+  preheaderWhen: string;
+  /** Verbatim HTML fragment (may be empty). */
+  locationRowHtml: string;
+  /** Verbatim HTML fragment (may be empty). */
+  assignedByRowHtml: string;
+  /** Button href — quote-only escape, matching `brandedButton`. */
+  dashboardUrl: string;
+  copyrightYear?: number | string;
+}): string {
+  return renderBrandedEmail({
+    brandName: parts.brandName,
+    brandTagline: "Company calendar",
+    heading: "An appointment was scheduled for you",
+    preheader: `${parts.preheaderType} on ${parts.preheaderWhen}.`,
+    contentHtml:
+      textParagraph(
+        `Hi ${parts.greetingName}, a new appointment has been placed on your calendar.`,
+      ) +
+      `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="font-size:14px;font-family:Arial,Helvetica,sans-serif;margin:0 0 8px;">
+<tr><td style="padding:2px 0;color:${BREATHE_COLORS.muted};">Type</td><td style="padding:2px 0 2px 16px;color:${BREATHE_COLORS.ink};font-weight:600;">${parts.typeHtml}</td></tr>
+<tr><td style="padding:2px 0;color:${BREATHE_COLORS.muted};">When</td><td style="padding:2px 0 2px 16px;color:${BREATHE_COLORS.ink};font-weight:600;">${parts.whenHtml}</td></tr>
+${parts.locationRowHtml}${parts.assignedByRowHtml}</table>`,
+    button: { label: "Open the calendar", url: parts.dashboardUrl },
+    footerLines: [
+      `You're receiving this because a teammate assigned this appointment to you in the ${parts.brandName} admin console.`,
+    ],
+    copyrightName: parts.brandName,
+    ...(parts.copyrightYear === undefined
+      ? {}
+      : { copyrightYear: parts.copyrightYear }),
+  });
 }
 
 function renderHtml(
@@ -195,46 +252,18 @@ function renderHtml(
   brandName = "CareMetric Breathe",
 ): string {
   const f = buildFields(input);
-  const locationRow = locationRowHtml(f.location);
-  const assignedByRow = assignedByRowHtml(f.assignedBy);
-  return `<!DOCTYPE html><html><body style="margin:0;padding:0;background:#f7f4ec;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;">
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f7f4ec;padding:24px 0;">
-    <tr><td align="center">
-      <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;padding:32px;max-width:560px;">
-        <tr><td style="padding-bottom:16px;border-bottom:2px solid #c9a24a;">
-          <div style="font-size:13px;letter-spacing:0.08em;color:#7a5d00;text-transform:uppercase;font-weight:600;">${escapeHtml(
-            brandName,
-          )} · Company calendar</div>
-          <div style="font-size:22px;color:#0a1f44;font-weight:700;margin-top:4px;">An appointment was scheduled for you</div>
-        </td></tr>
-        <tr><td style="padding-top:18px;color:#333;font-size:15px;line-height:1.55;">
-          Hi ${escapeHtml(f.greetingName)}, a new appointment has been placed on your calendar.
-        </td></tr>
-        <tr><td style="padding-top:16px;">
-          <table role="presentation" cellpadding="0" cellspacing="0" style="font-size:14px;">
-            <tr><td style="padding:2px 0;color:#888;">Type</td><td style="padding:2px 0 2px 16px;color:#0a1f44;font-weight:600;">${escapeHtml(
-              f.type,
-            )}</td></tr>
-            <tr><td style="padding:2px 0;color:#888;">When</td><td style="padding:2px 0 2px 16px;color:#0a1f44;font-weight:600;">${escapeHtml(
-              `${f.date}, ${f.time}`,
-            )}</td></tr>
-            ${locationRow}
-            ${assignedByRow}
-          </table>
-        </td></tr>
-        <tr><td align="center" style="padding-top:24px;">
-          <a href="${escapeHtml(
-            input.dashboardUrl,
-          )}" style="display:inline-block;background:#c9a24a;color:#0a1f44;text-decoration:none;padding:13px 26px;border-radius:8px;font-weight:700;">Open the calendar</a>
-        </td></tr>
-        <tr><td style="padding-top:28px;border-top:1px solid #eee;color:#888;font-size:12px;line-height:1.4;">
-          You're receiving this because a teammate assigned this appointment to you in the ${escapeHtml(
-            brandName,
-          )} admin console.
-        </td></tr>
-      </table>
-    </td></tr>
-  </table></body></html>`;
+  // Chrome comes from the shared CareMetric Breathe email design system.
+  return appointmentAssignedBrandedHtml({
+    brandName,
+    greetingName: f.greetingName,
+    typeHtml: escapeHtml(f.type),
+    whenHtml: escapeHtml(`${f.date}, ${f.time}`),
+    preheaderType: f.type,
+    preheaderWhen: `${f.date}, ${f.time}`,
+    locationRowHtml: locationRowHtml(f.location),
+    assignedByRowHtml: assignedByRowHtml(f.assignedBy),
+    dashboardUrl: input.dashboardUrl,
+  });
 }
 
 /**

@@ -113,7 +113,9 @@ describe("sendDeliveredNotificationEmail", () => {
     expect(arg.subject).toBe(
       "Your Penn Home Medical Supply order was delivered",
     );
-    expect(arg.html).toContain("It's here");
+    // The shared layout HTML-escapes headings, so the apostrophe rides
+    // as a numeric entity (renders identically in every mail client).
+    expect(arg.html).toContain("It&#39;s here");
     expect(arg.html).toContain("ups.com/track");
     expect(arg.html).toContain("1Z999AA10123456784");
     expect(arg.html).toContain("Apt 4B");

@@ -84,10 +84,14 @@ async function bothPaths(
 
 // Brands chosen to exercise the two HTML-context transforms: the rx
 // renderers STRIP [<>&]; the SendGrid-HTML renderers entity-escape.
+// O'Dell is deliberate: an apostrophe survives the rx strip but IS
+// entity-escaped by the shared layout, so it is the case that catches a
+// seed variable escaped a different number of times than its slot.
 const BRANDS = [
   { name: "Penn Home Medical Supply", legal: "Penn Home Medical Supply" },
   { name: "CareMetric Breathe", legal: "CareMetric Breathe" },
   { name: "R&R <Medical>", legal: "R&R <Medical> Supply & Co" },
+  { name: "O'Dell Home Care", legal: "O'Dell Home Care, Inc." },
 ] as const;
 
 describe("rx_renewal.* seeded-template parity", () => {

@@ -27,7 +27,16 @@
 //                customer reassurance — there's no opt-out wiring in
 //                v1; one nudge per cart-event is the entire policy).
 
-import { EmailApiError, EmailConfigError } from "@workspace/resupply-email";
+import {
+  BREATHE_COLORS,
+  EmailApiError,
+  EmailConfigError,
+  escapeHtml,
+  lineItemsTable,
+  renderBrandedEmail,
+  summaryRows,
+  textParagraph,
+} from "@workspace/resupply-email";
 
 import type { ShopAbandonedCartItem } from "@workspace/resupply-db";
 
@@ -69,15 +78,6 @@ export interface SendCartAbandonmentEmailResult {
   error?: string;
   /** SendGrid X-Message-Id when delivered. */
   messageId?: string;
-}
-
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
 }
 
 function formatMoney(cents: number, currency: string): string {
@@ -166,77 +166,41 @@ export async function sendCartAbandonmentEmail(
   );
   const text = textLines.join("\n");
 
-  // HTML body — sober, brand-consistent. Inline styles only (most
-  // mail clients strip <style> blocks).
-  const itemRows = items
-    .map(
-      (it) => `
-        <tr>
-          <td style="padding:8px 0;border-bottom:1px solid #eee;">
-            <div style="font-weight:600;color:#1a1a1a;">${escapeHtml(it.name)}</div>
-            ${
-              it.mode === "subscription" && it.recurringIntervalLabel
-                ? `<div style="font-size:12px;color:#7a5d00;margin-top:2px;">Subscribe &amp; ship every ${escapeHtml(it.recurringIntervalLabel)}</div>`
-                : ""
-            }
-          </td>
-          <td style="padding:8px 0;border-bottom:1px solid #eee;text-align:right;color:#555;">
-            ${it.quantity} &times; ${escapeHtml(formatMoney(it.unitAmountCents, it.currency))}
-          </td>
-        </tr>`,
-    )
-    .join("");
-
-  const html = `<!DOCTYPE html>
-<html>
-<body style="margin:0;padding:0;background:#f7f4ec;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;">
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f7f4ec;padding:24px 0;">
-    <tr>
-      <td align="center">
-        <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;padding:32px;max-width:560px;">
-          <tr>
-            <td style="padding-bottom:16px;border-bottom:2px solid #c9a227;">
-              <div style="font-size:14px;letter-spacing:0.08em;color:#7a5d00;text-transform:uppercase;font-weight:600;">${escapeHtml(brandName)}</div>
-              <div style="font-size:22px;color:#1a1a1a;font-weight:700;margin-top:4px;">You left items in your cart</div>
-            </td>
-          </tr>
-          <tr>
-            <td style="padding-top:20px;color:#333;font-size:15px;line-height:1.5;">
-              You started a checkout at ${escapeHtml(brandName)} but didn't finish. Your cart is still saved &mdash; pick up right where you left off.
-            </td>
-          </tr>
-          <tr>
-            <td style="padding-top:16px;">
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
-                ${itemRows}
-                <tr>
-                  <td style="padding:12px 0 0 0;font-weight:700;color:#1a1a1a;">Subtotal</td>
-                  <td style="padding:12px 0 0 0;text-align:right;font-weight:700;color:#1a1a1a;">${escapeHtml(formatMoney(subtotalCents, currency))}</td>
-                </tr>
-              </table>
-            </td>
-          </tr>
-          <tr>
-            <td align="center" style="padding-top:24px;">
-              <a href="${escapeHtml(cartUrl)}" style="display:inline-block;background:#c9a227;color:#1a1a1a;text-decoration:none;padding:14px 28px;border-radius:8px;font-weight:700;">Return to your cart</a>
-            </td>
-          </tr>
-          <tr>
-            <td align="center" style="padding-top:12px;">
-              <a href="${escapeHtml(browseUrl)}" style="color:#7a5d00;font-size:13px;text-decoration:underline;">or browse the shop</a>
-            </td>
-          </tr>
-          <tr>
-            <td style="padding-top:28px;border-top:1px solid #eee;color:#888;font-size:12px;line-height:1.4;">
-              You're receiving this because you started a checkout at ${escapeHtml(brandName)}. We send one of these per cart at most.
-            </td>
-          </tr>
-        </table>
-      </td>
-    </tr>
-  </table>
-</body>
-</html>`;
+  // HTML body — chrome comes from the shared CareMetric Breathe email
+  // design system; this builder supplies only copy + data.
+  const html = renderBrandedEmail({
+    brandName,
+    heading: "You left items in your cart",
+    preheader: `Your cart at ${brandName} is still saved — pick up where you left off.`,
+    contentHtml: [
+      textParagraph(
+        `You started a checkout at ${brandName} but didn't finish. Your cart is still saved — pick up right where you left off.`,
+      ),
+      lineItemsTable(
+        items.map((it) => ({
+          name: it.name,
+          detail:
+            it.mode === "subscription" && it.recurringIntervalLabel
+              ? `Subscribe & ship every ${it.recurringIntervalLabel}`
+              : undefined,
+          amount: `${it.quantity} × ${formatMoney(it.unitAmountCents, it.currency)}`,
+        })),
+      ),
+      summaryRows([
+        {
+          label: "Subtotal",
+          value: formatMoney(subtotalCents, currency),
+          emphasis: true,
+        },
+      ]),
+    ].join("\n"),
+    button: { label: "Return to your cart", url: cartUrl },
+    footerHtml: `<a href="${escapeHtml(browseUrl)}" style="color:${BREATHE_COLORS.blue};text-decoration:underline;">Browse the shop</a>`,
+    footerLines: [
+      `You're receiving this because you started a checkout at ${brandName}. We send one of these per cart at most.`,
+    ],
+    copyrightName: brandName,
+  });
 
   try {
     const { messageId } = await client.sendEmail({

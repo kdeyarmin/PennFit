@@ -231,7 +231,7 @@ describe("sendOrderConfirmationEmail", () => {
     expect(result.delivered).toBe(true);
     const arg = sendEmailMock.mock.calls[0]![0];
     // Fallback summary copy is present when there are no items.
-    expect(arg.html).toContain("itemised order is available online");
+    expect(arg.html).toContain("itemized order is available online");
     // No "Shipping to" block when address is null.
     expect(arg.html).not.toContain("Shipping to");
     // Plain-text body still includes total + view-order link.

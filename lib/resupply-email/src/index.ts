@@ -45,10 +45,22 @@ export {
   brandedButton,
   paragraph,
   textParagraph,
+  escapeHtml,
+  secondaryLink,
+  subheading,
+  divider,
+  lineItemsTable,
+  summaryRows,
+  infoPanel,
+  bulletList,
   BREATHE_COLORS,
   PLATFORM_BRAND_NAME,
   type BrandedEmailOptions,
   type BrandedEmailButton,
+  type EmailLineItem,
+  type EmailSummaryRow,
+  type EmailPanelOptions,
+  type EmailPanelTone,
 } from "./layout";
 
 export {

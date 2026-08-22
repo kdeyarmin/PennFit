@@ -218,6 +218,13 @@ function itemsHtml(): string {
     .join("")}</ul>`;
 }
 
+/**
+ * Copyright year for the seeded rows' footer. The seeds carry
+ * `{{copyright_year}}` rather than a baked year (see `seed-bodies.ts`),
+ * so every preview that renders one has to supply it.
+ */
+const PREVIEW_YEAR = String(new Date().getFullYear());
+
 /** Render one seeded template row by key, with the variables it allows. */
 function fromSeed(
   templateKey: string,
@@ -516,9 +523,10 @@ export function buildMessagePreviews(brand: PreviewBrand): MessagePreview[] {
     // The two `*_block_html` variables are pre-rendered markup the sender
     // supplies; empty is a valid value (no image, no price block).
     image_block_html: "",
-    price_block_html: `<div style="padding-top:10px;font-weight:700;color:#0a1f44;">${money(2400)}</div>`,
+    price_block_html: `<div style="padding-top:10px;font-weight:700;color:#0b1426;">${money(2400)}</div>`,
     brand_name: brandName,
     brand_name_html: brandName,
+    copyright_year: PREVIEW_YEAR,
   });
   if (backInStock) {
     out.push({
@@ -553,6 +561,7 @@ export function buildMessagePreviews(brand: PreviewBrand): MessagePreview[] {
     brand_name: brandName,
     brand_legal_name: brand.legalName,
     brand_legal_name_html: escapeHtml(brand.legalName),
+    copyright_year: PREVIEW_YEAR,
   });
   const rxSms = fromSeed("rx_renewal.sms", {
     sms_greeting: `Hi ${first}`,

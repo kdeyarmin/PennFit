@@ -28,7 +28,15 @@
 // short confirmation, an optional tracking box, the shipping address,
 // a "View order" CTA, and a "didn't get it?" support footer.
 
-import { EmailApiError, EmailConfigError } from "@workspace/resupply-email";
+import {
+  EmailApiError,
+  EmailConfigError,
+  escapeHtml,
+  infoPanel,
+  renderBrandedEmail,
+  secondaryLink,
+  textParagraph,
+} from "@workspace/resupply-email";
 
 import type { SavedShippingAddress } from "@workspace/resupply-db";
 
@@ -73,15 +81,6 @@ export interface SendDeliveredNotificationEmailResult {
   delivered: boolean;
   error?: string;
   messageId?: string;
-}
-
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
 }
 
 function publicBaseUrl(override?: string): string {
@@ -174,93 +173,52 @@ export async function sendDeliveredNotificationEmail(
   const text = textLines.join("\n");
 
   // ---------- html body ----------
-  const trackingBox =
+  // Chrome comes from the shared CareMetric Breathe email design system;
+  // this builder supplies only copy + data. The delivery panels use the
+  // "success" tone rather than a bespoke green button so the CTA stays
+  // identical to every other platform email.
+  const trackingPanel =
     carrier && trackingNumber
-      ? `
-          <tr>
-            <td style="padding-top:20px;">
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f0f7f1;border:1px solid #c9e3cd;border-radius:8px;">
-                <tr>
-                  <td style="padding:14px 16px;color:#1f5130;font-size:13px;letter-spacing:0.04em;text-transform:uppercase;font-weight:700;">Delivered by</td>
-                </tr>
-                <tr>
-                  <td style="padding:0 16px 14px 16px;color:#1a1a1a;font-size:15px;line-height:1.5;">
-                    <div><strong>${escapeHtml(carrier)}</strong></div>
-                    <div style="font-family:Menlo,Consolas,monospace;font-size:14px;color:#333;margin-top:2px;">${escapeHtml(trackingNumber)}</div>
-                  </td>
-                </tr>
-              </table>
-            </td>
-          </tr>`
+      ? infoPanel({
+          title: "Delivered by",
+          tone: "success",
+          html:
+            `<div style="font-weight:700;color:#0b1426;">${escapeHtml(carrier)}</div>` +
+            `<div style="font-family:Menlo,Consolas,monospace;font-size:14px;margin-top:2px;">${escapeHtml(
+              trackingNumber,
+            )}</div>`,
+        })
       : "";
 
-  const trackingButton = trackingUrl
-    ? `
-          <tr>
-            <td align="center" style="padding-top:24px;">
-              <a href="${escapeHtml(trackingUrl)}" style="display:inline-block;background:#1f8a4c;color:#ffffff;text-decoration:none;padding:14px 28px;border-radius:8px;font-weight:700;">View delivery details</a>
-            </td>
-          </tr>
-          <tr>
-            <td align="center" style="padding-top:8px;">
-              <a href="${escapeHtml(orderUrl)}" style="color:#1f5130;font-size:13px;text-decoration:underline;">or view your full order</a>
-            </td>
-          </tr>`
-    : `
-          <tr>
-            <td align="center" style="padding-top:24px;">
-              <a href="${escapeHtml(orderUrl)}" style="display:inline-block;background:#1f8a4c;color:#ffffff;text-decoration:none;padding:14px 28px;border-radius:8px;font-weight:700;">View order</a>
-            </td>
-          </tr>`;
-
-  const addressBlock = shippingAddress
-    ? `
-          <tr>
-            <td style="padding-top:24px;color:#1a1a1a;font-weight:700;">Delivered to</td>
-          </tr>
-          <tr>
-            <td style="padding-top:6px;color:#444;font-size:14px;line-height:1.5;">
-              ${renderAddressHtml(shippingAddress)}
-            </td>
-          </tr>`
+  const addressPanel = shippingAddress
+    ? infoPanel({
+        title: "Delivered to",
+        html: renderAddressHtml(shippingAddress),
+      })
     : "";
 
-  const html = `<!DOCTYPE html>
-<html>
-<body style="margin:0;padding:0;background:#f7f4ec;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;">
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f7f4ec;padding:24px 0;">
-    <tr>
-      <td align="center">
-        <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;padding:32px;max-width:560px;">
-          <tr>
-            <td style="padding-bottom:16px;border-bottom:2px solid #1f8a4c;">
-              <div style="font-size:14px;letter-spacing:0.08em;color:#1f5130;text-transform:uppercase;font-weight:600;">${escapeHtml(brandName)}</div>
-              <div style="font-size:22px;color:#1a1a1a;font-weight:700;margin-top:4px;">It's here</div>
-            </td>
-          </tr>
-          <tr>
-            <td style="padding-top:20px;color:#333;font-size:15px;line-height:1.5;">
-              Your ${escapeHtml(brandName)} order has been delivered &mdash; we hope everything arrived in great shape.
-            </td>
-          </tr>${trackingBox}
-          <tr>
-            <td>
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
-                ${addressBlock}
-              </table>
-            </td>
-          </tr>${trackingButton}
-          <tr>
-            <td style="padding-top:28px;border-top:1px solid #eee;color:#888;font-size:12px;line-height:1.4;">
-              Didn't receive it, or did something arrive damaged? Reply to this message and we'll make it right.
-            </td>
-          </tr>
-        </table>
-      </td>
-    </tr>
-  </table>
-</body>
-</html>`;
+  const html = renderBrandedEmail({
+    brandName,
+    heading: "It's here",
+    preheader: `Your ${brandName} order has been delivered.`,
+    contentHtml: [
+      textParagraph(
+        `Your ${brandName} order has been delivered — we hope everything arrived in great shape.`,
+      ),
+      trackingPanel,
+      addressPanel,
+      trackingUrl ? secondaryLink("Or view your full order", orderUrl) : "",
+    ]
+      .filter(Boolean)
+      .join("\n"),
+    button: trackingUrl
+      ? { label: "View delivery details", url: trackingUrl }
+      : { label: "View order", url: orderUrl },
+    footerLines: [
+      "Didn't receive it, or did something arrive damaged? Reply to this message and we'll make it right.",
+    ],
+    copyrightName: brandName,
+  });
 
   try {
     const { messageId } = await client.sendEmail({
