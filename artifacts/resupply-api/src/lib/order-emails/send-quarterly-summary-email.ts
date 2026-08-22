@@ -23,7 +23,16 @@
 // communication_preferences.emailMarketing at the dispatcher level
 // — if someone opts out of all marketing, they opt out of this too.
 
-import { EmailApiError, EmailConfigError } from "@workspace/resupply-email";
+import {
+  EmailApiError,
+  EmailConfigError,
+  BREATHE_COLORS,
+  escapeHtml,
+  paragraph,
+  renderBrandedEmail,
+  summaryRows,
+  textParagraph,
+} from "@workspace/resupply-email";
 
 import { createTenantSendgridClient } from "../email/tenant-sender.js";
 import {
@@ -64,15 +73,6 @@ export interface SendQuarterlySummaryEmailResult {
   delivered: boolean;
   error?: string;
   messageId?: string;
-}
-
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
 }
 
 function publicBaseUrl(override?: string): string {
@@ -146,43 +146,37 @@ export async function sendQuarterlySummaryEmail(
     `—The ${brandName} team`,
   ].join("\n");
 
-  const html = `<!doctype html>
-<html><body style="margin:0;padding:0;background:#f6f7fb;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#1a1f36;">
-  <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="padding:24px 0;">
-    <tr><td align="center">
-      <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="560" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.06);">
-        <tr><td style="background:#0f1d3a;color:#ffffff;padding:20px 28px;">
-          <p style="margin:0;font-size:12px;opacity:0.7;text-transform:uppercase;letter-spacing:0.08em;">90-day CPAP summary</p>
-          <h1 style="margin:6px 0 0;font-size:20px;font-weight:600;">${escapeHtml(input.windowStart)} &mdash; ${escapeHtml(input.windowEnd)}</h1>
-        </td></tr>
-        <tr><td style="padding:24px 28px;">
-          <p style="margin:0 0 14px;font-size:15px;line-height:1.5;">${greeting}</p>
-          <p style="margin:0 0 18px;font-size:14px;line-height:1.55;color:#3c4458;">
-            Here&apos;s your 90-day therapy rollup. Most patients save it to PDF and forward it to their primary care doctor or sleep medicine specialist &mdash; payers ask for it too.
-          </p>
-          <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="border:1px solid #eef0f5;border-radius:8px;border-collapse:separate;border-spacing:0;">
-            <tr><td style="padding:8px 12px;color:#5a6478;font-size:13px;">Nights recorded</td><td style="padding:8px 12px;text-align:right;font-variant-numeric:tabular-nums;font-size:13px;font-weight:600;">${f.nightsRecorded}</td></tr>
-            <tr><td style="padding:8px 12px;color:#5a6478;font-size:13px;">Nights compliant (&ge;4 hrs)</td><td style="padding:8px 12px;text-align:right;font-variant-numeric:tabular-nums;font-size:13px;font-weight:600;">${f.nightsCompliant}</td></tr>
-            <tr><td style="padding:8px 12px;color:#5a6478;font-size:13px;">Adherence rate</td><td style="padding:8px 12px;text-align:right;font-variant-numeric:tabular-nums;font-size:13px;font-weight:600;">${f.compliancePct}%</td></tr>
-            <tr><td style="padding:8px 12px;color:#5a6478;font-size:13px;">Avg usage</td><td style="padding:8px 12px;text-align:right;font-variant-numeric:tabular-nums;font-size:13px;font-weight:600;">${escapeHtml(fmtOptHours(f.avgUsageHours))}</td></tr>
-            <tr><td style="padding:8px 12px;color:#5a6478;font-size:13px;">Avg AHI</td><td style="padding:8px 12px;text-align:right;font-variant-numeric:tabular-nums;font-size:13px;font-weight:600;">${escapeHtml(fmtOptNum(f.avgAhi))}</td></tr>
-            <tr><td style="padding:8px 12px;color:#5a6478;font-size:13px;">Avg leak rate</td><td style="padding:8px 12px;text-align:right;font-variant-numeric:tabular-nums;font-size:13px;font-weight:600;">${escapeHtml(fmtOptNum(f.avgLeakLMin))} L/min</td></tr>
-          </table>
-          <p style="margin:18px 0 0;font-size:13px;line-height:1.55;color:#3c4458;">
-            For the printer-friendly version you can save to PDF and email to your physician:
-          </p>
-          <p style="margin:8px 0 0;">
-            <a href="${escapeHtml(fullSummaryUrl)}" style="display:inline-block;background:#0f1d3a;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:8px;font-size:14px;font-weight:600;">Open the full summary</a>
-          </p>
-        </td></tr>
-        <tr><td style="padding:16px 28px 24px;border-top:1px solid #eef0f5;font-size:12px;color:#8b95a9;">
-          The ${escapeHtml(brandName)} team &nbsp;&middot;&nbsp;
-          <a href="${escapeHtml(accountUrl)}#comm-prefs" style="color:#0f1d3a;text-decoration:none;">Manage these emails</a>
-        </td></tr>
-      </table>
-    </td></tr>
-  </table>
-</body></html>`;
+  // Chrome comes from the shared CareMetric Breathe email design system.
+  const html = renderBrandedEmail({
+    brandName,
+    brandTagline: "90-day CPAP summary",
+    heading: `${input.windowStart} — ${input.windowEnd}`,
+    preheader: `Your 90-day therapy rollup: ${f.compliancePct}% adherence across ${f.nightsRecorded} nights.`,
+    contentHtml: [
+      paragraph(greeting),
+      textParagraph(
+        "Here's your 90-day therapy rollup. Most patients save it to PDF and forward it to their primary care doctor or sleep medicine specialist — payers ask for it too.",
+      ),
+      summaryRows([
+        { label: "Nights recorded", value: String(f.nightsRecorded) },
+        {
+          label: "Nights compliant (≥4 hrs)",
+          value: String(f.nightsCompliant),
+        },
+        { label: "Adherence rate", value: `${f.compliancePct}%` },
+        { label: "Avg usage", value: fmtOptHours(f.avgUsageHours) },
+        { label: "Avg AHI", value: fmtOptNum(f.avgAhi) },
+        { label: "Avg leak rate", value: `${fmtOptNum(f.avgLeakLMin)} L/min` },
+      ]),
+      textParagraph(
+        "For the printer-friendly version you can save to PDF and email to your physician:",
+      ),
+    ].join("\n"),
+    button: { label: "Open the full summary", url: fullSummaryUrl },
+    footerHtml: `<a href="${escapeHtml(accountUrl)}#comm-prefs" style="color:${BREATHE_COLORS.blue};text-decoration:underline;">Manage these emails</a>`,
+    footerLines: [`The ${brandName} team`],
+    copyrightName: brandName,
+  });
 
   try {
     const result = await client.sendEmail({

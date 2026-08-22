@@ -16,7 +16,16 @@
 // helper, and the email itself carries an unsubscribe link to
 // /account#comm-prefs.
 
-import { EmailApiError, EmailConfigError } from "@workspace/resupply-email";
+import {
+  EmailApiError,
+  EmailConfigError,
+  BREATHE_COLORS,
+  bulletList,
+  escapeHtml,
+  infoPanel,
+  paragraph,
+  renderBrandedEmail,
+} from "@workspace/resupply-email";
 
 import { createTenantSendgridClient } from "../email/tenant-sender.js";
 import {
@@ -44,15 +53,6 @@ export interface SendDeductibleResetEmailResult {
   delivered: boolean;
   error?: string;
   messageId?: string;
-}
-
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
 }
 
 function publicBaseUrl(override?: string): string {
@@ -118,41 +118,30 @@ export async function sendDeductibleResetEmail(
     `Unsubscribe from year-end reminders: ${prefsUrl}`,
   ].join("\n");
 
-  const html = `<!doctype html>
-<html><body style="margin:0;padding:0;background:#f6f7fb;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#1a1f36;">
-  <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="padding:24px 0;">
-    <tr><td align="center">
-      <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="560" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.06);">
-        <tr><td style="background:#0f1d3a;color:#ffffff;padding:20px 28px;">
-          <h1 style="margin:0;font-size:20px;font-weight:600;">Use your benefits before January&nbsp;1</h1>
-          <p style="margin:4px 0 0;font-size:13px;opacity:0.85;">Your deductible resets when the calendar flips.</p>
-        </td></tr>
-        <tr><td style="padding:24px 28px;">
-          <p style="margin:0 0 12px;font-size:15px;line-height:1.5;">${greeting}</p>
-          <p style="margin:0 0 14px;font-size:14px;line-height:1.55;color:#3c4458;">
-            Your insurance deductible and out-of-pocket max reset on January&nbsp;1.
-            If you&apos;ve already hit them this year, supplies you order before the
-            calendar flips are likely <strong>$0 out-of-pocket</strong> — and full
-            price in January.
-          </p>
-          <div style="margin:18px 0;padding:14px 16px;border-radius:8px;background:#0f1d3a08;">
-            <p style="margin:0 0 6px;font-size:13px;font-weight:600;color:#1a1f36;">Common stock-up list</p>
-            <ul style="margin:0;padding:0 0 0 18px;font-size:13px;line-height:1.55;color:#3c4458;">
-              <li>Replacement cushion or full mask</li>
-              <li>Hose (annual replacement under most plans)</li>
-              <li>Filters (every 1-3 months)</li>
-            </ul>
-          </div>
-          <a href="${escapeHtml(shopUrl)}" style="display:inline-block;background:#0f1d3a;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:8px;font-size:14px;font-weight:600;">Bookmark your reorder</a>
-        </td></tr>
-        <tr><td style="padding:16px 28px 24px;border-top:1px solid #eef0f5;font-size:12px;color:#8b95a9;">
-          The ${escapeHtml(brandName)} team &nbsp;·&nbsp;
-          <a href="${escapeHtml(prefsUrl)}" style="color:#0f1d3a;text-decoration:none;">Unsubscribe from year-end reminders</a>
-        </td></tr>
-      </table>
-    </td></tr>
-  </table>
-</body></html>`;
+  // Chrome comes from the shared CareMetric Breathe email design system.
+  const html = renderBrandedEmail({
+    brandName,
+    heading: "Use your benefits before January 1",
+    preheader: "Your deductible resets when the calendar flips.",
+    contentHtml: [
+      paragraph(greeting),
+      paragraph(
+        "Your insurance deductible and out-of-pocket max reset on January&nbsp;1. If you&#39;ve already hit them this year, supplies you order before the calendar flips are likely <strong>$0 out-of-pocket</strong> — and full price in January.",
+      ),
+      infoPanel({
+        title: "Common stock-up list",
+        html: bulletList([
+          "Replacement cushion or full mask",
+          "Hose (annual replacement under most plans)",
+          "Filters (every 1-3 months)",
+        ]),
+      }),
+    ].join("\n"),
+    button: { label: "Bookmark your reorder", url: shopUrl },
+    footerHtml: `<a href="${escapeHtml(prefsUrl)}" style="color:${BREATHE_COLORS.blue};text-decoration:underline;">Unsubscribe from year-end reminders</a>`,
+    footerLines: [`The ${brandName} team`],
+    copyrightName: brandName,
+  });
 
   try {
     const result = await client.sendEmail({
