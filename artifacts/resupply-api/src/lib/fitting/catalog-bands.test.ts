@@ -66,13 +66,13 @@ const MODEL_SOURCES = [
 const BAND_SOURCES = [
   "0511_mask_fit_band_conventions.sql",
   "0512_mask_size_run_corrections.sql",
-  "0513_for_her_size_bands.sql",
+  "0514_for_her_size_bands.sql",
 ];
 
 /**
  * Runs that deliberately do NOT tile to the window ceiling: the model
  * ships only the LOWER rungs of its shared cushion platform's ladder
- * (the "For Her" subset runs — 0513). Stretching the top band to the
+ * (the "For Her" subset runs — 0514). Stretching the top band to the
  * ceiling was the defect: a face the shared platform bands at L was
  * confidently dispensed the M cushion with inBand=true. A face above
  * the run's top is genuinely outside every size this model ships, and

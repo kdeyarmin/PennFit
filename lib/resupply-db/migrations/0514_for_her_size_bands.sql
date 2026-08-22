@@ -1,4 +1,4 @@
--- 0513_for_her_size_bands — stop sizing "For Her" runs one physical
+-- 0514_for_her_size_bands — stop sizing "For Her" runs one physical
 -- size down.
 --
 -- The defect
