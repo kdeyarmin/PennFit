@@ -52,7 +52,6 @@ import {
 } from "../patient-packet/invite-email";
 import { BREATHE_COLORS, renderBrandedEmail } from "@workspace/resupply-email";
 
-import { stripHtmlUnsafe } from "../rx-renewal/renderers";
 import {
   renderImageBlockHtml,
   renderPriceBlockHtml,
@@ -572,7 +571,7 @@ export function buildMessagePreviews(brand: PreviewBrand): MessagePreview[] {
     headline_html: `Your prescription on file expires in ${SAMPLE.daysUntilExpiry} days.`,
     brand_name: brandName,
     brand_legal_name: brand.legalName,
-    brand_legal_name_html: escapeHtml(stripHtmlUnsafe(brand.legalName)),
+    brand_legal_name_html: escapeHtml(brand.legalName),
     copyright_year: PREVIEW_YEAR,
   });
   const rxSms = fromSeed("rx_renewal.sms", {

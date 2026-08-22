@@ -19,7 +19,7 @@
 # post-merge main run is the one that catches the racing-PR case.
 #
 # The allowlist freezes the duplicate prefixes that already exist on main.
-# They cannot be renumbered: applied migrations are
+# They are not renumbered: applied migrations are
 # immutable (ADR 003 / check-resupply-migration-immutability.sh), and
 # the migrator handles the existing pairs in lexicographic order with
 # a warning. DO NOT add entries to this list to silence a collision you
@@ -28,8 +28,12 @@
 #
 # The ONLY time an entry is added here is when the race was lost and BOTH
 # colliding migrations have already merged to main: at that point both are
-# shipped/immutable, so neither can be renumbered (a rename trips the
-# immutability guard — it reads as deleting a shipped file). The pair is
+# shipped/immutable, so neither should be renumbered. (The immutability
+# guard does permit a BYTE-IDENTICAL renumber — the content hash is
+# unchanged, so the migrator re-applies nothing — but on an already-applied
+# pair that gains nothing, and it still shifts the file's position in a
+# from-scratch replay's apply order. A renumber that edits content while
+# moving the file is rejected outright; that is commit 8f2106d.) The pair is
 # grandfathered instead, exactly like 0337/0338 before it, and is safe iff
 # the colliding migrations are independent so their lexicographic apply
 # order can't matter. 0370 is such a case: THREE PRs each branched when the

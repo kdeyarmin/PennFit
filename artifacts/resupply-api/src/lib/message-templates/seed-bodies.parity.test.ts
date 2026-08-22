@@ -82,11 +82,14 @@ async function bothPaths(
   return { seeded, fallbackPath };
 }
 
-// Brands chosen to exercise the two HTML-context transforms: the rx
-// renderers STRIP [<>&]; the SendGrid-HTML renderers entity-escape.
-// O'Dell is deliberate: an apostrophe survives the rx strip but IS
-// entity-escaped by the shared layout, so it is the case that catches a
-// seed variable escaped a different number of times than its slot.
+// Brands chosen to exercise the HTML-context transform. Every renderer
+// now entity-escapes; the rx renderers used to DELETE the three
+// markup-significant characters instead, which turned "R&R Medical" into
+// "RR Medical". These fixtures pin that the seeded row and the fallback
+// path escape the same value the same number of times. O'Dell is
+// deliberate: the apostrophe is escaped by the shared layout, so it is
+// the case that catches a seed variable escaped a different number of
+// times than its slot.
 const BRANDS = [
   { name: "Penn Home Medical Supply", legal: "Penn Home Medical Supply" },
   { name: "CareMetric Breathe", legal: "CareMetric Breathe" },

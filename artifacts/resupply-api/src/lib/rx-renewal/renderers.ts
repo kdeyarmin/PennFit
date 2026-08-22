@@ -20,9 +20,16 @@
 // the seeded-template output byte-identical to this fallback path
 // (pinned by dispatcher.seeded-template-parity.test.ts).
 //
-// PHI: no patient identifiers, no SKU, no diagnosis. Greeting +
-// first name are sanitized by the caller; days-until-expiry is a
-// non-PHI integer used in the headline.
+// PHI: no patient identifiers, no SKU, no diagnosis; days-until-expiry
+// is a non-PHI integer used in the headline.
+//
+// Markup safety: the caller passes the greeting and the brand names
+// verbatim. Plain-text output transforms nothing; every HTML slot is
+// entity-escaped, either here or by the layout. The HTML paths used to
+// DELETE the three markup-significant characters instead, so a tenant
+// trading as "R&R Medical" reached the patient as "RR Medical" in the
+// wordmark, footer and copyright line. (`rxRenewalText` never applied
+// that transform, and still doesn't — plain text needs none.)
 
 import {
   escapeHtml,
@@ -31,17 +38,6 @@ import {
 } from "@workspace/resupply-email";
 
 const PLATFORM_BRAND = "CareMetric Breathe";
-
-/**
- * The HTML-context sanitizer this module has always used: STRIP the
- * three markup-significant characters rather than entity-escape them.
- * Exported so the dispatcher's `*_html` template variables apply the
- * exact same transform (a divergence would break seeded-template
- * parity).
- */
-export function stripHtmlUnsafe(s: string): string {
-  return s.replace(/[<>&]/g, "");
-}
 
 export function rxRenewalSubject(daysUntilExpiry: number): string {
   return daysUntilExpiry === 0
@@ -120,8 +116,10 @@ export function rxRenewalHtml(
 ): string {
   // Chrome comes from the shared CareMetric Breathe email design system.
   return rxRenewalBrandedHtml({
-    brandName: stripHtmlUnsafe(signoffName),
-    greetingHtml: stripHtmlUnsafe(greeting),
+    // `brandName` lands in slots the layout escapes for us; the greeting
+    // lands in a verbatim slot, so it is escaped here.
+    brandName: signoffName,
+    greetingHtml: escapeHtml(greeting),
     headlineHtml: rxRenewalHeadlineHtml(daysUntilExpiry),
     preheader: rxRenewalHeadlineText(daysUntilExpiry),
   });
@@ -211,10 +209,11 @@ export function buildRxRenewalTemplateVars(
     brand_legal_name: input.brandLegalName,
     // Lands in slots the layout escapes (header wordmark, footer,
     // copyright). The seeded row's `{{...}}` token was escaped at build
-    // time, so the substituted value must arrive already escaped — strip
-    // first (this module's long-standing sanitizer), then escape.
-    brand_legal_name_html: escapeHtml(stripHtmlUnsafe(input.brandLegalName)),
-    greeting_html: stripHtmlUnsafe(input.greeting),
+    // time, so the substituted value must arrive already escaped. The
+    // fallback path hands the same raw name to the layout, which applies
+    // the identical escape — which is what keeps the two byte-identical.
+    brand_legal_name_html: escapeHtml(input.brandLegalName),
+    greeting_html: escapeHtml(input.greeting),
     subject_line: rxRenewalSubject(input.daysUntilExpiry),
     headline: rxRenewalHeadlineText(input.daysUntilExpiry),
     headline_html: rxRenewalHeadlineHtml(input.daysUntilExpiry),

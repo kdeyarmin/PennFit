@@ -41,6 +41,7 @@ import {
   BREATHE_COLORS,
   createSendgridClient,
   EmailConfigError,
+  escapeHtml,
   renderBrandedEmail,
 } from "@workspace/resupply-email";
 import {
@@ -982,15 +983,17 @@ export function htmlBodyForDay(
   label: OnboardingDayLabel,
   greeting: string,
 ): string {
-  const safeGreeting = greeting.replace(/[<>&]/g, "");
+  // The day-copy is plain text; entity-escape it on the way into the
+  // HTML rather than deleting the markup-significant characters, so a
+  // greeting or a name carrying an ampersand survives intact.
   const heading = subjectForDay(label);
-  const paragraphs = textBodyForDay(label, safeGreeting)
+  const paragraphs = textBodyForDay(label, greeting)
     .split("\n\n")
     .map(
       (p) =>
-        `<p style="margin:0 0 16px;font-family:Arial,Helvetica,sans-serif;font-size:16px;line-height:1.6;color:${BREATHE_COLORS.body};">${p
-          .replace(/[<>&]/g, "")
-          .replace(/\n/g, "<br>")}</p>`,
+        `<p style="margin:0 0 16px;font-family:Arial,Helvetica,sans-serif;font-size:16px;line-height:1.6;color:${BREATHE_COLORS.body};">${escapeHtml(
+          p,
+        ).replace(/\n/g, "<br>")}</p>`,
     )
     .join("");
   // Chrome comes from the shared CareMetric Breathe email design system.
