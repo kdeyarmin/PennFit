@@ -52,6 +52,8 @@ import {
 } from "../patient-packet/invite-email";
 import { BREATHE_COLORS, renderBrandedEmail } from "@workspace/resupply-email";
 
+import { stripHtmlUnsafe } from "../rx-renewal/renderers";
+
 export type PreviewGroup = "resupply" | "orders" | "clinical" | "billing";
 
 export interface PreviewEmail {
@@ -514,9 +516,11 @@ export function buildMessagePreviews(brand: PreviewBrand): MessagePreview[] {
   // EXACT: seeded template row.
   const backInStock = fromSeed("shop.back_in_stock.email", {
     product_name: "Nasal cushion (medium)",
-    product_name_html: "Nasal cushion (medium)",
+    product_name_html: escapeHtml("Nasal cushion (medium)"),
     product_url: `${baseUrl}/shop`,
-    product_url_html: `${baseUrl}/shop`,
+    // Href slot: matches `brandedButton`'s quote-only escape, as the
+    // production dispatcher does.
+    product_url_html: `${baseUrl}/shop`.replace(/"/g, "&quot;"),
     price_label: money(2400),
     price_line_text: `Price: ${money(2400)}`,
     // The two `*_block_html` variables are pre-rendered markup the sender
@@ -524,7 +528,7 @@ export function buildMessagePreviews(brand: PreviewBrand): MessagePreview[] {
     image_block_html: "",
     price_block_html: `<div style="padding-top:10px;font-weight:700;color:#0b1426;">${money(2400)}</div>`,
     brand_name: brandName,
-    brand_name_html: brandName,
+    brand_name_html: escapeHtml(brandName),
     copyright_year: PREVIEW_YEAR,
   });
   if (backInStock) {
@@ -559,7 +563,7 @@ export function buildMessagePreviews(brand: PreviewBrand): MessagePreview[] {
     headline_html: `Your prescription on file expires in ${SAMPLE.daysUntilExpiry} days.`,
     brand_name: brandName,
     brand_legal_name: brand.legalName,
-    brand_legal_name_html: escapeHtml(brand.legalName),
+    brand_legal_name_html: escapeHtml(stripHtmlUnsafe(brand.legalName)),
     copyright_year: PREVIEW_YEAR,
   });
   const rxSms = fromSeed("rx_renewal.sms", {
