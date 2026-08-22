@@ -26,7 +26,16 @@
 // branch without try/catch. NEVER throws — a SendGrid 5xx must not
 // block the lifecycle transition that already succeeded in the DB.
 
-import { EmailApiError, EmailConfigError } from "@workspace/resupply-email";
+import {
+  EmailApiError,
+  EmailConfigError,
+  escapeHtml,
+  infoPanel,
+  paragraph,
+  renderBrandedEmail,
+  secondaryLink,
+  textParagraph,
+} from "@workspace/resupply-email";
 
 import { createTenantSendgridClient } from "../email/tenant-sender.js";
 import {
@@ -72,15 +81,6 @@ export interface SendReturnStatusEmailResult {
   delivered: boolean;
   error?: string;
   messageId?: string;
-}
-
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
 }
 
 function formatMoney(cents: number, currency: string): string {
@@ -147,38 +147,49 @@ function buildApprovedBody(
   textParts.push(`See all your returns: ${myReturnsUrl}`);
   const text = textParts.join("\n");
 
-  const labelBlock = labelUrl
-    ? `<tr><td style="padding-top:16px;"><a href="${escapeHtml(labelUrl)}" style="display:inline-block;background:#c9a227;color:#1a1a1a;text-decoration:none;padding:14px 28px;border-radius:8px;font-weight:700;">Print your return label</a></td></tr>`
-    : "";
-  const carrierBlock =
+  // Chrome comes from the shared CareMetric Breathe email design system.
+  const shipmentPanel =
     carrier || tracking
-      ? `<tr><td style="padding-top:12px;color:#555;font-size:14px;">Carrier: <strong>${escapeHtml(carrier ?? "—")}</strong>${tracking ? ` &middot; Tracking: <strong>${escapeHtml(tracking)}</strong>` : ""}</td></tr>`
+      ? infoPanel({
+          title: "Return shipment",
+          html:
+            `Carrier: <strong>${escapeHtml(carrier ?? "—")}</strong>` +
+            (tracking
+              ? ` &middot; Tracking: <strong>${escapeHtml(tracking)}</strong>`
+              : ""),
+        })
       : "";
-  const noShipmentBlock =
+  const noShipmentNote =
     !labelUrl && !carrier && !tracking
-      ? `<tr><td style="padding-top:12px;color:#555;font-size:14px;">No return shipment is required &mdash; our team will be in touch about next steps.</td></tr>`
+      ? textParagraph(
+          "No return shipment is required — our team will be in touch about next steps.",
+        )
       : "";
 
-  const html = `<!DOCTYPE html>
-<html><body style="margin:0;padding:0;background:#f7f4ec;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;">
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f7f4ec;padding:24px 0;"><tr><td align="center">
-    <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;padding:32px;max-width:560px;">
-      <tr><td style="padding-bottom:16px;border-bottom:2px solid #c9a227;">
-        <div style="font-size:14px;letter-spacing:0.08em;color:#7a5d00;text-transform:uppercase;font-weight:600;">${escapeHtml(brand.storefrontName)}</div>
-        <div style="font-size:22px;color:#1a1a1a;font-weight:700;margin-top:4px;">Your return is approved</div>
-      </td></tr>
-      <tr><td style="padding-top:20px;color:#333;font-size:15px;line-height:1.5;">
-        Good news &mdash; we've approved your return on order <strong>&hellip;${escapeHtml(orderTail)}</strong>.
-      </td></tr>
-      ${labelBlock}
-      ${carrierBlock}
-      ${noShipmentBlock}
-      <tr><td style="padding-top:24px;"><a href="${escapeHtml(myReturnsUrl)}" style="color:#7a5d00;font-size:13px;text-decoration:underline;">View all your returns</a></td></tr>
-      <tr><td style="padding-top:28px;border-top:1px solid #eee;color:#888;font-size:12px;line-height:1.4;">
-        You're receiving this because you opened a return request at ${escapeHtml(brand.storefrontName)}. Reply to this email and our team will help.
-      </td></tr>
-    </table>
-  </td></tr></table></body></html>`;
+  const html = renderBrandedEmail({
+    brandName: brand.storefrontName,
+    heading: "Your return is approved",
+    preheader: `We've approved your return on order ...${orderTail}.`,
+    contentHtml: [
+      paragraph(
+        `Good news — we&#39;ve approved your return on order <strong>&hellip;${escapeHtml(
+          orderTail,
+        )}</strong>.`,
+      ),
+      shipmentPanel,
+      noShipmentNote,
+    ]
+      .filter(Boolean)
+      .join("\n"),
+    postButtonHtml: secondaryLink("View all your returns", myReturnsUrl),
+    ...(labelUrl
+      ? { button: { label: "Print your return label", url: labelUrl } }
+      : {}),
+    footerLines: [
+      `You're receiving this because you opened a return request at ${brand.storefrontName}. Reply to this email and our team will help.`,
+    ],
+    copyrightName: brand.storefrontName,
+  });
 
   return { subject, html, text };
 }
@@ -204,26 +215,26 @@ function buildRefundedBody(
     `See all your returns: ${myReturnsUrl}`,
   ].join("\n");
 
-  const html = `<!DOCTYPE html>
-<html><body style="margin:0;padding:0;background:#f7f4ec;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;">
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f7f4ec;padding:24px 0;"><tr><td align="center">
-    <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;padding:32px;max-width:560px;">
-      <tr><td style="padding-bottom:16px;border-bottom:2px solid #c9a227;">
-        <div style="font-size:14px;letter-spacing:0.08em;color:#7a5d00;text-transform:uppercase;font-weight:600;">${escapeHtml(brand.storefrontName)}</div>
-        <div style="font-size:22px;color:#1a1a1a;font-weight:700;margin-top:4px;">Refund issued</div>
-      </td></tr>
-      <tr><td style="padding-top:20px;color:#333;font-size:15px;line-height:1.5;">
-        We've issued your refund of <strong>${escapeHtml(amount)}</strong> on order <strong>&hellip;${escapeHtml(orderTail)}</strong>.
-      </td></tr>
-      <tr><td style="padding-top:16px;color:#555;font-size:14px;line-height:1.5;">
-        Refunds typically take <strong>5-10 business days</strong> to land back on the card you paid with. The amount will appear on your statement under <strong>${escapeHtml(brand.storefrontName)}</strong>.
-      </td></tr>
-      <tr><td style="padding-top:24px;"><a href="${escapeHtml(myReturnsUrl)}" style="color:#7a5d00;font-size:13px;text-decoration:underline;">View all your returns</a></td></tr>
-      <tr><td style="padding-top:28px;border-top:1px solid #eee;color:#888;font-size:12px;line-height:1.4;">
-        Questions? Reply to this email and our team will help.
-      </td></tr>
-    </table>
-  </td></tr></table></body></html>`;
+  const html = renderBrandedEmail({
+    brandName: brand.storefrontName,
+    heading: "Refund issued",
+    preheader: `We've issued your refund of ${amount}.`,
+    contentHtml: [
+      paragraph(
+        `We&#39;ve issued your refund of <strong>${escapeHtml(
+          amount,
+        )}</strong> on order <strong>&hellip;${escapeHtml(orderTail)}</strong>.`,
+      ),
+      paragraph(
+        `Refunds typically take <strong>5-10 business days</strong> to land back on the card you paid with. The amount will appear on your statement under <strong>${escapeHtml(
+          brand.storefrontName,
+        )}</strong>.`,
+      ),
+    ].join("\n"),
+    postButtonHtml: secondaryLink("View all your returns", myReturnsUrl),
+    footerLines: ["Questions? Reply to this email and our team will help."],
+    copyrightName: brand.storefrontName,
+  });
 
   return { subject, html, text };
 }
@@ -246,26 +257,24 @@ function buildReceivedBody(
     `See all your returns: ${myReturnsUrl}`,
   ].join("\n");
 
-  const html = `<!DOCTYPE html>
-<html><body style="margin:0;padding:0;background:#f7f4ec;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;">
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f7f4ec;padding:24px 0;"><tr><td align="center">
-    <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;padding:32px;max-width:560px;">
-      <tr><td style="padding-bottom:16px;border-bottom:2px solid #1f8a4c;">
-        <div style="font-size:14px;letter-spacing:0.08em;color:#1f5130;text-transform:uppercase;font-weight:600;">${escapeHtml(brand.storefrontName)}</div>
-        <div style="font-size:22px;color:#1a1a1a;font-weight:700;margin-top:4px;">Return received</div>
-      </td></tr>
-      <tr><td style="padding-top:20px;color:#333;font-size:15px;line-height:1.5;">
-        We've received your returned item on order <strong>&hellip;${escapeHtml(orderTail)}</strong> &mdash; thank you.
-      </td></tr>
-      <tr><td style="padding-top:16px;color:#555;font-size:14px;line-height:1.5;">
-        Our team is processing it now. You'll get a separate confirmation as soon as your refund or exchange is on its way.
-      </td></tr>
-      <tr><td style="padding-top:24px;"><a href="${escapeHtml(myReturnsUrl)}" style="color:#1f5130;font-size:13px;text-decoration:underline;">View all your returns</a></td></tr>
-      <tr><td style="padding-top:28px;border-top:1px solid #eee;color:#888;font-size:12px;line-height:1.4;">
-        Questions? Reply to this email and our team will help.
-      </td></tr>
-    </table>
-  </td></tr></table></body></html>`;
+  const html = renderBrandedEmail({
+    brandName: brand.storefrontName,
+    heading: "Return received",
+    preheader: "We've received your returned item — thank you.",
+    contentHtml: [
+      paragraph(
+        `We&#39;ve received your returned item on order <strong>&hellip;${escapeHtml(
+          orderTail,
+        )}</strong> — thank you.`,
+      ),
+      textParagraph(
+        "Our team is processing it now. You'll get a separate confirmation as soon as your refund or exchange is on its way.",
+      ),
+    ].join("\n"),
+    postButtonHtml: secondaryLink("View all your returns", myReturnsUrl),
+    footerLines: ["Questions? Reply to this email and our team will help."],
+    copyrightName: brand.storefrontName,
+  });
 
   return { subject, html, text };
 }

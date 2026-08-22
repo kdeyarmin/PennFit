@@ -131,6 +131,25 @@ describe("textBody", () => {
     const body = textBody("Hi Anna", "leak_rising", EMAIL_BRAND, ACCOUNT_URL);
     expect(body).toContain(ACCOUNT_URL);
   });
+
+  it("leaves a tenant brand containing '&' intact in plain text", () => {
+    // Regression: this renderer used to DELETE [<>&] from the body, so a
+    // tenant trading as "R&R Medical" was signed off as "RR Medical".
+    // Plain text needs no transform at all.
+    const body = textBody("Hi Anna", "leak_rising", "R&R Medical", ACCOUNT_URL);
+    expect(body).toContain("R&R Medical");
+    expect(body).not.toContain("RR Medical");
+  });
+
+  it("leaves an ampersand in the greeting intact in plain text", () => {
+    const body = textBody(
+      "Hi Ben & Co",
+      "leak_rising",
+      EMAIL_BRAND,
+      ACCOUNT_URL,
+    );
+    expect(body).toContain("Hi Ben & Co");
+  });
 });
 
 describe("htmlBody", () => {
@@ -147,5 +166,29 @@ describe("htmlBody", () => {
   it("renders the kind heading at the top", () => {
     const html = htmlBody("Hi Anna", "cushion_wear", EMAIL_BRAND, ACCOUNT_URL);
     expect(html).toContain(subjectForKind("cushion_wear"));
+  });
+
+  it("entity-escapes a tenant brand rather than deleting characters", () => {
+    // Regression: the paragraph transform used to DELETE [<>&], which
+    // silently rewrote "R&R <Medical>" to "RR Medical" in the body AND
+    // the wordmark. Escaping keeps the name readable and still inert.
+    const html = htmlBody(
+      "Hi Anna",
+      "leak_rising",
+      "R&R <Medical>",
+      ACCOUNT_URL,
+    );
+    expect(html).toContain("R&amp;R &lt;Medical&gt;");
+    expect(html).not.toContain("RR Medical");
+  });
+
+  it("entity-escapes an ampersand in the greeting", () => {
+    const html = htmlBody(
+      "Hi Ben & Co",
+      "leak_rising",
+      EMAIL_BRAND,
+      ACCOUNT_URL,
+    );
+    expect(html).toContain("Hi Ben &amp; Co");
   });
 });

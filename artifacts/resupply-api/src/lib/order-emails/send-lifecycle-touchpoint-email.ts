@@ -16,7 +16,15 @@
 // keep the body soft — no upsell, no discount code, no resupply
 // reminder. The point is the relationship signal, not the next sale.
 
-import { EmailApiError, EmailConfigError } from "@workspace/resupply-email";
+import {
+  EmailApiError,
+  EmailConfigError,
+  BREATHE_COLORS,
+  escapeHtml,
+  paragraph,
+  renderBrandedEmail,
+  textParagraph,
+} from "@workspace/resupply-email";
 
 import { createTenantSendgridClient } from "../email/tenant-sender.js";
 import {
@@ -53,15 +61,6 @@ export interface SendLifecycleTouchpointEmailResult {
   delivered: boolean;
   error?: string;
   messageId?: string;
-}
-
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
 }
 
 function publicBaseUrl(override?: string): string {
@@ -154,29 +153,17 @@ export async function sendLifecycleTouchpointEmail(
     `Manage these emails: ${prefsUrl}`,
   ].join("\n");
 
-  const html = `<!doctype html>
-<html><body style="margin:0;padding:0;background:#f6f7fb;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#1a1f36;">
-  <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="padding:24px 0;">
-    <tr><td align="center">
-      <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="560" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.06);">
-        <tr><td style="background:#0f1d3a;color:#ffffff;padding:24px 28px;">
-          <p style="margin:0;font-size:12px;opacity:0.7;text-transform:uppercase;letter-spacing:0.08em;">${input.kind === "birthday" ? "Birthday" : "Anniversary"}</p>
-          <h1 style="margin:6px 0 0;font-size:22px;font-weight:600;">${escapeHtml(c.headline)}</h1>
-        </td></tr>
-        <tr><td style="padding:24px 28px;">
-          <p style="margin:0 0 14px;font-size:15px;line-height:1.5;">${greeting}</p>
-          <p style="margin:0 0 18px;font-size:14px;line-height:1.6;color:#3c4458;">
-            ${escapeHtml(c.body)}
-          </p>
-        </td></tr>
-        <tr><td style="padding:16px 28px 24px;border-top:1px solid #eef0f5;font-size:12px;color:#8b95a9;">
-          The ${escapeHtml(brandName)} team &nbsp;&middot;&nbsp;
-          <a href="${escapeHtml(prefsUrl)}" style="color:#0f1d3a;text-decoration:none;">Manage these emails</a>
-        </td></tr>
-      </table>
-    </td></tr>
-  </table>
-</body></html>`;
+  // Chrome comes from the shared CareMetric Breathe email design system.
+  const html = renderBrandedEmail({
+    brandName,
+    brandTagline: input.kind === "birthday" ? "Birthday" : "Anniversary",
+    heading: c.headline,
+    preheader: c.body,
+    contentHtml: [paragraph(greeting), textParagraph(c.body)].join("\n"),
+    footerHtml: `<a href="${escapeHtml(prefsUrl)}" style="color:${BREATHE_COLORS.blue};text-decoration:underline;">Manage these emails</a>`,
+    footerLines: [`The ${brandName} team`],
+    copyrightName: brandName,
+  });
 
   try {
     const result = await client.sendEmail({

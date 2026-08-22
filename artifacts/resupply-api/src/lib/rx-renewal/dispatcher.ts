@@ -255,7 +255,7 @@ export async function runRxRenewalSendDue(
       : 0;
 
     const firstName = row.firstName
-      ? (row.firstName.split(/\s+/)[0]?.replace(/[<>&]/g, "") ?? "")
+      ? (row.firstName.split(/\s+/)[0] ?? "")
       : "";
     const greeting = firstName ? `Hi ${firstName}` : "Hi";
 

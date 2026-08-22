@@ -25,7 +25,12 @@
 // and the card last4 are the customer's own billing data — safe to render
 // to the customer. No PHI (this is the cash-pay shop billing surface).
 
-import { EmailApiError, EmailConfigError } from "@workspace/resupply-email";
+import {
+  EmailApiError,
+  EmailConfigError,
+  renderBrandedEmail,
+  textParagraph,
+} from "@workspace/resupply-email";
 
 import { createTenantSendgridClient } from "../email/tenant-sender.js";
 import {
@@ -66,15 +71,6 @@ export interface SendSubscriptionBillingEmailResult {
   delivered: boolean;
   error?: string;
   messageId?: string;
-}
-
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
 }
 
 function publicBaseUrl(override?: string): string {
@@ -199,40 +195,19 @@ export async function sendSubscriptionBillingEmail(
   const text = [c.intro, "", `${c.cta}: ${manageUrl}`, "", c.footer].join("\n");
 
   // ---------- html body ----------
-  const html = `<!DOCTYPE html>
-<html>
-<body style="margin:0;padding:0;background:#f7f4ec;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;">
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f7f4ec;padding:24px 0;">
-    <tr>
-      <td align="center">
-        <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;padding:32px;max-width:560px;">
-          <tr>
-            <td style="padding-bottom:16px;border-bottom:2px solid ${c.accent};">
-              <div style="font-size:14px;letter-spacing:0.08em;color:${c.accent};text-transform:uppercase;font-weight:600;">${escapeHtml(brandName)}</div>
-              <div style="font-size:22px;color:#1a1a1a;font-weight:700;margin-top:4px;">${escapeHtml(c.banner)}</div>
-            </td>
-          </tr>
-          <tr>
-            <td style="padding-top:20px;color:#333;font-size:15px;line-height:1.5;">
-              ${escapeHtml(c.intro)}
-            </td>
-          </tr>
-          <tr>
-            <td align="center" style="padding-top:24px;">
-              <a href="${escapeHtml(manageUrl)}" style="display:inline-block;background:${c.accent};color:#ffffff;text-decoration:none;padding:14px 28px;border-radius:8px;font-weight:700;">${escapeHtml(c.cta)}</a>
-            </td>
-          </tr>
-          <tr>
-            <td style="padding-top:28px;border-top:1px solid #eee;color:#888;font-size:12px;line-height:1.4;">
-              ${escapeHtml(c.footer)}
-            </td>
-          </tr>
-        </table>
-      </td>
-    </tr>
-  </table>
-</body>
-</html>`;
+  // Chrome comes from the shared CareMetric Breathe email design system;
+  // this builder supplies only copy. The per-kind accent still tints the
+  // CTA so "renewing soon" and "payment received" stay distinguishable.
+  const html = renderBrandedEmail({
+    brandName,
+    heading: c.banner,
+    preheader: c.intro,
+    contentHtml: textParagraph(c.intro),
+    button: { label: c.cta, url: manageUrl },
+    accent: c.accent,
+    footerLines: [c.footer],
+    copyrightName: brandName,
+  });
 
   try {
     const { messageId } = await client.sendEmail({

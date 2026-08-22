@@ -1,5 +1,11 @@
-// Drift guard: migration 0502's seeded template rows must embed the
-// seed-bodies.ts constants verbatim.
+// Drift guard: the CURRENT seeding migration's template rows must embed
+// the seed-bodies.ts constants verbatim.
+//
+// That migration is 0513, not the original 0502: the seeded bodies were
+// re-pointed at the shared branded email layout, and 0502 is immutable
+// (M1), so 0513 re-states all five rows as the corrective upsert. 0513 is
+// therefore what a database ends up holding, and what this guard compares
+// the seed module against.
 //
 // Why: the parity suite (seed-bodies.parity.test.ts) proves the TS
 // constants render byte-identically to the fallback renderers — but what
@@ -26,12 +32,12 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const MIGRATION = readFileSync(
   path.join(
     __dirname,
-    "../../../../../lib/resupply-db/migrations/0502_seed_message_template_rows.sql",
+    "../../../../../lib/resupply-db/migrations/0513_rebrand_message_template_rows.sql",
   ),
   "utf8",
 );
 
-describe("migration 0502 ⇄ seed-bodies.ts", () => {
+describe("migration 0513 ⇄ seed-bodies.ts", () => {
   it("covers every seed exactly once", () => {
     for (const seed of MESSAGE_TEMPLATE_SEEDS) {
       const marker = `'${seed.templateKey}',\n  '${seed.channel}',`;
@@ -81,7 +87,13 @@ describe("migration 0502 ⇄ seed-bodies.ts", () => {
     );
     expect(inserts?.length).toBe(MESSAGE_TEMPLATE_SEEDS.length);
     expect(
-      MIGRATION.match(/ON CONFLICT \("template_key", "channel"\) DO NOTHING;/g)
+      MIGRATION.match(
+        /ON CONFLICT \("template_key", "channel"\) DO UPDATE SET/g,
+      )?.length,
+    ).toBe(MESSAGE_TEMPLATE_SEEDS.length);
+    // The upsert must never clobber copy an operator has hand-edited.
+    expect(
+      MIGRATION.match(/WHERE "message_templates"\."updated_by" IS NULL;/g)
         ?.length,
     ).toBe(MESSAGE_TEMPLATE_SEEDS.length);
     expect(

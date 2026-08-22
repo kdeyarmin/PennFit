@@ -18,7 +18,15 @@
 // appear on a paper insurance card the patient hands to any pharmacy).
 // We still keep it OUT of the subject line and never log it.
 
-import { EmailApiError, EmailConfigError } from "@workspace/resupply-email";
+import {
+  BREATHE_COLORS,
+  EmailApiError,
+  EmailConfigError,
+  escapeHtml,
+  paragraph,
+  renderBrandedEmail,
+  textParagraph,
+} from "@workspace/resupply-email";
 
 import { createTenantSendgridClient } from "./email/tenant-sender.js";
 import {
@@ -56,15 +64,6 @@ export interface SendInsuranceLeadEmailsResult {
   notificationDelivered: boolean;
   confirmationDelivered: boolean;
   error?: string;
-}
-
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
 }
 
 /**
@@ -109,32 +108,33 @@ function renderNotificationHtml(
     .map(
       ([k, v]) => `
         <tr>
-          <td style="padding:8px 12px;border-bottom:1px solid #eee;color:#555;font-size:13px;width:38%;vertical-align:top;">${escapeHtml(k)}</td>
-          <td style="padding:8px 12px;border-bottom:1px solid #eee;color:#1a1a1a;font-weight:500;">${escapeHtml(v)}</td>
+          <td style="padding:8px 12px;border-bottom:1px solid ${BREATHE_COLORS.hairline};color:${BREATHE_COLORS.muted};font-size:13px;width:38%;vertical-align:top;">${escapeHtml(k)}</td>
+          <td style="padding:8px 12px;border-bottom:1px solid ${BREATHE_COLORS.hairline};color:${BREATHE_COLORS.ink};font-weight:500;">${escapeHtml(v)}</td>
         </tr>`,
     )
     .join("");
 
-  return `<!DOCTYPE html><html><body style="margin:0;padding:0;background:#f7f4ec;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;">
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f7f4ec;padding:24px 0;">
-    <tr><td align="center">
-      <table role="presentation" width="640" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;padding:28px;max-width:640px;">
-        <tr><td style="padding-bottom:14px;border-bottom:2px solid #c9a227;">
-          <div style="font-size:13px;letter-spacing:0.08em;color:#7a5d00;text-transform:uppercase;font-weight:600;">${escapeHtml(brandName)} · Insurance verification request</div>
-          <div style="font-size:20px;color:#1a1a1a;font-weight:700;margin-top:4px;">New lead from ${escapeHtml(payload.fullName)}</div>
-        </td></tr>
-        <tr><td style="padding-top:18px;color:#333;font-size:14px;line-height:1.55;">
-          A patient just submitted the insurance verification form on <a href="${escapeHtml(baseUrl)}/insurance" style="color:#7a5d00;">${escapeHtml(displayHost(baseUrl))}/insurance</a>. Please call back within <strong>one business day</strong>.
-        </td></tr>
-        <tr><td style="padding-top:18px;">
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #eee;border-radius:8px;">${tableRows}</table>
-        </td></tr>
-        <tr><td style="padding-top:20px;color:#888;font-size:12px;line-height:1.4;">
-          Logged at ${escapeHtml(new Date().toISOString())}. Reply directly to this email to reach the patient.
-        </td></tr>
-      </table>
-    </td></tr>
-  </table></body></html>`;
+  // Chrome comes from the shared CareMetric Breathe email design system.
+  return renderBrandedEmail({
+    brandName,
+    brandTagline: "Insurance verification request",
+    heading: `New lead from ${payload.fullName}`,
+    preheader: `${payload.fullName} submitted the insurance verification form — call back within one business day.`,
+    contentHtml: [
+      paragraph(
+        `A patient just submitted the insurance verification form on <a href="${escapeHtml(
+          baseUrl,
+        )}/insurance" style="color:${BREATHE_COLORS.blue};">${escapeHtml(
+          displayHost(baseUrl),
+        )}/insurance</a>. Please call back within <strong>one business day</strong>.`,
+      ),
+      `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border:1px solid ${BREATHE_COLORS.hairline};border-radius:8px;margin-top:8px;">${tableRows}</table>`,
+    ].join("\n"),
+    footerLines: [
+      `Logged at ${new Date().toISOString()}. Reply directly to this email to reach the patient.`,
+    ],
+    copyrightName: brandName,
+  });
 }
 
 function renderNotificationText(
@@ -164,29 +164,33 @@ function renderConfirmationHtml(
   brandName: string,
   baseUrl: string,
 ): string {
-  return `<!DOCTYPE html><html><body style="margin:0;padding:0;background:#f7f4ec;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;">
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f7f4ec;padding:24px 0;">
-    <tr><td align="center">
-      <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;padding:32px;max-width:560px;">
-        <tr><td style="padding-bottom:16px;border-bottom:2px solid #c9a227;">
-          <div style="font-size:14px;letter-spacing:0.08em;color:#7a5d00;text-transform:uppercase;font-weight:600;">${escapeHtml(brandName)}</div>
-          <div style="font-size:22px;color:#1a1a1a;font-weight:700;margin-top:4px;">We have your verification request</div>
-        </td></tr>
-        <tr><td style="padding-top:20px;color:#333;font-size:15px;line-height:1.55;">
-          Thanks ${escapeHtml(payload.fullName.split(/\s+/)[0] || "there")} — we received your insurance verification request and a member of the ${escapeHtml(brandName)} team will reach out within <strong>one business day</strong> to confirm your benefits and walk you through the next step.
-        </td></tr>
-        <tr><td style="padding-top:14px;color:#333;font-size:14px;line-height:1.55;">
-          We'll never charge you anything until we've confirmed your coverage and told you what (if anything) is owed out of pocket. There's no obligation to proceed.
-        </td></tr>
-        <tr><td align="center" style="padding-top:24px;">
-          <a href="${escapeHtml(baseUrl)}/insurance" style="display:inline-block;background:#c9a227;color:#1a1a1a;text-decoration:none;padding:13px 26px;border-radius:8px;font-weight:700;">How insurance works at ${escapeHtml(brandName)}</a>
-        </td></tr>
-        <tr><td style="padding-top:28px;border-top:1px solid #eee;color:#888;font-size:12px;line-height:1.4;">
-          Need to reach us sooner? Reply to this email or visit <a href="${escapeHtml(baseUrl)}/faq" style="color:#7a5d00;">${escapeHtml(displayHost(baseUrl))}/faq</a>.
-        </td></tr>
-      </table>
-    </td></tr>
-  </table></body></html>`;
+  const firstName = payload.fullName.split(/\s+/)[0] || "there";
+  // Chrome comes from the shared CareMetric Breathe email design system.
+  return renderBrandedEmail({
+    brandName,
+    heading: "We have your verification request",
+    preheader: `We received your insurance verification request — the ${brandName} team will reach out within one business day.`,
+    contentHtml: [
+      paragraph(
+        `Thanks ${escapeHtml(
+          firstName,
+        )} — we received your insurance verification request and a member of the ${escapeHtml(
+          brandName,
+        )} team will reach out within <strong>one business day</strong> to confirm your benefits and walk you through the next step.`,
+      ),
+      textParagraph(
+        "We'll never charge you anything until we've confirmed your coverage and told you what (if anything) is owed out of pocket. There's no obligation to proceed.",
+      ),
+    ].join("\n"),
+    button: {
+      label: `How insurance works at ${brandName}`,
+      url: `${baseUrl}/insurance`,
+    },
+    footerHtml: `Need to reach us sooner? Reply to this email or visit <a href="${escapeHtml(
+      baseUrl,
+    )}/faq" style="color:${BREATHE_COLORS.blue};">${escapeHtml(displayHost(baseUrl))}/faq</a>.`,
+    copyrightName: brandName,
+  });
 }
 
 function renderConfirmationText(

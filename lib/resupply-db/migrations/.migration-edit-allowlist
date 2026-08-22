@@ -14,6 +14,16 @@
 # allowlist ONLY for the rare emergency where an already-applied migration
 # must be made idempotent in place.
 #
+# A pure RENUMBER needs no entry. The check pairs the vanished path
+# against a file ADDED in the same change carrying byte-identical
+# content, and passes it — that is the case migrate.mjs's content-hash
+# dedup already makes safe. Change so much as a comment while
+# renumbering and the hash moves, the migrator re-applies the file, and
+# the check fails. That is deliberate: commit 8f2106d renumbered the
+# mask migrations AND rewrote their header cross-references, and the
+# resulting re-apply gated every deploy on a duplicate key until 0512
+# was made idempotent in place.
+#
 # Format: one migration basename per line; `#` starts a comment. Example:
 #
 #     0212_compliance_rules.sql  # 2026-06-05 emergency: add DROP TRIGGER IF EXISTS
@@ -21,61 +31,8 @@
 # Remove the entry once the edit has shipped — an allowlisted file stays
 # editable without a tripwire until the line is deleted.
 
-# 2026-06-14 prefix-collision renumber: the multi-tenant org_id backfill
-# files 0337_org_id_patient_clinical.sql and 0338_org_id_completion.sql
-# collided on main with 0337_smart_trigger_snooze.sql /
-# 0338_clinical_signal_daily_metrics.sql (post-merge tree-wide check). The
-# org_id files were renamed to 0340_/0341_ (identical content, never
-# applied to prod yet). The immutability check sees the old paths as
-# deletions; allowlist them so this renumber PR passes. Safe to delete
-# these two lines after this PR merges.
-0337_org_id_patient_clinical.sql
-0338_org_id_completion.sql
-
-# 2026-06-14 prefix-collision renumber: 0344_tenant_storefront_branding.sql
-# (#847) and 0344_patient_dedup_rpcs_org_scoped.sql (#858) both took prefix
-# 0344 and merged in a race (post-merge tree-wide check). The
-# most-recently-merged file (the patient-dedup RPCs) is renamed to 0345_
-# with IDENTICAL content — migrate.mjs dedups by content sha256, so the
-# already-applied hash is unchanged and it is NOT re-applied to production.
-# The immutability check sees the old 0344 path as a deletion; allowlist it
-# so this renumber PR passes. Safe to delete this line after this PR merges.
-0344_patient_dedup_rpcs_org_scoped.sql
-
-# 2026-06-15 prefix-collision renumber: a marketing PR renamed
-# 0344_tenant_storefront_branding.sql -> 0345_, which then collided with
-# 0345_patient_dedup_rpcs_org_scoped.sql (post-merge tree-wide check). The
-# most-recently-moved file (tenant_storefront_branding) is renamed to 0346_
-# with IDENTICAL content — migrate.mjs dedups by content sha256, so the
-# already-applied hash is unchanged and it is NOT re-applied to production.
-# The immutability check sees the old 0345 path as a deletion; allowlist it
-# so this renumber PR passes. Safe to delete this line after this PR merges.
-0345_tenant_storefront_branding.sql
-
-# 2026-06-16 prefix-collision renumber: the platform-billing PR (#1009)
-# took prefixes 0357 / 0358, which already belonged to
-# 0357_product_costs_org_scoped.sql (#1001) and
-# 0358_education_videos_org_scoped.sql — the collision surfaced post-merge
-# (tree-wide). The billing files are renamed to 0362_/0363_ with IDENTICAL
-# content — migrate.mjs dedups by content sha256, so the already-applied
-# hash is unchanged and they are NOT re-applied to production. The
-# immutability check sees the old 0357/0358 paths as deletions; allowlist
-# them so this renumber PR passes. Safe to delete these two lines after
-# this PR merges.
-0357_platform_billing_packages.sql
-0358_platform_billing_stripe.sql
-
-# 2026-06-17 prefix-collision repair: three PRs took prefix 0370 —
-# 0370_platform_billing_payment_method.sql (#1056),
-# 0370_low_stock_alert_state_org_pk.sql (#1058), and
-# 0370_inbound_fax_twilio_sid_nullable.sql (#1060). Surfaced post-merge
-# (tree-wide). Resolution: platform_billing keeps 0370; low_stock is
-# renamed to 0373_ with IDENTICAL content (migrate.mjs dedups by content
-# sha256, so the applied hash is unchanged and it is NOT re-applied); the
-# inbound-fax file is a stale duplicate of the content-identical
-# 0372_inbound_fax_twilio_sid_nullable.sql (its intended renumbered home)
-# and is deleted. The immutability check sees the old 0370 paths as
-# deletions; allowlist them so this repair PR passes. Safe to delete these
-# two lines after this PR merges.
-0370_low_stock_alert_state_org_pk.sql
-0370_inbound_fax_twilio_sid_nullable.sql
+# Currently EMPTY, which is the steady state. Every past entry has
+# shipped; `git log -p` on this file carries the history (the 2026-06
+# prefix-collision renumbers and the 2026-08-22 0512 idempotency
+# hotfix). An entry left behind after its edit ships is a silent hole:
+# it keeps the tripwire disarmed on that basename forever.

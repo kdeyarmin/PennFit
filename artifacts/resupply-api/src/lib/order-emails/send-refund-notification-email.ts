@@ -15,7 +15,12 @@
 // Privacy: the recipient email is never logged. The refunded amount is
 // the customer's own billing data — safe to render. No PHI.
 
-import { EmailApiError, EmailConfigError } from "@workspace/resupply-email";
+import {
+  EmailApiError,
+  EmailConfigError,
+  renderBrandedEmail,
+  textParagraph,
+} from "@workspace/resupply-email";
 
 import { createTenantSendgridClient } from "../email/tenant-sender.js";
 import {
@@ -45,15 +50,6 @@ export interface SendRefundNotificationEmailResult {
   delivered: boolean;
   error?: string;
   messageId?: string;
-}
-
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
 }
 
 function publicBaseUrl(override?: string): string {
@@ -122,45 +118,24 @@ export async function sendRefundNotificationEmail(
   ].join("\n");
 
   // ---------- html body ----------
-  const html = `<!DOCTYPE html>
-<html>
-<body style="margin:0;padding:0;background:#f7f4ec;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;">
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f7f4ec;padding:24px 0;">
-    <tr>
-      <td align="center">
-        <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;padding:32px;max-width:560px;">
-          <tr>
-            <td style="padding-bottom:16px;border-bottom:2px solid #6b7280;">
-              <div style="font-size:14px;letter-spacing:0.08em;color:#4b5563;text-transform:uppercase;font-weight:600;">${escapeHtml(brandName)}</div>
-              <div style="font-size:22px;color:#1a1a1a;font-weight:700;margin-top:4px;">${isPartial ? "Partial refund issued" : "Refund issued"}</div>
-            </td>
-          </tr>
-          <tr>
-            <td style="padding-top:20px;color:#333;font-size:15px;line-height:1.5;">
-              ${escapeHtml(lead)}
-            </td>
-          </tr>
-          <tr>
-            <td style="padding-top:12px;color:#555;font-size:14px;line-height:1.5;">
-              Refunds typically take 5&ndash;10 business days to appear on your statement, depending on your bank.
-            </td>
-          </tr>
-          <tr>
-            <td align="center" style="padding-top:24px;">
-              <a href="${escapeHtml(orderUrl)}" style="display:inline-block;background:#374151;color:#ffffff;text-decoration:none;padding:14px 28px;border-radius:8px;font-weight:700;">View order</a>
-            </td>
-          </tr>
-          <tr>
-            <td style="padding-top:28px;border-top:1px solid #eee;color:#888;font-size:12px;line-height:1.4;">
-              Questions about this refund? Reply to this message and we'll help.
-            </td>
-          </tr>
-        </table>
-      </td>
-    </tr>
-  </table>
-</body>
-</html>`;
+  // Chrome comes from the shared CareMetric Breathe email design system;
+  // this builder supplies only copy.
+  const html = renderBrandedEmail({
+    brandName,
+    heading: isPartial ? "Partial refund issued" : "Refund issued",
+    preheader: lead,
+    contentHtml: [
+      textParagraph(lead),
+      textParagraph(
+        "Refunds typically take 5–10 business days to appear on your statement, depending on your bank.",
+      ),
+    ].join("\n"),
+    button: { label: "View order", url: orderUrl },
+    footerLines: [
+      "Questions about this refund? Reply to this message and we'll help.",
+    ],
+    copyrightName: brandName,
+  });
 
   try {
     const { messageId } = await client.sendEmail({

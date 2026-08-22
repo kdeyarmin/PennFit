@@ -27,6 +27,7 @@ import {
   createQueueWithDlq,
   VENDOR_SEND_QUEUE_OPTS,
 } from "../lib/queue-options";
+import { renderBrandedEmail, textParagraph } from "@workspace/resupply-email";
 
 export const METRIC_ALERTS_NOTIFY_JOB = "metrics.alerts-notify";
 const METRIC_ALERTS_NOTIFY_CRON = "50 6 * * *"; // 5 min after the evaluator
@@ -96,24 +97,19 @@ export function renderAlertDigest(alerts: NotifiableAlert[]): {
     )
     .join("");
 
-  const html = `<!doctype html><html><body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#111827;background:#f9fafb;margin:0;padding:24px;">
-  <table style="max-width:600px;margin:0 auto;background:#ffffff;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;border-collapse:collapse;">
-    <tr><td style="padding:20px 24px;background:#0a1f44;color:#ffffff;">
-      <h1 style="margin:0;font-size:18px;font-weight:600;">KPI alert</h1>
-      <p style="margin:4px 0 0;font-size:13px;color:#cbd5e1;">${n} metric${
-        n === 1 ? "" : "s"
-      } crossed a threshold</p>
-    </td></tr>
-    <tr><td style="padding:0;">
-      <table style="width:100%;border-collapse:collapse;">
-        <tbody>${rows}</tbody>
-      </table>
-    </td></tr>
-    <tr><td style="padding:16px 24px;background:#f9fafb;font-size:12px;color:#6b7280;">
-      Triage these in the admin metric-alerts page.
-    </td></tr>
-  </table>
-</body></html>`;
+  // Chrome comes from the shared CareMetric Breathe email design system.
+  const html = renderBrandedEmail({
+    brandTagline: "Analytics",
+    heading: "KPI alert",
+    preheader: `${n} metric${n === 1 ? "" : "s"} crossed a threshold.`,
+    contentHtml: [
+      textParagraph(`${n} metric${n === 1 ? "" : "s"} crossed a threshold.`),
+      `<table role="presentation" width="100%" style="border-collapse:collapse;font-family:Arial,Helvetica,sans-serif;">
+<tbody>${rows}</tbody>
+</table>`,
+    ].join("\n"),
+    footerLines: ["Triage these in the admin metric-alerts page."],
+  });
   return { subject, html, text };
 }
 

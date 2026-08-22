@@ -44,7 +44,8 @@ vi.mock("../../lib/auth-deps", () => ({
     email: async () => undefined,
   }),
 }));
-vi.mock("@workspace/resupply-email", () => ({
+vi.mock("@workspace/resupply-email", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@workspace/resupply-email")>()),
   createSendgridClient: sendgridMock,
 }));
 vi.mock("../../lib/company-info", () => ({

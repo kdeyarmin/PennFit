@@ -14,6 +14,7 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
+    "@workspace/resupply-email": "workspace:*",
     "@workspace/resupply-secrets": "workspace:*",
     "zod": "catalog:"
   },

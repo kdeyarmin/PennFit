@@ -22,6 +22,18 @@
 //   - Plain-text bodies are NOT HTML-escaped. Doing so would render
 //     entity literals (`&amp;`) to recipients reading the text part.
 
+// The branded chrome comes from the shared email design system. We import
+// the `/layout` SUBPATH deliberately: it is a pure, dependency-free string
+// module with no SendGrid code in it, so this stays a vendor-agnostic
+// semantic layer (architecture Rule 11) while still rendering the one
+// platform-wide email identity.
+import {
+  BREATHE_COLORS,
+  renderBrandedEmail,
+  subheading,
+  textParagraph,
+} from "@workspace/resupply-email/layout";
+
 export interface RenderResupplyReminderInput {
   /** Practice display name (e.g. "Penn Sleep Center"). Already admin-vetted. */
   practiceName: string;
@@ -152,7 +164,6 @@ export function safeHref(rawUrl: string): string {
 export function renderResupplyReminder(
   input: RenderResupplyReminderInput,
 ): RenderedEmail {
-  const safeFirstName = escapeHtml(input.firstName);
   const safePractice = escapeHtml(input.practiceName);
   const variantCopy = reminderVariantCopy(
     input.variant ?? "initial",
@@ -208,73 +219,54 @@ export function renderResupplyReminder(
     `the ${input.practiceName} team`,
   ].join("\n");
 
-  // Inline-styled responsive HTML. No external CSS, no <style> block —
-  // tested against Gmail, Outlook 365, Apple Mail. Keep the table-based
-  // layout out (single-column flex via `<table>` is overkill for one CTA).
-  const html = `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>${escapeHtml(subject)}</title>
-</head>
-<body style="margin:0;padding:0;background:#f6f7f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#0f172a;">
-  <div style="max-width:560px;margin:0 auto;padding:32px 24px;">
-    <h1 style="margin:0 0 16px;font-size:20px;line-height:28px;font-weight:600;color:#0f172a;">
-      ${escapeHtml(subject)}
-    </h1>
-    <p style="margin:0 0 8px;font-size:15px;line-height:22px;">
-      Hi ${safeFirstName},
-    </p>
-    <p style="margin:0 0 16px;font-size:15px;line-height:22px;">
-      ${variantCopy.introHtml}
-    </p>
-    <ul style="margin:0 0 24px;padding-left:18px;font-size:15px;line-height:22px;color:#1e293b;">
-      ${itemsHtmlLines || `<li style="margin:4px 0;">Your supplies, per your prescription.</li>`}
-    </ul>
-    <p style="margin:0 0 4px;font-size:12px;line-height:18px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:#64748b;">
-      Why this matters
-    </p>
-    <p style="margin:0 0 20px;font-size:14px;line-height:21px;color:#475569;">
-      A worn cushion leaks. An old filter makes your machine work harder. Fresh supplies keep your therapy working the way it should.
-    </p>
-    <p style="margin:0 0 4px;font-size:12px;line-height:18px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:#64748b;">
-      What it costs
-    </p>
-    <p style="margin:0 0 20px;font-size:14px;line-height:21px;color:#475569;">
-      Most plans cover these replacements. We check your coverage before anything ships, so you won't get a surprise bill.
-    </p>
-    <p style="margin:0 0 4px;font-size:12px;line-height:18px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:#64748b;">
-      What to do
-    </p>
-    <p style="margin:0 0 16px;font-size:14px;line-height:21px;color:#334155;">
-      Pick one of the buttons below. You don't need a password or an account.
-    </p>
-    <p style="margin:0 0 8px;font-size:14px;line-height:21px;color:#334155;">
-      <strong>1. Send my supplies.</strong> Use this if you still use your CPAP and are running low. We check your plan, then ship to the address we have on file. If anything needs a closer look, a team member will contact you first.
-    </p>
-    <div style="margin:0 0 24px;">
-      <a href="${safeHref(input.confirmUrl)}" style="display:inline-block;padding:12px 20px;border-radius:6px;background:#0f766e;color:#ffffff;text-decoration:none;font-weight:600;font-size:15px;">
-        Send my supplies
-      </a>
-    </div>
-    <p style="margin:0 0 20px;font-size:14px;line-height:21px;color:#334155;">
-      <strong>2. Change my shipping address.</strong> Use this if you have moved. A team member will call or email you to confirm the new address.<br />
-      <a href="${safeHref(input.editUrl)}" style="color:#0f766e;text-decoration:underline;">Change my shipping address</a>
-    </p>
-    <p style="margin:0 0 24px;font-size:14px;line-height:21px;color:#334155;">
-      <strong>3. Stop these reminders.</strong> Use this if you don't want refill reminders. You can turn them back on any time by replying to one of our emails.<br />
-      <a href="${safeHref(input.stopUrl)}" style="color:#0f766e;text-decoration:underline;">Stop these reminders</a>
-    </p>
-    <hr style="border:none;border-top:1px solid #e2e8f0;margin:24px 0;" />
-    <p style="margin:0;font-size:12px;line-height:18px;color:#64748b;">
-      If a link doesn't work, just reply to this email. A real person reads it.<br />
-      Talk soon,<br />
-      the ${safePractice} team
-    </p>
-  </div>
-</body>
-</html>`;
+  // Chrome comes from the shared CareMetric Breathe email design system:
+  // table-based 600px card, MSO/VML bulletproof CTA, hidden preheader.
+  // This function supplies only copy. The three patient actions are one
+  // primary button ("Send my supplies") plus two secondary links, so the
+  // hierarchy matches what we want the patient to do.
+  const html = renderBrandedEmail({
+    brandName: input.practiceName,
+    heading: subject,
+    preheader: variantCopy.introText,
+    contentHtml: [
+      textParagraph(`Hi ${input.firstName},`),
+      `<p style="margin:0 0 16px;font-family:Arial,Helvetica,sans-serif;color:${BREATHE_COLORS.body};font-size:16px;line-height:1.6;">${variantCopy.introHtml}</p>`,
+      `<ul style="margin:0 0 24px;padding-left:20px;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.6;color:${BREATHE_COLORS.body};">${
+        itemsHtmlLines ||
+        `<li style="margin:4px 0;">Your supplies, per your prescription.</li>`
+      }</ul>`,
+      subheading("Why this matters"),
+      textParagraph(
+        "A worn cushion leaks. An old filter makes your machine work harder. Fresh supplies keep your therapy working the way it should.",
+      ),
+      subheading("What it costs"),
+      textParagraph(
+        "Most plans cover these replacements. We check your coverage before anything ships, so you won't get a surprise bill.",
+      ),
+      subheading("What to do"),
+      textParagraph(
+        "Pick one of the buttons below. You don't need a password or an account.",
+      ),
+      `<p style="margin:0 0 8px;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.6;color:${BREATHE_COLORS.body};"><strong>1. Send my supplies.</strong> Use this if you still use your CPAP and are running low. We check your plan, then ship to the address we have on file. If anything needs a closer look, a team member will contact you first.</p>`,
+    ].join("\n"),
+    button: { label: "Send my supplies", url: safeHref(input.confirmUrl) },
+    // Actions 2 and 3 go in the post-button slot, NOT the footer: the
+    // footer renders after the "Talk soon" sign-off, which would have the
+    // numbered workflow finish before two of its three steps appeared —
+    // and would bury the opt-out below the closing.
+    postButtonHtml:
+      `<p style="margin:0 0 12px;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.6;color:${BREATHE_COLORS.body};"><strong>2. Change my shipping address.</strong> Use this if you have moved. A team member will call or email you to confirm the new address.<br /><a href="${safeHref(
+        input.editUrl,
+      )}" style="color:${BREATHE_COLORS.blue};text-decoration:underline;">Change my shipping address</a></p>` +
+      `<p style="margin:0 0 12px;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.6;color:${BREATHE_COLORS.body};"><strong>3. Stop these reminders.</strong> Use this if you don't want refill reminders. You can turn them back on any time by replying to one of our emails.<br /><a href="${safeHref(
+        input.stopUrl,
+      )}" style="color:${BREATHE_COLORS.blue};text-decoration:underline;">Stop these reminders</a></p>`,
+    footerLines: [
+      "If a link doesn't work, just reply to this email. A real person reads it.",
+      `Talk soon, the ${input.practiceName} team`,
+    ],
+    copyrightName: input.practiceName,
+  });
 
   return { subject, html, text };
 }

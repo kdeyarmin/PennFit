@@ -50,6 +50,12 @@ import {
   renderPacketInviteHtml,
   renderPacketInviteText,
 } from "../patient-packet/invite-email";
+import { BREATHE_COLORS, renderBrandedEmail } from "@workspace/resupply-email";
+
+import {
+  renderImageBlockHtml,
+  renderPriceBlockHtml,
+} from "../back-in-stock-email";
 
 export type PreviewGroup = "resupply" | "orders" | "clinical" | "billing";
 
@@ -184,28 +190,26 @@ function escapeHtml(s: string): string {
 }
 
 /**
- * The shared shell the mirrored emails render into. It intentionally
- * matches the plain, table-based, inline-styled structure the production
- * senders use — a preview in a prettier shell than production would be
- * lying about what lands in the inbox.
+ * The shared shell the mirrored emails render into: the SAME
+ * `renderBrandedEmail` chrome the production senders use, so a preview
+ * cannot flatter what actually lands in the inbox.
  */
 function shell(brand: PreviewBrand, bodyHtml: string): string {
-  return `<!doctype html>
-<html><body style="font-family: -apple-system, system-ui, sans-serif; background:#f8fafc; padding:24px; margin:0;">
-  <table cellpadding="0" cellspacing="0" border="0" style="max-width:560px;margin:0 auto;background:#ffffff;border-radius:8px;border:1px solid #e2e8f0;">
-    <tr><td style="padding:24px;">
-${bodyHtml}
-      <p style="margin:24px 0 0;color:#6b7280;font-size:12px;line-height:1.5;">
-        ${escapeHtml(brand.legalName)}<br/>
-        Questions? Call ${escapeHtml(brand.supportPhoneDisplay)} or reply to this email.
-      </p>
-    </td></tr>
-  </table>
-</body></html>`;
+  // Same branded shell the real senders use, so an "approximate" preview
+  // still shows staff the chrome a patient actually receives.
+  return renderBrandedEmail({
+    brandName: brand.brandName,
+    contentHtml: bodyHtml,
+    footerLines: [
+      brand.legalName,
+      `Questions? Call ${brand.supportPhoneDisplay} or reply to this email.`,
+    ],
+    copyrightName: brand.legalName,
+  });
 }
 
 function p(text: string): string {
-  return `      <p style="margin:0 0 12px;color:#0a1f44;font-size:14px;line-height:1.55;">${text}</p>`;
+  return `<p style="margin:0 0 16px;font-family:Arial,Helvetica,sans-serif;color:${BREATHE_COLORS.body};font-size:16px;line-height:1.6;">${text}</p>`;
 }
 
 function itemsText(): string {
@@ -213,10 +217,17 @@ function itemsText(): string {
 }
 
 function itemsHtml(): string {
-  return `      <ul style="margin:0 0 12px;padding-left:20px;color:#0a1f44;font-size:14px;line-height:1.55;">${SAMPLE.items
+  return `      <ul style="margin:0 0 12px;padding-left:20px;color:${BREATHE_COLORS.body};font-size:14px;line-height:1.55;">${SAMPLE.items
     .map((i) => `<li>${i.quantity} &times; ${escapeHtml(i.name)}</li>`)
     .join("")}</ul>`;
 }
+
+/**
+ * Copyright year for the seeded rows' footer. The seeds carry
+ * `{{copyright_year}}` rather than a baked year (see `seed-bodies.ts`),
+ * so every preview that renders one has to supply it.
+ */
+const PREVIEW_YEAR = String(new Date().getFullYear());
 
 /** Render one seeded template row by key, with the variables it allows. */
 function fromSeed(
@@ -508,17 +519,25 @@ export function buildMessagePreviews(brand: PreviewBrand): MessagePreview[] {
   // EXACT: seeded template row.
   const backInStock = fromSeed("shop.back_in_stock.email", {
     product_name: "Nasal cushion (medium)",
-    product_name_html: "Nasal cushion (medium)",
+    product_name_html: escapeHtml("Nasal cushion (medium)"),
     product_url: `${baseUrl}/shop`,
-    product_url_html: `${baseUrl}/shop`,
+    // Href slot: matches `brandedButton`'s quote-only escape, as the
+    // production dispatcher does.
+    product_url_html: `${baseUrl}/shop`.replace(/"/g, "&quot;"),
     price_label: money(2400),
     price_line_text: `Price: ${money(2400)}`,
-    // The two `*_block_html` variables are pre-rendered markup the sender
-    // supplies; empty is a valid value (no image, no price block).
-    image_block_html: "",
-    price_block_html: `<div style="padding-top:10px;font-weight:700;color:#0a1f44;">${money(2400)}</div>`,
+    // These `*_block_html` variables are pre-rendered markup the sender
+    // supplies. Call the PRODUCTION fragment renderers rather than
+    // re-typing their markup here — hand-copied versions drifted (the
+    // preview had padding-top:10px and no font-size), which quietly made
+    // an "exact" preview differ from the email that ships. The sample has
+    // no image, and renderImageBlockHtml(null) is how production spells
+    // that.
+    image_block_html: renderImageBlockHtml(null),
+    price_block_html: renderPriceBlockHtml(money(2400)),
     brand_name: brandName,
-    brand_name_html: brandName,
+    brand_name_html: escapeHtml(brandName),
+    copyright_year: PREVIEW_YEAR,
   });
   if (backInStock) {
     out.push({
@@ -553,6 +572,7 @@ export function buildMessagePreviews(brand: PreviewBrand): MessagePreview[] {
     brand_name: brandName,
     brand_legal_name: brand.legalName,
     brand_legal_name_html: escapeHtml(brand.legalName),
+    copyright_year: PREVIEW_YEAR,
   });
   const rxSms = fromSeed("rx_renewal.sms", {
     sms_greeting: `Hi ${first}`,

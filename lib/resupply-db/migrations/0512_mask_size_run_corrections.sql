@@ -116,6 +116,8 @@ WHERE v."mask_model_id" = m."id"
 -- 2. The DreamWear Gel Pillows XS — a size Philips never made.
 -- ---------------------------------------------------------------
 -- Same retire-don't-delete rule as 0511 step 1.
+-- Guarded on status: `sort_order = 900 + sort_order` is not idempotent,
+-- so a second run would push an already-retired row to 1800.
 UPDATE "resupply"."mask_size_variants" v
 SET "status" = 'discontinued',
     "sort_order" = 900 + v."sort_order",
@@ -128,7 +130,8 @@ SET "status" = 'discontinued',
 FROM "resupply"."mask_models" m
 WHERE v."mask_model_id" = m."id"
   AND m."slug" = 'philips-dreamwear-np' AND m."org_id" IS NULL
-  AND v."component" = 'pillow' AND v."size_code" = 'XS';
+  AND v."component" = 'pillow' AND v."size_code" = 'XS'
+  AND v."status" IS DISTINCT FROM 'discontinued';
 --> statement-breakpoint
 
 -- ---------------------------------------------------------------
@@ -138,13 +141,28 @@ WHERE v."mask_model_id" = m."id"
 -- row keeps its UUID and its place on the ladder while getting the code
 -- the manufacturer prints. Four sequential statements — a single UPDATE
 -- would transiently duplicate codes under the unique index.
+--
+-- Each step is additionally guarded on its DESTINATION code being free.
+-- The migrator dedups by sha256 of this FILE, so any edit here (the
+-- 0510->0512 renumber rewrote these very comments) makes an
+-- already-applied migration pending again and re-runs it. Without the
+-- guards the first step renames the new S back onto the existing P and
+-- trips mask_size_variants_model_component_size_idx. On uncorrected data
+-- every destination is still free, so the cascade applies exactly as
+-- before; on corrected data all four steps are no-ops.
 UPDATE "resupply"."mask_size_variants" v
 SET "size_code" = 'P', "size_label" = 'P (Petite)', "sort_order" = 0,
     "updated_at" = now()
 FROM "resupply"."mask_models" m
 WHERE v."mask_model_id" = m."id"
   AND m."slug" = 'philips-amara-full' AND m."org_id" IS NULL
-  AND v."component" = 'cushion' AND v."size_code" = 'S';
+  AND v."component" = 'cushion' AND v."size_code" = 'S'
+  AND NOT EXISTS (
+    SELECT 1 FROM "resupply"."mask_size_variants" t
+    WHERE t."mask_model_id" = v."mask_model_id"
+      AND t."component" = 'cushion'
+      AND t."size_code" = 'P'
+  );
 --> statement-breakpoint
 UPDATE "resupply"."mask_size_variants" v
 SET "size_code" = 'S', "size_label" = 'S', "sort_order" = 10,
@@ -152,7 +170,13 @@ SET "size_code" = 'S', "size_label" = 'S', "sort_order" = 10,
 FROM "resupply"."mask_models" m
 WHERE v."mask_model_id" = m."id"
   AND m."slug" = 'philips-amara-full' AND m."org_id" IS NULL
-  AND v."component" = 'cushion' AND v."size_code" = 'M';
+  AND v."component" = 'cushion' AND v."size_code" = 'M'
+  AND NOT EXISTS (
+    SELECT 1 FROM "resupply"."mask_size_variants" t
+    WHERE t."mask_model_id" = v."mask_model_id"
+      AND t."component" = 'cushion'
+      AND t."size_code" = 'S'
+  );
 --> statement-breakpoint
 UPDATE "resupply"."mask_size_variants" v
 SET "size_code" = 'M', "size_label" = 'M', "sort_order" = 20,
@@ -160,7 +184,13 @@ SET "size_code" = 'M', "size_label" = 'M', "sort_order" = 20,
 FROM "resupply"."mask_models" m
 WHERE v."mask_model_id" = m."id"
   AND m."slug" = 'philips-amara-full' AND m."org_id" IS NULL
-  AND v."component" = 'cushion' AND v."size_code" = 'L';
+  AND v."component" = 'cushion' AND v."size_code" = 'L'
+  AND NOT EXISTS (
+    SELECT 1 FROM "resupply"."mask_size_variants" t
+    WHERE t."mask_model_id" = v."mask_model_id"
+      AND t."component" = 'cushion'
+      AND t."size_code" = 'M'
+  );
 --> statement-breakpoint
 UPDATE "resupply"."mask_size_variants" v
 SET "size_code" = 'L', "size_label" = 'L', "sort_order" = 30,
@@ -168,7 +198,13 @@ SET "size_code" = 'L', "size_label" = 'L', "sort_order" = 30,
 FROM "resupply"."mask_models" m
 WHERE v."mask_model_id" = m."id"
   AND m."slug" = 'philips-amara-full' AND m."org_id" IS NULL
-  AND v."component" = 'cushion' AND v."size_code" = 'XL';
+  AND v."component" = 'cushion' AND v."size_code" = 'XL'
+  AND NOT EXISTS (
+    SELECT 1 FROM "resupply"."mask_size_variants" t
+    WHERE t."mask_model_id" = v."mask_model_id"
+      AND t."component" = 'cushion'
+      AND t."size_code" = 'L'
+  );
 --> statement-breakpoint
 
 -- The seeded default rode the rename from "M" down to "S"; the default a

@@ -96,7 +96,11 @@ const {
   FakeTwilioConfigError: class extends Error {},
 }));
 
-vi.mock("@workspace/resupply-email", () => ({
+// Only the SendGrid wire is faked. The layout helpers (renderBrandedEmail
+// and friends) are pure string builders that the preview catalog renders
+// through, so they pass through from the real module.
+vi.mock("@workspace/resupply-email", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@workspace/resupply-email")>()),
   EmailConfigError: FakeEmailConfigError,
   DEFAULT_SENDGRID_FROM_EMAIL: "noreply@cmbreathe.com",
 }));

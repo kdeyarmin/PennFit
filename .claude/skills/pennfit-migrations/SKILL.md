@@ -31,7 +31,7 @@ they have caused several production incidents (see `docs/`:
 
 ## Hard rules — violating these can break production deploys
 
-### M1 — NEVER edit, delete, or rename a shipped migration
+### M1 — NEVER edit or delete a shipped migration; renumber byte-for-byte only
 A migration that already exists on the base branch is immutable. Editing it
 changes its content hash, so the deploy-time migrator treats it as **pending
 and re-applies it against production**. If the rewritten SQL isn't perfectly
@@ -39,13 +39,25 @@ idempotent, the re-apply errors and **gates the deploy**. This is exactly
 what broke every Railway release on 2026-06-05 (an in-place idempotency edit
 to `0212_compliance_rules.sql` re-ran a bare `CREATE TRIGGER` that already
 existed).
+
+The rule is about CONTENT, not the filename — and that is where renumbering
+trips people. A **renumber is a rename plus, almost always, a comment edit**,
+and the comment edit moves the hash exactly like an in-place edit would.
+Commit `8f2106d` renumbered the mask migrations to 0511/0512 and updated their
+header cross-references in the same move; both re-applied on the next deploy,
+and 0512's non-idempotent Amara cascade gated every release until it was
+patched in place. Renumbering off a prefix collision is fine — **change
+nothing inside the file**, not even a comment naming its own number. Correct
+stale references in a separate commit that touches no migration.
 - **Fix:** add a NEW, higher-numbered, idempotent corrective migration that
   brings the schema to the desired state. Never edit in place.
 - **Escape hatch (rare):** add the basename to
   `lib/resupply-db/migrations/.migration-edit-allowlist` in the same change so
   the override is reviewed in the PR diff; remove it once shipped.
 - **Enforced by** `scripts/check-resupply-migration-immutability.sh`
-  (pre-commit + CI; CI honors only the allowlist, not `--no-verify`).
+  (pre-commit + CI; CI honors only the allowlist, not `--no-verify`). It diffs
+  with `--no-renames` so a renumber shows up as a delete plus an add, then
+  pairs them by content and passes only when the bytes match.
 
 ### M2 — NEVER hand-edit `meta/_journal.json`
 It is frozen at 52 entries. Splicing/rebuilding it can make `migrate.mjs`

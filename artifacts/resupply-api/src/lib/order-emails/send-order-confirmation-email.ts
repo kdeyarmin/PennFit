@@ -28,14 +28,26 @@
 //     than on the success page they just visited.
 //
 // Template:
-//   - Subject:   "Your Penn Home Medical Supply order is confirmed"
-//   - HTML body: brand banner ("Order confirmed"), thank-you, item
-//                table (qty × name @ unit price), total, shipping
-//                address block, "View order" CTA linking to the
-//                order detail page on the customer success page,
-//                support footer.
+//   - Subject:   "Your <tenant brand> order is confirmed"
+//   - HTML body: rendered through the shared branded email layout
+//                (`renderBrandedEmail`) so it carries the same chrome as
+//                every other platform email — tenant wordmark header,
+//                white content card, bulletproof CTA, quiet footer. This
+//                builder supplies only the copy: thank-you line, item
+//                table (qty × unit price), total, shipping-address panel,
+//                "View order" CTA to the success page, support footer.
 
-import { EmailApiError, EmailConfigError } from "@workspace/resupply-email";
+import {
+  BREATHE_COLORS,
+  EmailApiError,
+  EmailConfigError,
+  escapeHtml,
+  infoPanel,
+  lineItemsTable,
+  renderBrandedEmail,
+  summaryRows,
+  textParagraph,
+} from "@workspace/resupply-email";
 
 import type { SavedShippingAddress } from "@workspace/resupply-db";
 
@@ -102,15 +114,6 @@ export interface SendOrderConfirmationEmailResult {
   error?: string;
   /** SendGrid X-Message-Id when delivered. */
   messageId?: string;
-}
-
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
 }
 
 function formatMoney(cents: number, currency: string): string {
@@ -232,90 +235,57 @@ export async function sendOrderConfirmationEmail(
   const text = textLines.join("\n");
 
   // ---------- html body ----------
-  const itemRows =
+  // Chrome comes from the shared CareMetric Breathe email design system
+  // (`renderBrandedEmail`); this builder supplies only copy + data. The
+  // wordmark is the TENANT's storefront brand, so the look is shared
+  // while the name stays per-tenant correct (see CLAUDE.md).
+  const itemsHtml =
     items.length > 0
-      ? items
-          .map(
-            (it) => `
-        <tr>
-          <td style="padding:8px 0;border-bottom:1px solid #eee;">
-            <div style="font-weight:600;color:#1a1a1a;">${escapeHtml(it.name)}</div>
-          </td>
-          <td style="padding:8px 0;border-bottom:1px solid #eee;text-align:right;color:#555;">
-            ${it.quantity} &times; ${escapeHtml(formatMoney(it.unitAmountCents, it.currency))}
-          </td>
-        </tr>`,
-          )
-          .join("")
-      : `
-        <tr>
-          <td colspan="2" style="padding:8px 0;border-bottom:1px solid #eee;color:#555;font-size:13px;">
-            Your full itemised order is available online &mdash; tap the View order button below.
-          </td>
-        </tr>`;
+      ? lineItemsTable(
+          items.map((it) => ({
+            name: it.name,
+            amount: `${it.quantity} × ${formatMoney(it.unitAmountCents, it.currency)}`,
+          })),
+        )
+      : textParagraph(
+          "Your full itemized order is available online — use the View order button below.",
+        );
 
-  const addressBlock = shippingAddress
-    ? `
-          <tr>
-            <td colspan="2" style="padding-top:24px;color:#1a1a1a;font-weight:700;">Shipping to</td>
-          </tr>
-          <tr>
-            <td colspan="2" style="padding-top:6px;color:#444;font-size:14px;line-height:1.5;">
-              ${renderAddressHtml(shippingAddress)}
-            </td>
-          </tr>`
+  const addressPanel = shippingAddress
+    ? infoPanel({
+        title: "Shipping to",
+        html: renderAddressHtml(shippingAddress),
+      })
     : "";
 
-  const html = `<!DOCTYPE html>
-<html>
-<body style="margin:0;padding:0;background:#f7f4ec;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;">
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f7f4ec;padding:24px 0;">
-    <tr>
-      <td align="center">
-        <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;padding:32px;max-width:560px;">
-          <tr>
-            <td style="padding-bottom:16px;border-bottom:2px solid #c9a227;">
-              <div style="font-size:14px;letter-spacing:0.08em;color:#7a5d00;text-transform:uppercase;font-weight:600;">${escapeHtml(brandName)}</div>
-              <div style="font-size:22px;color:#1a1a1a;font-weight:700;margin-top:4px;">Your order is confirmed</div>
-            </td>
-          </tr>
-          <tr>
-            <td style="padding-top:20px;color:#333;font-size:15px;line-height:1.5;">
-              Thanks for your order. Your payment was received and we're getting it ready to ship.
-            </td>
-          </tr>
-          <tr>
-            <td style="padding-top:16px;">
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
-                ${itemRows}
-                <tr>
-                  <td style="padding:12px 0 0 0;font-weight:700;color:#1a1a1a;">Total</td>
-                  <td style="padding:12px 0 0 0;text-align:right;font-weight:700;color:#1a1a1a;">${escapeHtml(formatMoney(amountTotalCents, currency))}</td>
-                </tr>${addressBlock}
-              </table>
-            </td>
-          </tr>
-          <tr>
-            <td align="center" style="padding-top:24px;">
-              <a href="${escapeHtml(orderUrl)}" style="display:inline-block;background:#c9a227;color:#1a1a1a;text-decoration:none;padding:14px 28px;border-radius:8px;font-weight:700;">View order</a>
-            </td>
-          </tr>
-          <tr>
-            <td align="center" style="padding-top:12px;">
-              <a href="${escapeHtml(browseUrl)}" style="color:#7a5d00;font-size:13px;text-decoration:underline;">or browse the shop</a>
-            </td>
-          </tr>
-          <tr>
-            <td style="padding-top:28px;border-top:1px solid #eee;color:#888;font-size:12px;line-height:1.4;">
-              We'll send another email with tracking info once your order ships. Reply to this message if you need to make a change &mdash; we read every reply.
-            </td>
-          </tr>
-        </table>
-      </td>
-    </tr>
-  </table>
-</body>
-</html>`;
+  const html = renderBrandedEmail({
+    brandName,
+    heading: "Your order is confirmed",
+    preheader: `We received your payment of ${formatMoney(amountTotalCents, currency)} and we're getting your order ready to ship.`,
+    contentHtml: [
+      textParagraph(
+        "Thanks for your order. Your payment was received and we're getting it ready to ship.",
+      ),
+      itemsHtml,
+      summaryRows([
+        {
+          label: "Total",
+          value: formatMoney(amountTotalCents, currency),
+          emphasis: true,
+        },
+      ]),
+      addressPanel,
+    ]
+      .filter(Boolean)
+      .join("\n"),
+    button: { label: "View order", url: orderUrl },
+    footerHtml: `<a href="${escapeHtml(browseUrl)}" style="color:${BREATHE_COLORS.blue};text-decoration:underline;">Browse the shop</a>`,
+    footerLines: [
+      "We'll send another email with tracking info once your order ships.",
+      "Reply to this message if you need to make a change — we read every reply.",
+    ],
+    copyrightName: brandName,
+  });
 
   try {
     const { messageId } = await withMetrics(

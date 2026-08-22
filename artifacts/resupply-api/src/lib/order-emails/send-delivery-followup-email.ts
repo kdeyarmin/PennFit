@@ -30,7 +30,15 @@
 //                CTAs: "It works great" (review link) and "Something
 //                isn't right" (return-flow link). Plain-text mirror.
 
-import { EmailApiError, EmailConfigError } from "@workspace/resupply-email";
+import {
+  EmailApiError,
+  EmailConfigError,
+  BREATHE_COLORS,
+  escapeHtml,
+  paragraph,
+  renderBrandedEmail,
+  textParagraph,
+} from "@workspace/resupply-email";
 
 import { isFeatureEnabled } from "../feature-flags";
 import { createTenantSendgridClient } from "../email/tenant-sender.js";
@@ -73,15 +81,6 @@ export interface SendDeliveryFollowupEmailResult {
   delivered: boolean;
   error?: string;
   messageId?: string;
-}
-
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
 }
 
 function publicBaseUrl(override?: string): string {
@@ -147,12 +146,12 @@ export async function sendDeliveryFollowupEmail(
       const htmlRow = cells
         .map(
           (c) =>
-            `<a href="${escapeHtml(c.href)}" style="display:inline-block;min-width:28px;padding:8px 0;margin:2px;text-align:center;border:1px solid #d4dae5;border-radius:6px;color:#0f1d3a;text-decoration:none;font-size:13px;font-weight:600;">${c.score}</a>`,
+            `<a href="${escapeHtml(c.href)}" style="display:inline-block;min-width:28px;padding:8px 0;margin:2px;text-align:center;border:1px solid ${BREATHE_COLORS.hairline};border-radius:6px;font-family:Arial,Helvetica,sans-serif;color:${BREATHE_COLORS.blue};text-decoration:none;font-size:13px;font-weight:600;">${c.score}</a>`,
         )
         .join("");
       npsRow = {
         html: `<table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="margin:8px 0 4px;"><tr><td>${htmlRow}</td></tr></table>
-          <p style="margin:4px 0 0;font-size:11px;color:#8b95a9;display:flex;justify-content:space-between;"><span>Not at all likely</span><span>Extremely likely</span></p>`,
+          <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="margin:4px 0 0;"><tr><td align="left" style="font-family:Arial,Helvetica,sans-serif;font-size:11px;color:${BREATHE_COLORS.faint};">Not at all likely</td><td align="right" style="font-family:Arial,Helvetica,sans-serif;font-size:11px;color:${BREATHE_COLORS.faint};">Extremely likely</td></tr></table>`,
         text: ["", "Rate it 0-10 (tap a link):"].concat(
           cells.map((c) => `  ${c.score} → ${c.href}`),
         ),
@@ -191,52 +190,46 @@ export async function sendDeliveryFollowupEmail(
     ...(npsRow ? npsRow.text : []),
   ].join("\n");
 
-  const html = `<!doctype html>
-<html><body style="margin:0;padding:0;background:#f6f7fb;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#1a1f36;">
-  <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="padding:24px 0;">
-    <tr><td align="center">
-      <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="560" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.06);">
-        <tr><td style="background:#0f1d3a;color:#ffffff;padding:20px 28px;">
-          <h1 style="margin:0;font-size:20px;font-weight:600;">${escapeHtml(brandName)}</h1>
-          <p style="margin:4px 0 0;font-size:13px;opacity:0.85;">Your supplies arrived — how did it go?</p>
-        </td></tr>
-        <tr><td style="padding:28px;">
-          <p style="margin:0 0 12px;font-size:15px;line-height:1.5;">${greeting}</p>
-          <p style="margin:0 0 16px;font-size:14px;line-height:1.55;color:#3c4458;">
-            Your ${escapeHtml(brandName)} supplies should have arrived a few days ago. We wanted to check in:
-            is the fit comfortable, the seal holding, and everything as you expected?
-          </p>
-          <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="margin:20px 0 8px;">
-            <tr>
-              <td style="padding-right:8px;">
-                <a href="${escapeHtml(reviewUrl)}" style="display:block;background:#0f1d3a;color:#ffffff;text-decoration:none;text-align:center;padding:12px;border-radius:8px;font-size:14px;font-weight:600;">It works great</a>
-              </td>
-              <td style="padding-left:8px;">
-                <a href="${escapeHtml(returnsUrl)}" style="display:block;background:#ffffff;color:#0f1d3a;text-decoration:none;text-align:center;padding:12px;border-radius:8px;font-size:14px;font-weight:600;border:1px solid #0f1d3a;">Something isn&apos;t right</a>
-              </td>
-            </tr>
-          </table>
-          <p style="margin:18px 0 0;font-size:13px;line-height:1.5;color:#5a6478;">
-            60-day Comfort Guarantee — start a return any time. Or just reply to
-            this email; we&apos;re real humans on the other side.
-          </p>
-          ${
-            npsRow
-              ? `<div style="margin-top:22px;padding-top:18px;border-top:1px solid #eef0f5;">
-            <p style="margin:0 0 6px;font-size:13px;font-weight:600;color:#1a1f36;">How likely are you to recommend us?</p>
-            ${npsRow.html}
-          </div>`
-              : ""
-          }
-        </td></tr>
-        <tr><td style="padding:16px 28px 24px;border-top:1px solid #eef0f5;font-size:12px;color:#8b95a9;">
-          <a href="${escapeHtml(orderUrl)}" style="color:#0f1d3a;text-decoration:none;">View your order</a> &nbsp;·&nbsp;
-          Sleep well, the ${escapeHtml(brandName)} team
-        </td></tr>
-      </table>
-    </td></tr>
-  </table>
-</body></html>`;
+  // Chrome comes from the shared CareMetric Breathe email design system.
+  // The two side-by-side choices stay a hand-built table: this is the one
+  // email with a genuine either/or, so neither is the single primary CTA
+  // the shared button models.
+  const html = renderBrandedEmail({
+    brandName,
+    brandTagline: "Your supplies arrived — how did it go?",
+    heading: "How did it go?",
+    preheader: `Your ${brandName} supplies should have arrived — is the fit comfortable?`,
+    contentHtml: [
+      paragraph(greeting),
+      textParagraph(
+        `Your ${brandName} supplies should have arrived a few days ago. We wanted to check in: is the fit comfortable, the seal holding, and everything as you expected?`,
+      ),
+      `<table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="margin:20px 0 8px;">
+<tr>
+<td style="padding-right:8px;">
+<a href="${escapeHtml(reviewUrl)}" style="display:block;background:${BREATHE_COLORS.blue};color:#ffffff;text-decoration:none;text-align:center;padding:12px;border-radius:8px;font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:600;">It works great</a>
+</td>
+<td style="padding-left:8px;">
+<a href="${escapeHtml(returnsUrl)}" style="display:block;background:#ffffff;color:${BREATHE_COLORS.blue};text-decoration:none;text-align:center;padding:12px;border-radius:8px;font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:600;border:1px solid ${BREATHE_COLORS.blue};">Something isn&#39;t right</a>
+</td>
+</tr>
+</table>`,
+      paragraph(
+        "60-day Comfort Guarantee — start a return any time. Or just reply to this email; we&#39;re real humans on the other side.",
+      ),
+      npsRow
+        ? `<div style="margin-top:22px;padding-top:18px;border-top:1px solid ${BREATHE_COLORS.hairline};">
+<p style="margin:0 0 6px;font-family:Arial,Helvetica,sans-serif;font-size:13px;font-weight:600;color:${BREATHE_COLORS.ink};">How likely are you to recommend us?</p>
+${npsRow.html}
+</div>`
+        : "",
+    ]
+      .filter(Boolean)
+      .join("\n"),
+    footerHtml: `<a href="${escapeHtml(orderUrl)}" style="color:${BREATHE_COLORS.blue};text-decoration:underline;">View your order</a>`,
+    footerLines: [`Sleep well, the ${brandName} team`],
+    copyrightName: brandName,
+  });
 
   try {
     const result = await client.sendEmail({

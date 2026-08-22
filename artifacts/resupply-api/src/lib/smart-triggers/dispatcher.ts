@@ -465,7 +465,7 @@ export async function runSmartTriggerSendDue(
     }
 
     const firstName = patient?.firstName
-      ? (patient.firstName.split(/\s+/)[0]?.replace(/[<>&]/g, "") ?? "")
+      ? (patient.firstName.split(/\s+/)[0] ?? "")
       : "";
     const greeting = firstName ? `Hi ${firstName}` : "Hi";
 

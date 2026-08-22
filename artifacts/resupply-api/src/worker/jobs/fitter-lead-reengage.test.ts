@@ -20,7 +20,8 @@ import {
 const supabaseMock = installSupabaseMock();
 
 const sendEmailMock = vi.fn(async () => undefined);
-vi.mock("@workspace/resupply-email", () => ({
+vi.mock("@workspace/resupply-email", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@workspace/resupply-email")>()),
   createSendgridClient: () => ({
     sendEmail: sendEmailMock,
   }),

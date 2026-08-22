@@ -20,22 +20,24 @@
 // the seeded-template output byte-identical to this fallback path
 // (pinned by dispatcher.seeded-template-parity.test.ts).
 //
-// PHI: no patient identifiers, no SKU, no diagnosis. Greeting +
-// first name are sanitized by the caller; days-until-expiry is a
-// non-PHI integer used in the headline.
+// PHI: no patient identifiers, no SKU, no diagnosis; days-until-expiry
+// is a non-PHI integer used in the headline.
+//
+// Markup safety: the caller passes the greeting and the brand names
+// verbatim. Plain-text output transforms nothing; every HTML slot is
+// entity-escaped, either here or by the layout. The HTML paths used to
+// DELETE the three markup-significant characters instead, so a tenant
+// trading as "R&R Medical" reached the patient as "RR Medical" in the
+// wordmark, footer and copyright line. (`rxRenewalText` never applied
+// that transform, and still doesn't — plain text needs none.)
+
+import {
+  escapeHtml,
+  paragraph,
+  renderBrandedEmail,
+} from "@workspace/resupply-email";
 
 const PLATFORM_BRAND = "CareMetric Breathe";
-
-/**
- * The HTML-context sanitizer this module has always used: STRIP the
- * three markup-significant characters rather than entity-escape them.
- * Exported so the dispatcher's `*_html` template variables apply the
- * exact same transform (a divergence would break seeded-template
- * parity).
- */
-export function stripHtmlUnsafe(s: string): string {
-  return s.replace(/[<>&]/g, "");
-}
 
 export function rxRenewalSubject(daysUntilExpiry: number): string {
   return daysUntilExpiry === 0
@@ -66,26 +68,61 @@ export function rxRenewalText(
   return `${greeting},\n\n${headline}\n\nWe need a fresh prescription on file before your next supply order ships. The fastest path is to ask your prescribing physician's office for a renewal — most clinics turn this around in 1-2 business days.\n\nIf you'd rather have us request the renewal directly from your physician, reply to this email with your physician's name + practice and we'll handle the outreach.\n\n— ${signoffName}\n`;
 }
 
+/**
+ * Assemble the branded body. Shared with the SEEDED template row
+ * (`seed-bodies.ts`), which calls this with `{{...}}` placeholders in
+ * place of the real values — that is what keeps the seeded output
+ * byte-identical to this fallback path.
+ */
+export function rxRenewalBrandedHtml(parts: {
+  /** Escaped slot (header, footer, copyright). The seed passes
+   *  `{{brand_legal_name_html}}`, whose value is pre-escaped to match. */
+  brandName: string;
+  /** Verbatim slot inside `paragraph()`. Seed passes `{{greeting_html}}`. */
+  greetingHtml: string;
+  /** Verbatim slot inside `paragraph()`. Seed passes `{{headline_html}}`. */
+  headlineHtml: string;
+  /** Escaped slot. Seed passes `{{headline}}` (plain text, no markup-
+   *  significant characters in any of its three possible values). */
+  preheader: string;
+  copyrightYear?: number | string;
+}): string {
+  return renderBrandedEmail({
+    brandName: parts.brandName,
+    heading: "Time to renew your prescription",
+    preheader: parts.preheader,
+    contentHtml: [
+      paragraph(`${parts.greetingHtml},`),
+      paragraph(parts.headlineHtml),
+      paragraph(
+        "We need a fresh prescription on file before your next supply order ships. The fastest path is to ask your prescribing physician&#39;s office for a renewal — most clinics turn this around in 1-2 business days.",
+      ),
+      paragraph(
+        "If you&#39;d rather have us request the renewal directly from your physician, reply to this email with your physician&#39;s name + practice and we&#39;ll handle the outreach.",
+      ),
+    ].join("\n"),
+    footerLines: [parts.brandName],
+    copyrightName: parts.brandName,
+    ...(parts.copyrightYear === undefined
+      ? {}
+      : { copyrightYear: parts.copyrightYear }),
+  });
+}
+
 export function rxRenewalHtml(
   greeting: string,
   daysUntilExpiry: number,
   signoffName = PLATFORM_BRAND,
 ): string {
-  const safeGreeting = stripHtmlUnsafe(greeting);
-  const safeSignoff = stripHtmlUnsafe(signoffName);
-  const headline = rxRenewalHeadlineHtml(daysUntilExpiry);
-  return `<!doctype html>
-<html><body style="font-family: -apple-system, system-ui, sans-serif; background: #f8fafc; padding: 24px;">
-  <table cellpadding="0" cellspacing="0" border="0" style="max-width:560px;margin:0 auto;background:#ffffff;border-radius:8px;border:1px solid #e2e8f0;">
-    <tr><td style="padding:24px;">
-      <p style="margin:0 0 12px;color:#0a1f44;font-size:14px;line-height:1.55;">${safeGreeting},</p>
-      <p style="margin:0 0 12px;color:#0a1f44;font-size:14px;line-height:1.55;">${headline}</p>
-      <p style="margin:0 0 12px;color:#0a1f44;font-size:14px;line-height:1.55;">We need a fresh prescription on file before your next supply order ships. The fastest path is to ask your prescribing physician's office for a renewal — most clinics turn this around in 1-2 business days.</p>
-      <p style="margin:0 0 12px;color:#0a1f44;font-size:14px;line-height:1.55;">If you'd rather have us request the renewal directly from your physician, reply to this email with your physician's name + practice and we'll handle the outreach.</p>
-      <p style="margin:24px 0 0;color:#6b7280;font-size:12px;">${safeSignoff}</p>
-    </td></tr>
-  </table>
-</body></html>`;
+  // Chrome comes from the shared CareMetric Breathe email design system.
+  return rxRenewalBrandedHtml({
+    // `brandName` lands in slots the layout escapes for us; the greeting
+    // lands in a verbatim slot, so it is escaped here.
+    brandName: signoffName,
+    greetingHtml: escapeHtml(greeting),
+    headlineHtml: rxRenewalHeadlineHtml(daysUntilExpiry),
+    preheader: rxRenewalHeadlineText(daysUntilExpiry),
+  });
 }
 
 /** The SMS opener: "Hi <first name>" when a name is on file, else "Hi". */
@@ -170,13 +207,19 @@ export function buildRxRenewalTemplateVars(
     greeting: input.greeting,
     brand_name: input.brandName,
     brand_legal_name: input.brandLegalName,
-    brand_legal_name_html: stripHtmlUnsafe(input.brandLegalName),
-    greeting_html: stripHtmlUnsafe(input.greeting),
+    // Lands in slots the layout escapes (header wordmark, footer,
+    // copyright). The seeded row's `{{...}}` token was escaped at build
+    // time, so the substituted value must arrive already escaped. The
+    // fallback path hands the same raw name to the layout, which applies
+    // the identical escape — which is what keeps the two byte-identical.
+    brand_legal_name_html: escapeHtml(input.brandLegalName),
+    greeting_html: escapeHtml(input.greeting),
     subject_line: rxRenewalSubject(input.daysUntilExpiry),
     headline: rxRenewalHeadlineText(input.daysUntilExpiry),
     headline_html: rxRenewalHeadlineHtml(input.daysUntilExpiry),
     sms_greeting: rxRenewalSmsGreeting(input.firstName),
     rx_status_clause: rxRenewalSmsStatus(input.daysUntilExpiry),
     push_title: rxRenewalPushTitle(input.daysUntilExpiry),
+    copyright_year: String(new Date().getFullYear()),
   };
 }

@@ -23,7 +23,13 @@
  * channels.
  */
 
-import { EmailConfigError } from "@workspace/resupply-email";
+import {
+  EmailConfigError,
+  escapeHtml,
+  paragraph,
+  renderBrandedEmail,
+  textParagraph,
+} from "@workspace/resupply-email";
 import {
   createTwilioSmsClient,
   TwilioConfigError,
@@ -353,34 +359,35 @@ function smsBody(
   return reasonCopy(reason).sms(greeting, brandName, link);
 }
 
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
 function renderRescanHtml(
   greeting: string,
   link: string,
   brandName: string,
   reason: RescanReason,
 ): string {
-  return `<!doctype html><html><body style="font-family:Arial,Helvetica,sans-serif;color:#1f2937;line-height:1.5">
-  <p>Hi ${escapeHtml(greeting)},</p>
-  <p><strong>${escapeHtml(brandName)}</strong> here.
-  ${escapeHtml(reasonCopy(reason).lead)}</p>
-  <p>It takes about two minutes and runs entirely on your own phone or
-  computer. Somewhere with good, even lighting helps a lot.</p>
-  <p style="margin:24px 0">
-    <a href="${escapeHtml(link)}" style="background:#0b2a4a;color:#fff;text-decoration:none;padding:12px 20px;border-radius:8px;display:inline-block">Take another scan</a>
-  </p>
-  <p style="font-size:13px;color:#6b7280">Your camera images never leave your
-  device — only the numeric measurements are shared with our team.</p>
-  <p style="font-size:13px;color:#6b7280">If the button doesn't work, copy and
-  paste this link into your browser:<br>${escapeHtml(link)}</p>
-  </body></html>`;
+  // Chrome comes from the shared CareMetric Breathe email design system.
+  return renderBrandedEmail({
+    brandName,
+    heading: "Time for another scan",
+    preheader: reasonCopy(reason).lead,
+    contentHtml: [
+      textParagraph(`Hi ${greeting},`),
+      paragraph(
+        `<strong>${escapeHtml(brandName)}</strong> here. ${escapeHtml(
+          reasonCopy(reason).lead,
+        )}`,
+      ),
+      textParagraph(
+        "It takes about two minutes and runs entirely on your own phone or computer. Somewhere with good, even lighting helps a lot.",
+      ),
+    ].join("\n"),
+    button: { label: "Take another scan", url: link },
+    footerLines: [
+      "Your camera images never leave your device — only the numeric measurements are shared with our team.",
+      `If the button doesn't work, copy and paste this link into your browser: ${link}`,
+    ],
+    copyrightName: brandName,
+  });
 }
 
 function renderRescanText(

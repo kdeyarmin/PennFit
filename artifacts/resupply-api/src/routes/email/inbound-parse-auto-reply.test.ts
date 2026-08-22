@@ -57,7 +57,8 @@ vi.mock("../../lib/messaging/email-auto-reply", () => ({
 const sendEmailMock = vi.fn(async (_input: unknown) => ({
   messageId: "sg-out-1",
 }));
-vi.mock("@workspace/resupply-email", () => ({
+vi.mock("@workspace/resupply-email", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@workspace/resupply-email")>()),
   createSendgridClient: () => ({ sendEmail: sendEmailMock }),
   EmailApiError: class EmailApiError extends Error {},
   EmailConfigError: class EmailConfigError extends Error {},

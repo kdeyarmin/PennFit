@@ -35,6 +35,12 @@ import {
 } from "@workspace/resupply-email";
 
 import { logger } from "../../lib/logger.js";
+import {
+  BREATHE_COLORS,
+  escapeHtml,
+  paragraph,
+  renderBrandedEmail,
+} from "@workspace/resupply-email";
 
 const router: IRouter = Router();
 
@@ -91,33 +97,32 @@ function renderHtml(
         </tr>`,
     )
     .join("");
-  return `<!DOCTYPE html><html><body style="margin:0;padding:0;background:#0b1426;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;">
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0b1426;padding:28px 0;">
-    <tr><td align="center">
-      <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:14px;padding:30px;max-width:600px;">
-        <tr><td style="padding-bottom:16px;border-bottom:2px solid #2f6fe6;">
-          <div style="font-size:13px;letter-spacing:0.08em;color:#2f6fe6;text-transform:uppercase;font-weight:700;">Breathe by CareMetric.ai</div>
-          <div style="font-size:22px;color:#0b1426;font-weight:700;margin-top:4px;">Your estimated annual impact</div>
-        </td></tr>
-        <tr><td style="padding-top:22px;">
-          <div style="font-size:38px;font-weight:800;color:#0b1426;letter-spacing:-0.02em;">${money(r.total)}</div>
-          <div style="font-size:14px;color:#555;margin-top:4px;">≈ ${money(r.total / 12)} every month back in the business</div>
-        </td></tr>
-        <tr><td style="padding-top:20px;">
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #eee;border-radius:8px;">${tableRows}</table>
-        </td></tr>
-        <tr><td style="padding-top:16px;color:#555;font-size:13px;line-height:1.55;">
-          Modeled for <strong>${patients.toLocaleString("en-US")}</strong> active patients and <strong>${staff}</strong> staff, using conservative, stated assumptions: ${ROI.hoursPerStaffWeek} hrs/week saved per staff at ${money(ROI.loadedHourly)}/hr loaded, ${money(ROI.rcmPerPatient)} revenue-cycle recovery and ${money(ROI.resupplyPerPatient)} resupply margin per active patient, and ${money(ROI.toolsPerStaff)}/seat in retired software licenses. Directional, not a quote.
-        </td></tr>
-        <tr><td align="center" style="padding-top:24px;">
-          <a href="https://cmbreathe.com/breathe/signup" style="display:inline-block;background:#2f6fe6;color:#ffffff;text-decoration:none;padding:13px 28px;border-radius:9px;font-weight:700;">Create your account</a>
-        </td></tr>
-        <tr><td style="padding-top:26px;border-top:1px solid #eee;color:#999;font-size:12px;line-height:1.4;">
-          Size it again any time at <a href="https://cmbreathe.com/breathe/roi" style="color:#2f6fe6;">cmbreathe.com/breathe/roi</a>. You're receiving this because you requested an estimate; reply to unsubscribe.
-        </td></tr>
-      </table>
-    </td></tr>
-  </table></body></html>`;
+  // Chrome comes from the shared CareMetric Breathe email design system.
+  return renderBrandedEmail({
+    brandTagline: "Breathe by CareMetric.ai",
+    heading: "Your estimated annual impact",
+    preheader: `An estimated ${money(r.total)} a year — about ${money(r.total / 12)} a month.`,
+    contentHtml: [
+      `<div style="font-family:Arial,Helvetica,sans-serif;font-size:38px;font-weight:800;color:${BREATHE_COLORS.ink};letter-spacing:-0.02em;">${escapeHtml(
+        money(r.total),
+      )}</div>
+<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:${BREATHE_COLORS.muted};margin:4px 0 16px;">≈ ${escapeHtml(
+        money(r.total / 12),
+      )} every month back in the business</div>`,
+      `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border:1px solid ${BREATHE_COLORS.hairline};border-radius:8px;">${tableRows}</table>`,
+      paragraph(
+        `Modeled for <strong>${patients.toLocaleString("en-US")}</strong> active patients and <strong>${staff}</strong> staff, using conservative, stated assumptions: ${ROI.hoursPerStaffWeek} hrs/week saved per staff at ${money(ROI.loadedHourly)}/hr loaded, ${money(ROI.rcmPerPatient)} revenue-cycle recovery and ${money(ROI.resupplyPerPatient)} resupply margin per active patient, and ${money(ROI.toolsPerStaff)}/seat in retired software licenses. Directional, not a quote.`,
+      ),
+    ].join("\n"),
+    button: {
+      label: "Create your account",
+      url: "https://cmbreathe.com/breathe/signup",
+    },
+    footerHtml: `Size it again any time at <a href="https://cmbreathe.com/breathe/roi" style="color:${BREATHE_COLORS.blue};text-decoration:underline;">cmbreathe.com/breathe/roi</a>.`,
+    footerLines: [
+      "You're receiving this because you requested an estimate; reply to unsubscribe.",
+    ],
+  });
 }
 
 function renderText(

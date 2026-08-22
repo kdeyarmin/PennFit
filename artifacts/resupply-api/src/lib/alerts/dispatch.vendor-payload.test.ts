@@ -49,7 +49,8 @@ interface SentSms {
 const sendEmail = vi.fn(async (_input: SentEmail) => ({ messageId: "sg_123" }));
 const sendSms = vi.fn(async (_input: SentSms) => ({ messageSid: "SM_123" }));
 
-vi.mock("@workspace/resupply-email", () => ({
+vi.mock("@workspace/resupply-email", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@workspace/resupply-email")>()),
   createSendgridClient: () => ({ sendEmail }),
   EmailApiError: class EmailApiError extends Error {},
   EmailConfigError: class EmailConfigError extends Error {},

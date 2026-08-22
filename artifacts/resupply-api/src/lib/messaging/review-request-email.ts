@@ -10,7 +10,12 @@
 // returns a discriminated `{sent, reason?}` shape so the dispatcher
 // keeps moving on partial failures.
 
-import { type SendgridClient } from "@workspace/resupply-email";
+import {
+  escapeHtml,
+  paragraph,
+  renderBrandedEmail,
+  type SendgridClient,
+} from "@workspace/resupply-email";
 
 import { isFeatureEnabled } from "../feature-flags";
 import { createTenantSendgridClient } from "../email/tenant-sender.js";
@@ -96,29 +101,27 @@ function renderHtml(input: {
   productName: string;
   productUrl: string;
 }): string {
-  return `<!doctype html>
-<html><body style="font-family:-apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif;color:#0a1f44;background:#f8fafc;padding:24px;">
-  <table role="presentation" width="100%" style="max-width:560px;margin:0 auto;background:#ffffff;border-radius:12px;padding:24px;">
-    <tr><td>
-      <h1 style="font-size:20px;margin:0 0 12px 0;">How are your supplies working out?</h1>
-      <p style="line-height:1.5;margin:0 0 16px 0;">
-        It's been a couple of weeks since you ordered ${escape(input.productName)} from ${escape(input.practice)}.
-        If you have a minute, we'd love to hear how it's going. A short review helps other patients pick the right mask, cushion, or bundle the first time.
-      </p>
-      <p style="margin:24px 0;">
-        <a href="${escape(input.productUrl)}" style="display:inline-block;background:#0a1f44;color:#ffffff;text-decoration:none;padding:12px 20px;border-radius:24px;font-weight:600;">
-          Leave a review
-        </a>
-      </p>
-      <p style="font-size:12px;color:#6b7280;line-height:1.5;margin:24px 0 0 0;">
-        Not satisfied? Our 60-day comfort guarantee may apply to your order — reply to this email with your order number and we'll help you with a return or exchange.
-      </p>
-      <p style="font-size:11px;color:#9ca3af;margin:24px 0 0 0;">
-        You can stop these emails anytime from your account &rsaquo; Communication preferences.
-      </p>
-    </td></tr>
-  </table>
-</body></html>`;
+  // Chrome comes from the shared CareMetric Breathe email design system.
+  return renderBrandedEmail({
+    brandName: input.practice,
+    heading: "How are your supplies working out?",
+    preheader: `It's been a couple of weeks since you ordered ${input.productName}.`,
+    contentHtml: [
+      paragraph(
+        `It&#39;s been a couple of weeks since you ordered ${escapeHtml(
+          input.productName,
+        )} from ${escapeHtml(
+          input.practice,
+        )}. If you have a minute, we&#39;d love to hear how it&#39;s going. A short review helps other patients pick the right mask, cushion, or bundle the first time.`,
+      ),
+    ].join("\n"),
+    button: { label: "Leave a review", url: input.productUrl },
+    footerLines: [
+      "Not satisfied? Our 60-day comfort guarantee may apply to your order — reply to this email with your order number and we'll help you with a return or exchange.",
+      "You can stop these emails anytime from your account › Communication preferences.",
+    ],
+    copyrightName: input.practice,
+  });
 }
 
 function renderText(input: {
@@ -139,12 +142,4 @@ function renderText(input: {
     "",
     `You can stop these emails anytime from your account → Communication preferences.`,
   ].join("\n");
-}
-
-function escape(s: string): string {
-  return String(s)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
 }

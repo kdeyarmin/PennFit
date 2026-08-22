@@ -31,6 +31,11 @@ import {
   type PacketDocumentSection,
 } from "../patient-packet/templates";
 import { signCsrOrderToken } from "./token";
+import {
+  escapeHtml,
+  paragraph,
+  renderBrandedEmail,
+} from "@workspace/resupply-email";
 
 type SupabaseClient = OrgScopedClient;
 
@@ -369,23 +374,33 @@ function renderOrderInviteHtml(input: {
   hasDocuments: boolean;
 }): string {
   const safeName = escapeHtml(input.customerName);
-  const safeCompany = escapeHtml(input.company);
   const steps = input.hasDocuments
     ? "review your order, sign the required paperwork, and complete your payment"
     : "review your order and complete your payment";
-  return `<!doctype html><html><body style="margin:0;background:#f1f5f9;font-family:Arial,Helvetica,sans-serif;color:#1f2937">
-  <div style="max-width:560px;margin:0 auto;padding:24px">
-    <div style="background:#ffffff;border-radius:16px;padding:32px;border:1px solid #e2e8f0">
-      <h1 style="margin:0 0 12px;font-size:20px;color:#0f172a">${safeCompany}</h1>
-      <p style="font-size:15px;line-height:1.55">Hello ${safeName},</p>
-      <p style="font-size:15px;line-height:1.55">We've prepared order <strong>${escapeHtml(input.orderReference)}</strong> for you (total <strong>${escapeHtml(input.amount)}</strong>). Please ${steps}. It only takes a few minutes on any phone, tablet, or computer.</p>
-      <p style="text-align:center;margin:28px 0">
-        <a href="${input.link}" style="display:inline-block;background:#0f172a;color:#ffffff;text-decoration:none;padding:14px 28px;border-radius:9999px;font-weight:bold;font-size:15px">Review &amp; complete my order</a>
-      </p>
-      <p style="font-size:13px;color:#64748b;line-height:1.5">If the button doesn't work, copy and paste this link into your browser:<br><span style="word-break:break-all;color:#334155">${input.link}</span></p>
-      <p style="font-size:13px;color:#64748b;line-height:1.5">This is a secure, personalized link. Please don't forward it. If you didn't expect this message, you can ignore it.</p>
-    </div>
-  </div></body></html>`;
+  // Chrome comes from the shared CareMetric Breathe email design system.
+  // `input.company` goes into slots the layout escapes itself — pass it
+  // raw or it double-escapes.
+  return renderBrandedEmail({
+    brandName: input.company,
+    heading: `Order ${input.orderReference}`,
+    preheader: `We've prepared order ${input.orderReference} for you (total ${input.amount}).`,
+    contentHtml: [
+      paragraph(`Hello ${safeName},`),
+      paragraph(
+        `We&#39;ve prepared order <strong>${escapeHtml(
+          input.orderReference,
+        )}</strong> for you (total <strong>${escapeHtml(
+          input.amount,
+        )}</strong>). Please ${steps}. It only takes a few minutes on any phone, tablet, or computer.`,
+      ),
+    ].join("\n"),
+    button: { label: "Review & complete my order", url: input.link },
+    footerLines: [
+      `If the button doesn't work, copy and paste this link into your browser: ${input.link}`,
+      "This is a secure, personalized link. Please don't forward it. If you didn't expect this message, you can ignore it.",
+    ],
+    copyrightName: input.company,
+  });
 }
 
 function renderOrderInviteText(input: {
@@ -410,12 +425,4 @@ function renderOrderInviteText(input: {
     "",
     "This is a secure, personalized link. Please don't forward it.",
   ].join("\n");
-}
-
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
 }

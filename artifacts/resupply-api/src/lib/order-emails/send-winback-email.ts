@@ -19,7 +19,15 @@
 // shop_customers.winback_sent_at column — we never send more than
 // one win-back per customer per 12 months.
 
-import { EmailApiError, EmailConfigError } from "@workspace/resupply-email";
+import {
+  EmailApiError,
+  EmailConfigError,
+  BREATHE_COLORS,
+  escapeHtml,
+  paragraph,
+  renderBrandedEmail,
+  secondaryLink,
+} from "@workspace/resupply-email";
 
 import { createTenantSendgridClient } from "../email/tenant-sender.js";
 import {
@@ -52,15 +60,6 @@ export interface SendWinbackEmailResult {
   delivered: boolean;
   error?: string;
   messageId?: string;
-}
-
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
 }
 
 function publicBaseUrl(override?: string): string {
@@ -127,37 +126,27 @@ export async function sendWinbackEmail(
     `Unsubscribe from re-engagement emails: ${prefsUrl}`,
   ].join("\n");
 
-  const html = `<!doctype html>
-<html><body style="margin:0;padding:0;background:#f6f7fb;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#1a1f36;">
-  <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="padding:24px 0;">
-    <tr><td align="center">
-      <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="560" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.06);">
-        <tr><td style="background:#0f1d3a;color:#ffffff;padding:20px 28px;">
-          <h1 style="margin:0;font-size:20px;font-weight:600;">It&apos;s been a while</h1>
-          <p style="margin:4px 0 0;font-size:13px;opacity:0.85;">Quick CPAP check-in</p>
-        </td></tr>
-        <tr><td style="padding:24px 28px;">
-          <p style="margin:0 0 12px;font-size:15px;line-height:1.5;">${greeting}</p>
-          <p style="margin:0 0 14px;font-size:14px;line-height:1.55;color:#3c4458;">
-            It&apos;s been about <strong>${input.monthsSinceLastOrder} months</strong> since we last shipped to you, and we wanted to check in.
-            CPAP supplies have replacement cadences for a reason — cushions stiffen, filters clog, hoses develop holes — and skipping replacement is the single biggest reason therapy slips.
-          </p>
-          <p style="margin:0 0 18px;font-size:14px;line-height:1.55;color:#3c4458;">
-            If you&apos;ve stopped CPAP therapy, no judgment. If you&apos;ve moved to a different supplier, also fine.
-            If you&apos;ve stayed on therapy but your supplies are due, your saved address and (often) card are still on file.
-          </p>
-          <a href="${escapeHtml(shopUrl)}" style="display:inline-block;background:#0f1d3a;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:8px;font-size:14px;font-weight:600;">Reorder supplies</a>
-          &nbsp;
-          <a href="${escapeHtml(accountUrl)}" style="display:inline-block;color:#0f1d3a;text-decoration:none;padding:12px 18px;border-radius:8px;font-size:14px;font-weight:600;border:1px solid #0f1d3a;">Account settings</a>
-        </td></tr>
-        <tr><td style="padding:16px 28px 24px;border-top:1px solid #eef0f5;font-size:12px;color:#8b95a9;">
-          The ${escapeHtml(brandName)} team &nbsp;·&nbsp;
-          <a href="${escapeHtml(prefsUrl)}" style="color:#0f1d3a;text-decoration:none;">Unsubscribe from re-engagement emails</a>
-        </td></tr>
-      </table>
-    </td></tr>
-  </table>
-</body></html>`;
+  // Chrome comes from the shared CareMetric Breathe email design system.
+  const html = renderBrandedEmail({
+    brandName,
+    brandTagline: "Quick CPAP check-in",
+    heading: "It's been a while",
+    preheader: `It's been about ${input.monthsSinceLastOrder} months since we last shipped to you.`,
+    contentHtml: [
+      paragraph(greeting),
+      paragraph(
+        `It&#39;s been about <strong>${input.monthsSinceLastOrder} months</strong> since we last shipped to you, and we wanted to check in. CPAP supplies have replacement cadences for a reason — cushions stiffen, filters clog, hoses develop holes — and skipping replacement is the single biggest reason therapy slips.`,
+      ),
+      paragraph(
+        "If you&#39;ve stopped CPAP therapy, no judgment. If you&#39;ve moved to a different supplier, also fine. If you&#39;ve stayed on therapy but your supplies are due, your saved address and (often) card are still on file.",
+      ),
+    ].join("\n"),
+    button: { label: "Reorder supplies", url: shopUrl },
+    postButtonHtml: secondaryLink("Account settings", accountUrl),
+    footerHtml: `<a href="${escapeHtml(prefsUrl)}" style="color:${BREATHE_COLORS.blue};text-decoration:underline;">Unsubscribe from re-engagement emails</a>`,
+    footerLines: [`The ${brandName} team`],
+    copyrightName: brandName,
+  });
 
   try {
     const result = await client.sendEmail({
