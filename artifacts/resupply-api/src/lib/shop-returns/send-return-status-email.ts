@@ -178,10 +178,10 @@ function buildApprovedBody(
       ),
       shipmentPanel,
       noShipmentNote,
-      secondaryLink("View all your returns", myReturnsUrl),
     ]
       .filter(Boolean)
       .join("\n"),
+    postButtonHtml: secondaryLink("View all your returns", myReturnsUrl),
     ...(labelUrl
       ? { button: { label: "Print your return label", url: labelUrl } }
       : {}),
@@ -230,8 +230,8 @@ function buildRefundedBody(
           brand.storefrontName,
         )}</strong>.`,
       ),
-      secondaryLink("View all your returns", myReturnsUrl),
     ].join("\n"),
+    postButtonHtml: secondaryLink("View all your returns", myReturnsUrl),
     footerLines: ["Questions? Reply to this email and our team will help."],
     copyrightName: brand.storefrontName,
   });
@@ -270,8 +270,8 @@ function buildReceivedBody(
       textParagraph(
         "Our team is processing it now. You'll get a separate confirmation as soon as your refund or exchange is on its way.",
       ),
-      secondaryLink("View all your returns", myReturnsUrl),
     ].join("\n"),
+    postButtonHtml: secondaryLink("View all your returns", myReturnsUrl),
     footerLines: ["Questions? Reply to this email and our team will help."],
     copyrightName: brand.storefrontName,
   });

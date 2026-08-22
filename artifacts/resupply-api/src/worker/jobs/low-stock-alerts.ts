@@ -136,6 +136,10 @@ function renderDigest(
 
   // Chrome comes from the shared CareMetric Breathe email design system.
   const html = renderBrandedEmail({
+    // Tenant-scoped subject, so the wordmark must match it (same reason as
+    // the PacWare digest). The PLATFORM_NAME digests correctly keep the
+    // platform default.
+    brandName: practiceName,
     brandTagline: "Inventory",
     heading: "Inventory alert",
     preheader: `${skus.length} product${

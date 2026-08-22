@@ -207,13 +207,15 @@ export async function sendDeliveredNotificationEmail(
       ),
       trackingPanel,
       addressPanel,
-      trackingUrl ? secondaryLink("Or view your full order", orderUrl) : "",
     ]
       .filter(Boolean)
       .join("\n"),
     button: trackingUrl
       ? { label: "View delivery details", url: trackingUrl }
       : { label: "View order", url: orderUrl },
+    postButtonHtml: trackingUrl
+      ? secondaryLink("Or view your full order", orderUrl)
+      : "",
     footerLines: [
       "Didn't receive it, or did something arrive damaged? Reply to this message and we'll make it right.",
     ],

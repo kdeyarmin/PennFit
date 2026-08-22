@@ -92,6 +92,18 @@ export interface BrandedEmailOptions {
   /** Optional primary CTA button rendered below the content. */
   button?: BrandedEmailButton;
   /**
+   * Raw HTML rendered AFTER the CTA button and BEFORE the footer — the
+   * slot for secondary actions that must read as subordinate to the
+   * primary one.
+   *
+   * Putting them in `contentHtml` instead places them ABOVE the button
+   * (the button is appended after all content), which inverts the
+   * hierarchy; putting them in `footerHtml` places them below the
+   * sign-off, which reads as an afterthought. CALLER is responsible for
+   * its safety (escape any dynamic values before passing).
+   */
+  postButtonHtml?: string;
+  /**
    * Footer lines (each escaped + rendered on its own muted row). Use for
    * the company signature, mailing address, and any "why you got this"
    * note. A copyright/year line is appended automatically.
@@ -387,7 +399,7 @@ export function renderBrandedEmail(opts: BrandedEmailOptions): string {
   )}</div>
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:${BREATHE_COLORS.canvas};">
 <tr><td align="center" style="padding:32px 16px;">
-<table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:600px;background-color:${BREATHE_COLORS.white};border-radius:16px;overflow:hidden;box-shadow:0 1px 3px rgba(11,20,38,0.08);">
+<table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;background-color:${BREATHE_COLORS.white};border-radius:16px;overflow:hidden;box-shadow:0 1px 3px rgba(11,20,38,0.08);">
 <!-- Header -->
 <tr><td style="background:${BREATHE_COLORS.ink};background:linear-gradient(135deg,${BREATHE_COLORS.ink} 0%,${BREATHE_COLORS.ink2} 100%);padding:28px 40px;">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td align="left">
@@ -409,7 +421,7 @@ ${
   buttonHtml
     ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td align="center" style="padding:12px 0 8px;">${buttonHtml}</td></tr></table>`
     : ""
-}
+}${opts.postButtonHtml ?? ""}
 </td></tr>
 <!-- Footer -->
 <tr><td style="padding:24px 40px 32px;border-top:1px solid ${BREATHE_COLORS.hairline};font-family:Arial,Helvetica,sans-serif;">

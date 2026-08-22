@@ -250,7 +250,11 @@ export function renderResupplyReminder(
       `<p style="margin:0 0 8px;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.6;color:${BREATHE_COLORS.body};"><strong>1. Send my supplies.</strong> Use this if you still use your CPAP and are running low. We check your plan, then ship to the address we have on file. If anything needs a closer look, a team member will contact you first.</p>`,
     ].join("\n"),
     button: { label: "Send my supplies", url: safeHref(input.confirmUrl) },
-    footerHtml:
+    // Actions 2 and 3 go in the post-button slot, NOT the footer: the
+    // footer renders after the "Talk soon" sign-off, which would have the
+    // numbered workflow finish before two of its three steps appeared —
+    // and would bury the opt-out below the closing.
+    postButtonHtml:
       `<p style="margin:0 0 12px;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.6;color:${BREATHE_COLORS.body};"><strong>2. Change my shipping address.</strong> Use this if you have moved. A team member will call or email you to confirm the new address.<br /><a href="${safeHref(
         input.editUrl,
       )}" style="color:${BREATHE_COLORS.blue};text-decoration:underline;">Change my shipping address</a></p>` +

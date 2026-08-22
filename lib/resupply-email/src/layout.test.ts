@@ -77,6 +77,33 @@ describe("renderBrandedEmail", () => {
     expect(html).toContain("Penn Home Medical Supply");
   });
 
+  it("keeps the card fluid so it can shrink on a phone", () => {
+    const html = renderBrandedEmail({ contentHtml: paragraph("Body") });
+    // A fixed `width:600px` would defeat the max-width and force
+    // horizontal scrolling on narrow mobile viewports. The width="600"
+    // ATTRIBUTE stays as the Outlook/desktop fallback.
+    expect(html).toContain("width:100%;max-width:600px");
+    expect(html).not.toContain("width:600px;max-width:600px");
+    expect(html).toContain('width="600"');
+  });
+
+  it("renders postButtonHtml after the CTA and before the footer", () => {
+    const html = renderBrandedEmail({
+      contentHtml: paragraph("Body"),
+      button: { label: "Primary", url: "https://x.test/go" },
+      postButtonHtml: "<span>SECONDARY</span>",
+      footerLines: ["FOOTERLINE"],
+    });
+    const cta = html.indexOf("Primary");
+    const secondary = html.indexOf("SECONDARY");
+    const footer = html.indexOf("FOOTERLINE");
+    expect(cta).toBeGreaterThan(-1);
+    // Ordering is the whole point: a secondary action placed in
+    // contentHtml would land ABOVE the button, inverting the hierarchy.
+    expect(secondary).toBeGreaterThan(cta);
+    expect(footer).toBeGreaterThan(secondary);
+  });
+
   it("omits the copyright line when copyrightName is empty", () => {
     const html = renderBrandedEmail({
       contentHtml: paragraph("Body"),

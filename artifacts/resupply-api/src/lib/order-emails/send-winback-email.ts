@@ -140,9 +140,9 @@ export async function sendWinbackEmail(
       paragraph(
         "If you&#39;ve stopped CPAP therapy, no judgment. If you&#39;ve moved to a different supplier, also fine. If you&#39;ve stayed on therapy but your supplies are due, your saved address and (often) card are still on file.",
       ),
-      secondaryLink("Account settings", accountUrl),
     ].join("\n"),
     button: { label: "Reorder supplies", url: shopUrl },
+    postButtonHtml: secondaryLink("Account settings", accountUrl),
     footerHtml: `<a href="${escapeHtml(prefsUrl)}" style="color:${BREATHE_COLORS.blue};text-decoration:underline;">Unsubscribe from re-engagement emails</a>`,
     footerLines: [`The ${brandName} team`],
     copyrightName: brandName,

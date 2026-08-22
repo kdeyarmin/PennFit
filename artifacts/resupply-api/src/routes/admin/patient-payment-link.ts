@@ -126,7 +126,9 @@ function renderPaymentEmailHtml(
   return renderBrandedEmail({
     brandName: practiceName,
     heading: `Payment request for ${amount}`,
-    preheader: `${practiceName} set up a secure online payment of ${amount}.`,
+    // The subject is deliberately PHI-free (see the send call below); the
+    // preheader sits beside it in inbox previews, so it omits the amount too.
+    preheader: `${practiceName} has set up a secure online payment for you.`,
     contentHtml: [
       textParagraph(`Hi ${greeting},`),
       paragraph(

@@ -152,7 +152,10 @@ export async function sendFitterOrderConfirmationEmail(
     brandName,
     brandTagline: "Order received",
     heading: `Reference ${input.orderReference}`,
-    preheader: `We received your CPAP mask order — ${maskLine}.`,
+    // Subject is deliberately generic ("Order received — <ref>"), and the
+    // preheader shows next to it on lock screens — so it must not name the
+    // mask. The selection stays inside the opened email.
+    preheader: `We received your order and will pick it up within one business day.`,
     contentHtml: [
       paragraph(greeting),
       textParagraph(

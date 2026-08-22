@@ -151,7 +151,10 @@ export async function sendQuarterlySummaryEmail(
     brandName,
     brandTagline: "90-day CPAP summary",
     heading: `${input.windowStart} — ${input.windowEnd}`,
-    preheader: `Your 90-day therapy rollup: ${f.compliancePct}% adherence across ${f.nightsRecorded} nights.`,
+    // The subject already says "90-day CPAP summary"; adherence numbers are
+    // additional clinical detail, so they stay inside the opened email.
+    preheader:
+      "Your 90-day therapy rollup is ready to share with your physician.",
     contentHtml: [
       paragraph(greeting),
       textParagraph(

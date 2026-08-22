@@ -109,6 +109,9 @@ function composeDigestEmail(opts: {
   // Chrome comes from the shared CareMetric Breathe email design system —
   // operator mail gets the same identity as patient mail.
   const html = renderBrandedEmail({
+    // The subject is tenant-scoped, so the wordmark must be too — otherwise
+    // a non-seed tenant's digest shows two different identities.
+    brandName: practiceName,
     brandTagline: "Operations",
     heading: `${readyCount} confirmed resupply ${noun} ready to sync to PacWare`,
     preheader: `${readyCount} confirmed ${noun} are waiting on a PacWare import.`,

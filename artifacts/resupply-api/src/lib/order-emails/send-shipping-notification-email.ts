@@ -241,13 +241,17 @@ export async function sendShippingNotificationEmail(
       textParagraph(`Good news — your ${brandName} order has shipped.`),
       trackingPanel,
       addressPanel,
-      trackingUrl ? secondaryLink("Or view your full order", orderUrl) : "",
     ]
       .filter(Boolean)
       .join("\n"),
     button: trackingUrl
       ? { label: "Track package", url: trackingUrl }
       : { label: "View order", url: orderUrl },
+    // Secondary action belongs BELOW the CTA, so it renders in the
+    // post-button slot rather than in contentHtml (which sits above it).
+    postButtonHtml: trackingUrl
+      ? secondaryLink("Or view your full order", orderUrl)
+      : "",
     footerLines: [
       "If anything looks off — wrong address, wrong items — reply to this message right away and we'll sort it out.",
     ],
