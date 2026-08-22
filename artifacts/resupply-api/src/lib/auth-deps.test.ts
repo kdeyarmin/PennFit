@@ -26,7 +26,8 @@ vi.mock("@workspace/resupply-audit", () => ({
   logAudit: vi.fn().mockResolvedValue(undefined),
 }));
 
-vi.mock("@workspace/resupply-email", () => ({
+vi.mock("@workspace/resupply-email", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@workspace/resupply-email")>()),
   createSendgridClient: () => {
     throw new Error("not configured");
   },

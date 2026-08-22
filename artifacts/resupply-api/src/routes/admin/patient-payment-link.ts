@@ -28,7 +28,13 @@ import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
 import { getOrgScopedClient } from "@workspace/resupply-db";
-import { EmailConfigError } from "@workspace/resupply-email";
+import {
+  EmailConfigError,
+  escapeHtml,
+  paragraph,
+  renderBrandedEmail,
+  textParagraph,
+} from "@workspace/resupply-email";
 import {
   createTwilioSmsClient,
   TwilioConfigError,
@@ -108,14 +114,6 @@ function formatUsd(cents: number): string {
   });
 }
 
-function escapeHtml(s: string): string {
-  return s
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;");
-}
-
 function renderPaymentEmailHtml(
   greeting: string,
   practiceName: string,
@@ -123,24 +121,35 @@ function renderPaymentEmailHtml(
   memo: string | null,
   link: string,
 ): string {
-  const memoLine = memo
-    ? `<p style="margin:0 0 12px">For: ${escapeHtml(memo)}</p>`
-    : "";
-  return `<!doctype html><html><body style="font-family:Arial,Helvetica,sans-serif;color:#1f2937;line-height:1.5">
-  <p>Hi ${escapeHtml(greeting)},</p>
-  <p>Your care team at <strong>${escapeHtml(practiceName)}</strong> has set up a
-  secure online payment of <strong>${escapeHtml(amount)}</strong>. You can pay by
-  card using the button below — it only takes a moment.</p>
-  ${memoLine}
-  <p style="margin:24px 0">
-    <a href="${escapeHtml(link)}" style="background:#0b2a4a;color:#fff;text-decoration:none;padding:12px 20px;border-radius:8px;display:inline-block">Pay ${escapeHtml(amount)} securely</a>
-  </p>
-  <p style="font-size:13px;color:#6b7280">Payments are processed securely by
-  Stripe. ${escapeHtml(practiceName)} never sees your full card number.</p>
-  <p style="font-size:13px;color:#6b7280">If the button doesn't work, copy and
-  paste this link:<br>${escapeHtml(link)}</p>
-  <p>— The ${escapeHtml(practiceName)} team</p>
-  </body></html>`;
+  const memoLine = memo ? paragraph(`For: ${escapeHtml(memo)}`) : "";
+  // Chrome comes from the shared CareMetric Breathe email design system.
+  return renderBrandedEmail({
+    brandName: practiceName,
+    heading: `Payment request for ${amount}`,
+    // The subject is deliberately PHI-free (see the send call below); the
+    // preheader sits beside it in inbox previews, so it omits the amount too.
+    preheader: `${practiceName} has set up a secure online payment for you.`,
+    contentHtml: [
+      textParagraph(`Hi ${greeting},`),
+      paragraph(
+        `Your care team at <strong>${escapeHtml(
+          practiceName,
+        )}</strong> has set up a secure online payment of <strong>${escapeHtml(
+          amount,
+        )}</strong>. You can pay by card using the button below — it only takes a moment.`,
+      ),
+      memoLine,
+    ]
+      .filter(Boolean)
+      .join("\n"),
+    button: { label: `Pay ${amount} securely`, url: link },
+    footerLines: [
+      `Payments are processed securely by Stripe. ${practiceName} never sees your full card number.`,
+      `If the button doesn't work, copy and paste this link: ${link}`,
+      `— The ${practiceName} team`,
+    ],
+    copyrightName: practiceName,
+  });
 }
 
 function renderPaymentEmailText(

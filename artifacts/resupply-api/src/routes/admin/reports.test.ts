@@ -108,7 +108,8 @@ const {
     EmailApiErrorStub,
   };
 });
-vi.mock("@workspace/resupply-email", () => ({
+vi.mock("@workspace/resupply-email", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@workspace/resupply-email")>()),
   createSendgridClient: createSendgridClientMock,
   EmailConfigError: EmailConfigErrorStub,
   EmailApiError: EmailApiErrorStub,

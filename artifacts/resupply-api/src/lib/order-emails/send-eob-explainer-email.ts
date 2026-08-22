@@ -23,7 +23,15 @@
 // Best-effort: a SendGrid outage must not 500 the event POST. The
 // route catches and logs.
 
-import { EmailApiError, EmailConfigError } from "@workspace/resupply-email";
+import {
+  EmailApiError,
+  EmailConfigError,
+  BREATHE_COLORS,
+  escapeHtml,
+  paragraph,
+  renderBrandedEmail,
+  textParagraph,
+} from "@workspace/resupply-email";
 
 import { createTenantSendgridClient } from "../email/tenant-sender.js";
 import {
@@ -65,15 +73,6 @@ export interface SendEobExplainerEmailResult {
   delivered: boolean;
   error?: string;
   messageId?: string;
-}
-
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
 }
 
 function fmtMoney(cents: number): string {
@@ -186,47 +185,40 @@ export async function sendEobExplainerEmail(
   const rowsHtml = breakdownRows
     .map(
       (r) =>
-        `<tr><td style="padding:6px 8px;color:#5a6478;font-size:14px;">${escapeHtml(r.label)}</td><td style="padding:6px 8px;text-align:right;font-variant-numeric:tabular-nums;font-size:14px;font-weight:600;color:#1a1f36;">${escapeHtml(r.value)}</td></tr>`,
+        `<tr><td style="padding:6px 8px;font-family:Arial,Helvetica,sans-serif;color:${BREATHE_COLORS.muted};font-size:14px;">${escapeHtml(r.label)}</td><td style="padding:6px 8px;text-align:right;font-family:Arial,Helvetica,sans-serif;font-variant-numeric:tabular-nums;font-size:14px;font-weight:600;color:${BREATHE_COLORS.ink};">${escapeHtml(r.value)}</td></tr>`,
     )
     .join("");
 
   const denialBlock =
     input.kind === "denied"
       ? `
-        ${input.denialReason ? `<p style="margin:16px 0 0;font-size:13px;color:#5a6478;"><strong>Denial reason:</strong> ${escapeHtml(input.denialReason)}</p>` : ""}
-        <p style="margin:12px 0 0;font-size:14px;line-height:1.55;color:#3c4458;">
+        ${input.denialReason ? `<p style="margin:16px 0 0;font-family:Arial,Helvetica,sans-serif;font-size:13px;color:${BREATHE_COLORS.muted};"><strong>Denial reason:</strong> ${escapeHtml(input.denialReason)}</p>` : ""}
+        <p style="margin:12px 0 0;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.55;color:${BREATHE_COLORS.body};">
           We&apos;ll review the denial and let you know what we can do next — file an appeal, gather more documentation, or work out a path forward together. <strong>You don&apos;t need to take action yet.</strong>
         </p>`
       : "";
 
-  const html = `<!doctype html>
-<html><body style="margin:0;padding:0;background:#f6f7fb;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#1a1f36;">
-  <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="padding:24px 0;">
-    <tr><td align="center">
-      <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="560" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.06);">
-        <tr><td style="background:#0f1d3a;color:#ffffff;padding:20px 28px;">
-          <h1 style="margin:0;font-size:20px;font-weight:600;">${escapeHtml(subject)}</h1>
-          <p style="margin:4px 0 0;font-size:13px;opacity:0.85;">${escapeHtml(dosLine)}</p>
-        </td></tr>
-        <tr><td style="padding:24px 28px;">
-          <p style="margin:0 0 12px;font-size:15px;line-height:1.5;">${greeting}</p>
-          <p style="margin:0 0 18px;font-size:14px;line-height:1.55;color:#3c4458;">${escapeHtml(lead)}</p>
-          <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="border:1px solid #eef0f5;border-radius:8px;border-collapse:separate;border-spacing:0;">
-            ${rowsHtml}
-          </table>
-          ${denialBlock}
-          <p style="margin:20px 0 8px;font-size:13px;color:#5a6478;">
-            Questions about this? <a href="${escapeHtml(supportUrl)}" style="color:#0f1d3a;">Open a chat</a> or reply to this email — we&apos;ll get you a human.
-          </p>
-        </td></tr>
-        <tr><td style="padding:16px 28px 24px;border-top:1px solid #eef0f5;font-size:12px;color:#8b95a9;">
-          <a href="${escapeHtml(accountUrl)}" style="color:#0f1d3a;text-decoration:none;">View on your account</a> &nbsp;·&nbsp;
-          The ${escapeHtml(brandName)} billing team
-        </td></tr>
-      </table>
-    </td></tr>
-  </table>
-</body></html>`;
+  // Chrome comes from the shared CareMetric Breathe email design system.
+  const html = renderBrandedEmail({
+    brandName,
+    brandTagline: dosLine,
+    heading: subject,
+    preheader: lead,
+    contentHtml: [
+      paragraph(greeting),
+      textParagraph(lead),
+      `<table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="border:1px solid ${BREATHE_COLORS.hairline};border-radius:8px;border-collapse:separate;border-spacing:0;">
+${rowsHtml}
+</table>`,
+      denialBlock,
+      paragraph(
+        `Questions about this? <a href="${escapeHtml(supportUrl)}" style="color:${BREATHE_COLORS.blue};">Open a chat</a> or reply to this email — we&#39;ll get you a human.`,
+      ),
+    ].join("\n"),
+    footerHtml: `<a href="${escapeHtml(accountUrl)}" style="color:${BREATHE_COLORS.blue};text-decoration:underline;">View on your account</a>`,
+    footerLines: [`The ${brandName} billing team`],
+    copyrightName: brandName,
+  });
 
   try {
     const result = await client.sendEmail({

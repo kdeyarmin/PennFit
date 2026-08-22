@@ -25,7 +25,15 @@
 // caregiver opt-in. The patient's UI section makes the scope
 // explicit.
 
-import { EmailApiError, EmailConfigError } from "@workspace/resupply-email";
+import {
+  EmailApiError,
+  EmailConfigError,
+  BREATHE_COLORS,
+  escapeHtml,
+  paragraph,
+  renderBrandedEmail,
+  textParagraph,
+} from "@workspace/resupply-email";
 
 import { createTenantSendgridClient } from "../email/tenant-sender.js";
 import {
@@ -65,15 +73,6 @@ export interface SendCaregiverNotificationEmailResult {
   delivered: boolean;
   error?: string;
   messageId?: string;
-}
-
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
 }
 
 function publicBaseUrl(override?: string): string {
@@ -162,30 +161,24 @@ export async function sendCaregiverNotificationEmail(
     `—The ${brandName} team`,
   ].join("\n");
 
-  const html = `<!doctype html>
-<html><body style="margin:0;padding:0;background:#f6f7fb;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#1a1f36;">
-  <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="padding:24px 0;">
-    <tr><td align="center">
-      <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="560" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.06);">
-        <tr><td style="background:#0f1d3a;color:#ffffff;padding:20px 28px;">
-          <p style="margin:0;font-size:12px;opacity:0.7;text-transform:uppercase;letter-spacing:0.08em;">Designated contact update</p>
-          <h1 style="margin:6px 0 0;font-size:20px;font-weight:600;">${escapeHtml(copy.headline)}</h1>
-        </td></tr>
-        <tr><td style="padding:24px 28px;">
-          <p style="margin:0 0 12px;font-size:15px;line-height:1.5;">${greeting}</p>
-          <p style="margin:0 0 14px;font-size:14px;line-height:1.55;color:#3c4458;">${escapeHtml(copy.body)}</p>
-          <p style="margin:18px 0 0;font-size:12px;color:#8b95a9;">
-            If you&apos;d rather not receive these, ask the account holder to
-            <a href="${escapeHtml(removeUrl)}" style="color:#0f1d3a;">remove you</a> from their designated contacts.
-          </p>
-        </td></tr>
-        <tr><td style="padding:16px 28px 24px;border-top:1px solid #eef0f5;font-size:12px;color:#8b95a9;">
-          The ${escapeHtml(brandName)} team
-        </td></tr>
-      </table>
-    </td></tr>
-  </table>
-</body></html>`;
+  // Chrome comes from the shared CareMetric Breathe email design system.
+  const html = renderBrandedEmail({
+    brandName,
+    brandTagline: "Designated contact update",
+    heading: copy.headline,
+    preheader: copy.body,
+    contentHtml: [
+      paragraph(greeting),
+      textParagraph(copy.body),
+      paragraph(
+        `If you&#39;d rather not receive these, ask the account holder to <a href="${escapeHtml(
+          removeUrl,
+        )}" style="color:${BREATHE_COLORS.blue};">remove you</a> from their designated contacts.`,
+      ),
+    ].join("\n"),
+    footerLines: [`The ${brandName} team`],
+    copyrightName: brandName,
+  });
 
   try {
     const result = await client.sendEmail({

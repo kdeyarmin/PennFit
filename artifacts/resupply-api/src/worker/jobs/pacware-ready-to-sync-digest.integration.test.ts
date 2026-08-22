@@ -45,7 +45,8 @@ import {
 const sendEmailMock = vi.fn(
   async (..._args: unknown[]) => undefined as unknown,
 );
-vi.mock("@workspace/resupply-email", () => ({
+vi.mock("@workspace/resupply-email", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@workspace/resupply-email")>()),
   createSendgridClient: () => ({ sendEmail: sendEmailMock }),
   // The digest only ever throws EmailConfigError on a missing key; our stub
   // never throws, so a class shape is enough for the `instanceof` guard.

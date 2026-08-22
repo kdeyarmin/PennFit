@@ -869,6 +869,9 @@ importers:
 
   lib/resupply-messaging:
     dependencies:
+      '@workspace/resupply-email':
+        specifier: workspace:*
+        version: link:../resupply-email
       '@workspace/resupply-secrets':
         specifier: workspace:*
         version: link:../resupply-secrets

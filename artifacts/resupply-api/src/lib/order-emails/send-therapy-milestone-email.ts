@@ -16,7 +16,14 @@
 // inserted but before its notified_at is stamped — the same atomic-
 // claim pattern used by the shipping notification.
 
-import { EmailApiError, EmailConfigError } from "@workspace/resupply-email";
+import {
+  EmailApiError,
+  EmailConfigError,
+  escapeHtml,
+  paragraph,
+  renderBrandedEmail,
+  textParagraph,
+} from "@workspace/resupply-email";
 
 import { createTenantSendgridClient } from "../email/tenant-sender.js";
 import {
@@ -103,15 +110,6 @@ function copyFor(
   };
 }
 
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
-
 function publicBaseUrl(override?: string): string {
   const raw =
     override ??
@@ -164,29 +162,17 @@ export async function sendTherapyMilestoneEmail(
     `The ${brandName} team`,
   ].join("\n");
 
-  const html = `<!doctype html>
-<html><body style="margin:0;padding:0;background:#f6f7fb;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#1a1f36;">
-  <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="padding:24px 0;">
-    <tr><td align="center">
-      <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="560" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.06);">
-        <tr><td style="background:#0f1d3a;color:#ffffff;padding:24px 28px;">
-          <p style="margin:0;font-size:12px;opacity:0.7;text-transform:uppercase;letter-spacing:0.08em;">Milestone</p>
-          <h1 style="margin:6px 0 0;font-size:22px;font-weight:600;">${escapeHtml(c.headline)}</h1>
-        </td></tr>
-        <tr><td style="padding:28px;">
-          <p style="margin:0 0 12px;font-size:15px;line-height:1.5;">${greeting}</p>
-          <p style="margin:0 0 18px;font-size:14px;line-height:1.55;color:#3c4458;">
-            ${escapeHtml(c.body)}
-          </p>
-          <a href="${escapeHtml(therapyUrl)}" style="display:inline-block;background:#0f1d3a;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:8px;font-size:14px;font-weight:600;">See your therapy summary</a>
-        </td></tr>
-        <tr><td style="padding:16px 28px 24px;border-top:1px solid #eef0f5;font-size:12px;color:#8b95a9;">
-          Sleep well, the ${escapeHtml(brandName)} team
-        </td></tr>
-      </table>
-    </td></tr>
-  </table>
-</body></html>`;
+  // Chrome comes from the shared CareMetric Breathe email design system.
+  const html = renderBrandedEmail({
+    brandName,
+    brandTagline: "Milestone",
+    heading: c.headline,
+    preheader: c.body,
+    contentHtml: [paragraph(greeting), textParagraph(c.body)].join("\n"),
+    button: { label: "See your therapy summary", url: therapyUrl },
+    footerLines: [`Sleep well, the ${brandName} team`],
+    copyrightName: brandName,
+  });
 
   try {
     const result = await client.sendEmail({

@@ -9,6 +9,12 @@
 // the invite by calling these same functions, so the preview staff see is
 // byte-for-byte the email that goes out — it cannot drift.
 
+import {
+  paragraph,
+  renderBrandedEmail,
+  textParagraph,
+} from "@workspace/resupply-email";
+
 export function escapeHtml(s: string): string {
   return s
     .replaceAll("&", "&amp;")
@@ -39,24 +45,32 @@ export function renderInviteEmailHtml(
   link: string,
 ): string {
   const whenLine = when
-    ? `<p style="margin:0 0 12px"><strong>When:</strong> ${escapeHtml(when)}</p>`
+    ? paragraph(`<strong>When:</strong> ${escapeHtml(when)}`)
     : "";
-  return `<!doctype html><html><body style="font-family:Arial,Helvetica,sans-serif;color:#1f2937;line-height:1.5">
-  <p>Hi ${escapeHtml(greeting)},</p>
-  <p>Your care team at <strong>${escapeHtml(practiceName)}</strong> has set up a
-  secure video visit to help you with your equipment. You can join from your
-  phone, tablet, or computer — no app to install, just a camera and microphone.</p>
-  ${whenLine}
-  <p style="margin:24px 0">
-    <a href="${escapeHtml(link)}" style="background:#0b2a4a;color:#fff;text-decoration:none;padding:12px 20px;border-radius:8px;display:inline-block">Join your video visit</a>
-  </p>
-  <p style="font-size:13px;color:#6b7280">Your browser will ask permission to
-  use your camera and microphone when you join. The call is encrypted
-  end-to-end and is never recorded.</p>
-  <p style="font-size:13px;color:#6b7280">If the button doesn't work, copy and
-  paste this link:<br>${escapeHtml(link)}</p>
-  <p>— The ${escapeHtml(practiceName)} team</p>
-  </body></html>`;
+  // Chrome comes from the shared CareMetric Breathe email design system.
+  return renderBrandedEmail({
+    brandName: practiceName,
+    heading: "Your video visit",
+    preheader: `Your care team at ${practiceName} set up a secure video visit.`,
+    contentHtml: [
+      textParagraph(`Hi ${greeting},`),
+      paragraph(
+        `Your care team at <strong>${escapeHtml(
+          practiceName,
+        )}</strong> has set up a secure video visit to help you with your equipment. You can join from your phone, tablet, or computer — no app to install, just a camera and microphone.`,
+      ),
+      whenLine,
+    ]
+      .filter(Boolean)
+      .join("\n"),
+    button: { label: "Join your video visit", url: link },
+    footerLines: [
+      "Your browser will ask permission to use your camera and microphone when you join. The call is encrypted end-to-end and is never recorded.",
+      `If the button doesn't work, copy and paste this link: ${link}`,
+      `— The ${practiceName} team`,
+    ],
+    copyrightName: practiceName,
+  });
 }
 
 export function renderInviteEmailText(

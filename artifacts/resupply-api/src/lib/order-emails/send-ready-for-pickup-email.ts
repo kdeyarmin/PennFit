@@ -18,7 +18,14 @@
 //   - The location name/address/phone are PUBLIC business contact info.
 //   - No PHI — this is the cash-pay shop.
 
-import { EmailApiError, EmailConfigError } from "@workspace/resupply-email";
+import {
+  EmailApiError,
+  EmailConfigError,
+  escapeHtml,
+  infoPanel,
+  renderBrandedEmail,
+  textParagraph,
+} from "@workspace/resupply-email";
 
 import { createTenantSendgridClient } from "../email/tenant-sender.js";
 import {
@@ -61,15 +68,6 @@ export interface SendReadyForPickupEmailResult {
   delivered: boolean;
   error?: string;
   messageId?: string;
-}
-
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
 }
 
 function publicBaseUrl(override?: string): string {
@@ -146,54 +144,22 @@ export async function sendReadyForPickupEmail(
   const text = textLines.join("\n");
 
   // ---------- html body ----------
-  const html = `<!DOCTYPE html>
-<html>
-<body style="margin:0;padding:0;background:#f7f4ec;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;">
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f7f4ec;padding:24px 0;">
-    <tr>
-      <td align="center">
-        <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;padding:32px;max-width:560px;">
-          <tr>
-            <td style="padding-bottom:16px;border-bottom:2px solid #c9a227;">
-              <div style="font-size:14px;letter-spacing:0.08em;color:#7a5d00;text-transform:uppercase;font-weight:600;">${escapeHtml(brandName)}</div>
-              <div style="font-size:22px;color:#1a1a1a;font-weight:700;margin-top:4px;">Ready for pickup</div>
-            </td>
-          </tr>
-          <tr>
-            <td style="padding-top:20px;color:#333;font-size:15px;line-height:1.5;">
-              Good news &mdash; your ${escapeHtml(brandName)} order is ready to pick up.
-            </td>
-          </tr>
-          <tr>
-            <td style="padding-top:20px;">
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#fbf7e8;border:1px solid #ecdfa6;border-radius:8px;">
-                <tr>
-                  <td style="padding:14px 16px;color:#5a4400;font-size:13px;letter-spacing:0.04em;text-transform:uppercase;font-weight:700;">Pick up at</td>
-                </tr>
-                <tr>
-                  <td style="padding:0 16px 14px 16px;color:#1a1a1a;font-size:15px;line-height:1.5;">
-                    ${locationHtml(location)}
-                  </td>
-                </tr>
-              </table>
-            </td>
-          </tr>
-          <tr>
-            <td align="center" style="padding-top:24px;">
-              <a href="${escapeHtml(orderUrl)}" style="display:inline-block;background:#c9a227;color:#1a1a1a;text-decoration:none;padding:14px 28px;border-radius:8px;font-weight:700;">View order</a>
-            </td>
-          </tr>
-          <tr>
-            <td style="padding-top:28px;border-top:1px solid #eee;color:#888;font-size:12px;line-height:1.4;">
-              Please bring a photo ID matching the order. If someone else is collecting on your behalf, let us know in advance.
-            </td>
-          </tr>
-        </table>
-      </td>
-    </tr>
-  </table>
-</body>
-</html>`;
+  // Chrome comes from the shared CareMetric Breathe email design system;
+  // this builder supplies only copy + data.
+  const html = renderBrandedEmail({
+    brandName,
+    heading: "Ready for pickup",
+    preheader: `Your ${brandName} order is ready to collect.`,
+    contentHtml: [
+      textParagraph(`Good news — your ${brandName} order is ready to pick up.`),
+      infoPanel({ title: "Pick up at", html: locationHtml(location) }),
+    ].join("\n"),
+    button: { label: "View order", url: orderUrl },
+    footerLines: [
+      "Please bring a photo ID matching the order. If someone else is collecting on your behalf, let us know in advance.",
+    ],
+    copyrightName: brandName,
+  });
 
   try {
     const { messageId } = await client.sendEmail({

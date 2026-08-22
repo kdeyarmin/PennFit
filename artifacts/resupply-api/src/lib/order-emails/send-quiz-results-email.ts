@@ -16,7 +16,17 @@
 // in the footer + the optional "if you've already been prescribed
 // CPAP, here's how we can help" tail.
 
-import { EmailApiError, EmailConfigError } from "@workspace/resupply-email";
+import {
+  EmailApiError,
+  EmailConfigError,
+  BREATHE_COLORS,
+  bulletList,
+  escapeHtml,
+  infoPanel,
+  paragraph,
+  renderBrandedEmail,
+  textParagraph,
+} from "@workspace/resupply-email";
 
 import { createTenantSendgridClient } from "../email/tenant-sender.js";
 import {
@@ -55,15 +65,6 @@ export interface SendQuizResultsEmailResult {
   delivered: boolean;
   error?: string;
   messageId?: string;
-}
-
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
 }
 
 function publicBaseUrl(override?: string): string {
@@ -145,15 +146,10 @@ export async function sendQuizResultsEmail(
 
   const symptomsHtml =
     (input.symptoms ?? []).length > 0
-      ? `<div style="margin-top:18px;padding:14px 16px;border-radius:8px;background:#f8f9fb;">
-           <p style="margin:0 0 6px;font-size:13px;font-weight:600;color:#1a1f36;">Yes answers you can share with your physician</p>
-           <ul style="margin:0;padding:0 0 0 18px;font-size:13px;line-height:1.55;color:#3c4458;">
-             ${(input.symptoms ?? [])
-               .slice(0, 20)
-               .map((s) => `<li>${escapeHtml(s)}</li>`)
-               .join("")}
-           </ul>
-         </div>`
+      ? infoPanel({
+          title: "Yes answers you can share with your physician",
+          html: bulletList((input.symptoms ?? []).slice(0, 20)),
+        })
       : "";
 
   const text = [
@@ -181,39 +177,31 @@ export async function sendQuizResultsEmail(
     .concat([""])
     .join("\n");
 
-  const html = `<!doctype html>
-<html><body style="margin:0;padding:0;background:#f6f7fb;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#1a1f36;">
-  <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="padding:24px 0;">
-    <tr><td align="center">
-      <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="560" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.06);">
-        <tr><td style="background:#0f1d3a;color:#ffffff;padding:24px 28px;">
-          <p style="margin:0;font-size:12px;opacity:0.7;text-transform:uppercase;letter-spacing:0.08em;">Your STOP-BANG results</p>
-          <h1 style="margin:6px 0 0;font-size:22px;font-weight:600;">${escapeHtml(copy.headline)}</h1>
-          <p style="margin:6px 0 0;font-size:14px;opacity:0.85;">Score: ${input.score}/8</p>
-        </td></tr>
-        <tr><td style="padding:24px 28px;">
-          <p style="margin:0 0 16px;font-size:14px;line-height:1.55;color:#3c4458;">${escapeHtml(copy.body)}</p>
-          ${symptomsHtml}
-          <div style="margin-top:18px;padding:14px 16px;border-radius:8px;background:#0f1d3a08;">
-            <p style="margin:0 0 6px;font-size:13px;font-weight:600;color:#1a1f36;">What to bring up at that visit</p>
-            <ul style="margin:0;padding:0 0 0 18px;font-size:13px;line-height:1.55;color:#3c4458;">
-              <li>Your STOP-BANG score (${input.score}/8) and which symptoms you said &ldquo;yes&rdquo; to.</li>
-              <li>Anything a bed partner has noticed &mdash; snoring, gasping, pauses, restless sleep.</li>
-              <li>Ask about <strong>at-home sleep testing</strong> &mdash; most insurers cover it.</li>
-              <li>Any history of high blood pressure, type-2 diabetes, atrial fibrillation, or recent unexplained weight gain.</li>
-            </ul>
-          </div>
-          <p style="margin:18px 0 0;font-size:12px;color:#8b95a9;font-style:italic;">This quiz is a screening tool. It is NOT a diagnosis.</p>
-        </td></tr>
-        <tr><td style="padding:16px 28px 24px;border-top:1px solid #eef0f5;font-size:12px;color:#8b95a9;">
-          <a href="${escapeHtml(learnUrl)}" style="color:#0f1d3a;text-decoration:none;">Learn more about sleep apnea</a> &nbsp;·&nbsp;
-          <a href="${escapeHtml(insuranceUrl)}" style="color:#0f1d3a;text-decoration:none;">Insurance coverage</a><br/>
-          The ${escapeHtml(brandName)} team
-        </td></tr>
-      </table>
-    </td></tr>
-  </table>
-</body></html>`;
+  // Chrome comes from the shared CareMetric Breathe email design system.
+  const html = renderBrandedEmail({
+    brandName,
+    brandTagline: "Your STOP-BANG results",
+    heading: copy.headline,
+    preheader: `Score: ${input.score}/8. ${copy.body}`,
+    contentHtml: [
+      paragraph(`<strong>Score: ${input.score}/8</strong>`),
+      textParagraph(copy.body),
+      symptomsHtml,
+      infoPanel({
+        title: "What to bring up at that visit",
+        html: `<ul style="margin:0;padding-left:20px;">
+<li style="margin:0 0 6px;">Your STOP-BANG score (${input.score}/8) and which symptoms you said &ldquo;yes&rdquo; to.</li>
+<li style="margin:0 0 6px;">Anything a bed partner has noticed &mdash; snoring, gasping, pauses, restless sleep.</li>
+<li style="margin:0 0 6px;">Ask about <strong>at-home sleep testing</strong> &mdash; most insurers cover it.</li>
+<li style="margin:0;">Any history of high blood pressure, type-2 diabetes, atrial fibrillation, or recent unexplained weight gain.</li>
+</ul>`,
+      }),
+      `<p style="margin:18px 0 0;color:${BREATHE_COLORS.muted};font-size:12px;font-style:italic;">This quiz is a screening tool. It is NOT a diagnosis.</p>`,
+    ].join("\n"),
+    footerHtml: `<a href="${escapeHtml(learnUrl)}" style="color:${BREATHE_COLORS.blue};text-decoration:underline;">Learn more about sleep apnea</a> &nbsp;·&nbsp; <a href="${escapeHtml(insuranceUrl)}" style="color:${BREATHE_COLORS.blue};text-decoration:underline;">Insurance coverage</a>`,
+    footerLines: [`The ${brandName} team`],
+    copyrightName: brandName,
+  });
 
   try {
     const result = await client.sendEmail({

@@ -22,9 +22,12 @@ import {
   type ResupplySupabaseClient,
 } from "@workspace/resupply-db";
 import {
+  BREATHE_COLORS,
   createSendgridClient,
   EmailApiError,
   EmailConfigError,
+  escapeHtml,
+  renderBrandedEmail,
 } from "@workspace/resupply-email";
 import {
   renderResupplyReminder,
@@ -68,18 +71,11 @@ export interface SendReminderEmailInput {
   actor: SendActor;
 }
 
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
-
-/** Minimal HTML render for custom-content emails: escaped paragraphs
- *  + an unsubscribe footer. Deliberately plain — custom content is
- *  conversational service copy, not a marketing layout. */
+/** HTML render for custom-content emails: escaped paragraphs in the
+ *  shared branded shell, plus an unsubscribe link. The COPY stays plain
+ *  (custom content is conversational service writing, not marketing),
+ *  but the chrome is the same platform identity every other email uses,
+ *  so a patient never gets one styled message and one bare one. */
 function renderCustomContent(opts: {
   practiceName: string;
   subject: string;
@@ -90,19 +86,20 @@ function renderCustomContent(opts: {
     .split(/\n{2,}/)
     .map(
       (p) =>
-        `<p style="margin:0 0 14px 0;">${escapeHtml(p).replace(/\n/g, "<br/>")}</p>`,
+        `<p style="margin:0 0 16px;font-family:Arial,Helvetica,sans-serif;color:${BREATHE_COLORS.body};font-size:16px;line-height:1.6;">${escapeHtml(p).replace(/\n/g, "<br/>")}</p>`,
     )
     .join("\n");
   return {
     subject: opts.subject,
-    html: `<!doctype html>
-<html lang="en"><body style="margin:0;padding:24px;background:#f4f6f8;font-family:-apple-system,Segoe UI,Roboto,sans-serif;color:#1f2a37;">
-<div style="max-width:560px;margin:0 auto;background:#ffffff;border:1px solid #e5e7eb;border-radius:8px;padding:28px;font-size:15px;line-height:1.55;">
-${paragraphs}
-<hr style="border:none;border-top:1px solid #e5e7eb;margin:18px 0 12px 0;"/>
-<p style="color:#6b7280;font-size:12px;margin:0;">${escapeHtml(opts.practiceName)} · <a href="${opts.stopUrl}" style="color:#6b7280;text-decoration:underline;">Stop these messages</a></p>
-</div>
-</body></html>`,
+    html: renderBrandedEmail({
+      brandName: opts.practiceName,
+      heading: opts.subject,
+      preheader: opts.bodyText.slice(0, 140),
+      contentHtml: paragraphs,
+      footerHtml: `<a href="${escapeHtml(opts.stopUrl)}" style="color:${BREATHE_COLORS.blue};text-decoration:underline;">Stop these messages</a>`,
+      footerLines: [opts.practiceName],
+      copyrightName: opts.practiceName,
+    }),
     text: `${opts.bodyText}\n\n${opts.practiceName}\nStop these messages: ${opts.stopUrl}`,
   };
 }

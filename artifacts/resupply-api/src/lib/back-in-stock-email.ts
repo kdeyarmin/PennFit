@@ -15,7 +15,13 @@
 // customerId is null on every send. Cross-referencing by email at
 // lookup time is a separate enhancement.
 
-import { EmailApiError, EmailConfigError } from "@workspace/resupply-email";
+import {
+  EmailApiError,
+  EmailConfigError,
+  escapeHtml,
+  renderBrandedEmail,
+  textParagraph,
+} from "@workspace/resupply-email";
 import { renderMessage } from "@workspace/resupply-templates";
 
 import { messageTemplateLookup } from "./message-templates/lookup";
@@ -51,61 +57,83 @@ export interface BackInStockEmailResult {
   error?: string;
 }
 
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
-
 /**
  * The HTML img fragment when an image URL is present, empty string
  * otherwise. Pre-rendered so the template body can interpolate
  * `{{image_block_html}}` as a single token rather than carry
  * conditional logic.
  */
-function renderImageBlockHtml(productImageUrl: string | null): string {
+export function renderImageBlockHtml(productImageUrl: string | null): string {
   if (!productImageUrl) return "";
-  return `<tr><td align="center" style="padding:8px 0 18px;">
-         <img src="${escapeHtml(productImageUrl)}" alt="" width="220" style="display:block;border-radius:10px;max-width:220px;height:auto;" />
-       </td></tr>`;
+  return `<div style="text-align:center;padding:0 0 18px;"><img src="${escapeHtml(
+    productImageUrl,
+  )}" alt="" width="220" style="display:inline-block;border-radius:10px;max-width:220px;height:auto;" /></div>`;
 }
 
 /**
  * The HTML price fragment when a label is present, empty string
  * otherwise. Same shape as `renderImageBlockHtml`.
  */
-function renderPriceBlockHtml(priceLabel: string | null): string {
+export function renderPriceBlockHtml(priceLabel: string | null): string {
   if (!priceLabel) return "";
-  return `<div style="font-size:18px;font-weight:700;color:#0a1f44;margin-top:6px;">${escapeHtml(priceLabel)}</div>`;
+  return `<div style="font-size:18px;font-weight:700;color:#0b1426;margin-top:6px;">${escapeHtml(priceLabel)}</div>`;
+}
+
+/**
+ * Assemble the branded body. Shared with the SEEDED template row
+ * (`seed-bodies.ts`), which calls this with `{{...}}` placeholders in
+ * place of the real values — that is what keeps the seeded output
+ * byte-identical to this fallback path. Every fragment is concatenated
+ * directly (no `filter`/`join`) so an absent image/price block collapses
+ * to the same bytes on both paths.
+ */
+export function backInStockBrandedHtml(parts: {
+  /** Goes into escaped slots. Fallback passes the raw brand; the seed
+   *  passes `{{brand_name_html}}` (whose value is pre-escaped to match). */
+  brandName: string;
+  /** Escaped slot. Seed passes `{{product_name_html}}`. */
+  productName: string;
+  /** Button href. `brandedButton` only quote-escapes, so the seed's
+   *  `{{product_url_html}}` must carry the same quote-only escape. */
+  productUrl: string;
+  /** Verbatim HTML fragment (may be empty). */
+  imageBlockHtml: string;
+  /** Verbatim HTML fragment (may be empty). */
+  priceBlockHtml: string;
+  copyrightYear?: number | string;
+}): string {
+  return renderBrandedEmail({
+    brandName: parts.brandName,
+    brandTagline: "Back in stock",
+    heading: `${parts.productName} is available again`,
+    preheader: `${parts.productName} is back in stock at ${parts.brandName}.`,
+    contentHtml:
+      parts.imageBlockHtml +
+      textParagraph(
+        `Good news — the item you asked us to watch is back in stock at ${parts.brandName}. Stock can run low quickly, so grab one while it's available.`,
+      ) +
+      parts.priceBlockHtml,
+    button: { label: "View product", url: parts.productUrl },
+    footerLines: [
+      `You're receiving this because you signed up for a back-in-stock alert at ${parts.brandName}. We'll only email you once per signup.`,
+    ],
+    copyrightName: parts.brandName,
+    ...(parts.copyrightYear === undefined
+      ? {}
+      : { copyrightYear: parts.copyrightYear }),
+  });
 }
 
 function renderHtml(p: BackInStockEmailPayload): string {
   const brandName = p.brandName ?? "CareMetric Breathe";
-  return `<!DOCTYPE html><html><body style="margin:0;padding:0;background:#f7f4ec;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;">
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f7f4ec;padding:24px 0;">
-    <tr><td align="center">
-      <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;padding:32px;max-width:560px;">
-        <tr><td style="padding-bottom:16px;border-bottom:2px solid #c9a24a;">
-          <div style="font-size:13px;letter-spacing:0.08em;color:#7a5d00;text-transform:uppercase;font-weight:600;">${escapeHtml(brandName)} · Back in stock</div>
-          <div style="font-size:22px;color:#0a1f44;font-weight:700;margin-top:4px;">${escapeHtml(p.productName)} is available again</div>
-        </td></tr>
-        ${renderImageBlockHtml(p.productImageUrl ?? null)}
-        <tr><td style="padding-top:18px;color:#333;font-size:15px;line-height:1.55;">
-          Good news — the item you asked us to watch is back in stock at ${escapeHtml(brandName)}. Stock can run low quickly, so grab one while it's available.
-          ${renderPriceBlockHtml(p.priceLabel ?? null)}
-        </td></tr>
-        <tr><td align="center" style="padding-top:24px;">
-          <a href="${escapeHtml(p.productUrl)}" style="display:inline-block;background:#c9a24a;color:#0a1f44;text-decoration:none;padding:13px 26px;border-radius:8px;font-weight:700;">View product</a>
-        </td></tr>
-        <tr><td style="padding-top:28px;border-top:1px solid #eee;color:#888;font-size:12px;line-height:1.4;">
-          You're receiving this because you signed up for a back-in-stock alert at ${escapeHtml(brandName)}. We'll only email you once per signup.
-        </td></tr>
-      </table>
-    </td></tr>
-  </table></body></html>`;
+  // Chrome comes from the shared CareMetric Breathe email design system.
+  return backInStockBrandedHtml({
+    brandName,
+    productName: p.productName,
+    productUrl: p.productUrl,
+    imageBlockHtml: renderImageBlockHtml(p.productImageUrl ?? null),
+    priceBlockHtml: renderPriceBlockHtml(p.priceLabel ?? null),
+  });
 }
 
 function renderText(p: BackInStockEmailPayload): string {
@@ -136,7 +164,9 @@ function buildVariables(p: BackInStockEmailPayload): Record<string, string> {
     product_name: p.productName,
     product_name_html: escapeHtml(p.productName),
     product_url: p.productUrl,
-    product_url_html: escapeHtml(p.productUrl),
+    // Href slot: `brandedButton` only quote-escapes, so this must too —
+    // a full escapeHtml would turn `&` into `&amp;` and break parity.
+    product_url_html: p.productUrl.replace(/"/g, "&quot;"),
     price_label: p.priceLabel ?? "",
     // Tenant storefront brand (resolved by sendBackInStockEmail; the
     // neutral platform identity when unset) — same value the fallback
@@ -145,6 +175,7 @@ function buildVariables(p: BackInStockEmailPayload): Record<string, string> {
     brand_name_html: escapeHtml(brandName),
     image_block_html: renderImageBlockHtml(p.productImageUrl ?? null),
     price_block_html: renderPriceBlockHtml(p.priceLabel ?? null),
+    copyright_year: String(new Date().getFullYear()),
     // Pre-rendered conditional line for the PLAIN-TEXT body: the price on
     // its own line (with trailing newline) when present, empty otherwise —
     // renderText omits the line entirely when there is no price, and the

@@ -79,3 +79,33 @@
 # two lines after this PR merges.
 0370_low_stock_alert_state_org_pk.sql
 0370_inbound_fax_twilio_sid_nullable.sql
+
+# 2026-08-22 emergency idempotency hotfix (the case this allowlist's header
+# names): 0512_mask_size_run_corrections.sql gated every deploy on
+# `duplicate key ... mask_size_variants_model_component_size_idx`.
+#
+# Why it re-applies at all: commit 8f2106d renumbered the mask migrations
+# and rewrote their header cross-references. That is a CONTENT change, so
+# the sha256 moved and the migrator sees the file as pending even where its
+# effects already exist. Production's ledger shows the sibling
+# band-conventions migration recorded under BOTH its pre- and post-renumber
+# hashes, so the double-apply already happened once — harmlessly, because
+# that file is idempotent.
+#
+# 0512 was not. Its Amara cascade (S->P, M->S, L->M, XL->L) is correct
+# exactly once; re-run, the first statement renames the new S onto the
+# existing P and collides. Section 2 also re-added its +900 sort_order
+# offset on every pass. Both are now guarded, so the file is a verified
+# no-op wherever its effects already exist.
+#
+# A higher-numbered corrective migration — the normal remedy — cannot work
+# here: the migrator stops at the first failure, so nothing after 0512 is
+# ever reached. Editing in place is the only fix that clears the gate.
+#
+# Verified on scratch Postgres 16: full 493-migration replay from empty
+# yields a catalog byte-identical to production's; re-running 0512 over
+# that result exits 0 with an unchanged fingerprint; the pre-fix file under
+# the same conditions reproduces the exact duplicate-key error.
+#
+# Safe to delete this line after this PR merges.
+0512_mask_size_run_corrections.sql

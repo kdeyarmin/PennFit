@@ -67,6 +67,11 @@ import {
   createQueueWithDlq,
   VENDOR_SEND_QUEUE_OPTS,
 } from "../lib/queue-options";
+import {
+  BREATHE_COLORS,
+  renderBrandedEmail,
+  textParagraph,
+} from "@workspace/resupply-email";
 
 type OrderRow = Database["public"]["Tables"]["orders"]["Row"];
 
@@ -152,19 +157,23 @@ function composeDigestEmail(opts: {
       ? `      <p>&hellip;and ${totalCount - rows.length} more. Run the ` +
         `<code>/admin/orders</code> failed-status filter for the complete list.</p>`
       : "";
-  const html = `<!doctype html>
-<html>
-  <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 640px; margin: 0 auto;">
-    <h2 style="color: #001f3f;">${totalCount} order ${
+  // Chrome comes from the shared CareMetric Breathe email design system.
+  const html = renderBrandedEmail({
+    brandTagline: "Operations",
+    heading: `${totalCount} order ${
       totalCount === 1 ? "confirmation" : "confirmations"
-    } failed in the last ${windowHours}h</h2>
-    <p style="color: #444;">${escapeHtml(introText)}</p>
-    <ul style="font-family: monospace; line-height: 1.7;">
+    } failed in the last ${windowHours}h`,
+    preheader: introText,
+    contentHtml: [
+      textParagraph(introText),
+      `<ul style="margin:0 0 16px;padding-left:22px;font-family:Menlo,Consolas,monospace;font-size:13px;line-height:1.7;color:${BREATHE_COLORS.body};">
 ${listHtml}
-    </ul>
-${overflowHtml}
-  </body>
-</html>`;
+</ul>`,
+      overflowHtml,
+    ]
+      .filter(Boolean)
+      .join("\n"),
+  });
 
   return { to: recipient, subject, html, text };
 }

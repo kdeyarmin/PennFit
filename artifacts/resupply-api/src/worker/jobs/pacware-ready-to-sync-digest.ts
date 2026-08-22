@@ -44,6 +44,11 @@ import {
   VENDOR_SEND_QUEUE_OPTS,
 } from "../lib/queue-options";
 import { getCompanyInfo } from "../../lib/company-info.js";
+import {
+  infoPanel,
+  renderBrandedEmail,
+  textParagraph,
+} from "@workspace/resupply-email";
 
 export const PACWARE_DIGEST_JOB = "pacware.ready-to-sync-digest";
 
@@ -101,14 +106,26 @@ function composeDigestEmail(opts: {
     `gap between "patient said yes" and "supplies shipped".\n\n` +
     `Action: open /admin/pacware → Sync to PacWare → verify the preview → ` +
     `download the resupply-due CSV → import into PacWare.`;
-  const html = `<!doctype html>
-<html>
-  <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 640px; margin: 0 auto;">
-    <h2 style="color: #001f3f;">${readyCount} confirmed resupply ${noun} ready to sync to PacWare</h2>
-    <p style="color: #444;">Nothing ships until the CSV is imported into PacWare, so this is the gap between &ldquo;patient said yes&rdquo; and &ldquo;supplies shipped&rdquo;.</p>
-    <p style="color: #444;">Action: open <code>/admin/pacware</code> &rarr; Sync to PacWare &rarr; verify the preview &rarr; download the resupply-due CSV &rarr; import into PacWare.</p>
-  </body>
-</html>`;
+  // Chrome comes from the shared CareMetric Breathe email design system —
+  // operator mail gets the same identity as patient mail.
+  const html = renderBrandedEmail({
+    // The subject is tenant-scoped, so the wordmark must be too — otherwise
+    // a non-seed tenant's digest shows two different identities.
+    brandName: practiceName,
+    brandTagline: "Operations",
+    heading: `${readyCount} confirmed resupply ${noun} ready to sync to PacWare`,
+    preheader: `${readyCount} confirmed ${noun} are waiting on a PacWare import.`,
+    contentHtml: [
+      textParagraph(
+        "Nothing ships until the CSV is imported into PacWare, so this is the gap between \u201cpatient said yes\u201d and \u201csupplies shipped\u201d.",
+      ),
+      infoPanel({
+        title: "Action",
+        tone: "warning",
+        html: "Open <strong>/admin/pacware</strong> &rarr; Sync to PacWare &rarr; verify the preview &rarr; download the resupply-due CSV &rarr; import into PacWare.",
+      }),
+    ].join("\n"),
+  });
   return { to: recipient, subject, html, text: body };
 }
 

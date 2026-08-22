@@ -29,9 +29,12 @@ vi.mock("@workspace/resupply-db", () => ({
 // The error classes are declared INSIDE the factories — vi.mock is hoisted
 // above any top-level declarations, so referencing an outer class throws.
 const sendEmailMock = vi.hoisted(() => vi.fn(async () => undefined));
-vi.mock("@workspace/resupply-email", () => {
+vi.mock("@workspace/resupply-email", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("@workspace/resupply-email")>();
   class EmailConfigError extends Error {}
   return {
+    ...actual,
     createSendgridClient: () => ({ sendEmail: sendEmailMock }),
     EmailConfigError,
   };

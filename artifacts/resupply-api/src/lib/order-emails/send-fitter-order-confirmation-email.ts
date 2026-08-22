@@ -28,7 +28,17 @@
 // received the order — the confirmation email is a comfort signal
 // on top of that. The route calls this best-effort.
 
-import { EmailApiError, EmailConfigError } from "@workspace/resupply-email";
+import {
+  EmailApiError,
+  EmailConfigError,
+  BREATHE_COLORS,
+  escapeHtml,
+  infoPanel,
+  paragraph,
+  renderBrandedEmail,
+  subheading,
+  textParagraph,
+} from "@workspace/resupply-email";
 
 import { createTenantSendgridClient } from "../email/tenant-sender.js";
 import {
@@ -64,15 +74,6 @@ export interface SendFitterOrderConfirmationResult {
   delivered: boolean;
   error?: string;
   messageId?: string;
-}
-
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
 }
 
 function publicBaseUrl(override?: string): string {
@@ -146,50 +147,47 @@ export async function sendFitterOrderConfirmationEmail(
     `—The ${brandName} team`,
   ].join("\n");
 
-  const html = `<!doctype html>
-<html><body style="margin:0;padding:0;background:#f6f7fb;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#1a1f36;">
-  <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="padding:24px 0;">
-    <tr><td align="center">
-      <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="560" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.06);">
-        <tr><td style="background:#0f1d3a;color:#ffffff;padding:20px 28px;">
-          <p style="margin:0;font-size:12px;opacity:0.7;text-transform:uppercase;letter-spacing:0.08em;">Order received</p>
-          <h1 style="margin:6px 0 0;font-size:22px;font-weight:600;">Reference ${escapeHtml(input.orderReference)}</h1>
-        </td></tr>
-        <tr><td style="padding:24px 28px;">
-          <p style="margin:0 0 12px;font-size:15px;line-height:1.5;">${greeting}</p>
-          <p style="margin:0 0 16px;font-size:14px;line-height:1.55;color:#3c4458;">
-            Thanks — we received your CPAP mask order and a real human will pick it up within one business day.
-          </p>
-          <div style="margin:0 0 18px;padding:14px 16px;border-radius:8px;background:#0f1d3a08;">
-            <p style="margin:0;font-size:12px;color:#5a6478;text-transform:uppercase;letter-spacing:0.06em;">Selected mask</p>
-            <p style="margin:4px 0 0;font-size:16px;font-weight:600;color:#1a1f36;">${escapeHtml(maskLine)}</p>
-            ${
-              sizeLine
-                ? `<p style="margin:6px 0 0;font-size:13px;color:#3c4458;">${escapeHtml(sizeLine)}</p>`
-                : ""
-            }
-          </div>
-          <p style="margin:0 0 8px;font-size:13px;font-weight:600;color:#1a1f36;">What happens next</p>
-          <ol style="margin:0 0 18px;padding:0 0 0 20px;font-size:13px;line-height:1.6;color:#3c4458;">
-            <li>We verify your insurance benefits. (Within 1 business day.)</li>
-            <li>We coordinate the prescription with your physician.</li>
-            <li>We ship the mask once both are squared away &mdash; you&apos;ll get a separate email with tracking when it leaves our warehouse.</li>
-          </ol>
-          <p style="margin:0 0 18px;font-size:13px;line-height:1.55;color:#3c4458;">
-            You don&apos;t need to do anything yet. If we hit a snag with insurance or the prescription, we&apos;ll reach out before charging anything.
-          </p>
-          <a href="${escapeHtml(accountUrl)}" style="display:inline-block;background:#0f1d3a;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:8px;font-size:14px;font-weight:600;">Track in my account</a>
-          <p style="margin:18px 0 0;font-size:12px;color:#8b95a9;">
-            Reply to this email with questions &mdash; a real human picks it up.
-          </p>
-        </td></tr>
-        <tr><td style="padding:16px 28px 24px;border-top:1px solid #eef0f5;font-size:12px;color:#8b95a9;">
-          The ${escapeHtml(brandName)} team
-        </td></tr>
-      </table>
-    </td></tr>
-  </table>
-</body></html>`;
+  // Chrome comes from the shared CareMetric Breathe email design system.
+  const html = renderBrandedEmail({
+    brandName,
+    brandTagline: "Order received",
+    heading: `Reference ${input.orderReference}`,
+    // Subject is deliberately generic ("Order received — <ref>"), and the
+    // preheader shows next to it on lock screens — so it must not name the
+    // mask. The selection stays inside the opened email.
+    preheader: `We received your order and will pick it up within one business day.`,
+    contentHtml: [
+      paragraph(greeting),
+      textParagraph(
+        "Thanks — we received your CPAP mask order and a real human will pick it up within one business day.",
+      ),
+      infoPanel({
+        title: "Selected mask",
+        html:
+          `<div style="font-size:16px;font-weight:600;color:${BREATHE_COLORS.ink};">${escapeHtml(
+            maskLine,
+          )}</div>` +
+          (sizeLine
+            ? `<div style="margin-top:6px;font-size:13px;">${escapeHtml(sizeLine)}</div>`
+            : ""),
+      }),
+      subheading("What happens next"),
+      `<ol style="margin:0 0 18px;padding-left:20px;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.6;color:${BREATHE_COLORS.body};">
+<li style="margin:0 0 6px;">We verify your insurance benefits. (Within 1 business day.)</li>
+<li style="margin:0 0 6px;">We coordinate the prescription with your physician.</li>
+<li style="margin:0;">We ship the mask once both are squared away &mdash; you&#39;ll get a separate email with tracking when it leaves our warehouse.</li>
+</ol>`,
+      textParagraph(
+        "You don't need to do anything yet. If we hit a snag with insurance or the prescription, we'll reach out before charging anything.",
+      ),
+    ].join("\n"),
+    button: { label: "Track in my account", url: accountUrl },
+    footerLines: [
+      "Reply to this email with questions — a real human picks it up.",
+      `The ${brandName} team`,
+    ],
+    copyrightName: brandName,
+  });
 
   try {
     const result = await client.sendEmail({
