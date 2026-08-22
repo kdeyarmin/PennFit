@@ -166,6 +166,18 @@ export async function captureToQuestionnaire(
   await page.getByTestId("button-capture").waitFor({ state: "visible" });
   await page.waitForTimeout(800);
   await page.getByTestId("button-capture").click({ timeout: 10_000 });
+  // The stubbed capture reads as farther than the coached arm's-length
+  // window (the fixture's 12.8 px iris sits below the px/mm distance
+  // band), so /measure shows the distance-retake hint and HOLDS instead
+  // of auto-advancing — navigating away 2.6 s after offering a retake
+  // took the choice away right as it was offered. Continue explicitly,
+  // as a patient would. When the stub never took (bundled build) the
+  // button never appears and the URL wait below settles the skip.
+  try {
+    await page.getByTestId("measure-continue").click({ timeout: 15_000 });
+  } catch {
+    /* no hold — either auto-advance ran or the stub didn't take */
+  }
   try {
     await page.waitForURL(/\/questionnaire/, { timeout: 15_000 });
     return true;
