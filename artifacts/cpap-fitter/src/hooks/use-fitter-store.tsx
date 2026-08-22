@@ -84,11 +84,21 @@ interface FitterState {
    * /questionnaire, /results, /order) refuse to render until the email
    * is set, so the email backs every recommendation the patient sees.
    * `emailConsent` is the OPTIONAL marketing opt-in — it does not gate
-   * the flow (see useFitterEmailGate in App.tsx); its only consumer is
+   * the flow (see useFitterConsentGate in App.tsx); its only consumer is
    * the marketing-gated completion ping in results.tsx.
    */
   email: string | null;
   emailConsent: boolean;
+  /**
+   * Whether the patient actually SUBMITTED the /consent step — the
+   * affirmative camera/biometric checkbox, not merely having an email on
+   * file. The two are distinct: a staff invite carries a known email, and
+   * prefilling it must never stand in for the patient's own consent to
+   * use their camera. Set ONLY by the consent page's Continue handler
+   * (which requires the checkbox), and it is what gates every
+   * camera-bearing route — see useFitterConsentGate in App.tsx.
+   */
+  cameraConsentGiven: boolean;
   /**
    * Signed token from a staff-initiated AI-fitter invite
    * (`/fitter-invite?t=…`). When present, the /results page transmits
@@ -140,6 +150,9 @@ interface FitterContextType extends FitterState {
   setCapturedFrames: (frames: CapturedFrame[] | null) => void;
   setChosenMask: (mask: ChosenMask | null) => void;
   setEmailConsent: (email: string, consent: boolean) => void;
+  /** Record that the patient submitted /consent (the camera/biometric
+   *  checkbox). Called only from that page's Continue handler. */
+  setCameraConsentGiven: () => void;
   setInviteToken: (token: string | null) => void;
   /** Re-anchor the entry channel when a NEW invite resolves — see the
    *  implementation note in the provider. */
@@ -352,6 +365,18 @@ export function FitterProvider({ children }: { children: ReactNode }) {
       return false;
     }
   });
+  // Deliberately its own key rather than inferred from `email`: a
+  // patient mid-flow when this shipped has an email but no flag, and
+  // re-showing them the consent step is the safe direction.
+  const [cameraConsentGiven, setCameraConsentGivenState] = useState<boolean>(
+    () => {
+      try {
+        return sessionStorage.getItem("fitter_camera_consent") === "1";
+      } catch {
+        return false;
+      }
+    },
+  );
 
   // Staff-invite token. Persisted in sessionStorage so it survives the
   // multi-page fitter flow (and a mid-flow refresh) and is still
@@ -486,6 +511,15 @@ export function FitterProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const setCameraConsentGiven = () => {
+    setCameraConsentGivenState(true);
+    try {
+      sessionStorage.setItem("fitter_camera_consent", "1");
+    } catch (e) {
+      console.error("Failed to persist fitter camera consent", e);
+    }
+  };
+
   const setInviteToken = (token: string | null) => {
     setInviteTokenState(token);
     try {
@@ -598,6 +632,11 @@ export function FitterProvider({ children }: { children: ReactNode }) {
     setMultiframeCaptureState(false);
     setEmail(null);
     setEmailConsentState(false);
+    // A different patient (a new invite in this tab, a shared kiosk)
+    // must give their OWN camera consent — never inherit the last
+    // patient's. `resetForNewFitting` deliberately keeps it: that is the
+    // same patient re-scanning within one consented session.
+    setCameraConsentGivenState(false);
     setInviteTokenState(null);
     // Clear the in-memory channel along with its storage key below — a
     // later fitting in the same tab must not inherit this one's channel.
@@ -609,6 +648,7 @@ export function FitterProvider({ children }: { children: ReactNode }) {
       sessionStorage.removeItem("fitter_multiframe");
       sessionStorage.removeItem("fitter_email");
       sessionStorage.removeItem("fitter_email_consent");
+      sessionStorage.removeItem("fitter_camera_consent");
       sessionStorage.removeItem("fitter_invite_token");
       sessionStorage.removeItem("fitter_entry_point");
     } catch {
@@ -630,6 +670,7 @@ export function FitterProvider({ children }: { children: ReactNode }) {
         chosenMask,
         email,
         emailConsent,
+        cameraConsentGiven,
         inviteToken,
         entryPoint,
         storagePersisted,
@@ -644,6 +685,7 @@ export function FitterProvider({ children }: { children: ReactNode }) {
         setCapturedFrames,
         setChosenMask,
         setEmailConsent,
+        setCameraConsentGiven,
         setInviteToken,
         setEntryPoint,
         reset,

@@ -190,6 +190,74 @@ describe("getActiveContraindications — catalog advisories actually fire", () =
     ).toHaveLength(0);
   });
 
+  it("respects each advisory's own threshold, not just the band", () => {
+    // The band only says "15 or above", so an advisory the patient
+    // cannot be shown to exceed must NOT fire: the Pilairo Q and Nova
+    // Micro carry "Pressures above 25 cmH₂O" and are rated to 25, and
+    // firing for a patient prescribed 16 crushed a perfectly suitable
+    // mask by the 0.15 contraindication multiplier.
+    const farAbove = maskFixture({
+      contraindications: ["Pressures above 25 cmH₂O"],
+    });
+    expect(
+      getActiveContraindications(
+        farAbove,
+        answers({ cpapPressureSetting: "high" }),
+      ),
+    ).toHaveLength(0);
+
+    // One cmH₂O above the band floor is still unproven — 16 sits inside
+    // the same "high" band as 15.
+    const justAbove = maskFixture({
+      contraindications: ["High pressures above 16 cmH₂O — clinical advisory"],
+    });
+    expect(
+      getActiveContraindications(
+        justAbove,
+        answers({ cpapPressureSetting: "high" }),
+      ),
+    ).toHaveLength(0);
+
+    // An advisory with no number is qualitative: "high pressures" is
+    // exactly what the high band reports, so it still fires.
+    const unnumbered = maskFixture({
+      contraindications: ["High pressures"],
+    });
+    expect(
+      getActiveContraindications(
+        unnumbered,
+        answers({ cpapPressureSetting: "high" }),
+      ),
+    ).toHaveLength(1);
+    expect(
+      getActiveContraindications(
+        unnumbered,
+        answers({ cpapPressureSetting: "medium" }),
+      ),
+    ).toHaveLength(0);
+  });
+
+  it("never reads an unanswered pressure question as a pressure claim", () => {
+    const m = maskFixture({ contraindications: ["High pressures"] });
+    expect(
+      getActiveContraindications(
+        m,
+        answers({ cpapPressureSetting: "unknown" }),
+      ),
+    ).toHaveLength(0);
+  });
+
+  it("leaves non-threshold 'pressure' wording alone", () => {
+    // "Sensitivity to nostril pressure" (AirFit P30i) is about comfort,
+    // not therapy pressure — it must not be swept up by the branch.
+    const m = maskFixture({
+      contraindications: ["Sensitivity to nostril pressure"],
+    });
+    expect(
+      getActiveContraindications(m, answers({ cpapPressureSetting: "high" })),
+    ).toHaveLength(0);
+  });
+
   it("triggers an adhesive advisory for a sensitive-skin patient", () => {
     const m = maskFixture({
       contraindications: ["Sensitive skin reactions to adhesive"],

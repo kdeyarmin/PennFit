@@ -863,6 +863,20 @@ export function Results() {
       : topConfidencePct >= 70
         ? "moderate"
         : "low";
+  // Whether a RETAKE could plausibly help — a question only the CAPTURE
+  // can answer, since this engine's confidence never reads it.
+  //
+  // `=== "low"` is the honest trigger, NOT `!== "high"`: `aggregateFrames`
+  // forces `low` only when a frame the measurements actually rest on
+  // failed its quality gates, or confidence sank below the moderate
+  // floor. `moderate` is a PASSING capture — and it is also where a
+  // clean burst that deduped to a single still lands, however good the
+  // pixels were (the per-key single-sample cap in scan-quality.ts), so
+  // `!== "high"` would blame a pristine photo, which is the very bug
+  // this copy is being fixed for. Null signals (the probe failed, or a
+  // stale blob was rejected) count as "not weak": we don't send someone
+  // back to the camera on a guess.
+  const scanWasWeak = scanSignals?.band === "low";
 
   return (
     <div className="container max-w-4xl mx-auto px-4 py-12 animate-shimmer-in">
@@ -914,9 +928,17 @@ export function Results() {
             </Button>
             <p className="text-xs text-muted-foreground max-w-md mx-auto">
               {confidenceBand === "low"
-                ? // A LOW match must not be sold as solid — say plainly that
-                  // the scan is the weak link and a retake is the fix.
-                  "This match is a rough guide only — the scan didn't give us enough to be sure. A fresh photo in even light usually makes a real difference."
+                ? // A LOW match must not be sold as solid. But WHY it is
+                  // low decides what to tell them: this engine's
+                  // confidence is questionnaire weights × facial fit ×
+                  // contraindication/pressure penalties — it never reads
+                  // the scan at all. Blaming the capture unconditionally
+                  // sent patients whose photo was perfect into a retake
+                  // loop that could not move the number. Only the scan
+                  // signals know whether a retake is worth their time.
+                  scanWasWeak
+                  ? "This match is a rough guide only, and the photo we measured from was borderline. A fresh photo in even light usually makes a real difference."
+                  : "This match is a rough guide only, and it reflects how the available masks suit your answers more than anything about your photo. Your provider can confirm the fit in person."
                 : "Optional — these recommendations are solid and you can order with confidence below. A retake can sharpen the fit if you have a moment."}
             </p>
           </div>

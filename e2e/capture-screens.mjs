@@ -140,6 +140,9 @@ if (!FIT_INVITE_TOKEN) {
       sessionStorage.setItem("fitter_answers", JSON.stringify(a));
       sessionStorage.setItem("fitter_email", "demo@example.com");
       sessionStorage.setItem("fitter_email_consent", "0");
+      // The camera gate keys on this, not on the email — see
+      // useFitterConsentGate in App.tsx.
+      sessionStorage.setItem("fitter_camera_consent", "1");
       sessionStorage.setItem("fitter_invite_token", t);
     },
     [MEASUREMENTS, SCAN, ANSWERS, FIT_INVITE_TOKEN],

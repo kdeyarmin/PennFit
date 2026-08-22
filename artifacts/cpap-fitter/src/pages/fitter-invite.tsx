@@ -159,11 +159,17 @@ export function FitterInvite() {
   const handleStart = (email: string | null) => {
     track("fitter_invite_started");
     if (email) {
-      // Known patient — prefill the email gate so /consent only asks for
-      // the checkbox. Marketing consent stays FALSE here: granting it
-      // for them would auto-enroll every invited patient in the nurture
-      // campaign without consent; the optional opt-in is theirs to check
-      // on /consent.
+      // Known patient — prefill the email so /consent only asks for the
+      // checkbox. This is a PREFILL and nothing more: the camera gate
+      // keys on `cameraConsentGiven`, which only /consent's Continue
+      // handler sets, so an invite carrying an email can no longer walk
+      // a patient past the disclosure they never saw
+      // (useFitterConsentGate in App.tsx).
+      //
+      // Marketing consent stays FALSE here: granting it for them would
+      // auto-enroll every invited patient in the nurture campaign
+      // without consent; the optional opt-in is theirs to check on
+      // /consent.
       setEmailConsent(email, false);
     }
     // EVERY invitee goes through /consent — including known-email ones.

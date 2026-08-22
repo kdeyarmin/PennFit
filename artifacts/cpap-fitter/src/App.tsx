@@ -754,11 +754,22 @@ const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
  * the redirect tick.
  */
 /**
- * Email gate that fronts every fitter step. The `/consent` page stores
- * the email when the patient clicks Continue, so "email present" means
- * "the consent step was completed"; a patient who deep-links into
- * `/capture` (or refreshes a tab whose sessionStorage was cleared)
- * gets bounced back here.
+ * Consent gate that fronts every fitter step.
+ *
+ * Keyed on `cameraConsentGiven` — set ONLY by the /consent page's
+ * Continue handler, which requires the affirmative camera/biometric
+ * checkbox. It used to be `Boolean(email)`, on the reasoning that the
+ * consent page is what stores the email, so "email present" implied
+ * "consent submitted". That inference broke the moment anything else
+ * stored an email first: a staff invite carries a KNOWN email, and
+ * /fitter-invite prefills it on Start, so an invited patient was
+ * treated as consented before they had seen the disclosure — free to
+ * type /capture (or press Back/Forward out of /consent) straight into
+ * `getUserMedia` with the checkbox never ticked.
+ *
+ * The email is still required alongside it: it is how the
+ * recommendation is delivered, and a rehydrate that lost it should
+ * re-ask rather than proceed.
  *
  * Deliberately does NOT require `emailConsent`: that flag is the
  * OPTIONAL marketing opt-in checkbox, which the consent page does not
@@ -767,9 +778,9 @@ const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
  * marketing email into a silent /consent redirect loop. The flag's
  * only consumer is the marketing-gated completion ping in results.tsx.
  */
-function useFitterEmailGate(): boolean {
-  const { email } = useFitterStore();
-  return Boolean(email);
+function useFitterConsentGate(): boolean {
+  const { email, cameraConsentGiven } = useFitterStore();
+  return cameraConsentGiven && Boolean(email);
 }
 
 /**
@@ -801,7 +812,7 @@ function GuardedConsent() {
 
 function GuardedCapture() {
   const invited = useFitterInviteGate();
-  const consented = useFitterEmailGate();
+  const consented = useFitterConsentGate();
   if (!invited) return <Redirect to="/fitter-invite" />;
   if (!consented) return <Redirect to="/consent" />;
   return <Capture />;
@@ -810,7 +821,7 @@ function GuardedCapture() {
 function GuardedMeasure() {
   const { capturedImage, measurements } = useFitterStore();
   const invited = useFitterInviteGate();
-  const consented = useFitterEmailGate();
+  const consented = useFitterConsentGate();
   if (!invited) return <Redirect to="/fitter-invite" />;
   if (!consented) return <Redirect to="/consent" />;
   // See canStayOnMeasure for the invariant. The non-obvious case is the
@@ -827,7 +838,7 @@ function GuardedMeasure() {
 function GuardedQuestionnaire() {
   const { measurements } = useFitterStore();
   const invited = useFitterInviteGate();
-  const consented = useFitterEmailGate();
+  const consented = useFitterConsentGate();
   if (!invited) return <Redirect to="/fitter-invite" />;
   if (!consented) return <Redirect to="/consent" />;
   if (!measurements) return <Redirect to="/capture" replace />;
@@ -836,7 +847,7 @@ function GuardedQuestionnaire() {
 function GuardedResults() {
   const { measurements } = useFitterStore();
   const invited = useFitterInviteGate();
-  const consented = useFitterEmailGate();
+  const consented = useFitterConsentGate();
   if (!invited) return <Redirect to="/fitter-invite" />;
   if (!consented) return <Redirect to="/consent" />;
   if (!measurements) return <Redirect to="/" />;
@@ -896,7 +907,7 @@ function AccountHashRedirect({ hash }: { hash: "insights" | "orders" }) {
 function GuardedOrder() {
   const { chosenMask, measurements } = useFitterStore();
   const invited = useFitterInviteGate();
-  const consented = useFitterEmailGate();
+  const consented = useFitterConsentGate();
   if (!invited) return <Redirect to="/fitter-invite" />;
   if (!consented) return <Redirect to="/consent" />;
   // An order without sizing data is a fulfillment problem for the DME

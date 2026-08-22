@@ -46,6 +46,7 @@ export function Consent() {
     email: storedEmail,
     emailConsent: storedEmailConsent,
     setEmailConsent,
+    setCameraConsentGiven,
     storagePersisted,
   } = useFitterStore();
   const [storageNoticeDismissed, setStorageNoticeDismissed] = useState(false);
@@ -83,6 +84,12 @@ export function Consent() {
     if (!canContinue) return;
     const normalizedEmail = trimmedEmail.toLowerCase();
     setEmailConsent(normalizedEmail, emailOptIn);
+    // THE consent event. `canContinue` above requires the affirmative
+    // camera/biometric checkbox, so this line — and only this line — is
+    // what unlocks every camera-bearing route (useFitterConsentGate in
+    // App.tsx). An invite prefilling a known email must never stand in
+    // for it.
+    setCameraConsentGiven();
     track("consent_given");
     // Fire-and-forget the server-side record so the opt-in row exists
     // even for patients who don't make it to /order. We deliberately

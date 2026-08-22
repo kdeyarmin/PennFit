@@ -776,6 +776,25 @@ export function maskHasMagneticHardware(mask: MaskEntry): boolean {
 }
 
 /**
+ * The LOWEST prescribed pressure each questionnaire band can represent,
+ * in cmH₂O — the only thing a coarse band tells us for certain about a
+ * patient. `unknown` yields null: an unanswered question must never be
+ * read as a pressure claim in either direction.
+ *
+ * Mirrors the band boundaries `toLegacyAnswers` applies
+ * (cpap-fitter/src/lib/fit-profile.ts): 15+ high, 10-14 medium, <10 low.
+ */
+const PRESSURE_BAND_FLOOR_CM_H2O: Record<
+  QuestionnaireAnswers["cpapPressureSetting"],
+  number | null
+> = {
+  high: 15,
+  medium: 10,
+  low: 0,
+  unknown: null,
+};
+
+/**
  * Check if a mask is contraindicated for this patient.
  * Returns array of triggered contraindication strings, empty if none.
  */
@@ -827,12 +846,39 @@ export function getActiveContraindications(
     // max of 20, so a 20-rated pillow (AirFit P10) with an explicit
     // high-pressure advisory topped a high-pressure patient's list with
     // no penalty and no note.
+    //
+    // The advisory's OWN threshold decides, because the questionnaire
+    // only yields a coarse band: "high" means 15+, so it tells us the
+    // patient clears 15 and nothing more. Firing every "pressure …
+    // above N" advisory for that band contraindicated masks the patient
+    // is nowhere near the limit of — the Pilairo Q and Nova Micro
+    // ("Pressures above 25 cmH₂O", both rated to 25) would be crushed by
+    // the 0.15 contraindication multiplier for a patient prescribed 16.
+    // A false contraindication is its own patient harm: it steers them
+    // off a mask that fits.
+    //
+    // So an advisory fires only when the band's FLOOR already clears its
+    // threshold — i.e. when every patient in the band exceeds it. An
+    // advisory with no number ("High pressures") is qualitative and
+    // fires on the high band alone. Masks whose MECHANICAL rating can't
+    // hold the prescription are demoted independently by
+    // `pressureMultiplier` in `recommend()`, so nothing under-rated
+    // slips through on the strength of this narrowing.
     if (
       lower.includes("pressure") &&
-      (lower.includes("high") || lower.includes("above")) &&
-      answers.cpapPressureSetting === "high"
+      (lower.includes("high") || lower.includes("above"))
     ) {
-      triggered.push(contra);
+      const advisoryThreshold = /(\d+(?:\.\d+)?)/.exec(contra);
+      const bandFloor = PRESSURE_BAND_FLOOR_CM_H2O[answers.cpapPressureSetting];
+      const qualifies = advisoryThreshold
+        ? // Numbered: every patient in the band clears the threshold.
+          bandFloor !== null && bandFloor >= Number(advisoryThreshold[1])
+        : // Unnumbered ("High pressures") — qualitative, so it applies to
+          // exactly the band that reports itself as high.
+          answers.cpapPressureSetting === "high";
+      if (qualifies) {
+        triggered.push(contra);
+      }
     }
     // Adhesive-sealed masks ("Sensitive skin reactions to adhesive").
     // Previously unmatched, so a sensitive-skin patient not only escaped
