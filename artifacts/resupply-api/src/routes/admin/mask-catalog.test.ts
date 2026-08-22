@@ -276,6 +276,23 @@ describe("PATCH /admin/fitter/catalog/variants/:id — shared-row protection", (
     expect(res.status).toBe(200);
   });
 
+  it("rejects a band no face measurement can ever land in (cm-for-mm slip)", async () => {
+    // 3.2–4.1 is a coherent min<max pair, so the ordering check waves it
+    // through — but it sits entirely outside the plausibility window the
+    // engine gates measurements by, so every patient would score ~0 on
+    // the dimension and the mask would be silently de-ranked for
+    // everyone, with nothing telling the operator the band is
+    // physically unreachable.
+    db.variantOwnerOrgId = ORG_ID;
+    const res = await request(makeApp())
+      .patch(`/admin/fitter/catalog/variants/${VARIANT_ID}`)
+      .send({ noseWidthMinMm: 3.2, noseWidthMaxMm: 4.1 });
+    expect(res.status).toBe(422);
+    expect(res.body.error).toBe("implausible_band");
+    expect(res.body.message).toMatch(/centimetres/i);
+    expect(db.writes).toHaveLength(0);
+  });
+
   it("refuses a manufacturer-provenance claim without a citation", async () => {
     // Mirrors the 0495 CHECK, but as a 422 the operator can act on
     // instead of a constraint error. `fit_data_source='manufacturer'`

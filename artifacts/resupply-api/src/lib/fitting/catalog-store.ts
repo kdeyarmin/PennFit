@@ -21,7 +21,11 @@ import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../logger";
 import { resolveSizeRunBuckets } from "../size-run.js";
-import { maskCatalog, type MaskEntry } from "../../data/maskCatalog.js";
+import {
+  MAGNETIC_MASK_IDS,
+  maskCatalog,
+  type MaskEntry,
+} from "../../data/maskCatalog.js";
 import {
   computeFitAdjustments,
   tallyOutcomesByMask,
@@ -80,42 +84,11 @@ const LEGACY_INTERFACE: Record<string, InterfaceType> = {
   hybrid: "hybrid",
 };
 
-/**
- * Audited magnet flags for the static catalog, mirroring migration 0492's
- * manufacturer-sourced corrections (FDA Class I recall list, ResMed IFU,
- * Philips' 6 Sep 2022 field safety notice, Fisher & Paykel's magnet-free
- * statement). The legacy entries' marketing text is NOT a safety record:
- * four genuinely magnetic masks carry no "magnet" wording at all, and the
- * Evora Full's "magnetic-style clips" copy describes a magnet-free clasp
- * — so deriving `hasMagneticComponents` from a text match re-broke, on
- * the degraded path, both directions of the correction 0492 shipped for
- * the DB catalog. `true` = magnetic, `false` = audited magnet-free; an id
- * absent here falls back to the text heuristic, which errs toward
- * exclusion — the safe direction for an unaudited future entry.
- * `catalog-store.static.test.ts` pins these against the 0492 slug list.
- */
-const STATIC_MAGNET_OVERRIDES: Readonly<Record<string, boolean>> = {
-  // FDA Class I recall list (magnetic headgear clips).
-  "resmed-airfit-f20": true,
-  "resmed-airtouch-f20": true,
-  "resmed-airfit-f30": true,
-  "resmed-airfit-f30i": true,
-  "resmed-airfit-n20": true,
-  "resmed-airtouch-n20": true,
-  // ResMed IFU: magnets in the frame and lower headgear clips.
-  "resmed-airfit-f40": true,
-  // Philips' 6 Sep 2022 field safety notice.
-  "philips-amara-view": true,
-  "philips-dreamwear-ff": true,
-  "philips-dreamwisp": true,
-  // No manufacturer magnet statement found either way; on a safety
-  // filter an unverified exclusion is the side to err on (0492).
-  "react-health-numa-full-face": true,
-  // Fisher & Paykel state publicly that their entire range is
-  // magnet-free; the entry's "magnetic-style clips" copy is a clasp
-  // description, not a magnet.
-  "fisher-paykel-evora-full": false,
-};
+// (The audited magnetic-model list lives with the catalog itself —
+// `MAGNETIC_MASK_IDS` in data/maskCatalog.ts, mirroring migration 0492's
+// manufacturer-sourced corrections — so the degraded-path flags, the
+// legacy engine's maskHasMagneticHardware, and the patient-facing magnet
+// warnings all read ONE source and cannot drift.)
 
 /**
  * Project the built-in TypeScript catalog into the engine's shape.
@@ -198,8 +171,13 @@ export function staticCatalogAsMasks(
       } as SizeVariant;
     });
 
+    // The audited list first (marketing copy is NOT a safety record —
+    // four genuinely magnetic masks carry no "magnet" wording at all);
+    // the text heuristic stays only as belt-and-braces for a future
+    // entry added without updating the audit, where erring toward
+    // exclusion is the safe direction.
     const hasMagnets =
-      STATIC_MAGNET_OVERRIDES[e.id] ??
+      MAGNETIC_MASK_IDS.has(e.id) ||
       /magnet/i.test([e.headgearStyle, ...(e.features ?? [])].join(" "));
 
     return {

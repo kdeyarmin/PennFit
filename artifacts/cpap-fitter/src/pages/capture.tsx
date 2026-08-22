@@ -38,7 +38,8 @@ export function Capture() {
 
 function SingleFrameCapture() {
   const [, setLocation] = useLocation();
-  const { setCapturedImage, setCapturedFrames } = useFitterStore();
+  const { setCapturedImage, setCapturedFrames, clearMeasurements } =
+    useFitterStore();
   const visionHealth = useVisionRuntimeHealth();
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -261,6 +262,10 @@ function SingleFrameCapture() {
         // (e.g. guided → fallback → retake). Stale frames left in the
         // store would measure photos the patient just replaced.
         setCapturedFrames(frames);
+        // …and the previous scan's persisted numbers go with them: a
+        // reload during THIS capture's analysis must land back here, not
+        // silently resurrect the measurements being replaced.
+        clearMeasurements();
       });
       stopCamera();
       track("capture_taken", { frames: frames.length, burst: true });

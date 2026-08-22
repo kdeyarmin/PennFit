@@ -16,6 +16,7 @@
  */
 
 import {
+  MAGNETIC_MASK_IDS,
   maskCatalog,
   type MaskEntry,
   type MaskType,
@@ -761,6 +762,13 @@ function generateSummary(
 }
 
 export function maskHasMagneticHardware(mask: MaskEntry): boolean {
+  // The audited list first: four genuinely magnetic masks (F30, F40,
+  // Amara View, DreamWear FF) carry no "magnetic" marketing copy at all,
+  // so the text check alone let them through every consumer that fails
+  // closed on magnets (the chatbot's compare/find tools among them). The
+  // text check stays as belt-and-braces for entries added after the
+  // audit.
+  if (MAGNETIC_MASK_IDS.has(mask.id)) return true;
   const haystack = [mask.headgearStyle, ...mask.features]
     .join(" ")
     .toLowerCase();

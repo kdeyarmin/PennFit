@@ -124,6 +124,10 @@ interface FitterContextType extends FitterState {
     measurements: FacialMeasurements,
     scanSignals?: ScanSignalsPayload | null,
   ) => void;
+  /** Drop the previous scan's persisted measurements + signals — called
+   *  when a new capture is committed, so a reload mid-analysis can't
+   *  resurrect the scan the patient just replaced. */
+  clearMeasurements: () => void;
   updateAnswers: (answers: Partial<QuestionnaireAnswers>) => void;
   updateFitAnswers: (answers: FitAnswers) => void;
   /** Replace the WHOLE v2 answer set. The merge-based updater above can
@@ -548,6 +552,26 @@ export function FitterProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  /**
+   * Invalidate the previous scan the moment a NEW capture is committed.
+   * The photo lives in memory only, but the measurements it produced are
+   * persisted — so a reload during the retake's analysis used to lose
+   * the new photo, rehydrate the OLD measurements, and silently forward
+   * the patient with the scan they had just chosen to replace. Called at
+   * capture-commit time (not when a retake button is clicked, which
+   * would un-gate the flow behind the Back button).
+   */
+  const clearMeasurements = () => {
+    setMeasurementsState(null);
+    setScanSignalsState(null);
+    try {
+      sessionStorage.removeItem(MEASUREMENTS_STORAGE_KEY);
+      sessionStorage.removeItem(SCAN_SIGNALS_STORAGE_KEY);
+    } catch {
+      // Storage unusable — nothing was persisted, nothing to clear.
+    }
+  };
+
   /** Clear the fitting DATA but keep identity + invite context. */
   const resetForNewFitting = () => {
     setMeasurementsState(null);
@@ -610,6 +634,7 @@ export function FitterProvider({ children }: { children: ReactNode }) {
         entryPoint,
         storagePersisted,
         setMeasurements,
+        clearMeasurements,
         updateAnswers,
         updateFitAnswers,
         replaceFitAnswers,

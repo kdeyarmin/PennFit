@@ -36,9 +36,11 @@ import {
   type MeasureLandmark,
 } from "./face-measurements";
 import { PLAUSIBILITY_BOUNDS } from "./measure-flow";
+import { estimatePoseFromLandmarks, type Point2D } from "./scan-quality";
 
 /** Canonical face model vertices (mm). Index = MediaPipe landmark id. */
 const CANONICAL: Record<number, [number, number, number]> = {
+  1: [0, -11.27, 74.76], // nose tip apex (pose estimator's yaw anchor)
   4: [0, -4.63, 75.87], // nose tip
   6: [0, 24.73, 57.89], // nose bridge
   33: [-44.46, 26.64, 31.73], // left eye outer corner
@@ -82,23 +84,30 @@ const TRUTH = {
 interface ProjectOptions {
   /** Camera distance to the eye plane, mm. */
   D: number;
-  /** TRUE horizontal field of view of the simulated camera, degrees. */
+  /** TRUE field of view of the simulated camera on its LONG axis, deg. */
   fovDeg: number;
   /** Strip the z channel, simulating a runtime that emits none. */
   dropZ?: boolean;
+  /** Frame dimensions — landscape by default; swap for portrait. */
+  width?: number;
+  height?: number;
 }
 
 /**
  * Pinhole-project a set of 3D millimetre points into normalized
  * landmarks, with a MediaPipe-style z channel: relative depth on the
  * same scale as x (weak perspective about the point-set mean), negative
- * toward the camera.
+ * toward the camera. The true focal is defined on the frame's LONG axis
+ * (a physical sensor property that doesn't change when the phone
+ * rotates), so a portrait frame is genuinely the same camera held
+ * upright — the geometry the production code has to survive.
  */
 function project(
   points: Array<{ index: number; x: number; y: number; z: number }>,
-  { D, fovDeg, dropZ = false }: ProjectOptions,
+  { D, fovDeg, dropZ = false, width = WIDTH, height = HEIGHT }: ProjectOptions,
 ): MeasureLandmark[] {
-  const f = WIDTH / 2 / Math.tan(((fovDeg / 2) * Math.PI) / 180);
+  const f =
+    Math.max(width, height) / 2 / Math.tan(((fovDeg / 2) * Math.PI) / 180);
   const camZ = (p: { z: number }) => D + EYE_PLANE_Z - p.z;
   const meanCamZ = points.reduce((sum, p) => sum + camZ(p), 0) / points.length;
   // 478-length array so the iris indices land where the runtime puts
@@ -111,9 +120,9 @@ function project(
   for (const p of points) {
     const cz = camZ(p);
     out[p.index] = {
-      x: (p.x * f) / cz / WIDTH + 0.5,
-      y: (-p.y * f) / cz / HEIGHT + 0.5,
-      ...(dropZ ? {} : { z: ((cz - meanCamZ) * f) / meanCamZ / WIDTH }),
+      x: (p.x * f) / cz / width + 0.5,
+      y: (-p.y * f) / cz / height + 0.5,
+      ...(dropZ ? {} : { z: ((cz - meanCamZ) * f) / meanCamZ / width }),
     };
   }
   return out;
@@ -154,8 +163,8 @@ function canonicalScene(): Array<{
 function measureAt(opts: ProjectOptions) {
   const landmarks = project(canonicalScene(), opts);
   return extractMeasurementValues(landmarks, {
-    width: WIDTH,
-    height: HEIGHT,
+    width: opts.width ?? WIDTH,
+    height: opts.height ?? HEIGHT,
   });
 }
 
@@ -215,6 +224,49 @@ describe("end-to-end accuracy through extractMeasurementValues", () => {
           expect(
             Math.abs(errPct(values[key], TRUTH[key])),
             `${key} at D=${D} FOV=${fovDeg}`,
+          ).toBeLessThanOrEqual(7);
+        }
+      }
+    }
+  });
+
+  it("holds the same tolerance on PORTRAIT captures — the posture phones actually use", () => {
+    // The regression this pins: the focal estimate was derived from
+    // `img.width` — the sensor's SHORT axis on a portrait frame — which
+    // under-read the camera distance by ~44% and dragged nose height
+    // ~-8% (one full size bucket on the 0511 nasal bands) while pushing
+    // clamp-limited face width ~+9%. The long-axis anchor makes the
+    // estimate orientation-independent.
+    for (const D of [280, 400, 550]) {
+      const { values, depthCorrected } = measureAt({
+        D,
+        fovDeg: ASSUMED_HFOV_DEG,
+        width: HEIGHT, // 720×1280 — the same camera, held upright
+        height: WIDTH,
+      });
+      expect(depthCorrected).toBe(true);
+      for (const key of KEYS) {
+        expect(
+          Math.abs(errPct(values[key], TRUTH[key])),
+          `${key} portrait at D=${D}`,
+        ).toBeLessThanOrEqual(3.5);
+      }
+    }
+  });
+
+  it("stays bounded on portrait captures when the real FOV differs from the assumption", () => {
+    for (const fovDeg of [55, 85]) {
+      for (const D of [280, 400, 550]) {
+        const { values } = measureAt({
+          D,
+          fovDeg,
+          width: HEIGHT,
+          height: WIDTH,
+        });
+        for (const key of KEYS) {
+          expect(
+            Math.abs(errPct(values[key], TRUTH[key])),
+            `${key} portrait at D=${D} FOV=${fovDeg}`,
           ).toBeLessThanOrEqual(7);
         }
       }
@@ -345,5 +397,64 @@ describe("the /measure plausibility gate admits this face", () => {
         }
       }
     }
+  });
+});
+
+describe("geometric pose estimator calibration", () => {
+  // The estimator's yaw must come back in (approximately) TRUE degrees:
+  // every consumer — poseCorrect's cos(), MEASUREMENT_YAW_LIMIT_DEG, the
+  // 20° turn targets — is written in true-angle physics. The historical
+  // `asymmetry * 90` linearization read a true 10° turn as ~27° at arm's
+  // length, so the turn poses accepted only ~4–13° true turns and
+  // poseCorrect over-corrected vertical spans from turned frames by up
+  // to ~12%.
+  function yawedScene(trueYawDeg: number) {
+    const pts = canonicalScene();
+    // The estimator existence-checks the nose bridge (168); its value
+    // does not enter the yaw math. Midpoint of the inner eye corners.
+    pts.push({ index: 168, x: 0, y: 25.85, z: 37.58 });
+    const th = (trueYawDeg * Math.PI) / 180;
+    return pts.map((p) => ({
+      ...p,
+      x: p.x * Math.cos(th) + p.z * Math.sin(th),
+      z: -p.x * Math.sin(th) + p.z * Math.cos(th),
+    }));
+  }
+
+  it("reads true head yaw to within the perspective residual, not 2.7x it", () => {
+    for (const trueYaw of [0, 5, 10, 15, 20]) {
+      const landmarks = project(yawedScene(trueYaw), {
+        D: 400,
+        fovDeg: ASSUMED_HFOV_DEG,
+      });
+      const est = Math.abs(
+        estimatePoseFromLandmarks(landmarks as Point2D[]).yawDeg,
+      );
+      // Perspective at 40 cm inflates the orthographic inversion ~+30%
+      // — the conservative direction for every gate that EXCLUDES
+      // high-yaw frames — so the bound is that residual, not zero.
+      expect(
+        Math.abs(est - trueYaw),
+        `true ${trueYaw}° read as ${est.toFixed(1)}°`,
+      ).toBeLessThanOrEqual(Math.max(2, 0.35 * trueYaw));
+    }
+  });
+
+  it("keeps a stable sign convention across turn directions", () => {
+    // Each turn step accepts either physical direction and the coaching
+    // compares magnitudes, but requiredTurn's direction lock depends on
+    // opposite turns reading with opposite signs.
+    const one = estimatePoseFromLandmarks(
+      project(yawedScene(15), { D: 400, fovDeg: ASSUMED_HFOV_DEG }) as Point2D[],
+    ).yawDeg;
+    const other = estimatePoseFromLandmarks(
+      project(yawedScene(-15), {
+        D: 400,
+        fovDeg: ASSUMED_HFOV_DEG,
+      }) as Point2D[],
+    ).yawDeg;
+    expect(Math.sign(one)).not.toBe(Math.sign(other));
+    expect(Math.abs(one)).toBeGreaterThan(5);
+    expect(Math.abs(other)).toBeGreaterThan(5);
   });
 });

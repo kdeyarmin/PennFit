@@ -116,7 +116,8 @@ function requiredTurn(
 
 export function GuidedCapture({ onFallback }: { onFallback: () => void }) {
   const [, setLocation] = useLocation();
-  const { setCapturedImage, setCapturedFrames } = useFitterStore();
+  const { setCapturedImage, setCapturedFrames, clearMeasurements } =
+    useFitterStore();
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const captureCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -300,6 +301,10 @@ export function GuidedCapture({ onFallback }: { onFallback: () => void }) {
     flushSync(() => {
       setCapturedImage(front.dataUrl);
       setCapturedFrames(frames);
+      // Invalidate the previous scan's persisted numbers — see the
+      // single-frame page; a reload mid-analysis must not resurrect the
+      // measurements this capture replaces.
+      clearMeasurements();
     });
     stopCamera();
     track("capture_taken", { frames: frames.length, guided: true });

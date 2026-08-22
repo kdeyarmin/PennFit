@@ -66,7 +66,25 @@ const MODEL_SOURCES = [
 const BAND_SOURCES = [
   "0511_mask_fit_band_conventions.sql",
   "0512_mask_size_run_corrections.sql",
+  "0513_for_her_size_bands.sql",
 ];
+
+/**
+ * Runs that deliberately do NOT tile to the window ceiling: the model
+ * ships only the LOWER rungs of its shared cushion platform's ladder
+ * (the "For Her" subset runs — 0513). Stretching the top band to the
+ * ceiling was the defect: a face the shared platform bands at L was
+ * confidently dispensed the M cushion with inBand=true. A face above
+ * the run's top is genuinely outside every size this model ships, and
+ * the honest outcomes are "closest available size — verify in person"
+ * or a model that actually ships their size out-ranking it. Tiling is
+ * still required from the window floor to the run's own top.
+ */
+const TOP_OPEN_RUNS = new Set([
+  "resmed-airfit-f20-for-her|cushion",
+  "resmed-airfit-p10-for-her|pillow",
+  "resmed-mirage-fx-for-her|cushion",
+]);
 /**
  * Models retired outright — status='discontinued' at the MODEL level,
  * bands nulled — because the product could not be verified to exist.
@@ -390,8 +408,13 @@ describe("the size run tiles its population window with no gaps", () => {
         );
       if (spans.length === 0) continue;
       const [lo, hi] = bounds[field];
+      // A subset run's top is open by design (see TOP_OPEN_RUNS): tiling
+      // is required up to the run's own ceiling, not the window's.
+      const hiBound = TOP_OPEN_RUNS.has(key)
+        ? Math.min(hi, Math.max(...spans.map(([, b]) => b)))
+        : hi;
       const gaps: number[] = [];
-      for (let x = lo; x <= hi + 1e-9; x = Math.round((x + 0.1) * 10) / 10) {
+      for (let x = lo; x <= hiBound + 1e-9; x = Math.round((x + 0.1) * 10) / 10) {
         if (!spans.some(([a, b]) => a - 1e-9 <= x && x <= b + 1e-9))
           gaps.push(x);
       }
