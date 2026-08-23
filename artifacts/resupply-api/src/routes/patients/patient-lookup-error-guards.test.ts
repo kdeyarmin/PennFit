@@ -55,7 +55,10 @@ describe("patient-route audit logging", () => {
     );
 
     for (const route of routeFiles) {
-      const source = readFileSync(path.join(import.meta.dirname, route), "utf8");
+      const source = readFileSync(
+        path.join(import.meta.dirname, route),
+        "utf8",
+      );
       expect(source, route).not.toContain("logger.warn({ err },");
       expect(source, route).not.toContain("logger.error({ err },");
     }
