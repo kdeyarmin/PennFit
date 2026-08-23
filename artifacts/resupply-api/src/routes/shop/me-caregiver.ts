@@ -39,6 +39,7 @@ import { z } from "zod";
 import { logAudit } from "@workspace/resupply-audit";
 import { getOrgScopedClient } from "@workspace/resupply-db";
 
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import { requireSignedIn } from "../../middlewares/requireSignedIn";
 
@@ -194,7 +195,10 @@ router.put("/shop/me/caregiver", requireSignedIn, async (req, res) => {
     ip: req.ip ?? null,
     userAgent: req.get("user-agent") ?? null,
   }).catch((err) => {
-    logger.warn({ err }, "shop_customer.caregiver write: audit failed");
+    logger.warn(
+      { err: redactDbErr(err) },
+      "shop_customer.caregiver write: audit failed",
+    );
   });
 
   res.json({
@@ -253,7 +257,10 @@ router.delete("/shop/me/caregiver", requireSignedIn, async (req, res) => {
     ip: req.ip ?? null,
     userAgent: req.get("user-agent") ?? null,
   }).catch((err) => {
-    logger.warn({ err }, "shop_customer.caregiver.revoke: audit failed");
+    logger.warn(
+      { err: redactDbErr(err) },
+      "shop_customer.caregiver.revoke: audit failed",
+    );
   });
 
   res.json({ caregiver: null });

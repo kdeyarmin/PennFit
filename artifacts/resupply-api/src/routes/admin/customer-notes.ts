@@ -26,6 +26,7 @@ import { z } from "zod";
 import { logAudit } from "@workspace/resupply-audit";
 import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
@@ -106,7 +107,10 @@ router.get(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "shop_customer.notes.list audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "shop_customer.notes.list audit write failed",
+      );
     });
 
     res.json({
@@ -196,7 +200,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "shop_customer.note.create audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "shop_customer.note.create audit write failed",
+      );
     });
 
     res.status(201).json({

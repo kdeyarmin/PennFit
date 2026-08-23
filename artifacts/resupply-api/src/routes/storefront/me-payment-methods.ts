@@ -33,6 +33,7 @@ import {
   setAutopayEnabled,
   toAutopayStatusView,
 } from "../../lib/billing/patient-autopay";
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import { readStripeConfigOrNull } from "../../lib/stripe/config";
 import { getOrCreateStripeCustomer } from "../../lib/stripe/customer";
@@ -223,7 +224,10 @@ router.post(
       });
       stripeCustomerId = mapping.stripeCustomerId;
     } catch (err) {
-      logger.warn({ err }, "me-payment-methods: stripe customer ensure failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "me-payment-methods: stripe customer ensure failed",
+      );
       res.status(502).json({ error: "stripe_error" });
       return;
     }

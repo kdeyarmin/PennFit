@@ -39,6 +39,7 @@ import {
 } from "@workspace/resupply-telecom";
 
 import { createTenantSendgridClient } from "../../lib/email/tenant-sender.js";
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import { resolveTenantSmsClientOptions } from "../../lib/messaging/tenant-telecom";
 import {
@@ -396,7 +397,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "fitter.invite.sent audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "fitter.invite.sent audit write failed",
+      );
     });
 
     res.status(201).json({
@@ -545,7 +549,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "fitter.invite.claimed audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "fitter.invite.claimed audit write failed",
+      );
     });
 
     res.json({
@@ -610,7 +617,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "fitter.invite.released audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "fitter.invite.released audit write failed",
+      );
     });
 
     res.json({ id: invite.id, released: true });
@@ -771,7 +781,10 @@ router.post(
           ip: req.ip ?? null,
           userAgent: req.get("user-agent") ?? null,
         }).catch((err) => {
-          logger.warn({ err }, "patient.onboarding.enroll audit write failed");
+          logger.warn(
+            { err: redactDbErr(err) },
+            "patient.onboarding.enroll audit write failed",
+          );
         });
       }
     }
@@ -807,7 +820,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "fitter.invite.attached audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "fitter.invite.attached audit write failed",
+      );
     });
 
     res.json({
@@ -914,7 +930,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "fitter.invite.resent audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "fitter.invite.resent audit write failed",
+      );
     });
 
     res.json({
@@ -990,7 +1009,10 @@ router.delete(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "fitter.invite.revoked audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "fitter.invite.revoked audit write failed",
+      );
     });
 
     res.json({ id: invite.id, status: "revoked" });

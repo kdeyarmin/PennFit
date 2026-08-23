@@ -22,6 +22,7 @@ import { logAudit } from "@workspace/resupply-audit";
 import type { OrgScopedClient } from "@workspace/resupply-db";
 
 import { isFeatureEnabled } from "../feature-flags";
+import { redactDbErr } from "../redact-db-err";
 import { logger } from "../logger";
 import {
   ObjectNotFoundError,
@@ -157,7 +158,10 @@ export async function autofileSignedPacketPdf(
         size_bytes: built.pdf.byteLength,
       },
     }).catch((err) => {
-      logger.warn({ err }, "patient_packet.chart_filed audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "patient_packet.chart_filed audit write failed",
+      );
     });
 
     return { filed: true };

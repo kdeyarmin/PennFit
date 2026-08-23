@@ -22,6 +22,7 @@ import { logAudit } from "@workspace/resupply-audit";
 
 import { runInsuranceDiscovery } from "../../lib/billing/insurance-discovery";
 import { isFeatureEnabled } from "../../lib/feature-flags";
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import { requirePermission } from "../../middlewares/requireAdmin";
 
@@ -145,7 +146,10 @@ router.post(
         ip: req.ip ?? null,
         userAgent: req.get("user-agent") ?? null,
       }).catch((err) => {
-        logger.warn({ err }, "insurance.discovery audit write failed");
+        logger.warn(
+          { err: redactDbErr(err) },
+          "insurance.discovery audit write failed",
+        );
       });
       if (result.status === "found" || result.status === "none") {
         res.json(result);

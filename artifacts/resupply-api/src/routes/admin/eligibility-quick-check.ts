@@ -21,6 +21,7 @@ import {
   PayerProfileNotFoundError,
   quickCheckEligibility,
 } from "../../lib/billing/eligibility-quick-check";
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import { requirePermission } from "../../middlewares/requireAdmin";
 
@@ -121,7 +122,10 @@ router.post(
         ip: req.ip ?? null,
         userAgent: req.get("user-agent") ?? null,
       }).catch((err) => {
-        logger.warn({ err }, "eligibility.quick_check audit write failed");
+        logger.warn(
+          { err: redactDbErr(err) },
+          "eligibility.quick_check audit write failed",
+        );
       });
       if (result.status === "parsed") {
         res.json(result);

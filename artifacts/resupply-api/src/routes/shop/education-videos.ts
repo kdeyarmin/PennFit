@@ -11,6 +11,7 @@ import {
   groupActiveVideosByTopic,
   type EducationVideo,
 } from "../../lib/storefront/education-videos";
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import { requestHost } from "../../lib/request-host";
 import { resolveOrgIdByHost } from "../../lib/tenant-branding";
@@ -69,7 +70,7 @@ router.get("/shop/education-videos", async (req, res) => {
     );
     res.json({ groups: groupActiveVideosByTopic(videos) });
   } catch (err) {
-    logger.warn({ err }, "shop/education-videos: threw");
+    logger.warn({ err: redactDbErr(err) }, "shop/education-videos: threw");
     res.json({ groups: [] });
   }
 });

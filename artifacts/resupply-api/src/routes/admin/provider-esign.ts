@@ -30,6 +30,7 @@ import {
 
 import { getAuthDeps } from "../../lib/auth-deps";
 import { buildInviteHelpAttachments } from "../../lib/help-docs";
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import {
   appendSignatureEvent,
@@ -1025,7 +1026,10 @@ router.post(
         });
         emailSent = true;
       } catch (err) {
-        logger.warn({ err }, "provider signature reminder email failed");
+        logger.warn(
+          { err: redactDbErr(err) },
+          "provider signature reminder email failed",
+        );
       }
     }
     await appendSignatureEvent(orgId, {

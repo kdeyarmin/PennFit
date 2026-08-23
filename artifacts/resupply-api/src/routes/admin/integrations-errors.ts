@@ -20,6 +20,7 @@ import {
 
 import { getIntegrationAdaptersForOrg } from "../../lib/integrations/registry";
 import { persistTherapyNights } from "../../lib/integrations/persist-nights";
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
@@ -179,7 +180,10 @@ router.post(
           parsedSnap.data.recentNights,
         );
       } catch (err) {
-        logger.warn({ err }, "errors.retry persistTherapyNights failed");
+        logger.warn(
+          { err: redactDbErr(err) },
+          "errors.retry persistTherapyNights failed",
+        );
       }
       succeeded += 1;
     }

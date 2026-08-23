@@ -32,6 +32,7 @@ import { z } from "zod";
 import { logAudit } from "@workspace/resupply-audit";
 import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import {
   ObjectNotFoundError,
@@ -379,7 +380,10 @@ router.post("/shop/me/documents", requireSignedIn, async (req, res) => {
     ip: req.ip ?? null,
     userAgent: req.get("user-agent") ?? null,
   }).catch((err) => {
-    logger.warn({ err }, "patient.document.upload audit write failed");
+    logger.warn(
+      { err: redactDbErr(err) },
+      "patient.document.upload audit write failed",
+    );
   });
 
   res.status(201).json({ ok: true, id: docId });
@@ -511,7 +515,10 @@ router.get("/shop/me/documents/:docId", requireSignedIn, async (req, res) => {
     ip: req.ip ?? null,
     userAgent: req.get("user-agent") ?? null,
   }).catch((err) => {
-    logger.warn({ err }, "patient.document.download audit write failed");
+    logger.warn(
+      { err: redactDbErr(err) },
+      "patient.document.download audit write failed",
+    );
   });
 
   try {
@@ -640,7 +647,10 @@ router.delete(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "patient.document.remove audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "patient.document.remove audit write failed",
+      );
     });
 
     res.status(200).json({ ok: true });

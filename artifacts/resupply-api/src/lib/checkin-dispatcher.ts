@@ -54,6 +54,7 @@ import {
 import { isOutsideSmsSendWindow } from "./comm-prefs";
 import { createTenantSendgridClient } from "./email/tenant-sender.js";
 import { isFeatureEnabled } from "./feature-flags";
+import { redactDbErr } from "./redact-db-err";
 import { logger } from "./logger";
 import {
   resolveTenantSmsClientOptions,
@@ -832,7 +833,10 @@ async function buildClients(
     sg = await createTenantSendgridClient(orgId);
   } catch (err) {
     if (!(err instanceof EmailConfigError)) {
-      logger.warn({ err }, "sendgrid client construction failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "sendgrid client construction failed",
+      );
     }
   }
 
@@ -867,7 +871,10 @@ async function buildClients(
       };
     } catch (err) {
       if (!(err instanceof TwilioConfigError)) {
-        logger.warn({ err }, "twilio sms client construction failed");
+        logger.warn(
+          { err: redactDbErr(err) },
+          "twilio sms client construction failed",
+        );
       }
     }
   }
@@ -891,7 +898,10 @@ async function buildClients(
       };
     } catch (err) {
       if (!(err instanceof TwilioConfigError)) {
-        logger.warn({ err }, "twilio voice client construction failed");
+        logger.warn(
+          { err: redactDbErr(err) },
+          "twilio voice client construction failed",
+        );
       }
     }
   }

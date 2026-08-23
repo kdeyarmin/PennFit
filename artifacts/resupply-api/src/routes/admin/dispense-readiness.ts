@@ -27,6 +27,7 @@ import {
   DISPENSE_PROMPT_VERSION,
   reviewDispenseReadiness,
 } from "../../lib/billing/dispense-readiness-reviewer";
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import {
@@ -165,7 +166,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "dispense_readiness.review audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "dispense_readiness.review audit write failed",
+      );
     });
     void publishEvent({
       orgId: req.orgId,

@@ -16,6 +16,7 @@ import {
 import { resolveBillingIdentity } from "../../lib/billing/identity-resolver";
 import { renderStatementPdf } from "../../lib/billing/statement-pdf";
 import { persistStatementPdfCopy } from "../../lib/billing/statement-storage";
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import { publishEvent } from "../../lib/webhooks/publisher";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
@@ -284,7 +285,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "billing_statement.generate audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "billing_statement.generate audit write failed",
+      );
     });
     void publishEvent({
       orgId: req.orgId,
@@ -438,7 +442,10 @@ router.patch(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "patient.statement_delivery.update audit failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "patient.statement_delivery.update audit failed",
+      );
     });
 
     res.json({

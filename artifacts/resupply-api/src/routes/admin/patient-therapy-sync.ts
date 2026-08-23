@@ -46,6 +46,7 @@ import {
 import { getIntegrationAdaptersForOrg } from "../../lib/integrations/registry";
 import { persistTherapyNights } from "../../lib/integrations/persist-nights";
 import { normalizeSnapshotForPersistence } from "../../worker/jobs/therapy-integrations-nightly-sync";
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
@@ -289,7 +290,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "patient.therapy_nights.sync audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "patient.therapy_nights.sync audit write failed",
+      );
     });
 
     res.json({ imported, sinceDate, source });

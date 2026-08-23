@@ -38,6 +38,7 @@ import { getOrgScopedClient } from "@workspace/resupply-db";
 import { classifyEdiPayload } from "@workspace/resupply-integrations-office-ally";
 
 import { resolveClearinghouse } from "../../lib/billing/identity-resolver";
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
@@ -252,7 +253,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "office_ally.manual_ack_upload audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "office_ally.manual_ack_upload audit write failed",
+      );
     });
 
     res.status(201).json({

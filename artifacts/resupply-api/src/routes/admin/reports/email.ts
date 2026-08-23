@@ -26,6 +26,7 @@ import {
   EmailConfigError,
 } from "@workspace/resupply-email";
 
+import { redactDbErr } from "../../../lib/redact-db-err";
 import { logger } from "../../../lib/logger";
 import { renderQboCsv } from "../../../lib/quickbooks-export";
 import { adminRateLimit } from "../../../middlewares/admin-rate-limit";
@@ -299,7 +300,10 @@ export function registerEmailRoute(router: IRouter): void {
         ip: req.ip ?? null,
         userAgent: req.get("user-agent") ?? null,
       }).catch((err) => {
-        logger.warn({ err }, "report.emailed audit write failed");
+        logger.warn(
+          { err: redactDbErr(err) },
+          "report.emailed audit write failed",
+        );
       });
 
       res.status(202).json({

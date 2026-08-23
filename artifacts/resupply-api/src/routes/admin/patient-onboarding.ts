@@ -25,6 +25,7 @@ import { logAudit } from "@workspace/resupply-audit";
 import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
 import { dispatchDueCheckins } from "../../lib/checkin-dispatcher";
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import { requirePermission } from "../../middlewares/requireAdmin";
 import { rateLimit } from "../../middlewares/rate-limit";
@@ -219,7 +220,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "patient.onboarding.enroll audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "patient.onboarding.enroll audit write failed",
+      );
     });
 
     res.status(201).json({
@@ -296,7 +300,10 @@ router.patch(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "patient.onboarding.status audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "patient.onboarding.status audit write failed",
+      );
     });
 
     res.json({ id: row.id, status: bodyParsed.data.status });

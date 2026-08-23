@@ -34,6 +34,7 @@ import { z } from "zod";
 import { logAudit } from "@workspace/resupply-audit";
 import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
+import { redactDbErr } from "../lib/redact-db-err";
 import { logger } from "../lib/logger";
 import { RATE_LIMITS } from "../lib/rate-limits-config";
 
@@ -205,7 +206,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, `integration.webhook.${config.prefix} audit failed`);
+      logger.warn(
+        { err: redactDbErr(err) },
+        `integration.webhook.${config.prefix} audit failed`,
+      );
     });
 
     res.status(202).json({ ok: true });

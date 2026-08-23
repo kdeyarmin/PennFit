@@ -30,6 +30,7 @@ import { z } from "zod";
 import { logAudit } from "@workspace/resupply-audit";
 import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import { autoFileSignedFax } from "../../lib/fax/auto-file-signed";
 import { extractFaxFields } from "../../lib/inbound-fax/ocr";
@@ -310,7 +311,10 @@ router.get(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "fax.inbound_media.admin_download audit failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "fax.inbound_media.admin_download audit failed",
+      );
     });
 
     try {
@@ -428,7 +432,7 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "fax.inbound.ocr audit failed");
+      logger.warn({ err: redactDbErr(err) }, "fax.inbound.ocr audit failed");
     });
 
     res.json({
@@ -534,7 +538,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "fax.inbound.manual_auto_file audit failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "fax.inbound.manual_auto_file audit failed",
+      );
     });
 
     res.json({
@@ -661,7 +668,10 @@ router.patch(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "fax.inbound.triage audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "fax.inbound.triage audit write failed",
+      );
     });
 
     res.status(200).json({ id: params.data.id, changed: true });

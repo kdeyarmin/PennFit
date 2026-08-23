@@ -35,6 +35,7 @@ import {
   isLegalCampaignTransition,
   type CampaignStatus,
 } from "../../lib/bulk-campaigns/dispatch-helpers";
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
@@ -316,7 +317,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "bulk_campaign.draft.create audit failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "bulk_campaign.draft.create audit failed",
+      );
     });
 
     res.status(201).json({
@@ -663,7 +667,10 @@ function makeTransitionHandler(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, `${plan.auditAction} audit failed`);
+      logger.warn(
+        { err: redactDbErr(err) },
+        `${plan.auditAction} audit failed`,
+      );
     });
 
     res.status(200).json({ id: params.data.id, status: plan.to });
@@ -865,7 +872,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "bulk_campaign.audience.regenerated audit failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "bulk_campaign.audience.regenerated audit failed",
+      );
     });
 
     res.json({ ok: true, totals: resolved.totals });

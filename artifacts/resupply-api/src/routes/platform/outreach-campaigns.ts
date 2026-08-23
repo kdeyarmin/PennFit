@@ -28,6 +28,7 @@ import {
   resolvePlatformAudience,
   type PlatformAudienceKind,
 } from "../../lib/platform-outreach/resolve-audience";
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import {
   adminReadRateLimiter,
@@ -183,7 +184,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) =>
-      logger.warn({ err }, "platform_email_campaign.draft.create audit failed"),
+      logger.warn(
+        { err: redactDbErr(err) },
+        "platform_email_campaign.draft.create audit failed",
+      ),
     );
 
     res.status(201).json({ id: campaign.id, totals: resolved.totals });
@@ -406,7 +410,12 @@ function makeTransitionHandler(
       metadata: { from_status: existing.status, to_status: plan.to },
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
-    }).catch((err) => logger.warn({ err }, `${plan.auditAction} audit failed`));
+    }).catch((err) =>
+      logger.warn(
+        { err: redactDbErr(err) },
+        `${plan.auditAction} audit failed`,
+      ),
+    );
 
     res.json({ id: params.data.id, status: plan.to });
   };

@@ -1673,7 +1673,12 @@ function NavItem({
   hint,
   isActive,
   badgeCount,
-}: NavLink & { isActive: boolean; badgeCount?: number }) {
+  onClick,
+}: NavLink & {
+  isActive: boolean;
+  badgeCount?: number;
+  onClick?: () => void;
+}) {
   // The nav-item-active / nav-item-idle utilities live in admin.css —
   // active state is navy fill + gold leading accent, idle hovers to a
   // surface-3 wash with a faint gold leading hint. We add a leading
@@ -1688,6 +1693,7 @@ function NavItem({
         isActive ? "nav-item-active" : "nav-item-idle"
       }`}
       aria-current={isActive ? "page" : undefined}
+      onClick={onClick}
       data-testid={`admin-nav-${href.replace(/\//g, "-").replace(/^-/, "")}`}
     >
       <Icon className="h-4 w-4 shrink-0 opacity-90" aria-hidden="true" />
@@ -1948,20 +1954,15 @@ function SidebarNavBody({
                         {section}
                       </p>
                     ) : null}
-                    <div onClick={onItemClick}>
-                      <NavItem
-                        href={href}
-                        label={link.label}
-                        icon={link.icon}
-                        hint={link.hint}
-                        isActive={link === activeSection}
-                        badgeCount={sectionBadgeCount(
-                          link,
-                          counts,
-                          permissions,
-                        )}
-                      />
-                    </div>
+                    <NavItem
+                      href={href}
+                      label={link.label}
+                      icon={link.icon}
+                      hint={link.hint}
+                      isActive={link === activeSection}
+                      badgeCount={sectionBadgeCount(link, counts, permissions)}
+                      onClick={onItemClick}
+                    />
                   </Fragment>
                 );
               })}

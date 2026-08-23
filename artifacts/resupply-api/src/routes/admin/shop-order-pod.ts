@@ -12,6 +12,7 @@ import { z } from "zod";
 import { logAudit } from "@workspace/resupply-audit";
 import { getOrgScopedClient } from "@workspace/resupply-db";
 
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import { ObjectAlreadyOwnedError } from "../../lib/object-storage/objectAcl";
 import {
@@ -101,7 +102,10 @@ router.patch(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "shop.order.pod.uploaded audit failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "shop.order.pod.uploaded audit failed",
+      );
     });
     res.json({ ok: true });
   },

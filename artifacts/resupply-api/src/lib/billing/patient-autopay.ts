@@ -23,6 +23,7 @@ import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 import type Stripe from "stripe";
 
 import { localDateIso, practiceTimezone } from "../billing-date";
+import { redactDbErr } from "../redact-db-err";
 import { logger } from "../logger";
 import {
   getStripeClient,
@@ -151,7 +152,10 @@ export async function createAutopaySetupSession(
     );
   } catch (err) {
     // Log the Error object so pino's serializer redacts message/stack.
-    logger.warn({ err }, "patient-autopay: setup session create failed");
+    logger.warn(
+      { err: redactDbErr(err) },
+      "patient-autopay: setup session create failed",
+    );
     return { error: "stripe_error" };
   }
   if (!session.url) return { error: "stripe_no_url" };

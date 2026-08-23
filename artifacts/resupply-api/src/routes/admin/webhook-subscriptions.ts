@@ -14,6 +14,7 @@ import { z } from "zod";
 import { logAudit } from "@workspace/resupply-audit";
 import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import { assertSafeOutboundUrlSync } from "../../lib/safe-outbound";
 import { VALID_EVENT_TYPE_SET } from "../../lib/webhooks/event-catalog";
@@ -142,7 +143,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "webhook_subscription.create audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "webhook_subscription.create audit write failed",
+      );
     });
     // ONE TIME response with the signing secret. The admin UI must
     // copy it now — the GET endpoint never returns it again.

@@ -24,6 +24,7 @@ import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 type SubstituteUpdate =
   Database["resupply"]["Tables"]["shop_sku_substitutes"]["Update"];
 
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import {
@@ -171,7 +172,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "resupply.backorder.marked audit failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "resupply.backorder.marked audit failed",
+      );
     });
     res.status(201).json({ id: row.id });
   },
@@ -239,7 +243,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "resupply.backorder.cleared audit failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "resupply.backorder.cleared audit failed",
+      );
     });
     res.json({ ok: true });
   },
@@ -354,7 +361,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "resupply.substitute.created audit failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "resupply.substitute.created audit failed",
+      );
     });
     res.status(201).json({ id: row.id });
   },
@@ -427,7 +437,10 @@ router.delete(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "resupply.substitute.deleted audit failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "resupply.substitute.deleted audit failed",
+      );
     });
     res.json({ ok: true });
   },

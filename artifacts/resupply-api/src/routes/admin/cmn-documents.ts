@@ -26,6 +26,7 @@ import {
 } from "../../lib/billing/cmn-forms";
 import { resolveBillingIdentity } from "../../lib/billing/identity-resolver";
 import { getDocumentSupplierName } from "../../lib/company-info";
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
@@ -390,7 +391,10 @@ router.get(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "cmn_document.pdf_rendered audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "cmn_document.pdf_rendered audit write failed",
+      );
     });
   },
 );

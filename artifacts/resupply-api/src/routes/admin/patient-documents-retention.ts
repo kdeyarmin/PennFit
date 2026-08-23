@@ -18,6 +18,7 @@ import { z } from "zod";
 import { logAudit } from "@workspace/resupply-audit";
 import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import { bucketRetention } from "../../lib/patient-documents/retention";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
@@ -224,7 +225,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "patient_documents.legal_hold audit failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "patient_documents.legal_hold audit failed",
+      );
     });
 
     res.json({ ok: true, legalHold: parsed.data.hold });
@@ -381,7 +385,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "patient_documents.destroyed audit failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "patient_documents.destroyed audit failed",
+      );
     });
 
     res.json({ ok: true, destroyedAt: nowIso });

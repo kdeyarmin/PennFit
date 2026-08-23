@@ -11,6 +11,7 @@ import { logAudit } from "@workspace/resupply-audit";
 import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { runPecosSync } from "../../worker/jobs/pecos-sync";
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import {
@@ -99,7 +100,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "providers_pecos.manual_sync audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "providers_pecos.manual_sync audit write failed",
+      );
     });
     res.json({ ok: true, stats });
   },

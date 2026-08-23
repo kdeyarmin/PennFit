@@ -18,6 +18,7 @@ import {
   suggestIcd10,
 } from "../../lib/clinical/ai-icd10-suggester";
 import { logger } from "../../lib/logger";
+import { redactDbErr } from "../../lib/redact-db-err";
 import { adminWriteRateLimiter } from "../../middlewares/admin-rate-limit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
 
@@ -117,7 +118,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "sleep_study.ai_icd10_suggest audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "sleep_study.ai_icd10_suggest audit write failed",
+      );
     });
 
     res.json({
@@ -183,7 +187,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "sleep_study.ai_icd10_accept audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "sleep_study.ai_icd10_accept audit write failed",
+      );
     });
     res.json({ ok: true });
   },

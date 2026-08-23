@@ -252,6 +252,11 @@ describe("AppShell — SidebarNavBody renders collapsible group toggles", () => 
     expect(APPSHELL_SRC).toContain("group.items.map((link, idx) =>");
   });
 
+  it("attaches the drawer-close handler to the link instead of a mouse-only wrapper", () => {
+    expect(APPSHELL_SRC).toContain("onClick={onItemClick}");
+    expect(APPSHELL_SRC).not.toContain("<div onClick={onItemClick}>");
+  });
+
   it("renders a sub-section sub-header when an item starts a new section", () => {
     // Large groups are broken into labelled clusters via the optional
     // `section` tag on each NavLink; the body emits a muted sub-header

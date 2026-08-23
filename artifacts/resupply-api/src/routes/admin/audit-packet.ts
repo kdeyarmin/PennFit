@@ -43,6 +43,7 @@ import {
 import { resolveBillingIdentity } from "../../lib/billing/identity-resolver";
 import { signAuditPacketFaxToken } from "../../lib/fax-document-token";
 import { isFeatureEnabled } from "../../lib/feature-flags";
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import { resolveTenantFaxFrom } from "../../lib/messaging/tenant-telecom";
 import {
@@ -150,7 +151,7 @@ async function fetchObjectBytes(
     return { bytes: Buffer.from(arrayBuf), contentType };
   } catch (err) {
     if (err instanceof ObjectNotFoundError) return null;
-    logger.warn({ err }, "audit_packet.object_fetch_failed");
+    logger.warn({ err: redactDbErr(err) }, "audit_packet.object_fetch_failed");
     return null;
   }
 }
@@ -174,7 +175,7 @@ async function persistPacketPdf(
       visibility: "private",
     });
   } catch (err) {
-    logger.warn({ err }, "audit_packet.persist_failed");
+    logger.warn({ err: redactDbErr(err) }, "audit_packet.persist_failed");
     return null;
   }
 }
@@ -366,7 +367,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "audit_packet.faxed audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "audit_packet.faxed audit write failed",
+      );
     });
 
     res.json({ ok: true, vendorRef });
@@ -667,7 +671,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "audit_packet.generated audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "audit_packet.generated audit write failed",
+      );
     });
 
     res.setHeader("Content-Type", "application/pdf");

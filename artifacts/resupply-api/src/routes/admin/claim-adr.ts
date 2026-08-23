@@ -27,6 +27,7 @@ import {
 
 import { extractAdrFromFax } from "../../lib/adr/extract-from-fax";
 import { isFeatureEnabled } from "../../lib/feature-flags";
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import { ObjectStorageService } from "../../lib/object-storage/objectStorage";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
@@ -296,7 +297,9 @@ router.post(
       },
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
-    }).catch((err) => logger.warn({ err }, "adr.created audit write failed"));
+    }).catch((err) =>
+      logger.warn({ err: redactDbErr(err) }, "adr.created audit write failed"),
+    );
 
     res.status(201).json({ id: adr.id });
   },
@@ -352,7 +355,7 @@ router.post(
       });
       res.json(extraction);
     } catch (err) {
-      logger.warn({ err }, "adr.suggest_from_fax failed");
+      logger.warn({ err: redactDbErr(err) }, "adr.suggest_from_fax failed");
       res.json({ status: "failed", reason: "fetch_error" });
     }
   },
@@ -591,7 +594,9 @@ router.patch(
       },
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
-    }).catch((err) => logger.warn({ err }, "adr.updated audit write failed"));
+    }).catch((err) =>
+      logger.warn({ err: redactDbErr(err) }, "adr.updated audit write failed"),
+    );
 
     res.json({ ok: true });
   },

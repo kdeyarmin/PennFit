@@ -42,6 +42,7 @@ import {
 
 import { getAuthDeps } from "../../lib/auth-deps";
 import { buildInviteHelpAttachments } from "../../lib/help-docs";
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import { resolveBrandingByOrgId } from "../../lib/tenant-branding";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
@@ -415,7 +416,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "patient.portal.invite_issued audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "patient.portal.invite_issued audit write failed",
+      );
     });
 
     res.status(201).json({
@@ -566,7 +570,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "patient.portal.invite_resent audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "patient.portal.invite_resent audit write failed",
+      );
     });
 
     res.json({
@@ -640,7 +647,10 @@ router.delete(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "patient.portal.invite_revoked audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "patient.portal.invite_revoked audit write failed",
+      );
     });
 
     res.json({ portalStatus: "not_invited" });

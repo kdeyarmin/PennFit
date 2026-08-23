@@ -16,6 +16,7 @@ import { logAudit } from "@workspace/resupply-audit";
 import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { redactDbErr } from "../../lib/redact-db-err";
 import { adminWriteRateLimiter } from "../../middlewares/admin-rate-limit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
 
@@ -68,12 +69,20 @@ router.post(
 
     // Verify patient exists. We could rely on the FK to fire a 23503
     // here, but a pre-check yields a cleaner 404 vs. 500 mapping.
-    const { data: patient } = await supabase
+    const { data: patient, error: patientError } = await supabase
       .from("patients")
       .select("id")
       .eq("id", patientId)
       .limit(1)
       .maybeSingle();
+    if (patientError) {
+      logger.error(
+        { err: redactDbErr(patientError), patientId },
+        "patient.note.create patient lookup failed",
+      );
+      res.status(500).json({ error: "query_failed" });
+      return;
+    }
     if (!patient) {
       res.status(404).json({ error: "not_found" });
       return;
@@ -103,7 +112,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "patient.note.create audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "patient.note.create audit write failed",
+      );
     });
 
     res.status(201).json({

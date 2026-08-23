@@ -31,6 +31,7 @@ import {
 } from "@workspace/resupply-db";
 
 import { getAuthDeps } from "../../lib/auth-deps";
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import { resolveCompanyProfile } from "../../lib/patient-packet/company";
 import {
@@ -809,7 +810,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "patient_packet.sent audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "patient_packet.sent audit write failed",
+      );
     });
 
     res.status(201).json({
@@ -908,7 +912,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "patient_packet.sent (contact) audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "patient_packet.sent (contact) audit write failed",
+      );
     });
 
     res.status(201).json({
@@ -1130,7 +1137,10 @@ router.patch(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "patient_packet.updated audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "patient_packet.updated audit write failed",
+      );
     });
 
     res.json({ status: packet.status, documentCount });
@@ -1238,7 +1248,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "patient_packet.resent audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "patient_packet.resent audit write failed",
+      );
     });
 
     res.json({ status: "sent", emailSent, smsSent, signingLink: link });
@@ -1310,7 +1323,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "patient_packet.voided audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "patient_packet.voided audit write failed",
+      );
     });
 
     res.json({ status: "voided" });
@@ -1429,7 +1445,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "patient_packet_preset.created audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "patient_packet_preset.created audit write failed",
+      );
     });
 
     res.status(201).json({ id: created.id });
@@ -1471,7 +1490,10 @@ router.delete(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "patient_packet_preset.deleted audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "patient_packet_preset.deleted audit write failed",
+      );
     });
 
     res.json({ ok: true });

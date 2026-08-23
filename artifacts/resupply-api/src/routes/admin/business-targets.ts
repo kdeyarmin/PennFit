@@ -16,6 +16,7 @@ import { logAudit } from "@workspace/resupply-audit";
 import { getOrgScopedClient } from "@workspace/resupply-db";
 import { parsePeriodRange, computeGoalPace } from "@workspace/resupply-domain";
 
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
@@ -235,7 +236,10 @@ router.put(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "business_target.upsert audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "business_target.upsert audit write failed",
+      );
     });
 
     res.json(mapTarget(row as Record<string, unknown>));

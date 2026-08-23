@@ -47,6 +47,7 @@ import {
   type PatientColumnMapping,
 } from "@workspace/resupply-integrations-pacware";
 
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import {
   adminReadRateLimiter,
@@ -380,7 +381,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "patient.pacware_sync audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "patient.pacware_sync audit write failed",
+      );
     });
 
     // If any write failed, return a non-2xx. The idempotency middleware only
@@ -466,7 +470,10 @@ router.get(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "patient.pacware_export audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "patient.pacware_export audit write failed",
+      );
     });
 
     res.setHeader("Content-Type", "text/csv; charset=utf-8");
@@ -806,7 +813,10 @@ router.put(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "pacware.settings_update audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "pacware.settings_update audit write failed",
+      );
     });
 
     res.json({ autoSync: parsed.data.autoSync });

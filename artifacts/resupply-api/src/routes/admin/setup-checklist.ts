@@ -17,6 +17,7 @@ import { z } from "zod";
 import { logAudit } from "@workspace/resupply-audit";
 import { getOrgScopedClient } from "@workspace/resupply-db";
 
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import {
   adminRateLimit,
@@ -168,7 +169,10 @@ router.put(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "setup_checklist.upsert audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "setup_checklist.upsert audit write failed",
+      );
     });
 
     res.json({ stepKey, status });

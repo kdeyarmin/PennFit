@@ -40,6 +40,7 @@ import {
 import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import { getAuthDeps } from "../../lib/auth-deps";
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import { adminWriteRateLimiter } from "../../middlewares/admin-rate-limit";
 import { requirePlatformAdmin } from "../../middlewares/requirePlatformAdmin";
@@ -158,7 +159,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: null,
     }).catch((err) => {
-      logger.warn({ err }, "platform: impersonation-start audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "platform: impersonation-start audit write failed",
+      );
     });
 
     res

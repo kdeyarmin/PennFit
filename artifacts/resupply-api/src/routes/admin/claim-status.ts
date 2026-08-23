@@ -21,6 +21,7 @@ import {
   ClaimNotForPatientError,
   submitClaimStatusCheck,
 } from "../../lib/billing/claim-status-checker";
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import {
   adminRateLimit,
@@ -66,7 +67,10 @@ router.post(
         ip: req.ip ?? null,
         userAgent: req.get("user-agent") ?? null,
       }).catch((err) => {
-        logger.warn({ err }, "claim_status.check_submitted audit write failed");
+        logger.warn(
+          { err: redactDbErr(err) },
+          "claim_status.check_submitted audit write failed",
+        );
       });
       res.status(201).json({
         id: result.claimStatusCheckId,

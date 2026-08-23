@@ -48,6 +48,7 @@ import { z } from "zod";
 import { logAudit } from "@workspace/resupply-audit";
 import { getOrgScopedClient } from "@workspace/resupply-db";
 
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import {
   getTrackingById,
@@ -209,7 +210,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "signature_tracking.returned audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "signature_tracking.returned audit write failed",
+      );
     });
 
     res.status(200).json({ status: "returned_signed" });
@@ -332,7 +336,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "signature_tracking.canceled audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "signature_tracking.canceled audit write failed",
+      );
     });
 
     res.status(200).json({ status: "canceled" });

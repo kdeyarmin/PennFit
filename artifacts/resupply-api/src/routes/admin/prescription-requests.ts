@@ -78,6 +78,7 @@ import {
   TelnyxApiError,
 } from "@workspace/resupply-telecom";
 
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import {
   type PrescriptionRequestInputs,
@@ -296,7 +297,10 @@ router.post(
       });
       trackingCode = reg.trackingCode;
     } catch (err) {
-      logger.warn({ err }, "prescription_request.tracking_register failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "prescription_request.tracking_register failed",
+      );
     }
 
     await logAudit({
@@ -313,7 +317,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "prescription_request.created audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "prescription_request.created audit write failed",
+      );
     });
 
     res.status(201).json({ id: inserted.id, trackingCode });
@@ -617,7 +624,10 @@ router.get(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "prescription_request.previewed audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "prescription_request.previewed audit write failed",
+      );
     });
   },
 );
@@ -731,7 +741,10 @@ async function dispatchPacketFax(
       packet.id,
       "fax",
     ).catch((err) => {
-      logger.warn({ err }, "prescription_request.tracking_sent failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "prescription_request.tracking_sent failed",
+      );
     });
     await logAudit({
       action: isResend
@@ -945,7 +958,10 @@ router.post(
       "prescription_request",
       params.data.id,
     ).catch((err) => {
-      logger.warn({ err }, "prescription_request.tracking_returned failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "prescription_request.tracking_returned failed",
+      );
     });
     await logAudit({
       action: "prescription_request.signed",
@@ -957,7 +973,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "prescription_request.signed audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "prescription_request.signed audit write failed",
+      );
     });
     res.status(200).json({ status: "signed" });
   },
@@ -1012,7 +1031,10 @@ router.post(
       "prescription_request",
       params.data.id,
     ).catch((err) => {
-      logger.warn({ err }, "prescription_request.tracking_canceled failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "prescription_request.tracking_canceled failed",
+      );
     });
     await logAudit({
       action: "prescription_request.void",
@@ -1024,7 +1046,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "prescription_request.void audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "prescription_request.void audit write failed",
+      );
     });
     res.status(200).json({ status: "void" });
   },

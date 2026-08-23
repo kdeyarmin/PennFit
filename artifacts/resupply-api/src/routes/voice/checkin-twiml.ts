@@ -32,6 +32,7 @@ import { requireTwilioSignature } from "@workspace/resupply-telecom";
 import { resolveOrgIdForSignedRecord } from "../../lib/storefront/signed-link-org";
 import { resolveBrandingByOrgId } from "../../lib/tenant-branding";
 import { voiceScriptForDay } from "../../lib/checkin-dispatcher";
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import {
   readTwilioWebhookAuthTokenOrNull,
@@ -276,7 +277,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "voice.checkin_press audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "voice.checkin_press audit write failed",
+      );
     });
 
     res

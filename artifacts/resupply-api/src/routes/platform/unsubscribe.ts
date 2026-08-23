@@ -17,6 +17,7 @@ import {
   ipKeyGenerator,
 } from "express-rate-limit";
 
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import { verifyPlatformUnsubscribeToken } from "../../lib/platform-outreach/unsubscribe-token";
 
@@ -82,7 +83,10 @@ router.get(
         .eq("id", verified.contactId);
       if (error) throw error;
     } catch (err) {
-      logger.error({ err }, "platform-unsubscribe: failed to flag contact");
+      logger.error(
+        { err: redactDbErr(err) },
+        "platform-unsubscribe: failed to flag contact",
+      );
       res
         .status(500)
         .type("html")

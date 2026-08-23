@@ -28,6 +28,7 @@ import {
   buildEdiPayloadForSubmission,
   executeOfficeAllyBatchSubmit,
 } from "../../lib/billing/office-ally-batch";
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import {
@@ -1158,7 +1159,10 @@ router.patch(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "office_ally_submission.update audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "office_ally_submission.update audit write failed",
+      );
     });
 
     res.json({ ok: true });
