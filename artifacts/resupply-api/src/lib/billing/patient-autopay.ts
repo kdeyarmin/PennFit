@@ -151,7 +151,7 @@ export async function createAutopaySetupSession(
       accountOptions,
     );
   } catch (err) {
-    // Log the Error object so pino's serializer redacts message/stack.
+    // Log only the sanitized error shape to avoid leaking raw DB details.
     logger.warn(
       { err: redactDbErr(err) },
       "patient-autopay: setup session create failed",
