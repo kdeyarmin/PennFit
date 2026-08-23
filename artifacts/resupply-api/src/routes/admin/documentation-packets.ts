@@ -22,6 +22,7 @@ import {
   type PacketSection,
 } from "../../lib/billing/documentation-packet";
 import { resolveBillingIdentity } from "../../lib/billing/identity-resolver";
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
@@ -310,7 +311,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "documentation_packet.generate audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "documentation_packet.generate audit write failed",
+      );
     });
 
     res.setHeader("Content-Type", "application/pdf");

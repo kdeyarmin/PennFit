@@ -23,6 +23,7 @@ import {
   isUuidCursorId,
   parseCompositeCursor,
 } from "../../lib/cursor";
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
@@ -252,7 +253,10 @@ router.patch(
         ip: req.ip ?? null,
         userAgent: req.get("user-agent") ?? null,
       }).catch((err) => {
-        logger.warn({ err }, "shop_product_question.answer audit write failed");
+        logger.warn(
+          { err: redactDbErr(err) },
+          "shop_product_question.answer audit write failed",
+        );
       });
 
       res.json({ id, status: "answered", answeredAt: nowIso });
@@ -313,7 +317,10 @@ router.patch(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "shop_product_question.reject audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "shop_product_question.reject audit write failed",
+      );
     });
 
     res.json({ id, status: "rejected", moderatedAt: nowIso });

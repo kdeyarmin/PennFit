@@ -22,6 +22,7 @@ import { Router, type IRouter } from "express";
 import { logAudit } from "@workspace/resupply-audit";
 import { resolveSeedOrgId } from "@workspace/resupply-db";
 
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import {
   getStripeClient,
@@ -115,7 +116,7 @@ router.post(
         ip: req.ip ?? null,
         userAgent: null,
       }).catch((err) => {
-        logger.warn({ err }, "catalog-seed: audit failed");
+        logger.warn({ err: redactDbErr(err) }, "catalog-seed: audit failed");
       });
 
       res.json(result);

@@ -15,6 +15,7 @@ import {
 } from "@workspace/resupply-domain";
 
 import { runCappedRentalAdvance } from "../../lib/billing/capped-rental-advancer";
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import {
@@ -207,7 +208,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "capped_rental_cycle.create audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "capped_rental_cycle.create audit write failed",
+      );
     });
     res.status(201).json({ id: data.id });
   },

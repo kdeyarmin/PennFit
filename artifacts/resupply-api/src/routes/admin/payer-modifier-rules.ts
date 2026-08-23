@@ -19,6 +19,7 @@ import {
   cappedRentalRotationForLine,
   mergeLineModifiers,
 } from "../../lib/billing/claim-builder";
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import {
@@ -284,7 +285,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "payer_modifier_rule.create audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "payer_modifier_rule.create audit write failed",
+      );
     });
     res.status(201).json({ id: data.id });
   },
@@ -361,7 +365,10 @@ router.patch(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "payer_modifier_rule.update audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "payer_modifier_rule.update audit write failed",
+      );
     });
     res.json({ ok: true });
   },

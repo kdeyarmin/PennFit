@@ -20,6 +20,7 @@ import { z } from "zod";
 import { logAudit } from "@workspace/resupply-audit";
 import { getOrgScopedClient, type Database } from "@workspace/resupply-db";
 
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import { requirePermission } from "../../middlewares/requireAdmin";
 import { rateLimit } from "../../middlewares/rate-limit";
@@ -284,7 +285,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "patient.therapy_link.created audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "patient.therapy_link.created audit write failed",
+      );
     });
 
     res.status(201).json({ link: toResponse(inserted) });
@@ -383,7 +387,10 @@ router.patch(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "patient.therapy_link.updated audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "patient.therapy_link.updated audit write failed",
+      );
     });
 
     res.json({ link: toResponse(updated) });
@@ -443,7 +450,10 @@ router.delete(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "patient.therapy_link.revoked audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "patient.therapy_link.revoked audit write failed",
+      );
     });
 
     res.json({ link: toResponse(updated) });

@@ -18,6 +18,7 @@ import {
   hydrateCompanyInfoCache,
   invalidateCompanyInfoCache,
 } from "../../lib/company-info";
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import {
@@ -357,7 +358,10 @@ router.put(
     // saved name without a restart. Fail-soft — the save itself succeeded.
     invalidateCompanyInfoCache();
     await hydrateCompanyInfoCache().catch((err) => {
-      logger.warn({ err }, "company info re-hydration after save failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "company info re-hydration after save failed",
+      );
     });
 
     await logAudit({
@@ -370,7 +374,10 @@ router.put(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "dme_organization.upsert audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "dme_organization.upsert audit write failed",
+      );
     });
 
     res.json({ id: rowId, created: !existing });

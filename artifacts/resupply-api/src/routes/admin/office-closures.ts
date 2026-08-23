@@ -21,6 +21,7 @@ import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
 import { findActiveClosure } from "../../lib/office-closure/active";
 import { buildClosuresIcal } from "../../lib/office-closure/build-ical";
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
@@ -159,7 +160,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "office_closure.created audit failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "office_closure.created audit failed",
+      );
     });
     res.status(201).json({ id: row.id });
   },
@@ -235,7 +239,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "office_closure.ended_early audit failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "office_closure.ended_early audit failed",
+      );
     });
     res.json({ ok: true });
   },
@@ -389,7 +396,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "office_closure.recurring.created audit failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "office_closure.recurring.created audit failed",
+      );
     });
     res.status(201).json({ id: row.id });
   },

@@ -38,6 +38,7 @@ import {
   parseOrderItems,
 } from "../../lib/csr-order/order";
 import { verifyCsrOrderToken } from "../../lib/csr-order/token";
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import { resolveOrgIdForSignedRecord } from "../../lib/storefront/signed-link-org";
 import { resolveCompanyProfile } from "../../lib/patient-packet/company";
@@ -309,7 +310,10 @@ router.post("/csr-orders/sign", mutateLimiter, async (req, res) => {
     ip,
     userAgent,
   }).catch((err) => {
-    logger.warn({ err }, "csr_order.signed audit write failed");
+    logger.warn(
+      { err: redactDbErr(err) },
+      "csr_order.signed audit write failed",
+    );
   });
 
   res.json({ status: "signed", signedAt: nowIso });

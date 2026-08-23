@@ -43,6 +43,7 @@ import {
 import { createAdhocPaymentCheckoutSession } from "../../lib/billing/patient-payment";
 import { getCompanyInfo } from "../../lib/company-info";
 import { createTenantSendgridClient } from "../../lib/email/tenant-sender";
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import { resolveTenantSmsClientOptions } from "../../lib/messaging/tenant-telecom";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
@@ -396,7 +397,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "patient.payment_link.sent audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "patient.payment_link.sent audit write failed",
+      );
     });
 
     res.status(201).json({

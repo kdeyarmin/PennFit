@@ -31,6 +31,7 @@ import {
   MAX_CLAIMS_PER_BATCH,
 } from "../../lib/billing/auto-submit-engine";
 import { isFeatureEnabled } from "../../lib/feature-flags";
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import {
   adminReadRateLimiter,
@@ -151,7 +152,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "billing.auto_submit.run audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "billing.auto_submit.run audit write failed",
+      );
     });
 
     req.log?.info(

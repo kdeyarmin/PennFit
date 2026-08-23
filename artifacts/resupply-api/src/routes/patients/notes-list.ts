@@ -16,6 +16,7 @@ import { logAudit } from "@workspace/resupply-audit";
 import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { redactDbErr } from "../../lib/redact-db-err";
 import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
 
@@ -44,12 +45,20 @@ router.get(
 
     // Verify the patient exists first so the dashboard's 404 surface
     // for a deleted patient is consistent with /patients/:id.
-    const { data: patient } = await supabase
+    const { data: patient, error: patientError } = await supabase
       .from("patients")
       .select("id")
       .eq("id", id)
       .limit(1)
       .maybeSingle();
+    if (patientError) {
+      logger.error(
+        { err: redactDbErr(patientError), patientId: id },
+        "patient.notes.list patient lookup failed",
+      );
+      res.status(500).json({ error: "query_failed" });
+      return;
+    }
     if (!patient) {
       res.status(404).json({ error: "not_found" });
       return;
@@ -63,7 +72,11 @@ router.get(
       .limit(50);
 
     if (error) {
-      res.status(500).json({ error: "query_failed", message: error.message });
+      logger.error(
+        { err: redactDbErr(error), patientId: id },
+        "patient.notes.list notes query failed",
+      );
+      res.status(500).json({ error: "query_failed" });
       return;
     }
 
@@ -77,7 +90,10 @@ router.get(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "patient.notes.list audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "patient.notes.list audit write failed",
+      );
     });
 
     res.json({

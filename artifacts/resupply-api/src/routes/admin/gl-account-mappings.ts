@@ -20,6 +20,7 @@ import {
   type GlAccountKey,
   type GlAccountMappingRow,
 } from "../../lib/billing/gl-accounts";
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
@@ -108,7 +109,10 @@ router.put(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "gl_account_mapping.upsert audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "gl_account_mapping.upsert audit write failed",
+      );
     });
     res.json({ ok: true, key: key.data, accountName: parsed.data.accountName });
   },

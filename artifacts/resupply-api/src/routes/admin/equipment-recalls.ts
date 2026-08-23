@@ -25,6 +25,7 @@ import { logAudit } from "@workspace/resupply-audit";
 import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
 import { runRecallBulkMatch } from "../../lib/equipment/recall-bulk-match";
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import { safeCsvCell } from "../../lib/safe-csv-cell";
 import {
@@ -243,7 +244,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "equipment_recall.create audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "equipment_recall.create audit write failed",
+      );
     });
 
     res.status(201).json({ id: row.id });
@@ -316,7 +320,10 @@ router.patch(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "equipment_recall.update audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "equipment_recall.update audit write failed",
+      );
     });
 
     res.status(200).json({ id: params.data.id, changed: true });
@@ -418,7 +425,10 @@ router.get(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "equipment_recall.scan audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "equipment_recall.scan audit write failed",
+      );
     });
 
     res.json({
@@ -485,7 +495,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "equipment_recall.match_assets audit failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "equipment_recall.match_assets audit failed",
+      );
     });
 
     res.json(result);
@@ -671,7 +684,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "equipment_recall.remediation.logged audit failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "equipment_recall.remediation.logged audit failed",
+      );
     });
 
     res.status(201).json({ id: row.id });

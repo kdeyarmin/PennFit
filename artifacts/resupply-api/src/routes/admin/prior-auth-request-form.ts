@@ -31,6 +31,7 @@ import {
 
 import { buildPaRequestPdf } from "../../lib/billing/pa-request-render";
 import { signPaRequestFaxToken } from "../../lib/fax-document-token";
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import { resolveTenantFaxFrom } from "../../lib/messaging/tenant-telecom";
 import { requirePermission } from "../../middlewares/requireAdmin";
@@ -206,7 +207,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "prior_auth.request_form.faxed audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "prior_auth.request_form.faxed audit write failed",
+      );
     });
 
     res.json({ ok: true, vendorRef: faxId });

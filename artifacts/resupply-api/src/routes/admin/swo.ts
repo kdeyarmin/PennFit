@@ -27,6 +27,7 @@ import { logAudit } from "@workspace/resupply-audit";
 import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { getDocumentSupplierName } from "../../lib/company-info";
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import {
   renderSwo,
@@ -221,7 +222,10 @@ router.get(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "patient.swo.generated audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "patient.swo.generated audit write failed",
+      );
     });
   },
 );

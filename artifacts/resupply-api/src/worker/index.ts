@@ -26,6 +26,7 @@
 // into an artifact and add the orchestration plumbing.
 
 import PgBoss from "pg-boss";
+import { redactDbErr } from "../lib/redact-db-err";
 import { logger } from "../lib/logger";
 import { registerReminderJobs } from "./jobs/reminders.js";
 import { registerReminderVoiceJob } from "./jobs/reminder-voice.js";
@@ -1261,7 +1262,7 @@ export async function stopWorker(timeoutMs = 10_000): Promise<void> {
   try {
     await bossInstance.stop({ graceful: true, timeout: budget });
   } catch (err) {
-    logger.error({ err }, "error stopping pg-boss");
+    logger.error({ err: redactDbErr(err) }, "error stopping pg-boss");
   }
   bossInstance = null;
 }

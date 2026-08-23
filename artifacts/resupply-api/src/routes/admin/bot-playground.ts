@@ -37,6 +37,7 @@ import {
 } from "@workspace/resupply-telecom";
 
 import { isFeatureEnabled } from "../../lib/feature-flags";
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import { getPendingSessions } from "../../lib/voice/pending-sessions";
 import { readVoiceConfigOrNull } from "../../lib/voice/voice-config";
@@ -392,7 +393,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "bot playground voice-call audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "bot playground voice-call audit write failed",
+      );
     });
 
     logger.info(

@@ -15,6 +15,7 @@ import { logAudit } from "@workspace/resupply-audit";
 
 import { scoreAndPersist } from "../../lib/billing/heuristic-denial-scorer";
 import { logger } from "../../lib/logger";
+import { redactDbErr } from "../../lib/redact-db-err";
 import { adminWriteRateLimiter } from "../../middlewares/admin-rate-limit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
 
@@ -75,7 +76,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "insurance_claim.predict_denial audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "insurance_claim.predict_denial audit write failed",
+      );
     });
     res.json({
       probability: score.probability,

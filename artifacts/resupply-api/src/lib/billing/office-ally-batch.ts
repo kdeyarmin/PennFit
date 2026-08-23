@@ -52,6 +52,7 @@ import {
 import { parseRecordedIcd10 } from "./coverage-diagnosis";
 import { isFeatureEnabled } from "../feature-flags";
 import { reserveIsa13Value } from "./isa13-counter";
+import { redactDbErr } from "../redact-db-err";
 import { logger } from "../logger";
 import { recordTenantUsage } from "../metering/usage";
 import { publishEvent } from "../webhooks/publisher";
@@ -970,7 +971,10 @@ export async function executeOfficeAllyBatchSubmit(
     ip: input.ip ?? null,
     userAgent: input.userAgent ?? null,
   }).catch((err) => {
-    logger.warn({ err }, "insurance_claim.batch_submit audit write failed");
+    logger.warn(
+      { err: redactDbErr(err) },
+      "insurance_claim.batch_submit audit write failed",
+    );
   });
 
   // Meter the transmitted claims as billing transactions (G12) — one per

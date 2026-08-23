@@ -37,6 +37,7 @@ type SleepStudyUpdate =
   Database["resupply"]["Tables"]["sleep_studies"]["Update"];
 
 import { logger } from "../../lib/logger";
+import { redactDbErr } from "../../lib/redact-db-err";
 import {
   adminReadRateLimiter,
   adminWriteRateLimiter,
@@ -180,12 +181,20 @@ router.post(
       return;
     }
     const supabase = getOrgScopedClient(orgId);
-    const { data: patient } = await supabase
+    const { data: patient, error: patientError } = await supabase
       .from("patients")
       .select("id")
       .eq("id", patientId)
       .limit(1)
       .maybeSingle();
+    if (patientError) {
+      logger.error(
+        { err: redactDbErr(patientError), patientId },
+        "patient.sleep_study.create patient lookup failed",
+      );
+      res.status(500).json({ error: "query_failed" });
+      return;
+    }
     if (!patient) {
       res.status(404).json({ error: "not_found" });
       return;
@@ -239,7 +248,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "patient.sleep_study.create audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "patient.sleep_study.create audit write failed",
+      );
     });
 
     res.status(201).json({ id: row.id });
@@ -312,7 +324,10 @@ router.patch(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "patient.sleep_study.update audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "patient.sleep_study.update audit write failed",
+      );
     });
 
     res.status(200).json({ id: studyId, changed: true });

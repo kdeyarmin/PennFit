@@ -39,6 +39,7 @@ import { z } from "zod";
 import { logAudit } from "@workspace/resupply-audit";
 import { getOrgScopedClient } from "@workspace/resupply-db";
 
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import { ObjectAlreadyOwnedError } from "../../lib/object-storage/objectAcl";
 import {
@@ -408,7 +409,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "shop.order.pod.upload audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "shop.order.pod.upload audit write failed",
+      );
     });
 
     res.status(200).json({ ok: true });
@@ -461,7 +465,10 @@ router.get(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "shop.order.pod.download audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "shop.order.pod.download audit write failed",
+      );
     });
 
     try {
@@ -562,7 +569,10 @@ router.delete(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "shop.order.pod.remove audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "shop.order.pod.remove audit write failed",
+      );
     });
 
     res.status(200).json({ ok: true });

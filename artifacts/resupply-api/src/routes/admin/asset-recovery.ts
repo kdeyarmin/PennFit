@@ -29,6 +29,7 @@ import { logAudit } from "@workspace/resupply-audit";
 import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { selectAdapter } from "../../lib/carrier-labels";
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
@@ -245,7 +246,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "asset_recovery.case.create audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "asset_recovery.case.create audit write failed",
+      );
     });
 
     res.status(201).json({ case: toDto(row) });
@@ -321,7 +325,10 @@ router.patch(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "asset_recovery.case.update audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "asset_recovery.case.update audit write failed",
+      );
     });
 
     res.json({ case: toDto(row) });
@@ -442,7 +449,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "asset_recovery.label.created audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "asset_recovery.label.created audit write failed",
+      );
     });
 
     res.json({

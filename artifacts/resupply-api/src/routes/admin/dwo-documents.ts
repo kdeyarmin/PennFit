@@ -17,6 +17,7 @@ import {
   ObjectNotFoundError,
   ObjectStorageService,
 } from "../../lib/object-storage/objectStorage";
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
@@ -253,7 +254,10 @@ router.get(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "dwo_document.generated audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "dwo_document.generated audit write failed",
+      );
     });
   },
 );
@@ -311,7 +315,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "dwo_document.create audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "dwo_document.create audit write failed",
+      );
     });
     res.status(201).json({ id: data.id });
   },

@@ -16,6 +16,7 @@ import {
   CoverageNotForPatientError,
   verifyEligibility,
 } from "../../lib/billing/eligibility-verifier";
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import { requirePermission } from "../../middlewares/requireAdmin";
 
@@ -84,7 +85,10 @@ router.post(
         ip: req.ip ?? null,
         userAgent: req.get("user-agent") ?? null,
       }).catch((err) => {
-        logger.warn({ err }, "eligibility.verify audit write failed");
+        logger.warn(
+          { err: redactDbErr(err) },
+          "eligibility.verify audit write failed",
+        );
       });
       res.status(201).json(result);
     } catch (err) {

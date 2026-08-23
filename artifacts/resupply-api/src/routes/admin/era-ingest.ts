@@ -20,6 +20,7 @@ import { parse835 } from "@workspace/resupply-integrations-office-ally";
 import { runDenialAnalysis } from "../../lib/billing/denial-analysis-runner";
 import { reconcileEra } from "../../lib/billing/era-reconciler";
 import { resolvePayerProfileForEra } from "../../lib/billing/era-payer-resolver";
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import { publishEvent } from "../../lib/webhooks/publisher";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
@@ -101,7 +102,7 @@ router.post(
     try {
       parsedEra = parse835(payload);
     } catch (err) {
-      logger.warn({ err }, "era_ingest: parse failed");
+      logger.warn({ err: redactDbErr(err) }, "era_ingest: parse failed");
       res.status(400).json({
         error: "parse_failed",
         message: "the uploaded file could not be parsed as a 5010 835",
@@ -233,7 +234,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "era_file.ingest audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "era_file.ingest audit write failed",
+      );
     });
     void publishEvent({
       orgId: req.orgId,

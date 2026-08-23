@@ -27,6 +27,7 @@ type PriorAuthorizationUpdate =
   Database["resupply"]["Tables"]["prior_authorizations"]["Update"];
 
 import { logger } from "../../lib/logger";
+import { redactDbErr } from "../../lib/redact-db-err";
 import {
   adminReadRateLimiter,
   adminWriteRateLimiter,
@@ -190,12 +191,20 @@ router.post(
     }
     const supabase = getOrgScopedClient(orgId);
 
-    const { data: patient } = await supabase
+    const { data: patient, error: patientError } = await supabase
       .from("patients")
       .select("id")
       .eq("id", idParsed.data.id)
       .limit(1)
       .maybeSingle();
+    if (patientError) {
+      logger.error(
+        { err: redactDbErr(patientError), patientId: idParsed.data.id },
+        "patient.prior_authorization.create patient lookup failed",
+      );
+      res.status(500).json({ error: "query_failed" });
+      return;
+    }
     if (!patient) {
       res.status(404).json({ error: "not_found" });
       return;
@@ -238,7 +247,7 @@ router.post(
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
       logger.warn(
-        { err },
+        { err: redactDbErr(err) },
         "patient.prior_authorization.create audit write failed",
       );
     });
@@ -350,7 +359,7 @@ router.patch(
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
       logger.warn(
-        { err },
+        { err: redactDbErr(err) },
         "patient.prior_authorization.update audit write failed",
       );
     });

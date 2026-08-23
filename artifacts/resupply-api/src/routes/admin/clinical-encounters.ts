@@ -21,6 +21,7 @@ import { z } from "zod";
 import { logAudit } from "@workspace/resupply-audit";
 import { getOrgScopedClient } from "@workspace/resupply-db";
 
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import {
   adminRateLimit,
@@ -189,7 +190,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "clinical_encounter.create audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "clinical_encounter.create audit write failed",
+      );
     });
 
     res.status(201).json({

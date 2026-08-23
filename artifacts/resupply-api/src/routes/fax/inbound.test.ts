@@ -220,7 +220,9 @@ describe("POST /fax/inbound — audit failure resilience", () => {
     expect(res.status).toBe(200);
     await flushMicrotasks();
     expect(loggerWarnMock).toHaveBeenCalledWith(
-      expect.objectContaining({ err: expect.any(Error) }),
+      expect.objectContaining({
+        err: expect.objectContaining({ name: "Error", message: "DB down" }),
+      }),
       expect.any(String),
     );
   });

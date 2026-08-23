@@ -238,7 +238,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "patient.bulk_create audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "patient.bulk_create audit write failed",
+      );
     });
 
     res.status(200).json({
