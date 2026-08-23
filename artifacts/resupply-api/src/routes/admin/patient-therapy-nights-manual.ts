@@ -13,6 +13,7 @@ import { z } from "zod";
 import { logAudit } from "@workspace/resupply-audit";
 import { getOrgScopedClient } from "@workspace/resupply-db";
 
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import { respondInvalidBody } from "../../lib/http-validation";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
@@ -125,7 +126,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "therapy.night.manual.upsert audit failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "therapy.night.manual.upsert audit failed",
+      );
     });
     res.status(201).json({ id: data.id });
   },

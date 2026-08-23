@@ -25,6 +25,7 @@ import {
 
 import { scanCompliance } from "../../lib/compliance-scanner";
 import { releaseAddressChangeHold } from "../../lib/messaging/order-flow";
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import { requirePermission } from "../../middlewares/requireAdmin";
 import { rateLimit } from "../../middlewares/rate-limit";
@@ -225,7 +226,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "csr.compliance_scan.run audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "csr.compliance_scan.run audit write failed",
+      );
     });
     res.json(summary);
   },

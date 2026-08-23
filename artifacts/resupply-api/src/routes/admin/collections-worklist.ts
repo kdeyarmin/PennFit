@@ -20,6 +20,7 @@ import { nextDunningStep } from "@workspace/resupply-domain";
 import { resolveBillingIdentity } from "../../lib/billing/identity-resolver";
 import { renderDunningLettersBatchPdf } from "../../lib/billing/dunning-letter-pdf";
 import { isFeatureEnabled } from "../../lib/feature-flags";
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
@@ -155,7 +156,10 @@ async function transition(
     ip: req.ip ?? null,
     userAgent: req.get("user-agent") ?? null,
   }).catch((err) =>
-    logger.warn({ err }, `dunning.${action} audit write failed`),
+    logger.warn(
+      { err: redactDbErr(err) },
+      `dunning.${action} audit write failed`,
+    ),
   );
 
   res.json({ ok: true });
@@ -399,7 +403,10 @@ router.get(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) =>
-      logger.warn({ err }, "dunning.letter_batch audit write failed"),
+      logger.warn(
+        { err: redactDbErr(err) },
+        "dunning.letter_batch audit write failed",
+      ),
     );
 
     res.setHeader("Content-Type", "application/pdf");

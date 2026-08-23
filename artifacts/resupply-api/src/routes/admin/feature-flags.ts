@@ -31,6 +31,7 @@ import {
   type FeatureFlagKey,
   invalidateFeatureFlagCache,
 } from "../../lib/feature-flags";
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import { resolveTenantPlanCode } from "../../lib/product-scope";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
@@ -227,7 +228,10 @@ router.patch(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "feature_flag.toggle audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "feature_flag.toggle audit write failed",
+      );
     });
 
     const { error: eventErr } = await supabase
@@ -396,7 +400,10 @@ router.post(
         ip: req.ip ?? null,
         userAgent: req.get("user-agent") ?? null,
       }).catch((err) => {
-        logger.warn({ err }, "feature_flag.apply_preset audit write failed");
+        logger.warn(
+          { err: redactDbErr(err) },
+          "feature_flag.apply_preset audit write failed",
+        );
       });
     }
 

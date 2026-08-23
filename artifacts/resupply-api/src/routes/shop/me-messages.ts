@@ -37,6 +37,7 @@ import {
   markInAppThreadRead,
 } from "../../lib/messaging/in-app-conversation";
 import { requireSignedIn } from "../../middlewares/requireSignedIn";
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 
 const router: IRouter = Router();
@@ -164,7 +165,10 @@ router.post("/shop/me/messages", requireSignedIn, async (req, res) => {
     ip: req.ip ?? null,
     userAgent: req.get("user-agent") ?? null,
   }).catch((err) => {
-    logger.warn({ err }, "shop_customer.message.send audit write failed");
+    logger.warn(
+      { err: redactDbErr(err) },
+      "shop_customer.message.send audit write failed",
+    );
   });
 
   // Best-effort notification email to the shared CSR inbox so a CSR

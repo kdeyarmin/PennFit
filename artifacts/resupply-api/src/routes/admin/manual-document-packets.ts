@@ -43,6 +43,7 @@ import {
 } from "@workspace/resupply-telecom";
 
 import { signManualDocumentPacketFaxToken } from "../../lib/fax-document-token.js";
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger.js";
 import { resolveTenantFaxFrom } from "../../lib/messaging/tenant-telecom";
 import {
@@ -210,7 +211,10 @@ async function stampMemberDocumentsSent(
       docRow.id,
       channel,
     ).catch((err) =>
-      logger.warn({ err }, "manual_document_packet tracking_sent failed"),
+      logger.warn(
+        { err: redactDbErr(err) },
+        "manual_document_packet tracking_sent failed",
+      ),
     );
   }
 }
@@ -364,7 +368,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "manual_document_packet.created audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "manual_document_packet.created audit write failed",
+      );
     });
 
     res.status(201).json({ id: inserted.id, status: "draft" });
@@ -494,7 +501,10 @@ router.patch(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "manual_document_packet.updated audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "manual_document_packet.updated audit write failed",
+      );
     });
 
     res.json({ ok: true });
@@ -537,7 +547,10 @@ router.delete(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "manual_document_packet.deleted audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "manual_document_packet.deleted audit write failed",
+      );
     });
 
     res.json({ ok: true }); // idempotent
@@ -571,7 +584,10 @@ router.get(
         loaded.documents,
       );
     } catch (err) {
-      logger.warn({ err }, "manual_document_packet.pdf render failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "manual_document_packet.pdf render failed",
+      );
       res.status(500).json({ error: "render_failed" });
       return;
     }
@@ -718,7 +734,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "manual_document_packet.emailed audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "manual_document_packet.emailed audit write failed",
+      );
     });
 
     res.json({ ok: true, emailed: true });
@@ -833,7 +852,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "manual_document_packet.faxed audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "manual_document_packet.faxed audit write failed",
+      );
     });
 
     res.json({ ok: true, faxed: true, vendorRef });

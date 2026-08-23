@@ -24,6 +24,7 @@ import { z } from "zod";
 import { logAudit } from "@workspace/resupply-audit";
 
 import { buildExport837P } from "../../lib/billing/office-ally-batch";
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
@@ -104,7 +105,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "billing.claim_837p_export audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "billing.claim_837p_export audit write failed",
+      );
     });
 
     const fileName = `claims-837p-${result.interchangeControlNumber}.txt`;

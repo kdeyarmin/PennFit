@@ -23,6 +23,7 @@ import { logAudit } from "@workspace/resupply-audit";
 import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { redactDbErr } from "../../lib/redact-db-err";
 import { adminWriteRateLimiter } from "../../middlewares/admin-rate-limit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
 
@@ -124,7 +125,10 @@ router.patch(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "patient.prescription.status_changed audit failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "patient.prescription.status_changed audit failed",
+      );
     });
 
     res.status(200).json({ id: rxId, status: nextStatus, changed: true });

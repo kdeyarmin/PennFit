@@ -10,6 +10,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger.js";
 
 const router = Router();
@@ -102,7 +103,10 @@ router.post("/usage-events", async (req, res) => {
       });
     if (error) throw error;
   } catch (err) {
-    logger.warn({ err }, "Failed to insert usage event (ignored)");
+    logger.warn(
+      { err: redactDbErr(err) },
+      "Failed to insert usage event (ignored)",
+    );
   }
   res.status(204).end();
 });

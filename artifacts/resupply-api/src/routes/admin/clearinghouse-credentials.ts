@@ -29,6 +29,7 @@ import { listOutboundFiles } from "@workspace/resupply-integrations-office-ally"
 
 import { runOfficeAllyInboundPoll } from "../../worker/jobs/office-ally-inbound-poll";
 import { resolveClearinghouse } from "../../lib/billing/identity-resolver";
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import {
@@ -431,7 +432,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "clearinghouse_credentials.test audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "clearinghouse_credentials.test audit write failed",
+      );
     });
     if (!result.ok) {
       res.status(502).json({
@@ -477,7 +481,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "office_ally.manual_poll audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "office_ally.manual_poll audit write failed",
+      );
     });
     res.json({ ok: true, stats });
   },

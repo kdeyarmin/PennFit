@@ -38,6 +38,7 @@ import {
   summarizeOverview,
   type TherapyNightInput,
 } from "../../lib/rt-overview/aggregate";
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
@@ -339,7 +340,10 @@ router.get(
         ...overview.summary,
       },
     }).catch((err) => {
-      logger.warn({ err }, "rt-overview: audit log failed (continuing)");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "rt-overview: audit log failed (continuing)",
+      );
     });
 
     res.json(overview);
@@ -373,7 +377,10 @@ router.get(
         ...overview.summary,
       },
     }).catch((err) => {
-      logger.warn({ err }, "rt-overview.csv: audit log failed (continuing)");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "rt-overview.csv: audit log failed (continuing)",
+      );
     });
 
     const headers = [

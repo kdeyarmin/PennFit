@@ -21,6 +21,7 @@ import { z } from "zod";
 import { logAudit } from "@workspace/resupply-audit";
 import { getOrgScopedClient } from "@workspace/resupply-db";
 
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
@@ -184,7 +185,7 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "case.create audit write failed");
+      logger.warn({ err: redactDbErr(err) }, "case.create audit write failed");
     });
 
     res.status(201).json({ id: row.id, createdAt: row.created_at });
@@ -309,7 +310,7 @@ router.patch(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "case.update audit write failed");
+      logger.warn({ err: redactDbErr(err) }, "case.update audit write failed");
     });
 
     res.json({ id: updated.id, status: updated.status });
@@ -386,7 +387,7 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "case.link audit write failed");
+      logger.warn({ err: redactDbErr(err) }, "case.link audit write failed");
     });
 
     res.status(201).json({ linked: true });

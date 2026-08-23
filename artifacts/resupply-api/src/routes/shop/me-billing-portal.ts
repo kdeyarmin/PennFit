@@ -29,6 +29,7 @@ import {
 } from "../../lib/stripe/config";
 import { stripeAccountRequestOptions } from "../../lib/stripe/connect";
 import { getOrCreateStripeCustomer } from "../../lib/stripe/customer";
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import { rateLimit } from "../../middlewares/rate-limit";
 import { requireSignedIn } from "../../middlewares/requireSignedIn";
@@ -119,7 +120,7 @@ router.post(
         ip: req.ip ?? null,
         userAgent: req.get("user-agent") ?? null,
       }).catch((err) => {
-        logger.warn({ err }, "billing-portal: audit failed");
+        logger.warn({ err: redactDbErr(err) }, "billing-portal: audit failed");
       });
       res.status(200).json({ url: session.url });
     } catch (err) {

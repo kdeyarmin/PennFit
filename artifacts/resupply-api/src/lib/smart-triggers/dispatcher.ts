@@ -56,6 +56,7 @@ import {
 
 import { isInDndWindow, isOutsideSmsSendWindow } from "../comm-prefs";
 import { isFeatureEnabled } from "../feature-flags";
+import { redactDbErr } from "../redact-db-err";
 import { logger } from "../logger";
 import { resolveTenantSmsClientOptions } from "../messaging/tenant-telecom";
 import { recordOutboundMessageUsage } from "../metering/usage";
@@ -564,7 +565,10 @@ export async function runSmartTriggerSendDue(
         ip: actor.ip,
         userAgent: actor.userAgent,
       }).catch((err) => {
-        logger.warn({ err }, "patient.smart_trigger.sent audit write failed");
+        logger.warn(
+          { err: redactDbErr(err) },
+          "patient.smart_trigger.sent audit write failed",
+        );
       });
 
       // Phase G.8 — best-effort push fan-out by email lookup. Never

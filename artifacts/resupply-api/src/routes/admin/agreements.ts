@@ -24,6 +24,7 @@ import {
   getPendingAgreementTypes,
   invalidatePendingAgreementsCache,
 } from "../../lib/agreements/status";
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import {
   adminReadRateLimiter,
@@ -116,7 +117,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "agreements: accept audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "agreements: accept audit write failed",
+      );
     });
 
     // Clear the server-side gate cache so the just-signed agreement

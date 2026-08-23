@@ -482,7 +482,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "insurance_claim.create audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "insurance_claim.create audit write failed",
+      );
     });
 
     res.status(201).json({ id: row.id });
@@ -638,7 +641,10 @@ router.patch(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "insurance_claim.update audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "insurance_claim.update audit write failed",
+      );
     });
 
     // Publish a webhook event for the status transition so external
@@ -743,7 +749,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "insurance_claim.line.create audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "insurance_claim.line.create audit write failed",
+      );
     });
 
     res.status(201).json({ id: line.id });
@@ -841,7 +850,10 @@ router.patch(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "insurance_claim.line.update audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "insurance_claim.line.update audit write failed",
+      );
     });
 
     res.status(200).json({ ok: true });
@@ -927,7 +939,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "insurance_claim.event.create audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "insurance_claim.event.create audit write failed",
+      );
     });
 
     // Best-effort EOB explainer email. Fires for paid / partial_pay /

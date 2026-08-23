@@ -29,6 +29,7 @@ import {
   type CustomerEconomicsInput,
 } from "@workspace/resupply-domain";
 
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import {
   adminRateLimit,
@@ -178,7 +179,10 @@ router.put(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "customer_acquisition.upsert audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "customer_acquisition.upsert audit write failed",
+      );
     });
 
     res.json({

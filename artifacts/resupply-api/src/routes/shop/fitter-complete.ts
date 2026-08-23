@@ -32,6 +32,7 @@ import { z } from "zod";
 
 import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import { requestHost } from "../../lib/request-host";
 import { resolveOrgIdByHost } from "../../lib/tenant-branding";
@@ -633,7 +634,7 @@ router.get("/shop/track/o", openTrackingRateLimiter, async (req, res) => {
   try {
     verify = verifyOpenTrackingToken(token);
   } catch (err) {
-    logger.warn({ err }, "shop/track/o: verify threw");
+    logger.warn({ err: redactDbErr(err) }, "shop/track/o: verify threw");
     sendPixel();
     return;
   }
@@ -914,7 +915,7 @@ router.get("/shop/track/c", clickTrackRateLimiter, async (req, res) => {
   try {
     verify = verifyClickTrackingToken(token);
   } catch (err) {
-    logger.warn({ err }, "shop/track/c: verify threw");
+    logger.warn({ err: redactDbErr(err) }, "shop/track/c: verify threw");
     res.redirect(302, fallbackDestination());
     return;
   }
@@ -1133,7 +1134,10 @@ router.get(
     } catch (err) {
       // RESUPPLY_LINK_HMAC_KEY missing → service misconfig. Return a
       // friendly page rather than the raw error.
-      logger.warn({ err }, "shop/fitter-leads/unsubscribe: verify threw");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "shop/fitter-leads/unsubscribe: verify threw",
+      );
       res.status(500).type("text/html").send(unsubscribeHtml("error"));
       return;
     }

@@ -27,6 +27,7 @@ import {
   type OrgScopedClient,
 } from "@workspace/resupply-db";
 
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import { resolveOrgIdForSignedRecord } from "../../lib/storefront/signed-link-org";
 import { autofileSignedPacketPdf } from "../../lib/patient-packet/autofile";
@@ -424,7 +425,10 @@ router.post("/patient-packets/sign", signLimiter, async (req, res) => {
     ip,
     userAgent,
   }).catch((err) => {
-    logger.warn({ err }, "patient_packet.signed audit write failed");
+    logger.warn(
+      { err: redactDbErr(err) },
+      "patient_packet.signed audit write failed",
+    );
   });
 
   // File the signed PDF onto the patient's chart — fire-and-forget,

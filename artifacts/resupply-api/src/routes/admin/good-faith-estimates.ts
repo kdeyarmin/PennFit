@@ -28,6 +28,7 @@ import {
   resolveBillingIdentity,
 } from "../../lib/billing/identity-resolver";
 import { createTenantSendgridClient } from "../../lib/email/tenant-sender";
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import {
@@ -289,7 +290,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "good_faith_estimate.generate audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "good_faith_estimate.generate audit write failed",
+      );
     });
 
     res.setHeader("Content-Type", "application/pdf");
@@ -400,7 +404,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "good_faith_estimate.emailed audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "good_faith_estimate.emailed audit write failed",
+      );
     });
 
     res.json({ ok: true, deliveredAt: nowIso, deliveryMethod: "email" });
@@ -462,7 +469,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "good_faith_estimate.delivered audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "good_faith_estimate.delivered audit write failed",
+      );
     });
 
     res.json({

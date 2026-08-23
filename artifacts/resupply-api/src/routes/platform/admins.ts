@@ -26,6 +26,7 @@ import { logAudit } from "@workspace/resupply-audit";
 import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import { getAuthDeps } from "../../lib/auth-deps";
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import {
   adminReadRateLimiter,
@@ -193,7 +194,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "platform: operator grant audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "platform: operator grant audit write failed",
+      );
     });
 
     res.status(201).json({
@@ -297,7 +301,10 @@ router.delete(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "platform: operator revoke audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "platform: operator revoke audit write failed",
+      );
     });
 
     res.json({ ok: true, removed: authUserId });

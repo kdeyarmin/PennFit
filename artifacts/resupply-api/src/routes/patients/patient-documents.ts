@@ -30,6 +30,7 @@ import { logAudit } from "@workspace/resupply-audit";
 import { getOrgScopedClient, type Database } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { redactDbErr } from "../../lib/redact-db-err";
 import { ObjectAlreadyOwnedError } from "../../lib/object-storage/objectAcl";
 import {
   ObjectNotFoundError,
@@ -287,7 +288,10 @@ router.post(
         ip: req.ip ?? null,
         userAgent: req.get("user-agent") ?? null,
       }).catch((err) => {
-        logger.warn({ err }, "patient.document.admin_upload_url audit failed");
+        logger.warn(
+          { err: redactDbErr(err) },
+          "patient.document.admin_upload_url audit failed",
+        );
       });
       res.json({ uploadURL, objectPath });
     } catch (err) {
@@ -435,7 +439,10 @@ router.post(
       ).catch(() => null);
       if (tracking && tracking.status === "awaiting_signature") {
         await markReturnedAndCascade(supabase, tracking).catch((err) => {
-          logger.warn({ err }, "admin_patient_document.mark_returned failed");
+          logger.warn(
+            { err: redactDbErr(err) },
+            "admin_patient_document.mark_returned failed",
+          );
         });
         signatureMarkedReturned = true;
       }
@@ -457,7 +464,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "patient.document.admin_upload audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "patient.document.admin_upload audit write failed",
+      );
     });
 
     res.status(201).json({ ok: true, id: docId, signatureMarkedReturned });
@@ -726,7 +736,10 @@ router.delete(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "patient.document.admin_remove audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "patient.document.admin_remove audit write failed",
+      );
     });
 
     res.status(200).json({ ok: true });

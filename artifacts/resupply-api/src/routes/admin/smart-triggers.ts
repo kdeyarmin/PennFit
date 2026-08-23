@@ -42,6 +42,7 @@ import {
   subjectForKind,
   textBody,
 } from "../../lib/smart-triggers/renderers";
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import { requirePermission } from "../../middlewares/requireAdmin";
 import { rateLimit } from "../../middlewares/rate-limit";
@@ -332,7 +333,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "patient.smart_trigger.snoozed audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "patient.smart_trigger.snoozed audit write failed",
+      );
     });
 
     res.json({ id, snoozedUntil });

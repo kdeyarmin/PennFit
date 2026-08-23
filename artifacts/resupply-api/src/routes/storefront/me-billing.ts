@@ -27,6 +27,7 @@ import {
 
 import { resolveBillingIdentity } from "../../lib/billing/identity-resolver";
 import { renderStatementPdf } from "../../lib/billing/statement-pdf";
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 
 const router: IRouter = Router();
@@ -282,7 +283,10 @@ router.get("/me/billing-statements/:id/pdf", async (req, res) => {
     });
     pdf = result.pdf;
   } catch (err) {
-    logger.warn({ err }, "billing_statement.pdf render failed");
+    logger.warn(
+      { err: redactDbErr(err) },
+      "billing_statement.pdf render failed",
+    );
     res.status(500).json({ error: "render_failed" });
     return;
   }

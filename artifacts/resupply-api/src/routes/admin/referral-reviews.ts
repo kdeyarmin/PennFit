@@ -43,6 +43,7 @@ import {
 } from "@workspace/resupply-db";
 import { normalizeE164, timezoneForUsState } from "@workspace/resupply-domain";
 
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import { ObjectAlreadyOwnedError } from "../../lib/object-storage/objectAcl";
 import {
@@ -701,7 +702,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "referral_review.upload audit failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "referral_review.upload audit failed",
+      );
     });
 
     res.status(201).json({ ...reviewToJson(inserted), enqueued });
@@ -1194,7 +1198,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "referral_review.accept audit failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "referral_review.accept audit failed",
+      );
     });
 
     res.status(201).json({ patientId, documentIds, warnings });
@@ -1436,7 +1443,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "referral_review.dismiss audit failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "referral_review.dismiss audit failed",
+      );
     });
 
     res.json({ id: review.id, status: "dismissed" });

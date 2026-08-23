@@ -10,6 +10,7 @@ import { logAudit } from "@workspace/resupply-audit";
 import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { parseFeeScheduleCsv } from "../../lib/billing/fee-schedule-csv";
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
@@ -97,7 +98,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "payer_fee_schedule.import_csv audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "payer_fee_schedule.import_csv audit write failed",
+      );
     });
     res.status(201).json({ accepted: rows.length, errors });
   },

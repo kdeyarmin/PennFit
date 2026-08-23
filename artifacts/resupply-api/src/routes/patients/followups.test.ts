@@ -72,6 +72,19 @@ describe("GET /patients/:id/followups", () => {
     expect(res.body.error).toBe("not_found");
   });
 
+  it("500s instead of returning a false 404 when patient lookup fails", async () => {
+    mockAdmin.current = ADMIN;
+    stageSupabaseResponse("patients", "select", {
+      data: null,
+      error: { code: "XX000", message: "database unavailable" },
+    });
+    const res = await request(makeApp()).get(
+      `/patients/${PATIENT_ID}/followups`,
+    );
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: "query_failed" });
+  });
+
   it("returns the open queue", async () => {
     mockAdmin.current = ADMIN;
     stageSupabaseResponse("patients", "select", { data: { id: PATIENT_ID } });
@@ -104,6 +117,19 @@ describe("POST /patients/:id/followups", () => {
       .post(`/patients/${PATIENT_ID}/followups`)
       .send({ body: "x", dueAt: "2026-05-10T16:00:00Z" });
     expect(res.status).toBe(401);
+  });
+
+  it("500s instead of returning a false 404 when patient lookup fails", async () => {
+    mockAdmin.current = ADMIN;
+    stageSupabaseResponse("patients", "select", {
+      data: null,
+      error: { code: "XX000", message: "database unavailable" },
+    });
+    const res = await request(makeApp())
+      .post(`/patients/${PATIENT_ID}/followups`)
+      .send({ body: "Call patient", dueAt: "2026-05-10T16:00:00Z" });
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: "query_failed" });
   });
 
   it("400s with empty body", async () => {

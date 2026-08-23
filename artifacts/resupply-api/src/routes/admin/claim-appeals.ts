@@ -23,6 +23,7 @@ import { renderAppealPdf } from "../../lib/billing/appeal-pdf";
 import { resolveBillingIdentity } from "../../lib/billing/identity-resolver";
 import { parsePayerAddressLines } from "../../lib/billing/payer-address";
 import { signAppealFaxToken } from "../../lib/fax-document-token";
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import { resolveTenantFaxFrom } from "../../lib/messaging/tenant-telecom";
 import { publishEvent } from "../../lib/webhooks/publisher";
@@ -262,7 +263,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "claim_appeal.generate audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "claim_appeal.generate audit write failed",
+      );
     });
     void publishEvent({
       orgId: req.orgId,
@@ -433,7 +437,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "claim_appeal.faxed audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "claim_appeal.faxed audit write failed",
+      );
     });
 
     res.json({ ok: true, vendorRef: faxId });
@@ -527,7 +534,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "claim_appeal.marked_delivered audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "claim_appeal.marked_delivered audit write failed",
+      );
     });
 
     res.json({ ok: true });
@@ -614,7 +624,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "claim_appeal.outcome_recorded audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "claim_appeal.outcome_recorded audit write failed",
+      );
     });
 
     res.json({ ok: true, outcome: parsed.data.outcome, respondedAt });

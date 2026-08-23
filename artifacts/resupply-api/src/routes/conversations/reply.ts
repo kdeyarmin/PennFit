@@ -35,6 +35,7 @@ import { TwilioConfigError } from "@workspace/resupply-telecom";
 import { EmailConfigError } from "@workspace/resupply-email";
 
 import { getCompanyInfo } from "../../lib/company-info";
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import { applyTenantEmailSender } from "../../lib/email/apply-tenant-email-sender";
 import { createTenantSendgridClient } from "../../lib/email/tenant-sender";
@@ -372,7 +373,10 @@ async function handleInAppReply(input: {
     ip: req.ip ?? null,
     userAgent: req.get("user-agent") ?? null,
   }).catch((err) => {
-    logger.warn({ err }, "messaging.reply.sent audit write failed (in_app)");
+    logger.warn(
+      { err: redactDbErr(err) },
+      "messaging.reply.sent audit write failed (in_app)",
+    );
   });
 
   // Best-effort customer notification email. We look up the customer's

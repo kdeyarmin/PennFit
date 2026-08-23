@@ -37,6 +37,7 @@ import {
 } from "../../lib/feature-flags";
 import { getAuthDeps } from "../../lib/auth-deps";
 import { getCompanyInfo } from "../../lib/company-info";
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import {
   invalidateBrandingCache,
@@ -345,7 +346,10 @@ async function setTenantStatus(
     ip: req.ip ?? null,
     userAgent: req.get("user-agent") ?? null,
   }).catch((err) => {
-    logger.warn({ err }, "platform: tenant status audit write failed");
+    logger.warn(
+      { err: redactDbErr(err) },
+      "platform: tenant status audit write failed",
+    );
   });
 
   res.json({ tenant: toTenantView(updated as OrgRow) });
@@ -602,7 +606,10 @@ router.patch(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "platform: feature_flag toggle audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "platform: feature_flag toggle audit write failed",
+      );
     });
 
     // Durable per-tenant toggle record — the same table the tenant's own
@@ -1252,7 +1259,10 @@ router.post(
       ip: null,
       userAgent: null,
     }).catch((err) => {
-      logger.warn({ err }, "platform: tenant admin create audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "platform: tenant admin create audit write failed",
+      );
     });
 
     res.status(prior ? 200 : 201).json({
@@ -1364,7 +1374,10 @@ router.post(
       ip: null,
       userAgent: null,
     }).catch((err) => {
-      logger.warn({ err }, "platform: tenant create audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "platform: tenant create audit write failed",
+      );
     });
 
     res.status(201).json({ tenant, flagsProvisioned });

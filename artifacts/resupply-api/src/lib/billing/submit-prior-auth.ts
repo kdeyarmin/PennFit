@@ -26,6 +26,7 @@ import {
   resolveDavinciPasToken,
 } from "./davinci-pas-token";
 import { resolveBillingIdentity } from "./identity-resolver";
+import { redactDbErr } from "../redact-db-err";
 import { logger } from "../logger";
 import {
   assertSafeOutboundHost,
@@ -443,7 +444,10 @@ export async function submitPriorAuth(
     ip: input.ip ?? null,
     userAgent: input.userAgent ?? null,
   }).catch((err) => {
-    logger.warn({ err }, "davinci_pas.submit audit write failed");
+    logger.warn(
+      { err: redactDbErr(err) },
+      "davinci_pas.submit audit write failed",
+    );
   });
 
   return {

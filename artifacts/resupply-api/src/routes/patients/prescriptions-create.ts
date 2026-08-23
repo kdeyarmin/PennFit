@@ -25,6 +25,7 @@ import { logAudit } from "@workspace/resupply-audit";
 import { type Json, getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { redactDbErr } from "../../lib/redact-db-err";
 import { adminWriteRateLimiter } from "../../middlewares/admin-rate-limit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
 
@@ -210,7 +211,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "patient.prescription.create audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "patient.prescription.create audit write failed",
+      );
     });
 
     res.status(201).json({ id: row.id });

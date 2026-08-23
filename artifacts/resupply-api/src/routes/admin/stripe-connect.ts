@@ -22,6 +22,7 @@ import { Router, type IRouter } from "express";
 import { logAudit } from "@workspace/resupply-audit";
 import { getOrgScopedClient } from "@workspace/resupply-db";
 
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import {
   getStripeClient,
@@ -128,7 +129,10 @@ router.post(
           ip: req.ip ?? null,
           userAgent: null,
         }).catch((err) => {
-          logger.warn({ err }, "stripe-connect: account-created audit failed");
+          logger.warn(
+            { err: redactDbErr(err) },
+            "stripe-connect: account-created audit failed",
+          );
         });
       }
 
@@ -232,7 +236,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: null,
     }).catch((err) => {
-      logger.warn({ err }, "stripe-connect: disconnect audit failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "stripe-connect: disconnect audit failed",
+      );
     });
     res.json({ connected: false, chargesEnabled: false, accountId: null });
   },

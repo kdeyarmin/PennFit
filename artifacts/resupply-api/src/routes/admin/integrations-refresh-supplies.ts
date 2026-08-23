@@ -28,6 +28,7 @@ import {
 } from "@workspace/resupply-integrations";
 
 import { getIntegrationAdaptersForOrg } from "../../lib/integrations/registry";
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
@@ -147,7 +148,7 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "supplies_refreshed audit failed");
+      logger.warn({ err: redactDbErr(err) }, "supplies_refreshed audit failed");
     });
     res.json({
       refreshed: refreshedSources.length,

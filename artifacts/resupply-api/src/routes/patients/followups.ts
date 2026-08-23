@@ -23,6 +23,7 @@ import { logAudit } from "@workspace/resupply-audit";
 import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { redactDbErr } from "../../lib/redact-db-err";
 import {
   adminReadRateLimiter,
   adminWriteRateLimiter,
@@ -67,12 +68,20 @@ router.get(
     }
     const supabase = getOrgScopedClient(orgId);
 
-    const { data: patient } = await supabase
+    const { data: patient, error: patientError } = await supabase
       .from("patients")
       .select("id")
       .eq("id", patientId)
       .limit(1)
       .maybeSingle();
+    if (patientError) {
+      logger.error(
+        { err: redactDbErr(patientError), patientId },
+        "patient.followups.list patient lookup failed",
+      );
+      res.status(500).json({ error: "query_failed" });
+      return;
+    }
     if (!patient) {
       res.status(404).json({ error: "not_found" });
       return;
@@ -164,12 +173,20 @@ router.post(
     }
     const supabase = getOrgScopedClient(orgId);
 
-    const { data: patient } = await supabase
+    const { data: patient, error: patientError } = await supabase
       .from("patients")
       .select("id")
       .eq("id", patientId)
       .limit(1)
       .maybeSingle();
+    if (patientError) {
+      logger.error(
+        { err: redactDbErr(patientError), patientId },
+        "patient.followup.create patient lookup failed",
+      );
+      res.status(500).json({ error: "query_failed" });
+      return;
+    }
     if (!patient) {
       res.status(404).json({ error: "not_found" });
       return;
@@ -202,7 +219,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "patient.followup.create audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "patient.followup.create audit write failed",
+      );
     });
 
     res.status(201).json({
@@ -239,12 +259,20 @@ router.patch(
     }
     const supabase = getOrgScopedClient(orgId);
 
-    const { data: row } = await supabase
+    const { data: row, error: lookupError } = await supabase
       .from("patient_followups")
       .select("id, patient_id, completed_at, body, due_at")
       .eq("id", followupId)
       .limit(1)
       .maybeSingle();
+    if (lookupError) {
+      logger.error(
+        { err: redactDbErr(lookupError), patientId, followupId },
+        "patient.followup.complete lookup failed",
+      );
+      res.status(500).json({ error: "query_failed" });
+      return;
+    }
     if (!row) {
       res.status(404).json({ error: "followup_not_found" });
       return;
@@ -296,7 +324,10 @@ router.patch(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "patient.followup.complete audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "patient.followup.complete audit write failed",
+      );
     });
 
     res.json({
@@ -338,7 +369,14 @@ router.patch(
       .eq("id", followupId)
       .limit(1)
       .maybeSingle();
-    if (lookupErr) throw lookupErr;
+    if (lookupErr) {
+      logger.error(
+        { err: redactDbErr(lookupErr), patientId, followupId },
+        "patient.followup.reopen lookup failed",
+      );
+      res.status(500).json({ error: "query_failed" });
+      return;
+    }
     if (!row || row.patient_id !== patientId) {
       res.status(404).json({ error: "followup_not_found" });
       return;
@@ -386,7 +424,10 @@ router.patch(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "patient.followup.reopen audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "patient.followup.reopen audit write failed",
+      );
     });
 
     res.json({

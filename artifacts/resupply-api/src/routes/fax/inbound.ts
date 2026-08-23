@@ -44,6 +44,7 @@ import {
 } from "@workspace/resupply-telecom";
 
 import { ingestInboundFax } from "../../lib/fax/ingest-inbound.js";
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger.js";
 
 /**
@@ -126,6 +127,6 @@ export async function processInboundFaxEvent(
       // itself carries it under PHI ACL.
     },
   }).catch((err: unknown) => {
-    logger.warn({ err }, "fax/inbound: audit write failed");
+    logger.warn({ err: redactDbErr(err) }, "fax/inbound: audit write failed");
   });
 }

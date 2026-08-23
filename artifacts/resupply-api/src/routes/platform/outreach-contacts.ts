@@ -18,6 +18,7 @@ import { z } from "zod";
 import { logAudit } from "@workspace/resupply-audit";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import {
   adminReadRateLimiter,
@@ -254,7 +255,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) =>
-      logger.warn({ err }, "platform_contacts.import audit failed"),
+      logger.warn(
+        { err: redactDbErr(err) },
+        "platform_contacts.import audit failed",
+      ),
     );
 
     res.json({ imported, skipped: rows.length - imported });

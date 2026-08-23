@@ -22,6 +22,7 @@ import { getOrgScopedClient } from "@workspace/resupply-db";
 import { logAudit } from "@workspace/resupply-audit";
 
 import { isFeatureEnabled } from "../feature-flags";
+import { redactDbErr } from "../redact-db-err";
 import { logger } from "../logger";
 import { createAndSendPatientPacket } from "./send";
 
@@ -111,7 +112,10 @@ export async function autoSendPatientPacketOnDelivery(opts: {
       trigger: "order_delivered",
     },
   }).catch((err) => {
-    logger.warn({ err }, "patient_packet.autosent audit write failed");
+    logger.warn(
+      { err: redactDbErr(err) },
+      "patient_packet.autosent audit write failed",
+    );
   });
 
   logger.info(

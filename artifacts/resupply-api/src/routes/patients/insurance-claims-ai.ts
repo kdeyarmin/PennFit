@@ -50,6 +50,7 @@ import { applyAiPatches, type AiPatch } from "../../lib/billing/ai-patch";
 import { parseRecordedIcd10 } from "../../lib/billing/coverage-diagnosis";
 import { scoreAndPersist } from "../../lib/billing/heuristic-denial-scorer";
 import { logger } from "../../lib/logger";
+import { redactDbErr } from "../../lib/redact-db-err";
 import {
   adminReadRateLimiter,
   adminWriteRateLimiter,
@@ -180,7 +181,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "insurance_claim.ai_scrub audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "insurance_claim.ai_scrub audit write failed",
+      );
     });
 
     res.status(201).json({
@@ -301,7 +305,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "insurance_claim.ai_scrub_apply audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "insurance_claim.ai_scrub_apply audit write failed",
+      );
     });
 
     res.status(200).json({ ok: true, outcomes });

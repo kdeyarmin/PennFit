@@ -17,6 +17,7 @@ import {
   getOrgScopedClient,
 } from "@workspace/resupply-db";
 
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import {
   requireAdminOnly,
@@ -219,7 +220,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "claim_template.create audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "claim_template.create audit write failed",
+      );
     });
     res.status(201).json({ id: data.id });
   },
@@ -284,7 +288,10 @@ router.patch(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "claim_template.update audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "claim_template.update audit write failed",
+      );
     });
     res.json({ ok: true });
   },
@@ -417,7 +424,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "insurance_claim.apply_template audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "insurance_claim.apply_template audit write failed",
+      );
     });
 
     res.status(201).json({

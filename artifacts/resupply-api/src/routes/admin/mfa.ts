@@ -33,6 +33,7 @@ import {
   verifyTotpCode,
 } from "@workspace/resupply-auth";
 
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
@@ -301,7 +302,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "auth.mfa.enroll_begin audit failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "auth.mfa.enroll_begin audit failed",
+      );
     });
 
     // Response carries the SECRET (so the SPA can render the QR
@@ -387,7 +391,10 @@ router.post(
         ip: req.ip ?? null,
         userAgent: req.get("user-agent") ?? null,
       }).catch((err) => {
-        logger.warn({ err }, "auth.mfa.enroll_verify_failed audit failed");
+        logger.warn(
+          { err: redactDbErr(err) },
+          "auth.mfa.enroll_verify_failed audit failed",
+        );
       });
       res.status(400).json({
         error: "invalid_code",
@@ -484,7 +491,7 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "auth.mfa.verify audit failed");
+      logger.warn({ err: redactDbErr(err) }, "auth.mfa.verify audit failed");
     });
 
     res.json({
@@ -596,7 +603,7 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "auth.mfa.disabled audit failed");
+      logger.warn({ err: redactDbErr(err) }, "auth.mfa.disabled audit failed");
     });
 
     res.json({ ok: true, enrolled: false });
@@ -725,7 +732,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "auth.mfa.device_removed audit failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "auth.mfa.device_removed audit failed",
+      );
     });
 
     res.json({ ok: true });
@@ -860,7 +870,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "auth.mfa.recovery_codes_regenerated audit failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "auth.mfa.recovery_codes_regenerated audit failed",
+      );
     });
 
     res.json({

@@ -1,3 +1,5 @@
+import { readFileSync, readdirSync } from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { redactDbErr } from "./redact-db-err";
@@ -42,5 +44,26 @@ describe("redactDbErr", () => {
       name: "non_error",
       message: "raw string failure",
     });
+  });
+
+  it("guards every API route against logging raw caught errors", () => {
+    const routesDir = path.join(import.meta.dirname, "..", "routes");
+    const routeFiles = readdirSync(routesDir, {
+      recursive: true,
+      withFileTypes: true,
+    }).filter(
+      (entry) =>
+        entry.isFile() &&
+        entry.name.endsWith(".ts") &&
+        !entry.name.endsWith(".test.ts") &&
+        !entry.name.endsWith(".spec.ts"),
+    );
+
+    for (const entry of routeFiles) {
+      const file = path.join(entry.parentPath, entry.name);
+      const source = readFileSync(file, "utf8");
+      expect(source, file).not.toContain("logger.warn({ err },");
+      expect(source, file).not.toContain("logger.error({ err },");
+    }
   });
 });

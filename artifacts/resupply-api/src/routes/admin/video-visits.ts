@@ -36,6 +36,7 @@ import {
 
 import { createTenantSendgridClient } from "../../lib/email/tenant-sender.js";
 import { isFeatureEnabled } from "../../lib/feature-flags";
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import { readSmsConfigOrNull } from "../../lib/messaging/messaging-config";
 import { resolveTenantSmsClientOptions } from "../../lib/messaging/tenant-telecom";
@@ -467,7 +468,10 @@ async function createVisitAndRespond(
     ip: req.ip ?? null,
     userAgent: req.get("user-agent") ?? null,
   }).catch((err) => {
-    logger.warn({ err }, "patient.video_visit.created audit write failed");
+    logger.warn(
+      { err: redactDbErr(err) },
+      "patient.video_visit.created audit write failed",
+    );
   });
 
   res.status(201).json({
@@ -770,7 +774,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "patient.video_visit.invited audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "patient.video_visit.invited audit write failed",
+      );
     });
 
     res.json({
@@ -888,7 +895,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "patient.video_visit.cancelled audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "patient.video_visit.cancelled audit write failed",
+      );
     });
 
     res.json({ ok: true });
@@ -946,7 +956,10 @@ router.post(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "patient.video_visit.completed audit write failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "patient.video_visit.completed audit write failed",
+      );
     });
 
     res.json({ ok: true });

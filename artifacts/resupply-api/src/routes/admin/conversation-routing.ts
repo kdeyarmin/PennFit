@@ -29,6 +29,7 @@ import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { maybeAutoAssignConversation } from "../../lib/routing/auto-assign";
 import { scoreCandidates } from "../../lib/routing/skill-score";
+import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import {
@@ -109,7 +110,10 @@ router.patch(
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "team.skills.updated audit failed");
+      logger.warn(
+        { err: redactDbErr(err) },
+        "team.skills.updated audit failed",
+      );
     });
 
     res.json({ ok: true, skills });
@@ -305,7 +309,10 @@ router.post(
         ip: req.ip ?? null,
         userAgent: req.get("user-agent") ?? null,
       }).catch((err) => {
-        logger.warn({ err }, "conversation.auto_assigned audit failed");
+        logger.warn(
+          { err: redactDbErr(err) },
+          "conversation.auto_assigned audit failed",
+        );
       });
     }
     // Translate the non-assigned outcomes to 409 so the SPA can
