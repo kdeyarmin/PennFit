@@ -16,7 +16,9 @@ const supabaseMock = installSupabaseMock();
 const { mockAdmin, loggerMock, logAuditMock } = vi.hoisted(() => ({
   mockAdmin: { current: null as MockAdminCtx | null },
   loggerMock: { error: vi.fn(), warn: vi.fn(), info: vi.fn() },
-  logAuditMock: vi.fn<(input: unknown) => Promise<undefined>>(async () => undefined),
+  logAuditMock: vi.fn<(input: unknown) => Promise<undefined>>(
+    async () => undefined,
+  ),
 }));
 
 vi.mock("../../middlewares/requireAdmin", () =>
@@ -80,7 +82,8 @@ const CREATE_ROUTES: readonly CreateRouteCase[] = [
       payerName: "Medicare",
     },
     insertTable: "prior_authorizations",
-    lookupLogMessage: "patient.prior_authorization.create patient lookup failed",
+    lookupLogMessage:
+      "patient.prior_authorization.create patient lookup failed",
     auditWarnMessage: "patient.prior_authorization.create audit write failed",
   },
 ] as const;
