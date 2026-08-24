@@ -28,6 +28,7 @@ import {
   type CatalogProduct,
   type StockReason,
 } from "@/lib/admin/catalog-api";
+import { movementDelta } from "@/lib/admin/catalog-movement";
 
 const REASONS: Array<{ value: StockReason; label: string; hint: string }> = [
   {
@@ -282,23 +283,13 @@ function StockDialog(props: {
 
   const mutation = useMutation({
     mutationFn: async () => {
-      const qty = Number.parseInt(amount, 10);
-      if (!Number.isFinite(qty) || qty <= 0) {
-        throw new Error("Enter a whole number greater than zero.");
-      }
-      // A physical count is an absolute figure, not a movement — convert it
-      // to the delta that lands on it, so the ledger still reads as history.
-      const delta =
-        reason === "count"
-          ? qty - (product.stockCount ?? 0)
-          : reason === "receipt" || reason === "return"
-            ? qty
-            : -qty;
-      if (delta === 0) {
-        throw new Error(
-          "That count matches the current number — nothing to record.",
-        );
-      }
+      // movementDelta owns the count-vs-quantity distinction and rejects
+      // anything the RPC would refuse; its message is operator-facing.
+      const delta = movementDelta(
+        reason,
+        Number.parseInt(amount, 10),
+        product.stockCount,
+      );
       return adjustStock(product.sku, {
         delta,
         reason,
