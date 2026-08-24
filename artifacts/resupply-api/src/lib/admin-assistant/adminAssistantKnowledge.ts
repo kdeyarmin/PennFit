@@ -352,7 +352,7 @@ HOW TO USE THIS:
     of the console, and /admin/resources/faq holds short answers to
     common questions.
 
-Guides (55):
+Guides (47):
   Getting started:
     finish-workspace-setup — Finish setting up your workspace
     invite-your-team — Add a teammate and set their role
@@ -375,16 +375,8 @@ Guides (55):
     coach-a-struggling-patient — Run an adherence coaching plan
     manage-document-retention — Place a legal hold or destroy an expired document
   Orders & shop:
-    take-a-front-desk-order — Ring up a walk-in at the front desk
-    fulfill-and-ship-an-order — Fulfill an order and print a shipping label
-    handle-a-return — Process a return, exchange, or refund
-    manage-subscriptions — Answer a question about a resupply subscription
-    count-and-reconcile-inventory — Run an inventory count and reconcile variance
-    moderate-reviews-and-questions — Moderate product reviews and answer customer questions
-    recover-abandoned-carts — Recover abandoned carts and clear back-in-stock waitlists
     work-insurance-leads — Work the insurance-coverage lead queue
     recover-rental-equipment — Recover a rental device from a patient who stopped therapy
-    set-inventory-reorder-points — Set reorder points so you stop running out
   Billing & claims:
     verify-a-patients-insurance — Verify a patient's insurance right now
     submit-a-claim — Take a claim from eligibility to submission

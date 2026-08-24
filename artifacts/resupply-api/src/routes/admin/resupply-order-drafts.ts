@@ -5,15 +5,15 @@
 // is due for a supply; it is NOT an order and nothing is charged. A CSR
 // stages drafts here (manually from the opportunities page, or via the
 // daily resupply-auto-draft worker), reviews the queue, and approves a
-// draft into the existing CSR sign-&-pay order flow (a Stripe Hosted
-// Checkout link the patient pays — nothing is charged on approve).
+// draft into the CSR signature order flow (a signing link the patient
+// e-signs; the order is then billed to their insurance).
 //
 //   GET  /admin/therapy-resupply/draft-orders             — review queue
 //   POST /admin/therapy-resupply/draft-orders             — batch-stage from
 //                                                            selected items
 //   POST /admin/therapy-resupply/draft-orders/:id/dismiss — drop a proposal
 //   POST /admin/therapy-resupply/draft-orders/:id/approve — create the
-//                                                            sign-&-pay order
+//                                                            signature order
 //                                                            request + link
 //
 // Org-scoped (the facade enforces the tenant filter + injects org_id on
@@ -40,9 +40,9 @@ import {
 } from "../../lib/resupply/resupply-draft-staging.js";
 import { requirePermission } from "../../middlewares/requireAdmin.js";
 
-// Stripe's USD minimum is $0.50; a $100k sanity cap. Mirrors the bounds
-// the CSR order-requests route enforces so approve and the Orders page
-// agree.
+// Order-value bounds: a $0.50 floor (a zero-value line is a data-entry
+// slip) and a $100k sanity cap. Mirrors the bounds the CSR order-requests
+// route enforces so approve and the Orders page agree.
 const MIN_TOTAL_CENTS = 50;
 const MAX_TOTAL_CENTS = 100_000_00;
 
@@ -430,7 +430,6 @@ router.post(
         phone: phoneE164,
         link,
         orderReference: created.order_reference,
-        amountTotalCents,
         hasDocuments: snapshot.documents.length > 0,
         orderRequestId: created.id,
       }));

@@ -3,8 +3,8 @@
 // Distinct from /platform/account-setup (the platform super-admin's
 // deployment launch checklist). THIS surface is what a freshly signed-up
 // tenant owner uses to stand up their OWN workspace: branding, custom
-// domain, phone / SMS / fax numbers, email sender, payments, team, and a
-// starter catalog. Every item links to the admin page that configures it.
+// domain, phone / SMS / fax numbers, email sender, and team. Every item
+// links to the admin page that configures it.
 //
 // Read-only and gated by the coarse `requireAdmin` (not a fine permission)
 // so it can power the dashboard "Finish setting up" card for ANY admin —
@@ -17,15 +17,9 @@
 
 import { Router, type IRouter } from "express";
 
-import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger.js";
-import {
-  getStripeClient,
-  readStripeConfigOrNull,
-} from "../../lib/stripe/config.js";
-import { stripeAccountRequestOptions } from "../../lib/stripe/connect.js";
-import { isShopCategory } from "../../lib/stripe/products-meta.js";
 import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit.js";
 import { requireAdmin } from "../../middlewares/requireAdmin.js";
 
@@ -58,14 +52,6 @@ export interface TenantSetupSnapshot {
   messagingServiceSid: string | null;
   faxFromNumber: string | null;
   fromEmail: string | null;
-  stripeAccountId: string | null;
-  stripeChargesEnabled: boolean;
-  /**
-   * Count of catalog products in the tenant's OWN Stripe account, or null
-   * when it couldn't be read (Stripe unset, not the tenant's own account,
-   * or a probe error). Only used to flip the catalog item to "complete".
-   */
-  catalogProductCount: number | null;
   activeAdminCount: number;
   /** Count of patients in the tenant's workspace (drives the "add/import
    *  patients" item). 0 for a brand-new tenant. */
@@ -85,7 +71,6 @@ export function buildTenantSetupItems(
   const domainVerified =
     s.customDomainStatus === "verified" && set(s.customDomain);
   const smsReady = set(s.smsFromNumber) || set(s.messagingServiceSid);
-  const stripeReady = set(s.stripeAccountId) && s.stripeChargesEnabled;
 
   return [
     // ── Branding & domain ────────────────────────────────────────────
@@ -192,27 +177,10 @@ export function buildTenantSetupItems(
       required: false,
     },
 
-    // ── Payments ─────────────────────────────────────────────────────
-    {
-      id: "payments",
-      group: "Payments",
-      title: "Connect payments (Stripe)",
-      description:
-        "Connect your Stripe account so storefront checkout deposits to you. Required before opening the cash-pay shop.",
-      status: stripeReady ? "complete" : "incomplete",
-      detail: stripeReady
-        ? "Stripe connected and charges enabled."
-        : set(s.stripeAccountId)
-          ? "Stripe account linked — finish onboarding so Stripe enables charges."
-          : "Not connected.",
-      href: "/admin/billing/config/organization",
-      required: true,
-    },
-
-    // ── Team & catalog ───────────────────────────────────────────────
+    // ── Team ─────────────────────────────────────────────────────────
     {
       id: "team",
-      group: "Team & catalog",
+      group: "Team",
       title: "Invite your team",
       description:
         "Add colleagues as admins or customer-service reps so you're not the only login.",
@@ -222,25 +190,6 @@ export function buildTenantSetupItems(
           ? `${s.activeAdminCount} active staff accounts.`
           : "Just you so far — invite teammates from Team.",
       href: "/admin/team",
-      required: false,
-    },
-    {
-      id: "catalog",
-      group: "Team & catalog",
-      title: "Add your product catalog",
-      description:
-        "Load products so your storefront isn't empty. Start from a generic CPAP-supply catalog with one click, then edit pricing to match yours.",
-      status:
-        s.catalogProductCount != null && s.catalogProductCount > 0
-          ? "complete"
-          : "action",
-      detail:
-        s.catalogProductCount != null && s.catalogProductCount > 0
-          ? `${s.catalogProductCount}${s.catalogProductCount >= 100 ? "+" : ""} product${s.catalogProductCount === 1 ? "" : "s"} in your catalog.`
-          : stripeReady
-            ? "Empty — load the starter catalog from Inventory, then edit pricing to match yours."
-            : "Connect payments first, then load the starter catalog.",
-      href: "/admin/shop/inventory",
       required: false,
     },
   ];
@@ -257,9 +206,6 @@ async function loadSnapshot(orgId: string): Promise<TenantSetupSnapshot> {
     messagingServiceSid: null,
     faxFromNumber: null,
     fromEmail: null,
-    stripeAccountId: null,
-    stripeChargesEnabled: false,
-    catalogProductCount: null,
     activeAdminCount: 0,
     patientCount: 0,
   };
@@ -270,7 +216,7 @@ async function loadSnapshot(orgId: string): Promise<TenantSetupSnapshot> {
       .schema("resupply")
       .from("organizations")
       .select(
-        "storefront_name, logo_url, custom_domain, custom_domain_status, voice_from_number, sms_from_number, twilio_messaging_service_sid, fax_from_number, from_email, stripe_account_id, stripe_charges_enabled",
+        "storefront_name, logo_url, custom_domain, custom_domain_status, voice_from_number, sms_from_number, twilio_messaging_service_sid, fax_from_number, from_email",
       )
       .eq("id", orgId)
       .limit(1)
@@ -288,8 +234,6 @@ async function loadSnapshot(orgId: string): Promise<TenantSetupSnapshot> {
       (r["twilio_messaging_service_sid"] as string | null) ?? null;
     base.faxFromNumber = (r["fax_from_number"] as string | null) ?? null;
     base.fromEmail = (r["from_email"] as string | null) ?? null;
-    base.stripeAccountId = (r["stripe_account_id"] as string | null) ?? null;
-    base.stripeChargesEnabled = r["stripe_charges_enabled"] === true;
   } catch (err) {
     logger.warn(
       { event: "tenant_setup_org_probe_failed", err },
@@ -323,39 +267,6 @@ async function loadSnapshot(orgId: string): Promise<TenantSetupSnapshot> {
     logger.warn(
       { event: "tenant_setup_patient_count_failed", err },
       "tenant-setup: patient count probe failed",
-    );
-  }
-
-  // Catalog probe (fail-soft): count the tenant's OWN catalog products so
-  // the checklist can flip "Add your product catalog" to complete. Only
-  // counts the account that IS the tenant's — their connected account, or
-  // the platform account for the seed tenant — never another tenant's
-  // platform-shared catalog. Any hiccup leaves the count null (→ "action").
-  try {
-    const config = readStripeConfigOrNull();
-    if (config) {
-      const accountOptions = await stripeAccountRequestOptions(orgId);
-      const ownsAccount =
-        Boolean(accountOptions.stripeAccount) ||
-        orgId === (await resolveSeedOrgId());
-      if (ownsAccount) {
-        const stripe = getStripeClient(config);
-        const list = await stripe.products.list(
-          { active: true, limit: 100 },
-          accountOptions,
-        );
-        base.catalogProductCount = list.data.filter((p) =>
-          isShopCategory(p.metadata?.category),
-        ).length;
-      } else {
-        // Tenant hasn't connected Stripe yet → no catalog of their own.
-        base.catalogProductCount = 0;
-      }
-    }
-  } catch (err) {
-    logger.warn(
-      { event: "tenant_setup_catalog_probe_failed", err },
-      "tenant-setup: catalog product probe failed",
     );
   }
 

@@ -299,7 +299,6 @@ describe("App.tsx — lazy() imports for educational article pages", () => {
 
 describe("App.tsx — formerly-eager pages are code-split", () => {
   const NOW_LAZY: Array<[string, string]> = [
-    ["shop", "Shop"],
     ["masks", "Masks"],
     ["how-it-works", "HowItWorks"],
     ["faq", "Faq"],
@@ -309,7 +308,6 @@ describe("App.tsx — formerly-eager pages are code-split", () => {
     ["insurance", "Insurance"],
     ["insurance-estimate", "InsuranceEstimate"],
     ["track-order", "TrackOrder"],
-    ["nps", "NpsLanding"],
     ["mask-fit", "MaskFitLanding"],
     ["learn-videos", "LearnVideos"],
   ];
@@ -332,7 +330,6 @@ describe("App.tsx — formerly-eager pages are code-split", () => {
   });
 
   it("leaves the now-lazy pages' routes registered (components unchanged)", () => {
-    expect(hasRoute(SRC, "/shop", "Shop")).toBe(true);
     expect(hasRoute(SRC, "/masks", "Masks")).toBe(true);
     expect(hasRoute(SRC, "/learn", "Learn")).toBe(true);
     expect(hasRoute(SRC, "/faq", "Faq")).toBe(true);

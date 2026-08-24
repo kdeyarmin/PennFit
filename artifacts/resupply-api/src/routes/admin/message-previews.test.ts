@@ -386,9 +386,9 @@ describe("POST /admin/message-previews/:id/send — SMS", () => {
   });
 
   it("400s for a scenario that has no SMS variant", async () => {
-    // The order confirmation is email-only.
+    // The billing statement is email-only.
     await request(makeApp())
-      .post("/admin/message-previews/orders.confirmation/send")
+      .post("/admin/message-previews/billing.statement/send")
       .send({ channel: "sms", to: "+12155551234" })
       .expect(400);
     expect(sendSms).not.toHaveBeenCalled();

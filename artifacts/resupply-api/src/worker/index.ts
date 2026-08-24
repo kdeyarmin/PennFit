@@ -61,7 +61,6 @@ import { registerEligibilityReverifyBatchJob } from "./jobs/eligibility-reverify
 import { registerAutoSubmitBatchJob } from "./jobs/auto-submit-batch.js";
 import { registerPriorAuthAutoSubmitJob } from "./jobs/prior-auth-auto-submit.js";
 import { registerBillHoldSweepJob } from "./jobs/bill-hold-sweep.js";
-import { registerInventoryReservationSweepJob } from "./jobs/inventory-reservation-sweep.js";
 import { registerClinicalOutreachBatchJob } from "./jobs/clinical-outreach-batch.js";
 import { registerOutreachPlaybookTickJob } from "./jobs/outreach-playbook-tick.js";
 import { registerSlaEscalationSweepJob } from "./jobs/sla-escalation-sweep.js";
@@ -99,13 +98,10 @@ import { registerOfficeAllyInboundPollJob } from "./jobs/office-ally-inbound-pol
 import { registerPaMcoSlaSweepJob } from "./jobs/pa-mco-sla-sweep.js";
 import { registerPecosSyncJob } from "./jobs/pecos-sync.js";
 import { registerCappedRentalAdvanceJob } from "./jobs/capped-rental-advance.js";
-import { registerPaymentPlanAutochargeJob } from "./jobs/payment-plan-autocharge.js";
-import { registerPatientAutopayChargeJob } from "./jobs/patient-autopay-charge.js";
 import { registerDwoExpirySweepJob } from "./jobs/dwo-expiry-sweep.js";
 import { registerWebhookDispatcherJob } from "./jobs/webhook-dispatcher.js";
 import { registerAutoWorkflowJob } from "./jobs/auto-workflow.js";
 import { registerInvitePasswordExpiryNotifyJob } from "./jobs/invite-password-expiry-notify.js";
-import { registerLowStockAlertsJob } from "./jobs/low-stock-alerts.js";
 import { registerPrescriptionRequestAutoDraftJob } from "./jobs/prescription-request-auto-draft.js";
 import { registerConversationOrphanAssigneeSweepJob } from "./jobs/conversation-orphan-assignee-sweep.js";
 import { registerPaymentFailedAlertJob } from "./jobs/payment-failed-alert.js";
@@ -775,16 +771,6 @@ async function doStartWorker(): Promise<void> {
     registerBillHoldSweepJob(boss),
   );
 
-  // Inventory-reservation sweep — every 5 min (cadence overridable via
-  // INVENTORY_RESERVATION_SWEEP_CRON). Expires stale checkout holds across
-  // every tenant. Always-on: the oversell guard is fail-open and strictly
-  // safer, so there's no reason to gate the housekeeping sweep.
-  await safeRegister(
-    "registerInventoryReservationSweepJob",
-    registrationFailures,
-    () => registerInventoryReservationSweepJob(boss),
-  );
-
   // Proactive clinical outreach (RT #23). Queue + worker always register;
   // the recurring cron only attaches when CLINICAL_OUTREACH_CRON is set
   // (opt-in — it emits outbound patient contact).
@@ -1111,27 +1097,6 @@ async function doStartWorker(): Promise<void> {
     () => registerCappedRentalAdvanceJob(boss),
   );
 
-  // Auto-charge due patient payment-plan installments off-session
-  // (mig 0255). Triple-gated: opt-in cron (BILLING_PAYMENT_PLAN_
-  // AUTOCHARGE_CRON), the seeded-OFF billing.payment_plan_autocharge
-  // flag, and per-plan patient authorization. Inert by default.
-  await safeRegister(
-    "registerPaymentPlanAutochargeJob",
-    registrationFailures,
-    () => registerPaymentPlanAutochargeJob(boss),
-  );
-
-  // Auto-charge a patient's outstanding balance off-session against the
-  // card they saved + authorized in the portal (mig 0260). Triple-gated:
-  // opt-in cron (BILLING_PATIENT_AUTOPAY_CRON), the seeded-OFF
-  // billing.patient_autopay flag, and the per-patient autopay toggle.
-  // Inert by default.
-  await safeRegister(
-    "registerPatientAutopayChargeJob",
-    registrationFailures,
-    () => registerPatientAutopayChargeJob(boss),
-  );
-
   // Weekly DWO / CMN renewal sweep (mig 0134). T-60/T-30/T-7 CSR
   // alerts before expires_on.
   await safeRegister("dwo.expiry-sweep", registrationFailures, () =>
@@ -1175,21 +1140,6 @@ async function doStartWorker(): Promise<void> {
     "registerInvitePasswordExpiryNotifyJob",
     registrationFailures,
     () => registerInvitePasswordExpiryNotifyJob(boss),
-  );
-
-  // Every 6 hours — shop inventory low-stock alert digest. Reads
-  // Stripe catalog, dedups per-SKU via resupply.low_stock_alert_state,
-  // emails RESUPPLY_ADMIN_EMAILS one rollup per tick.
-  await safeRegister(
-    "shop-inventory.low-stock-alerts",
-    registrationFailures,
-    () =>
-      registerIfProvisioned(
-        boss,
-        "shop-inventory.low-stock-alerts",
-        ["low_stock_alert_state"],
-        registerLowStockAlertsJob,
-      ),
   );
 
   // Daily 13:43 UTC — pre-build draft prescription_request_packets

@@ -487,7 +487,7 @@ function CreateCsrOrderModal({
   return (
     <AdminModal
       title="Create a sign & pay order"
-      description="The customer gets a secure link to review the order, e-sign standalone paperwork, and pay by card through Stripe."
+      description="The customer gets a secure link to review the order and e-sign the required paperwork. Nothing is charged — the order is billed to their insurance."
       onClose={onClose}
       className="max-w-3xl"
     >

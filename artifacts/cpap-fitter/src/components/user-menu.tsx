@@ -4,7 +4,7 @@
 //                + sign-out.
 //   Signed out → "Sign in" link that round-trips back to the current
 //                path via ?redirect=, so a visitor who clicks "Sign in"
-//                from /shop/cart lands back on /shop/cart afterwards
+//                lands back where the visitor started afterwards
 //                instead of the admin dashboard.
 //
 // The dropdown calls the identity shim's signOut() which clears the
@@ -12,7 +12,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "wouter";
-import { LogIn, LogOut, MessageSquare, Package, User } from "lucide-react";
+import { LogIn, LogOut, MessageSquare, User } from "lucide-react";
 
 import { toast } from "@/hooks/use-toast";
 import { SignedIn, useShopIdentity } from "@/lib/identity";
@@ -142,28 +142,13 @@ function UserPill() {
           >
             <User className="h-4 w-4" /> My account
           </Link>
-          {/*
-            Direct shortcut to the orders page. On desktop this duplicates
-            the header "Your orders" link, but on mobile (where that link is
-            hidden) it is the only one-tap path to order history & returns
-            without first opening /account and finding the right tab.
-          */}
-          <Link
-            href="/shop/orders"
-            onClick={() => setOpen(false)}
-            className="flex items-center gap-2 px-3 py-2 rounded-md hover:bg-muted"
-            role="menuitem"
-            data-testid="user-menu-orders"
-          >
-            <Package className="h-4 w-4" /> Your orders
-          </Link>
           <button
             type="button"
             role="menuitem"
             onClick={() => {
               setOpen(false);
               // Navigate home ONLY on a successful sign-out. The shop
-              // signOut() clears cart/wishlist/chat and revokes the server
+              // signOut() clears wishlist/chat and revokes the server
               // session; it re-throws if the server call fails. Navigating in
               // `finally` regardless would strand the user on the home page
               // looking signed-out while their session cookie is still valid

@@ -28,14 +28,6 @@ const DOCS_SRC = readFileSync(
   path.join(SECTIONS_DIR, "DocumentsSection.tsx"),
   "utf8",
 );
-const ORDERS_SRC = readFileSync(
-  path.join(SECTIONS_DIR, "OrdersSection.tsx"),
-  "utf8",
-);
-const SUBS_SRC = readFileSync(
-  path.join(SECTIONS_DIR, "SubscriptionsSection.tsx"),
-  "utf8",
-);
 
 // ---------------------------------------------------------------------------
 // ProfileSection extraction — import location
@@ -120,86 +112,6 @@ describe("account — account-card-error no longer has role=alert", () => {
 // role="alert" removed — account-reorder-error
 // ---------------------------------------------------------------------------
 
-describe("account — account-reorder-error no longer has role=alert", () => {
-  it("still renders data-testid account-reorder-error", () => {
-    expect(ORDERS_SRC).toContain('data-testid="account-reorder-error"');
-  });
-
-  it("account-reorder-error element does not carry role=alert", () => {
-    const idx = ORDERS_SRC.indexOf('data-testid="account-reorder-error"');
-    expect(idx).toBeGreaterThan(-1);
-    const elementContext = ORDERS_SRC.slice(idx - 150, idx + 50);
-    expect(elementContext).not.toContain('role="alert"');
-  });
-});
-
-// ---------------------------------------------------------------------------
-// role="alert" removed — account-subscription-action-error
-// ---------------------------------------------------------------------------
-
-describe("account — account-subscription-action-error no longer has role=alert", () => {
-  it("still renders data-testid account-subscription-action-error", () => {
-    expect(SUBS_SRC).toContain(
-      'data-testid="account-subscription-action-error"',
-    );
-  });
-
-  it("account-subscription-action-error element does not carry role=alert", () => {
-    const idx = SUBS_SRC.indexOf(
-      'data-testid="account-subscription-action-error"',
-    );
-    expect(idx).toBeGreaterThan(-1);
-    const elementContext = SUBS_SRC.slice(idx - 150, idx + 50);
-    expect(elementContext).not.toContain('role="alert"');
-  });
-});
-
-// ---------------------------------------------------------------------------
-// role="alert" removed — cadence-load error paragraph
-// ---------------------------------------------------------------------------
-
-describe("account — cadenceLoadError paragraph no longer has role=alert", () => {
-  it("still renders the cadence load error text", () => {
-    expect(SUBS_SRC).toContain(
-      "Couldn't load cadence options. Please try again.",
-    );
-  });
-
-  it("cadenceLoadError paragraph does not carry role=alert", () => {
-    const errorText = "Couldn't load cadence options. Please try again.";
-    const idx = SUBS_SRC.indexOf(errorText);
-    expect(idx).toBeGreaterThan(-1);
-    const elementContext = SUBS_SRC.slice(
-      idx - 80,
-      idx + errorText.length + 20,
-    );
-    expect(elementContext).not.toContain('role="alert"');
-  });
-});
-
-// ---------------------------------------------------------------------------
-// role="alert" removed — ReportLostLink error span
-// ---------------------------------------------------------------------------
-
-describe("account — ReportLostLink error span no longer has role=alert", () => {
-  it("ReportLostLink renders the error message in a span", () => {
-    expect(ORDERS_SRC).toContain("result.message");
-  });
-
-  it("the error span inside ReportLostLink does not carry role=alert", () => {
-    const fnStart = ORDERS_SRC.indexOf("function ReportLostLink(");
-    expect(fnStart).toBeGreaterThan(-1);
-    const msgIdx = ORDERS_SRC.indexOf("result.message", fnStart);
-    expect(msgIdx).toBeGreaterThan(-1);
-    const spanContext = ORDERS_SRC.slice(msgIdx - 100, msgIdx + 50);
-    expect(spanContext).not.toContain('role="alert"');
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Regression: Field helper function not defined in account.tsx
-// ---------------------------------------------------------------------------
-
 describe("account — Field helper is not defined in account.tsx (moved to ProfileSection.tsx)", () => {
   it("does not contain a local Field function declaration", () => {
     // The Field label-wrapper component moved to ProfileSection.tsx.
@@ -258,12 +170,15 @@ describe("account — formatMoneyCents no longer imported from @/lib/shop-api", 
 // Tabbed account navigation — the ~20-section scroll is now five tabs.
 // ---------------------------------------------------------------------------
 describe("account — sections grouped into tabs", () => {
-  it("defines an AccountTabBar with the five tab ids", () => {
+  it("defines an AccountTabBar with the four tab ids", () => {
+    // The "orders" tab retired with cash-pay: there is no retail order
+    // list, membership, or subscription for a patient to manage.
     expect(SRC).toContain("function AccountTabBar");
     expect(SRC).toContain("const ACCOUNT_TABS");
-    for (const id of ["overview", "orders", "therapy", "messages", "account"]) {
+    for (const id of ["overview", "therapy", "messages", "account"]) {
       expect(SRC).toContain(`id: "${id}"`);
     }
+    expect(SRC).not.toContain('id: "orders"');
   });
 
   it("renders a tablist with per-tab testids", () => {
@@ -276,9 +191,6 @@ describe("account — sections grouped into tabs", () => {
     expect(SRC).toContain("function hashToAccountTab");
     expect(SRC).toContain('if (h === "insights") return "overview"');
     expect(SRC).toContain('if (h === "messages") return "messages"');
-    expect(SRC).toContain(
-      'if (h === "autoship" || h === "orders") return "orders"',
-    );
     expect(SRC).toContain('addEventListener("hashchange"');
   });
 
@@ -293,10 +205,6 @@ describe("account — sections grouped into tabs", () => {
       "<ProfileSection",
       "<ClinicalInfoSection",
       "<InsightsSection",
-      "<ReorderSuggestionsSection",
-      "<SubscriptionsSection",
-      "<OrdersSection",
-      "<MyReturnsSection",
       "<SubstitutionsSection",
       "<TherapySummarySection",
       "<MaintenanceSection",

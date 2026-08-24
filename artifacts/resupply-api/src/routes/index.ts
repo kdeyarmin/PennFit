@@ -1,6 +1,4 @@
 import { Router, type IRouter } from "express";
-import abandonedCartsRouter from "./admin/abandoned-carts.js";
-import shopCustomersAdminRouter from "./admin/customers.js";
 import shopCustomerNotesRouter from "./admin/customer-notes.js";
 import shopCustomerFollowupsRouter from "./admin/customer-followups.js";
 import customerTimelineRouter from "./admin/customer-timeline.js";
@@ -32,13 +30,8 @@ import agentAvailabilityRouter from "./admin/agent-availability.js";
 import conversationsSearchRouter from "./admin/conversations-search.js";
 import conversationDraftReplyRouter from "./admin/conversation-draft-reply.js";
 import clickToDialRouter from "./admin/click-to-dial.js";
-import shopOrdersAdminRouter from "./admin/shop-orders.js";
 import xpsShippingAdminRouter from "./admin/xps-shipping.js";
-import counterOrdersRouter from "./admin/counter-orders.js";
-import csrOrderRequestsAdminRouter from "./admin/csr-order-requests.js";
-import shopProductsAdminRouter from "./admin/shop-products.js";
 import storefrontBrandingAdminRouter from "./admin/storefront-branding.js";
-import inventoryReconciliationRouter from "./admin/inventory-reconciliation.js";
 import csrMacrosRouter from "./admin/csr-macros.js";
 import alertsRouter from "./admin/alerts.js";
 import alertMessageOverridesRouter from "./admin/alert-message-overrides.js";
@@ -46,9 +39,7 @@ import messageTemplatesRouter from "./admin/message-templates.js";
 import messagePreviewsRouter from "./admin/message-previews.js";
 import outreachPlaybooksRouter from "./admin/outreach-playbooks.js";
 import messageTemplateOverridesRouter from "./admin/message-template-overrides.js";
-import shopReturnsAdminRouter from "./admin/shop-returns.js";
 import shopReturnNotesRouter from "./admin/return-notes.js";
-import shopReviewRequestsRouter from "./admin/shop-review-requests.js";
 import teamRouter from "./admin/team.js";
 import adminAssistantChatRouter from "./admin/assistant-chat.js";
 import opsStatusRouter from "./admin/ops-status.js";
@@ -78,7 +69,6 @@ import rtOverviewRouter from "./admin/rt-overview.js";
 import productivityRouter from "./admin/productivity.js";
 import staffingLiveRouter from "./admin/staffing-live.js";
 import patientDocumentsRetentionRouter from "./admin/patient-documents-retention.js";
-import shopBackordersRouter from "./admin/shop-backorders.js";
 import officeClosuresRouter from "./admin/office-closures.js";
 import officeHoursRouter from "./admin/office-hours.js";
 import companyCalendarRouter from "./admin/company-calendar.js";
@@ -89,7 +79,6 @@ import conversationTriageRouter from "./admin/conversation-triage.js";
 import patientAddressHistoryRouter from "./admin/patient-address-history.js";
 import patientTimelineRouter from "./admin/patient-timeline.js";
 import csrShiftsRouter from "./admin/csr-shifts.js";
-import shopOrderLossClaimsRouter from "./admin/shop-order-loss-claims.js";
 import carrierLabelsRouter from "./admin/carrier-labels.js";
 import formAcknowledgementsRouter from "./admin/form-acknowledgements.js";
 import patientFitOverridesRouter from "./admin/patient-fit-overrides.js";
@@ -101,8 +90,6 @@ import therapyUsageReportRouter from "./admin/therapy-usage-report.js";
 import patientTherapyNightsManualRouter from "./admin/patient-therapy-nights-manual.js";
 import patientIdentityVerificationsRouter from "./admin/patient-identity-verifications.js";
 import providerPortalRouter from "./provider-portal.js";
-import shopOrderPodRouter from "./admin/shop-order-pod.js";
-import shopOrderPodUploadRouter from "./admin/shop-order-pod-upload.js";
 import integrationsStatusRouter from "./admin/integrations-status.js";
 import integrationsNightlySyncRouter from "./admin/integrations-nightly-sync.js";
 import integrationsWebhooksRouter from "./integrations-webhooks.js";
@@ -131,13 +118,10 @@ import deliveryFailuresRouter from "./admin/delivery-failures.js";
 import outboundMessagesRouter from "./admin/outbound-messages.js";
 import lookupRouter from "./admin/lookup.js";
 import systemInfoRouter from "./admin/system-info.js";
-import shopReviewsAdminRouter from "./admin/shop-reviews.js";
-import shopProductQuestionsAdminRouter from "./admin/product-questions.js";
 import csrComplianceAlertsRouter from "./admin/csr-compliance-alerts.js";
 import patientOnboardingRouter from "./admin/patient-onboarding.js";
 import patientPortalInviteRouter from "./admin/patient-portal-invite.js";
 import prescriptionRenewalsRouter from "./admin/prescription-renewals.js";
-import shopProductCompatibilityAdminRouter from "./admin/product-compatibility.js";
 import patientTherapySyncRouter from "./admin/patient-therapy-sync.js";
 import patientResupplySummaryRouter from "./admin/patient-resupply-summary.js";
 import patientTherapyLinksRouter from "./admin/patient-therapy-links.js";
@@ -148,9 +132,6 @@ import faxSettingsRouter from "./admin/fax-settings.js";
 import phoneSettingsRouter from "./admin/phone-settings.js";
 import emailSettingsRouter from "./admin/email-settings.js";
 import tenantSetupRouter from "./admin/tenant-setup.js";
-import catalogSeedRouter from "./admin/catalog-seed.js";
-import shopBackInStockAdminRouter from "./admin/shop-back-in-stock.js";
-import shopSubsMetricsRouter from "./admin/shop-subscriptions-metrics.js";
 import insuranceLeadsAdminRouter from "./admin/insurance-leads.js";
 import fitterLeadsAdminRouter from "./admin/fitter-leads.js";
 import fitterInvitesAdminRouter from "./admin/fitter-invites.js";
@@ -166,8 +147,6 @@ import denialsWorklistRouter from "./admin/denials-worklist.js";
 import claimStatusRouter from "./admin/claim-status.js";
 import billingActionQueueRouter from "./admin/billing-action-queue.js";
 import patientTherapySnapshotRouter from "./admin/patient-therapy-snapshot.js";
-import paymentPlansRouter from "./admin/payment-plans.js";
-import patientPaymentLinkRouter from "./admin/patient-payment-link.js";
 import eligibilityVerificationWorklistRouter from "./admin/eligibility-verification-worklist.js";
 import priorAuthRenewalRouter from "./admin/prior-auth-renewal.js";
 import manualClaimRouter from "./admin/manual-claim.js";
@@ -191,14 +170,12 @@ import sameOrSimilarRouter from "./admin/same-or-similar.js";
 import cappedRentalCyclesRouter from "./admin/capped-rental-cycles.js";
 import dwoDocumentsRouter from "./admin/dwo-documents.js";
 import adherencePredictionsRouter from "./admin/adherence-predictions.js";
-import shopMembershipRouter from "./admin/shop-membership.js";
 import fhirRouter from "./fhir/index.js";
 import davinciPasSubmitRouter from "./admin/davinci-pas-submit.js";
 import priorAuthRequestFormRouter from "./admin/prior-auth-request-form.js";
 import billingBenchmarksRouter from "./admin/billing-benchmarks.js";
 import billingBatchSubmitRouter from "./admin/billing-batch-submit.js";
 import billingExport837pRouter from "./admin/billing-export-837p.js";
-import stripeConnectRouter from "./admin/stripe-connect.js";
 import claimPaperworkRouter from "./admin/claim-paperwork.js";
 import billingAutoSubmitRouter from "./admin/billing-auto-submit.js";
 import billingStatementsRouter from "./admin/billing-statements.js";
@@ -332,19 +309,6 @@ router.use(rulesRouter);
 router.use(complianceRulesRouter);
 router.use(conversationsRouter);
 router.use(episodesRouter);
-// /admin/shop/abandoned-carts/* — operator tooling for the cart-
-// abandonment SendGrid nudge (list + manual dispatcher trigger).
-// requireAdmin gate is on the router itself.
-router.use(abandonedCartsRouter);
-// /admin/shop/reviews/* — moderation queue for customer-submitted
-// product reviews. Reviews are pending by default and only become
-// publicly visible after an admin approves them. requireAdmin gate
-// is on the router itself.
-router.use(shopReviewsAdminRouter);
-// /admin/shop/product-questions — moderation queue + answer flow
-// for customer-submitted product Q&A (Phase A.5). Pending questions
-// only become publicly visible after a CSR posts an answer.
-router.use(shopProductQuestionsAdminRouter);
 // /admin/patients/:id/onboarding + /admin/onboarding/send-due —
 // first-90-day adherence-coaching enrollment + dispatcher (Phase
 // B.1 / feature #17). The CMS adherence threshold is missed by
@@ -366,16 +330,6 @@ router.use(patientPortalInviteRouter);
 // expiring within 30 days and emails the patient to coordinate
 // renewal. Aeroflow built its brand on this.
 router.use(prescriptionRenewalsRouter);
-// /admin/shop/products/:productId/compatibility — admin CRUD for
-// the product-to-machine compatibility map (Phase B.3 / feature
-// #11). Public reads live alongside the catalog router.
-router.use(shopProductCompatibilityAdminRouter);
-// /admin/shop/inventory/reconciliations/* — monthly physical-count
-// workflow. Admin enters counted quantities per SKU, server records
-// variance against the live Stripe stock_count, optionally pushes
-// the new counts back to Stripe. requireAdmin gate via
-// requirePermission("admin.tools.manage") on the router.
-router.use(inventoryReconciliationRouter);
 // /admin/patients/:id/therapy-nights/* — therapy-cloud sync
 // (Phase E.1 / feature #18). Adapter stubs for ResMed AirView +
 // Philips Care; the actual partner integration lands once partner
@@ -428,10 +382,6 @@ router.use(prescriptionRequestsRouter);
 // when it comes back. Reads resupply.signature_tracking, which the
 // prescription-request and manual-document send paths register into.
 router.use(signatureTrackingRouter);
-// /admin/shop/back-in-stock-queue — visibility into who's waiting
-// for which OOS SKU + manual fanout trigger. requireAdmin gate is
-// on the router itself.
-router.use(shopBackInStockAdminRouter);
 // /admin/shop/insurance-leads/* — durable queue + status mutations
 // for submissions to the public POST /shop/insurance-leads form.
 // requireAdmin gate is on the router itself.
@@ -578,12 +528,6 @@ router.use(billingActionQueueRouter);
 // /admin/patients/:id/therapy-snapshot — compact recent-adherence
 // snapshot for the CSR/RT patient context panel (CSR C3). patients.read.
 router.use(patientTherapySnapshotRouter);
-// /admin/.../payment-plans — patient installment-plan tracker (biller B7).
-router.use(paymentPlansRouter);
-// POST /admin/patients/:id/payment-link — email/SMS a patient a hosted
-// Stripe Checkout link to collect a payment (copay / cash-pay balance).
-// patients.update.
-router.use(patientPaymentLinkRouter);
 // /admin/billing/eligibility-verification-worklist — active coverages
 // ranked by re-verification urgency (never/terminating/stale) (Biller
 // #31, read-only half). reports.read.
@@ -666,9 +610,6 @@ router.use(dwoDocumentsRouter);
 // /admin/patients/:id/adherence/score + /history — heuristic
 // adherence predictor + history; at-risk list at /admin/adherence/at-risk.
 router.use(adherencePredictionsRouter);
-// /admin/shop/customers/:id/membership — cash-pay membership tier
-// management (Stripe Subscriptions handles billing).
-router.use(shopMembershipRouter);
 // /fhir/r4/* — read-only FHIR R4 patient surface (Cures Act +
 // USCDI v4 future-proofing). CapabilityStatement, Patient, and
 // Patient/$everything (Coverage + Condition + MedicationRequest +
@@ -687,7 +628,6 @@ router.use(billingBenchmarksRouter);
 router.use(billingBatchSubmitRouter);
 // /admin/billing/claims/export-837p — download a clearinghouse-neutral 837P.
 router.use(billingExport837pRouter);
-router.use(stripeConnectRouter);
 // /admin/billing/auto-submit/* — staged-approval auto-submission: the
 // "ready to transmit" worklist (preflight-clean + active eligibility),
 // automation status, and the operator approve-and-submit action.
@@ -784,44 +724,18 @@ router.use(dispenseReadinessRouter);
 // /admin/support/* — tenant-facing support tickets with an AI intake bot
 // (requireAdmin + support.tickets feature gate on the router).
 router.use(adminSupportRouter);
-// /admin/shop/products/* — operator tooling for the cash-pay catalog
-// itself. Today: PATCH stock_count metadata on a Stripe Product.
-// requireAdmin gate is on the router itself.
-router.use(shopProductsAdminRouter);
-// POST /admin/shop/catalog/seed — one-click "load starter catalog" into the
-// tenant's own Stripe account (idempotent). Gated by admin.tools.manage.
-router.use(catalogSeedRouter);
 // /admin/storefront-branding/* — a tenant configures their own
 // storefront name / tagline / logo and binds + verifies a custom domain.
 router.use(storefrontBrandingAdminRouter);
-// /admin/shop/orders/* — fulfillment tooling on shop_orders rows
-// (tracking entry, mark-delivered, address override, refund issuance).
-// requireAdmin gate is on the router itself.
-router.use(shopOrdersAdminRouter);
 // /admin/shipping/xps/* + /admin/shop/orders/:orderId/shipping/* — XPS
 // Ship shipping-label integration: rate-shop, merge the patient address
 // onto a label, book + print it, and auto-fill tracking. requirePermission
 // gate is on each route.
 router.use(xpsShippingAdminRouter);
-// /admin/shop/counter-orders — Front Desk walk-in ordering. A CSR rings
-// up a cash or bill-to-insurance order for a walk-in customer without
-// Stripe Hosted Checkout. requirePermission("orders.create") gate is on
-// the route itself.
-router.use(counterOrdersRouter);
-// /admin/csr-order-requests* — CSR-created "sign & pay" orders: the
-// CSR builds an order from the admin Orders page and the customer
-// receives a signed link to review, e-sign paperwork, and pay via
-// Stripe Hosted Checkout (public twin: routes/storefront/csr-orders).
-router.use(csrOrderRequestsAdminRouter);
 // /admin/shop/orders/:orderId/notes — internal CSR notes per shop
 // order (Phase 14). Mounted after the orders router so the more-
 // specific /notes path doesn't shadow any future detail GET.
 router.use(shopOrderNotesRouter);
-// /admin/shop/returns/* — comfort-guarantee swap / refund / RMA
-// queue. Linear lifecycle (requested → approved → shipped_back →
-// received → refunded|replaced|closed) with strict from-state
-// assertions on every transition.
-router.use(shopReturnsAdminRouter);
 // /admin/shop/returns/:returnId/notes — internal CSR notes per
 // return (Phase 15). Mounted after the returns router so the more-
 // specific /notes path doesn't shadow the lifecycle endpoints.
@@ -873,14 +787,6 @@ router.use(outreachPlaybooksRouter);
 // the parent route: forward-deploy-safe via the lookup-fallback
 // chain even before the migration is journaled.
 router.use(messageTemplateOverridesRouter);
-// /admin/shop/subscriptions/metrics — KPI rollup for the
-// subscription health dashboard. Pure SQL aggregation — no Stripe
-// round-trip on this path.
-router.use(shopSubsMetricsRouter);
-// /admin/shop/review-requests/send-due — manual dispatcher for the
-// post-purchase review-request email. Same atomic-claim pattern as
-// the abandoned-cart dispatcher; comm-prefs + DND aware.
-router.use(shopReviewRequestsRouter);
 // /admin/team/* — DB-backed admin/CSR team management. Supplements
 // (does not replace) the RESUPPLY_ADMIN_EMAILS env var allowlist;
 // see middlewares/requireAdmin.ts for the resolution order.
@@ -994,11 +900,6 @@ router.use(rtOverviewRouter);
 // /admin/patient-documents/retention/* — HIPAA retention sweep
 // review queue, legal-hold toggle, and (admin-only) destruction.
 router.use(patientDocumentsRetentionRouter);
-// /admin/shop/backorders + /admin/shop/sku-substitutes — resupply
-// substitution catalog. requireAdmin for backorder marks (CSR
-// day-to-day); requireAdminOnly for substitute rule changes
-// (clinical preference order).
-router.use(shopBackordersRouter);
 // /admin/office-closures — CSR-managed closure windows; inbound
 // SMS during an active window gets the closure auto-reply.
 router.use(officeClosuresRouter);
@@ -1031,11 +932,6 @@ router.use(patientTimelineRouter);
 // HIPAA audit-log archive — list flagged rows + admin destroy.
 // CSR shift schedule — who's on now + admin scheduling.
 router.use(csrShiftsRouter);
-// /admin/shop/orders/:orderId/loss-claims — lost-shipment workflow
-// for paid orders that never arrived. Lifecycle: open →
-// carrier_filed → resolved_refunded | resolved_reshipped |
-// closed_unresolved.
-router.use(shopOrderLossClaimsRouter);
 // /admin/shop/returns/:returnId/label — adapter-backed carrier
 // label generation. Returns 503 until CARRIER_LABEL_VENDOR is set.
 router.use(carrierLabelsRouter);
@@ -1069,14 +965,6 @@ router.use(patientIdentityVerificationsRouter);
 // /provider-portal/:token — public token-gated read-only caseload
 // view for a physician/NP. Token minted by CSR.
 router.use(providerPortalRouter);
-// /admin/shop/orders/:orderId/pod — proof-of-delivery photo upload
-// stamp for accreditation + dispute resolution.
-router.use(shopOrderPodRouter);
-// /admin/shop/orders/:orderId/pod/* — 3-step upload (presigned PUT
-// → finalize-verifies-bucket → admin-only GET stream + DELETE) for
-// the proof-of-delivery photo. Co-exists with the legacy PATCH
-// above; pattern mirrors prescription-attachment for consistency.
-router.use(shopOrderPodUploadRouter);
 // /admin/integrations/status — vendor-adapter health dashboard.
 router.use(integrationsStatusRouter);
 // /admin/integrations/nightly-sync — manual trigger for the nightly
@@ -1176,11 +1064,6 @@ router.use(lookupRouter);
 // triage. Platform super-admin only; never returns env-var values, only
 // "is this set?" booleans.
 router.use(systemInfoRouter);
-// /admin/shop/customers/* — Customer 360 surface (search/list +
-// detail + reorder-on-behalf). Read-mostly; the only write is the
-// reorder action which creates a Stripe Checkout Session. Same
-// requireAdmin gate as the other shop-admin modules.
-router.use(shopCustomersAdminRouter);
 // /admin/shop/customers/:userId/notes — internal CSR notes per
 // shop customer (Phase 10). Mounted after the customers router so
 // the more-specific /notes path doesn't shadow the detail GET.

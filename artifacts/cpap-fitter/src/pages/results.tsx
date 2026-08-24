@@ -26,13 +26,9 @@ import {
 } from "lucide-react";
 import { track } from "@/lib/track";
 import {
-  fetchShopProducts,
-  formatMoneyCents,
   submitFitterComplete,
   submitFitterInviteComplete,
-  type ShopProductView,
 } from "@/lib/shop-api";
-import { useCart } from "@/hooks/use-cart";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { MaskRecommendationCard } from "@/components/mask-recommendation-card";
 import { formatMaskType } from "@/lib/mask-images";
@@ -43,7 +39,6 @@ import {
   isWithheld,
   toLegacyMaskType,
   type FitAssessment,
-  type FitCandidate,
   type SafetyScreenPrompt,
 } from "@/lib/fit-assess-api";
 import {
@@ -52,7 +47,6 @@ import {
 } from "@/components/safety-screen";
 import { toProfilePayload } from "@/lib/fit-profile";
 import { ClinicalResults, FitWithheld } from "@/components/clinical-results";
-import { rememberFitCheckoutContext } from "@/lib/fit-checkout-context";
 
 export function Results() {
   useDocumentTitle("Your mask matches");
@@ -138,87 +132,6 @@ export function Results() {
     });
     track("mask_chosen", { mask: mask.modelNumber });
     setLocation("/order");
-  };
-
-  // Cash-pay bridge: when a recommended mask is also sold in the shop
-  // (matched by manufacturer model number) and checkout is live, each
-  // card gets a secondary "buy without insurance" CTA that drops the
-  // shop product into the cart. Strictly best-effort — a failed or
-  // preview-mode catalog load just hides the CTAs, never blocks the
-  // recommendations the patient came for.
-  const { addItem } = useCart();
-  const [shopByModelNumber, setShopByModelNumber] = useState<Map<
-    string,
-    ShopProductView
-  > | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    fetchShopProducts()
-      .then((result) => {
-        if (cancelled || "unavailable" in result) return;
-        if (!result.purchasingEnabled) return;
-        const byModel = new Map<string, ShopProductView>();
-        for (const p of result.products) {
-          // Untracked inventory (null) is always purchasable; a tracked
-          // count is in stock only when strictly positive. Match the rest
-          // of the shop's `<= 0` out-of-stock rule so negative (oversold)
-          // inventory isn't mistaken for available.
-          const outOfStock =
-            typeof p.stockCount === "number" && p.stockCount <= 0;
-          if (p.modelNumber && !outOfStock) {
-            byModel.set(p.modelNumber, p);
-          }
-        }
-        setShopByModelNumber(byModel);
-      })
-      .catch(() => {
-        // Catalog unreachable — cash-pay CTAs simply don't render.
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const handleCashPayAdd = (
-    mask: { maskId: string; modelNumber: string },
-    product: ShopProductView,
-    /**
-     * Present only on the clinical path, where the order can be linked
-     * back to the fitting that produced it. The LEGACY path records no
-     * fit session, so there is genuinely nothing to attribute.
-     */
-    fitLink?: {
-      fitSessionId: string;
-      orderedMaskSlug: string;
-      orderedVariantId: string | null;
-    },
-  ) => {
-    const added = addItem({
-      productId: product.id,
-      priceId: product.price.id,
-      name: product.name,
-      unitAmountCents: product.price.unitAmount,
-      currency: product.price.currency,
-      imageUrl: product.imageUrl,
-      isBundle: product.isBundle,
-      mode: "one_time",
-      recurringPriceId: product.recurringPrice?.id ?? null,
-      recurringIntervalLabel: product.recurringPrice?.intervalLabel ?? null,
-      stockCount: product.stockCount,
-    });
-    if (!added.ok) return; // sold out between load and click — leave the page as-is
-    // Hand the fitting off to checkout. Written only on success so a
-    // rejected add (sold out) doesn't leave a link pointing at an order
-    // that was never placed.
-    if (fitLink) {
-      rememberFitCheckoutContext({
-        fitSessionId: fitLink.fitSessionId,
-        orderedMaskSlug: fitLink.orderedMaskSlug,
-        orderedVariantId: fitLink.orderedVariantId,
-      });
-    }
-    track("mask_cashpay_added", { mask: mask.modelNumber });
-    setLocation("/shop/cart");
   };
 
   // The mask fitter is invitation-only: the recommendation endpoint
@@ -424,71 +337,6 @@ export function Results() {
     catalog.masks.forEach((m) => map.set(m.id, m));
     return map;
   }, [catalog]);
-
-  // Cash-pay on the CLINICAL path.
-  //
-  // Two different identifier spaces meet here, and conflating them is
-  // what broke this. `shopByModelNumber` is keyed on the TENANT's own
-  // SKU — `model_number` in the Stripe product's metadata, e.g.
-  // "PHM-RM-F20". `mask_size_variants.manufacturer_part_number` is the
-  // MANUFACTURER's part number. They are not the same string, and every
-  // variant the 0486 seed writes leaves the part number NULL besides, so
-  // resolving on it alone matched nothing: the CTA never rendered on the
-  // clinical path, and because this resolver is the only caller that
-  // supplies `fitLink`, `fit_checkout_context` was never written either
-  // — so `fit_sessions.shop_order_id` and `dispensed_at` stayed NULL and
-  // the fitter-outcome dispense rate was structurally zero.
-  //
-  // So try the part number first (correct when a tenant does key its shop
-  // on manufacturer part numbers), then fall back to the legacy catalog's
-  // `modelNumber` for the same slug. 0481 deliberately keeps the slug
-  // space identical across both catalogs, which is what makes that
-  // fallback exact rather than a guess. A mask in neither still hides the
-  // CTA, which remains the right failure: a mask we can't price is a mask
-  // we can't sell.
-  //
-  // This also carries the fit-session link into the cart, which is the
-  // only way a paid order ever gets attributed back to the fitting that
-  // produced it.
-  //
-  // Deliberately a plain function, not a memo: it is called once per
-  // candidate per render and does a Map lookup, and `ClinicalResults` is
-  // not memoized, so a stable identity would buy nothing.
-  const clinicalCashPayFor = (c: FitCandidate) => {
-    const partNumber =
-      c.cushion?.manufacturerPartNumber ?? c.frame?.manufacturerPartNumber;
-    const legacyModelNumber = catalogById.get(c.maskSlug)?.modelNumber;
-    const shopKey =
-      (partNumber && shopByModelNumber?.has(partNumber)
-        ? partNumber
-        : undefined) ??
-      (legacyModelNumber && shopByModelNumber?.has(legacyModelNumber)
-        ? legacyModelNumber
-        : undefined);
-    if (!shopKey) return undefined;
-    const product = shopByModelNumber?.get(shopKey);
-    if (!product) return undefined;
-    const fitSessionId = assessment?.fitSessionId;
-    return {
-      priceLabel: formatMoneyCents(
-        product.price.unitAmount,
-        product.price.currency,
-      ),
-      onAddToCart: () =>
-        handleCashPayAdd(
-          { maskId: c.maskId, modelNumber: shopKey },
-          product,
-          fitSessionId
-            ? {
-                fitSessionId,
-                orderedMaskSlug: c.maskSlug,
-                orderedVariantId:
-                  c.cushion?.variantId ?? c.frame?.variantId ?? null,
-              }
-            : undefined,
-        ),
-    };
-  };
 
   // Fire the campaign-enrollment ping the first time `data` arrives
   // with at least one recommendation. Gated by emailConsent so a
@@ -784,7 +632,6 @@ export function Results() {
         </div>
         <ClinicalResults
           assessment={assessment}
-          cashPayFor={clinicalCashPayFor}
           onChoose={(c) =>
             handleChooseMask({
               maskId: c.maskSlug,
@@ -1042,7 +889,6 @@ export function Results() {
           </p>
         </div>
         {data.topRecommendations.map((mask, idx) => {
-          const shopProduct = shopByModelNumber?.get(mask.modelNumber);
           return (
             <MaskRecommendationCard
               key={mask.maskId}
@@ -1059,17 +905,6 @@ export function Results() {
                 })
               }
               measurements={measurements}
-              cashPay={
-                shopProduct
-                  ? {
-                      priceLabel: formatMoneyCents(
-                        shopProduct.price.unitAmount,
-                        shopProduct.price.currency,
-                      ),
-                      onAddToCart: () => handleCashPayAdd(mask, shopProduct),
-                    }
-                  : undefined
-              }
             />
           );
         })}

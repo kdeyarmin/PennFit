@@ -15,9 +15,6 @@ const EMPTY: TenantSetupSnapshot = {
   messagingServiceSid: null,
   faxFromNumber: null,
   fromEmail: null,
-  stripeAccountId: null,
-  stripeChargesEnabled: false,
-  catalogProductCount: null,
   activeAdminCount: 1,
   patientCount: 0,
 };
@@ -35,23 +32,6 @@ describe("buildTenantSetupItems", () => {
     expect(byId(items, "sms-number").status).toBe("incomplete");
     expect(byId(items, "voice-number").status).toBe("incomplete");
     expect(byId(items, "email-sender").status).toBe("incomplete");
-    expect(byId(items, "payments").status).toBe("incomplete");
-    // catalog is an action item until the tenant has products of their own.
-    expect(byId(items, "catalog").status).toBe("action");
-  });
-
-  it("completes the catalog item once the tenant has products of their own", () => {
-    const seeded = buildTenantSetupItems({ ...EMPTY, catalogProductCount: 27 });
-    expect(byId(seeded, "catalog").status).toBe("complete");
-    expect(byId(seeded, "catalog").detail).toContain("27 products");
-
-    // A zero count (own account, but empty) stays an action item.
-    const empty = buildTenantSetupItems({ ...EMPTY, catalogProductCount: 0 });
-    expect(byId(empty, "catalog").status).toBe("action");
-
-    // 100+ is rendered with a "+" so a capped probe doesn't read as exactly 100.
-    const big = buildTenantSetupItems({ ...EMPTY, catalogProductCount: 100 });
-    expect(byId(big, "catalog").detail).toContain("100+ products");
   });
 
   it("completes branding when a storefront name is set", () => {
@@ -81,22 +61,6 @@ describe("buildTenantSetupItems", () => {
       customDomainStatus: "verified",
     });
     expect(byId(verified, "custom-domain").status).toBe("complete");
-  });
-
-  it("requires BOTH an account id and charges enabled for payments", () => {
-    const linkedOnly = buildTenantSetupItems({
-      ...EMPTY,
-      stripeAccountId: "acct_1",
-      stripeChargesEnabled: false,
-    });
-    expect(byId(linkedOnly, "payments").status).toBe("incomplete");
-
-    const ready = buildTenantSetupItems({
-      ...EMPTY,
-      stripeAccountId: "acct_1",
-      stripeChargesEnabled: true,
-    });
-    expect(byId(ready, "payments").status).toBe("complete");
   });
 
   it("surfaces the patient import item, completing once the tenant has patients", () => {
@@ -135,7 +99,7 @@ describe("buildTenantSetupItems", () => {
     // SMS number is RECOMMENDED, not required: outbound SMS already works on
     // the shared platform number, so a tenant isn't blocked from "set up"
     // until they provision their own (they do that as they grow).
-    expect(required).toEqual(["branding", "email-sender", "payments"].sort());
+    expect(required).toEqual(["branding", "email-sender"].sort());
     expect(byId(items, "sms-number").required).toBe(false);
   });
 

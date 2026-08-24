@@ -7,11 +7,11 @@
 // "No signatures found matching the expected signature for payload"
 // for every event Stripe sends.
 //
-// `app.ts` mounts `app.post("/resupply-api/stripe/webhook",
-// express.raw(...), stripeWebhookHandler)` BEFORE `app.use(express.
-// json())`. This test pins that ordering so a future middleware
-// re-shuffle fails CI loud, instead of silently breaking webhook
-// signature verification in production.
+// `app.ts` mounts `app.post("/resupply-api/stripe/platform-webhook",
+// express.raw(...), stripePlatformBillingWebhookHandler)` BEFORE
+// `app.use(express.json())`. This test pins that ordering so a future
+// middleware re-shuffle fails CI loud, instead of silently breaking
+// webhook signature verification in production.
 //
 // Strategy: mock the webhook handler with a spy that captures
 // `req.body`, then issue an HTTP request through the actual app. If
@@ -39,20 +39,11 @@ vi.hoisted(() => {
 });
 
 const captured = vi.hoisted(() => ({
-  body: null as unknown,
-  isBuffer: false,
   platformBody: null as unknown,
   platformIsBuffer: false,
 }));
 
-vi.mock("./lib/stripe/webhook-handler", () => ({
-  stripeWebhookHandler: (req: Request, res: Response) => {
-    captured.body = req.body;
-    captured.isBuffer = Buffer.isBuffer(req.body);
-    res.status(200).send("ok");
-  },
-  // The dedicated platform-billing webhook is mounted with the same
-  // raw-body-before-express.json() contract; pin it the same way.
+vi.mock("./lib/stripe/platform-webhook-handler", () => ({
   stripePlatformBillingWebhookHandler: (req: Request, res: Response) => {
     captured.platformBody = req.body;
     captured.platformIsBuffer = Buffer.isBuffer(req.body);
@@ -63,20 +54,7 @@ vi.mock("./lib/stripe/webhook-handler", () => ({
 const { default: app } = await import("./app");
 
 describe("Stripe webhook middleware ordering", () => {
-  it("delivers a raw Buffer body to the handler (raw parser runs before global JSON parser)", async () => {
-    const payload = '{"id":"evt_test_ordering","type":"ping"}';
-
-    await request(app)
-      .post("/resupply-api/stripe/webhook")
-      .set("content-type", "application/json")
-      .send(payload)
-      .expect(200);
-
-    expect(captured.isBuffer).toBe(true);
-    expect((captured.body as Buffer).toString("utf8")).toBe(payload);
-  });
-
-  it("delivers a raw Buffer body to the dedicated platform-billing handler too", async () => {
+  it("delivers a raw Buffer body to the platform-billing handler", async () => {
     const payload = '{"id":"evt_test_platform_ordering","type":"ping"}';
 
     await request(app)

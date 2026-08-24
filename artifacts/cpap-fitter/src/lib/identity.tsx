@@ -9,7 +9,6 @@ import type * as React from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { authClient, authHooks, SESSION_QUERY_KEY } from "./auth-hooks";
-import { cartStore } from "@/hooks/use-cart";
 import { csrfHeader } from "./csrf";
 
 export interface ShopIdentity {
@@ -100,13 +99,6 @@ export function useShopIdentity(): ShopIdentity {
       // device-shared content doesn't bleed.
       if (typeof window !== "undefined") {
         try {
-          // Clear through the shared cart store, not a raw
-          // localStorage.removeItem: the store also holds the cart in
-          // memory and re-renders every mounted consumer. A raw remove
-          // would leave the always-mounted header MiniCart showing
-          // User A's items, and the stale in-memory state would
-          // re-persist them on the next mutation.
-          cartStore.clear();
           window.localStorage.removeItem("pennpaps:wishlist:v1");
           window.localStorage.removeItem("pennpaps:compare:v1");
           window.localStorage.removeItem("pennpaps_recently_viewed_v1");

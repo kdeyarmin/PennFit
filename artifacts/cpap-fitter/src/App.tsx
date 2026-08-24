@@ -1,4 +1,4 @@
-import React, { Suspense, useEffect, useState } from "react";
+import React, { Suspense, useEffect } from "react";
 import {
   Switch,
   Route,
@@ -12,9 +12,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/not-found";
 import { Layout } from "@/components/layout";
 import { ErrorBoundary } from "@/components/error-boundary";
-import { CartSnapshotSync } from "@/hooks/use-cart-snapshot";
 import { lazyWithRetry } from "@/lib/lazy-with-retry";
-import { getCompanyContact } from "@/lib/contact";
 
 // The landing page is the ONE eagerly-imported route. It's the most
 // common entry point, so keeping it in the initial chunk avoids a
@@ -23,13 +21,6 @@ import { getCompanyContact } from "@/lib/contact";
 // below) so its page code never weighs down the initial bundle.
 import { Home } from "@/pages/home";
 
-// Formerly-eager public pages, now code-split. Each becomes its own
-// chunk, loaded on demand under the shared <Suspense> boundary in
-// PatientRouter. They had grown large (shop/learn/faq are 800–1200+
-// lines) and were the bulk of the >400 kB initial chunk.
-const Shop = lazyWithRetry(() =>
-  import("@/pages/shop").then((m) => ({ default: m.Shop })),
-);
 const Masks = lazyWithRetry(() =>
   import("@/pages/masks").then((m) => ({ default: m.Masks })),
 );
@@ -61,9 +52,6 @@ const InsuranceEstimate = lazyWithRetry(() =>
 );
 const TrackOrder = lazyWithRetry(() =>
   import("@/pages/track-order").then((m) => ({ default: m.TrackOrder })),
-);
-const NpsLanding = lazyWithRetry(() =>
-  import("@/pages/nps").then((m) => ({ default: m.NpsLanding })),
 );
 const MaskFitLanding = lazyWithRetry(() =>
   import("@/pages/mask-fit").then((m) => ({ default: m.MaskFitLanding })),
@@ -102,9 +90,6 @@ const Results = lazyWithRetry(() =>
 const Order = lazyWithRetry(() =>
   import("@/pages/order").then((m) => ({ default: m.Order })),
 );
-const OrderSuccess = lazyWithRetry(() =>
-  import("@/pages/order-success").then((m) => ({ default: m.OrderSuccess })),
-);
 const ComfortGuaranteePage = lazyWithRetry(() =>
   import("@/pages/comfort-guarantee").then((m) => ({
     default: m.ComfortGuaranteePage,
@@ -122,30 +107,6 @@ const SleepApneaQuiz = lazyWithRetry(() =>
   import("@/pages/sleep-apnea-quiz").then((m) => ({
     default: m.SleepApneaQuiz,
   })),
-);
-const ShopCart = lazyWithRetry(() =>
-  import("@/pages/shop-cart").then((m) => ({ default: m.ShopCart })),
-);
-const ShopProductDetail = lazyWithRetry(() =>
-  import("@/pages/shop-product-detail").then((m) => ({
-    default: m.ShopProductDetail,
-  })),
-);
-const ShopCheckoutSuccess = lazyWithRetry(() =>
-  import("@/pages/shop-checkout-success").then((m) => ({
-    default: m.ShopCheckoutSuccess,
-  })),
-);
-const ShopCheckoutCancel = lazyWithRetry(() =>
-  import("@/pages/shop-checkout-cancel").then((m) => ({
-    default: m.ShopCheckoutCancel,
-  })),
-);
-const ShopOrders = lazyWithRetry(() =>
-  import("@/pages/shop-orders").then((m) => ({ default: m.ShopOrders })),
-);
-const ShopWishlist = lazyWithRetry(() =>
-  import("@/pages/shop-wishlist").then((m) => ({ default: m.ShopWishlist })),
 );
 const AccountPage = lazyWithRetry(() =>
   import("@/pages/account").then((m) => ({ default: m.AccountPage })),
@@ -176,9 +137,6 @@ const VerifyEmailPage = lazyWithRetry(() =>
     default: m.VerifyEmailPage,
   })),
 );
-const ReturnsPage = lazyWithRetry(() =>
-  import("@/pages/returns").then((m) => ({ default: m.ReturnsPage })),
-);
 
 // Help Center — task-oriented, "how do I use this feature" documentation.
 // Distinct from /learn (medical patient education) and /faq (quick clinical
@@ -193,16 +151,6 @@ const Help = lazyWithRetry(() =>
 const HelpFindYourMask = lazyWithRetry(() =>
   import("@/pages/help-find-your-mask").then((m) => ({
     default: m.HelpFindYourMask,
-  })),
-);
-const HelpPlaceAnOrder = lazyWithRetry(() =>
-  import("@/pages/help-place-an-order").then((m) => ({
-    default: m.HelpPlaceAnOrder,
-  })),
-);
-const HelpShopAndCheckout = lazyWithRetry(() =>
-  import("@/pages/help-shop-and-checkout").then((m) => ({
-    default: m.HelpShopAndCheckout,
   })),
 );
 const HelpTrackYourOrder = lazyWithRetry(() =>
@@ -225,29 +173,9 @@ const HelpInsuranceEstimate = lazyWithRetry(() =>
     default: m.HelpInsuranceEstimate,
   })),
 );
-const HelpReturnsAndRefunds = lazyWithRetry(() =>
-  import("@/pages/help-returns-and-refunds").then((m) => ({
-    default: m.HelpReturnsAndRefunds,
-  })),
-);
 const HelpResetPassword = lazyWithRetry(() =>
   import("@/pages/help-reset-password").then((m) => ({
     default: m.HelpResetPassword,
-  })),
-);
-const HelpSaveToWishlist = lazyWithRetry(() =>
-  import("@/pages/help-save-to-wishlist").then((m) => ({
-    default: m.HelpSaveToWishlist,
-  })),
-);
-const HelpManageSubscriptions = lazyWithRetry(() =>
-  import("@/pages/help-manage-subscriptions").then((m) => ({
-    default: m.HelpManageSubscriptions,
-  })),
-);
-const HelpPaymentMethods = lazyWithRetry(() =>
-  import("@/pages/help-payment-methods").then((m) => ({
-    default: m.HelpPaymentMethods,
   })),
 );
 const HelpCommunicationPreferences = lazyWithRetry(() =>
@@ -685,9 +613,9 @@ const PatientPacketSign = lazyWithRetry(() =>
     default: m.PatientPacketSign,
   })),
 );
-const OrderPay = lazyWithRetry(() =>
-  import("@/pages/order-pay").then((m) => ({
-    default: m.OrderPay,
+const OrderSign = lazyWithRetry(() =>
+  import("@/pages/order-sign").then((m) => ({
+    default: m.OrderSign,
   })),
 );
 const VideoVisitPage = lazyWithRetry(() =>
@@ -919,13 +847,6 @@ function GuardedOrder() {
   return <Order />;
 }
 
-function GuardedShopOrders() {
-  const { isSignedIn, isLoaded } = useShopIdentity();
-  if (!isLoaded) return <RouteFallback />;
-  if (!isSignedIn) return <Redirect to="/sign-in" />;
-  return <ShopOrders />;
-}
-
 function GuardedAccount() {
   const { isSignedIn, isLoaded } = useShopIdentity();
   if (!isLoaded) return <RouteFallback />;
@@ -950,114 +871,6 @@ function GuardedAccountBilling() {
  * rate limiting, so this doesn't widen the attack surface beyond
  * the existing track-order page.
  */
-function GuardedOrderSuccess() {
-  const [state, setState] = useState<"checking" | "ok" | "deny">("checking");
-  useEffect(() => {
-    let cancelled = false;
-    // Fast path: sessionStorage carries the confirmation from /order.
-    try {
-      const stored = sessionStorage.getItem("fitter_order_confirmation");
-      if (stored) {
-        setState("ok");
-        return;
-      }
-    } catch {
-      /* fall through to URL-param recovery */
-    }
-    // Recovery path: read ?ref + ?email from the URL and ask the
-    // server. If both are present and the lookup succeeds, prime
-    // sessionStorage so <OrderSuccess /> renders normally without
-    // its own retry needed.
-    let ref: string | null = null;
-    let email: string | null = null;
-    try {
-      const params = new URLSearchParams(window.location.search);
-      ref = params.get("ref");
-      email = params.get("email");
-    } catch {
-      /* ignore — URL parse failure falls through to deny */
-    }
-    if (!ref || !email) {
-      setState("deny");
-      return;
-    }
-    void (async () => {
-      try {
-        const res = await fetch("/api/orders/track", {
-          method: "POST",
-          credentials: "same-origin",
-          headers: {
-            Accept: "application/json",
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ orderReference: ref, email }),
-        });
-        if (cancelled) return;
-        if (!res.ok) {
-          setState("deny");
-          return;
-        }
-        const data = (await res.json()) as {
-          orderReference: string;
-          mask: {
-            name: string;
-            manufacturer: string | null;
-            modelNumber?: string | null;
-          };
-        };
-        // Prime sessionStorage in the same shape /order writes so the
-        // OrderSuccess component's existing hydration path Just Works.
-        // Recovered orders don't carry measurements (not returned by
-        // /api/orders/track — they live in the persisted order's
-        // payload jsonb and aren't part of the public lookup surface);
-        // <OrderSuccess /> already renders the measurements card
-        // conditionally so absence is a clean visual no-op.
-        try {
-          sessionStorage.setItem(
-            "fitter_order_confirmation",
-            JSON.stringify({
-              orderReference: data.orderReference,
-              message: `Your order has been sent to ${getCompanyContact().legalName}. A team member will contact you within 1 business day to confirm and arrange shipping.`,
-              mask: {
-                name: data.mask.name,
-                manufacturer: data.mask.manufacturer ?? "",
-                modelNumber: data.mask.modelNumber ?? "",
-              },
-            }),
-          );
-          setState("ok");
-        } catch {
-          // sessionStorage write failed (e.g. private browsing /
-          // storage disabled). Without it, OrderSuccess hydrates to
-          // null and the page is blank — better to deny+redirect so
-          // the patient at least sees the home page than to leave
-          // them staring at an empty "Order confirmed" frame.
-          setState("deny");
-          return;
-        }
-        // URL scrub runs ONLY after successful recovery so that a
-        // transient fetch failure leaves the ?ref + ?email intact —
-        // the patient can refresh and retry from the same URL.
-        // Scrubbing earlier would burn the recovery inputs on the
-        // first attempt and bounce them to "/" with no way back.
-        try {
-          const scrubbedUrl = `${window.location.pathname}${window.location.hash}`;
-          window.history.replaceState(window.history.state, "", scrubbedUrl);
-        } catch {
-          /* ignore — best-effort URL scrub */
-        }
-      } catch {
-        if (!cancelled) setState("deny");
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-  if (state === "checking") return <RouteFallback />;
-  if (state === "deny") return <Redirect to="/" />;
-  return <OrderSuccess />;
-}
 
 function PatientRouter() {
   const [location] = useLocation();
@@ -1070,7 +883,6 @@ function PatientRouter() {
         on every patient page where the cart can change. No-op for
         signed-out visitors.
       */}
-      <CartSnapshotSync />
       {/*
         Inline error boundary INSIDE the Layout so a crash in any single
         page falls back to a recoverable card while the header/nav/footer
@@ -1108,11 +920,6 @@ function PatientRouter() {
             {/* Help Center — specific /help/* guides registered before the
               /help hub so wouter's <Switch> matches them first. */}
             <Route path="/help/find-your-mask" component={HelpFindYourMask} />
-            <Route path="/help/place-an-order" component={HelpPlaceAnOrder} />
-            <Route
-              path="/help/shop-and-checkout"
-              component={HelpShopAndCheckout}
-            />
             <Route
               path="/help/track-your-order"
               component={HelpTrackYourOrder}
@@ -1129,23 +936,7 @@ function PatientRouter() {
               path="/help/insurance-estimate"
               component={HelpInsuranceEstimate}
             />
-            <Route
-              path="/help/returns-and-refunds"
-              component={HelpReturnsAndRefunds}
-            />
             <Route path="/help/reset-password" component={HelpResetPassword} />
-            <Route
-              path="/help/save-to-wishlist"
-              component={HelpSaveToWishlist}
-            />
-            <Route
-              path="/help/manage-subscriptions"
-              component={HelpManageSubscriptions}
-            />
-            <Route
-              path="/help/payment-methods"
-              component={HelpPaymentMethods}
-            />
             <Route
               path="/help/communication-preferences"
               component={HelpCommunicationPreferences}
@@ -1259,23 +1050,7 @@ function PatientRouter() {
             <Route path="/insurance" component={Insurance} />
             <Route path="/insurance/estimate" component={InsuranceEstimate} />
             <Route path="/track-order" component={TrackOrder} />
-            <Route path="/nps" component={NpsLanding} />
             <Route path="/mask-fit" component={MaskFitLanding} />
-            <Route path="/shop" component={Shop} />
-            <Route path="/shop/p/:productId">
-              {(params) => <ShopProductDetail productId={params.productId} />}
-            </Route>
-            <Route path="/shop/cart" component={ShopCart} />
-            <Route
-              path="/shop/checkout-success"
-              component={ShopCheckoutSuccess}
-            />
-            <Route
-              path="/shop/checkout-cancel"
-              component={ShopCheckoutCancel}
-            />
-            <Route path="/shop/orders" component={GuardedShopOrders} />
-            <Route path="/shop/wishlist" component={ShopWishlist} />
             {/* Push-notification deep links. The backend sends pushes
                 with url=/account/orders (shipping updates) and
                 /account/insights (smart triggers); both surfaces are
@@ -1295,21 +1070,19 @@ function PatientRouter() {
             {/* Public token-gated "review, sign & pay" page for
                 CSR-created orders (link arrives by SMS/email; token
                 rides the query string like /patient-packet-sign). */}
-            <Route path="/order-pay" component={OrderPay} />
+            <Route path="/order-sign" component={OrderSign} />
             {/* Public token-gated telehealth join page (link arrives by
                 SMS/email; token rides the query string like
                 /patient-packet-sign). */}
             <Route path="/video-visit" component={VideoVisitPage} />
             <Route path="/privacy" component={Privacy} />
             <Route path="/terms" component={Terms} />
-            <Route path="/returns" component={ReturnsPage} />
 
             {/* Guarded routes — see GuardedXxx components above. */}
             <Route path="/measure" component={GuardedMeasure} />
             <Route path="/questionnaire" component={GuardedQuestionnaire} />
             <Route path="/results" component={GuardedResults} />
             <Route path="/order" component={GuardedOrder} />
-            <Route path="/order-success" component={GuardedOrderSuccess} />
 
             <Route component={NotFound} />
           </Switch>

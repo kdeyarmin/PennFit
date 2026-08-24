@@ -20,8 +20,6 @@ import csrOrdersRouter from "./csr-orders.js";
 import chatRouter from "./chat.js";
 import sleepCoachRouter from "./sleep-coach.js";
 import meClaimsRouter from "./me-claims.js";
-import mePaymentsRouter from "./me-payments.js";
-import mePaymentMethodsRouter from "./me-payment-methods.js";
 import meBillingRouter from "./me-billing.js";
 import meInsuranceEstimateRouter from "./me-insurance-estimate.js";
 import { attachSignedIn } from "../../middlewares/requireSignedIn.js";
@@ -75,9 +73,9 @@ router.use(tenantSignupRouter);
 // new-patient document packet. Token-gated (HMAC); no login. Mounted
 // before attachSignedIn so it stays unauthenticated.
 router.use(patientPacketsRouter);
-// /api/csr-orders/view + /sign + /checkout — public "sign & pay" flow
-// for CSR-created orders. Token-gated (HMAC); no login. Mounted before
-// attachSignedIn so it stays unauthenticated.
+// /api/csr-orders/view + /sign — public signature flow for CSR-created
+// orders. Token-gated (HMAC); no login. Mounted before attachSignedIn so
+// it stays unauthenticated.
 router.use(csrOrdersRouter);
 router.use(chatRouter);
 // Patient-portal session resolution for the routers below. They read
@@ -95,14 +93,6 @@ router.use(sleepCoachRouter);
 // Patient-portal claim explorer: read-only /api/me/claims +
 // /api/me/billing-balance for the logged-in patient.
 router.use(meClaimsRouter);
-// /api/me/payments — Stripe PaymentIntent for patient balances +
-// list. The intent's success is processed via the existing
-// /resupply-api/stripe/webhook handler (payment_intent.* cases).
-router.use(mePaymentsRouter);
-// /api/me/payment-methods — patient-controlled card-on-file + autopay
-// toggle. Saving a card never charges; the worker (gated by the
-// seeded-OFF billing.patient_autopay flag + an env cron) does.
-router.use(mePaymentMethodsRouter);
 // /api/me/billing-statements — the patient's own statement history
 // + on-demand PDF re-render (no PDF persistence — the line_items_json
 // snapshot is the source of truth).

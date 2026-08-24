@@ -28,7 +28,7 @@ vi.mock("../platform-billing/stripe", () => ({
 vi.mock("../../worker/index.js", () => ({ getBoss: vi.fn() }));
 
 const { stripePlatformBillingWebhookHandler } =
-  await import("./webhook-handler");
+  await import("./platform-webhook-handler");
 
 function makeRes() {
   const res = {
