@@ -21,7 +21,7 @@ export interface RecordFitRequestInput {
   requestType: "full_details" | "callback";
   fullName: string;
   email: string;
-  phone: string;
+  phone: string | null;
   preferredContactMethod: "phone" | "email" | "text";
   preferredContactTime?: string | null;
   dateOfBirth?: string | null;

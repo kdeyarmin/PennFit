@@ -198,11 +198,12 @@ export async function captureToQuestionnaire(
  * tile would fail somewhere far away with an unhelpful message.
  */
 export async function questionnaireToResults(page: Page): Promise<void> {
+  // Present-or-absent, not try/catch. A blanket catch here would swallow
+  // a genuinely broken tile and let the generic radio loop below answer
+  // the gate by accident — the helper would pass while proving nothing.
   const adultTile = page.getByTestId("button-population-adult");
-  try {
+  if ((await adultTile.count()) > 0) {
     await adultTile.click({ timeout: 5_000 });
-  } catch {
-    /* Already past the gate (a resumed session carries the answer). */
   }
 
   for (let i = 0; i < 13; i++) {

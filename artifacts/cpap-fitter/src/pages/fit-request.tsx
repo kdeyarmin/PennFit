@@ -9,8 +9,14 @@
 //     which is the whole point: a patient who cannot find their member
 //     ID should not be stuck, because a person is going to verify it
 //     anyway.
-//   "callback"     — they just ask to be called. Name plus one contact
-//     channel, and nothing else.
+//   "callback"     — they just ask to be contacted. Contact details and
+//     nothing else.
+//
+// Contact fields: email is required (the /consent gate means every
+// patient reaching this page already has one, and it is prefilled), and
+// a phone number is asked for only when they chose to be reached by
+// phone or text. Someone who picked email should not have to invent a
+// number to ask for help.
 //
 // Nothing here creates an order, a claim, or a shipment, and the
 // confirmation deliberately hands back no order number — an order-shaped
@@ -80,7 +86,7 @@ const buildSchema = (mode: FitRequestType) =>
     .object({
       fullName: z.string().trim().min(2, "Required").max(120),
       email: z.string().trim().email("Enter a valid email").max(200),
-      phone: z.string().trim().min(7, "Enter a valid phone number").max(40),
+      phone: z.string().trim().max(40).optional().or(z.literal("")),
       preferredContactMethod: z.enum(["phone", "email", "text"]),
       preferredContactTime: z.string().max(120).optional().or(z.literal("")),
       // Optional even in the detailed form: it helps staff find an
@@ -103,6 +109,17 @@ const buildSchema = (mode: FitRequestType) =>
       website: z.string().max(0).optional().or(z.literal("")),
     })
     .superRefine((values, ctx) => {
+      // A number is only required when it is the channel they picked.
+      const wantsCall =
+        values.preferredContactMethod === "phone" ||
+        values.preferredContactMethod === "text";
+      if (wantsCall && (values.phone ?? "").trim().length < 7) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["phone"],
+          message: "Enter a number we can reach you on, or switch to email",
+        });
+      }
       if (mode !== "full_details") return;
       // A member ID with no carrier (or the reverse) is a half-answer
       // that reads as complete on the queue. Ask for the pair or
@@ -195,7 +212,7 @@ export function FitRequest() {
       requestType: mode,
       fullName: values.fullName,
       email: values.email,
-      phone: values.phone,
+      phone: values.phone ?? "",
       preferredContactMethod: values.preferredContactMethod,
       preferredContactTime: values.preferredContactTime,
       // A callback request never asks for these, and the form never
@@ -240,8 +257,8 @@ export function FitRequest() {
               We have your request
             </CardTitle>
             <CardDescription className="text-base">
-              A member of the {company.legalName} team will be in touch within
-              one business day.
+              A member of the {company.name} team will be in touch within one
+              business day.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -291,8 +308,8 @@ export function FitRequest() {
         </h1>
         <p className="text-muted-foreground leading-relaxed">
           {isCallback
-            ? `Leave your name and the best way to reach you. Someone from ${company.legalName} will call to go through your results and what happens next.`
-            : `Tell us how to reach you and we'll take it from here. ${company.legalName} places the order — you don't.`}
+            ? `Leave your name and the best way to reach you. Someone from ${company.name} will call to go through your results and what happens next.`
+            : `Tell us how to reach you and we'll take it from here. ${company.name} places the order — you don't.`}
         </p>
         {chosenMask && (
           <div className="glass-panel rounded-xl p-4 text-sm">
@@ -339,7 +356,11 @@ export function FitRequest() {
                   {...register("email")}
                 />
               </Field>
-              <Field label="Phone" required error={errors.phone?.message}>
+              <Field
+                label="Phone"
+                required={contactMethod === "phone" || contactMethod === "text"}
+                error={errors.phone?.message}
+              >
                 <Input
                   type="tel"
                   data-testid="input-fit-request-phone"
@@ -489,9 +510,9 @@ export function FitRequest() {
         <div className="glass-panel rounded-xl p-4 flex items-start gap-3 text-sm text-muted-foreground leading-relaxed">
           <ShieldCheck className="w-5 h-5 shrink-0 mt-0.5 text-[hsl(var(--penn-navy))]" />
           <span>
-            This is a request, not an order. {company.legalName} reviews it,
-            confirms your coverage and sizing, and speaks to you before anything
-            is ordered or billed.
+            This is a request, not an order. {company.name} reviews it, confirms
+            your coverage and sizing, and speaks to you before anything is
+            ordered or billed.
           </span>
         </div>
 
@@ -510,10 +531,10 @@ export function FitRequest() {
           ) : isCallback ? (
             <>
               <PhoneCall className="w-4 h-4 mr-2" />
-              Ask {company.legalName} to contact me
+              Ask {company.name} to contact me
             </>
           ) : (
-            `Send my fitting to ${company.legalName}`
+            `Send my fitting to ${company.name}`
           )}
         </Button>
       </form>

@@ -561,6 +561,12 @@ export const GetRecommendationResponse = zod.object({
       }),
     )
     .max(getRecommendationResponseTopRecommendationsMax),
+  // The service line the ranking actually ran on. Lets a caller tell an
+  // empty `topRecommendations` for a CHILD (this catalog carries no
+  // pediatric interfaces — refer to the DME) apart from an empty one for
+  // an adult (a measurement problem). Optional so an older client that
+  // ignores it still validates.
+  population: zod.enum(["adult", "pediatric"]).optional(),
   alternatives: zod.array(
     zod.object({
       maskId: zod.string(),

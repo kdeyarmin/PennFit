@@ -8,9 +8,18 @@
 //     (contact details, date of birth, and — optionally — carrier and
 //     member ID). A CSR can usually start verifying benefits from this
 //     without a phone call.
-//   requestType: "callback" — the patient just asked to be called. Name
-//     and one contact channel is all we get, and that is a legitimate
-//     outcome: the alternative was making them guess at a member ID.
+//   requestType: "callback" — the patient just asked to be contacted.
+//     Contact details and nothing else, which is a legitimate outcome:
+//     the alternative was making them guess at a member ID.
+//
+// CONTACT FIELDS. `email` is required because the fitter cannot be
+// entered without one — /consent gates on it and the form prefills it —
+// and it is what the confirmation goes to. `phone` is required only when
+// the patient asked to be reached BY phone or text; someone who picked
+// email should not have to invent a number to be allowed to ask for
+// help. (An earlier draft's comments promised "one contact channel"
+// while the schema demanded both, which is the mismatch this states
+// plainly.)
 //
 // Neither creates an order, a claim, or a shipment. The request lands in
 // `resupply.fitter_fit_requests` and a person works it.
@@ -87,7 +96,7 @@ const requestBody = z
     requestType: z.enum(["full_details", "callback"]),
     fullName: z.string().trim().min(2).max(120),
     email: z.string().trim().toLowerCase().email().max(200),
-    phone: z.string().trim().min(7).max(40),
+    phone: z.string().trim().max(40).optional().default(""),
     preferredContactMethod: z
       .enum(["phone", "email", "text"])
       .optional()
@@ -114,7 +123,21 @@ const requestBody = z
     /** Honeypot. Real patients never see this field. */
     website: z.string().max(200).optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((v, ctx) => {
+    // A phone number is only demanded when it is the channel they asked
+    // to be reached on. See the CONTACT FIELDS note in the header.
+    const wantsCall =
+      v.preferredContactMethod === "phone" ||
+      v.preferredContactMethod === "text";
+    if (wantsCall && v.phone.trim().length < 7) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["phone"],
+        message: "A phone number is required to be reached by phone or text.",
+      });
+    }
+  });
 
 router.post("/shop/fitter-requests", requestLimiter, async (req, res) => {
   const inviteToken = req.header("x-fitter-invite-token");
@@ -187,12 +210,28 @@ router.post("/shop/fitter-requests", requestLimiter, async (req, res) => {
     req.headers["x-forwarded-for"]?.toString().split(",")[0]?.trim() ||
     null;
 
+  // The FITTING CONTEXT is client-supplied and staff act on it — the
+  // queue badge and the notification email both read it — so it is
+  // verified, not trusted. A caller holding one valid invite must not be
+  // able to attach another tenant's fit session, or a session belonging
+  // to a different fitting, to what a CSR sees.
+  //
+  // `fit_sessions` is read through the ORG-SCOPED client, so a session id
+  // from another tenant simply does not resolve. An id that resolves is
+  // this tenant's; one that doesn't is dropped rather than rejected —
+  // the patient's request is still worth filing, it just carries no
+  // session link, which is the same honest state a legacy-path request
+  // has.
+  const fitSessionId = data.fitSessionId
+    ? await resolveOwnedFitSession(orgId, data.fitSessionId, req)
+    : null;
+
   const recorded = await recordFitRequest({
     orgId,
     requestType: data.requestType,
     fullName: data.fullName,
     email: data.email,
-    phone: data.phone,
+    phone: data.phone.trim() || null,
     preferredContactMethod: data.preferredContactMethod,
     preferredContactTime: data.preferredContactTime,
     dateOfBirth: data.dateOfBirth,
@@ -202,7 +241,7 @@ router.post("/shop/fitter-requests", requestLimiter, async (req, res) => {
     prescribingPhysician: data.prescribingPhysician,
     notes: data.notes,
     population: data.population,
-    fitSessionId: data.fitSessionId ?? null,
+    fitSessionId,
     recommendedMaskId: data.recommendedMaskId,
     recommendedMaskName: data.recommendedMaskName,
     recommendedMaskType: data.recommendedMaskType,
@@ -237,7 +276,7 @@ router.post("/shop/fitter-requests", requestLimiter, async (req, res) => {
     requestType: data.requestType,
     fullName: data.fullName,
     email: data.email,
-    phone: data.phone,
+    phone: data.phone.trim() || null,
     preferredContactMethod: data.preferredContactMethod,
     preferredContactTime: data.preferredContactTime,
     dateOfBirth: data.dateOfBirth,
@@ -280,6 +319,48 @@ router.post("/shop/fitter-requests", requestLimiter, async (req, res) => {
     confirmationEmailed: emailed.confirmationDelivered,
   });
 });
+
+/**
+ * Confirm a client-claimed fit session actually belongs to this tenant.
+ *
+ * Returns the id when it resolves through the org-scoped client, null
+ * otherwise — including on a lookup failure, because an unverifiable
+ * link is worth less than no link: a CSR who follows it expects to land
+ * on the fitting this request came from.
+ */
+async function resolveOwnedFitSession(
+  orgId: string,
+  fitSessionId: string,
+  req: { log?: { warn?: (obj: unknown, msg: string) => void } },
+): Promise<string | null> {
+  try {
+    const supabase = getOrgScopedClient(orgId);
+    const { data, error } = (await supabase
+      .from("fit_sessions")
+      .select("id")
+      .eq("id", fitSessionId)
+      .limit(1)
+      .maybeSingle()) as {
+      data: Record<string, unknown> | null;
+      error: { message: string } | null;
+    };
+    if (error) throw error;
+    if (!data) {
+      req.log?.warn?.(
+        { event: "fit_request_session_not_owned" },
+        "shop/fitter-requests: claimed fit session does not belong to this tenant — filing without the link",
+      );
+      return null;
+    }
+    return fitSessionId;
+  } catch (err) {
+    req.log?.warn?.(
+      { err },
+      "shop/fitter-requests: fit session ownership check failed — filing without the link",
+    );
+    return null;
+  }
+}
 
 /**
  * Load just enough of the invite to decide whether it still stands.

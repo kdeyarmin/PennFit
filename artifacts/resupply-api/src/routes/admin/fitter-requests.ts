@@ -241,19 +241,33 @@ router.patch(
     }
     const supabase = getOrgScopedClient(orgId);
 
-    // Only stamp `contacted_at` the FIRST time. Reading it back before
-    // the write costs one round-trip and keeps the "first reached"
-    // timestamp honest through re-opens.
-    if (update.contacted_at) {
-      const { data: existing, error: readErr } = await supabase
+    // "Who first reached this patient" is claimed ATOMICALLY, in its own
+    // conditional update, before the rest of the patch.
+    //
+    // A read-then-write here looked equivalent and was not: two CSRs
+    // opening the same request can both observe `contacted_at` as null
+    // and then both write, so the LAST one wins and the record shows the
+    // wrong person at the wrong time — which is precisely the fact this
+    // column exists to preserve across re-opens. `.is("contacted_at",
+    // null)` makes the database the arbiter: whoever gets there first
+    // sets it, the loser's update matches no row and changes nothing.
+    const firstContact = update.contacted_at;
+    const firstContactBy = update.contacted_by;
+    delete update.contacted_at;
+    delete update.contacted_by;
+    if (firstContact) {
+      const { error: claimErr } = await supabase
         .from("fitter_fit_requests")
-        .select("contacted_at")
+        .update({ contacted_at: firstContact, contacted_by: firstContactBy })
         .eq("id", idParam)
-        .maybeSingle();
-      if (readErr) throw readErr;
-      if (existing?.contacted_at) {
-        delete update.contacted_at;
-        delete update.contacted_by;
+        .is("contacted_at", null);
+      // A failed claim costs the row its provenance stamp, not the status
+      // change the CSR actually asked for — so it is logged, not thrown.
+      if (claimErr) {
+        req.log?.warn?.(
+          { err: claimErr, id: idParam },
+          "admin/fitter-requests: first-contact claim failed",
+        );
       }
     }
 

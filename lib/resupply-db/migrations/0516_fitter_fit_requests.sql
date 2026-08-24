@@ -54,8 +54,13 @@ CREATE TABLE IF NOT EXISTS "resupply"."fitter_fit_requests" (
 
   -- ── Contact ──
   "full_name" text NOT NULL,
+  -- Required: the fitter cannot be entered without an email (/consent
+  -- gates on it), and it is where the confirmation goes.
   "email" text NOT NULL,
-  "phone" text NOT NULL,
+  -- NULLABLE on purpose. A patient who asked to be reached by email
+  -- should not have to invent a phone number to be allowed to ask for
+  -- help; the route requires one only when they chose phone or text.
+  "phone" text,
   "preferred_contact_method" text NOT NULL DEFAULT 'phone',
   -- Free text ("mornings", "after 5"), shown to the CSR verbatim.
   "preferred_contact_time" text,

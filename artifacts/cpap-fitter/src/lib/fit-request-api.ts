@@ -32,6 +32,7 @@ export interface FitRequestInput {
   requestType: FitRequestType;
   fullName: string;
   email: string;
+  /** Empty when the patient asked to be reached by email. */
   phone: string;
   preferredContactMethod: "phone" | "email" | "text";
   preferredContactTime?: string | null;

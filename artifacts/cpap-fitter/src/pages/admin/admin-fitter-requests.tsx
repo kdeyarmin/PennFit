@@ -136,6 +136,10 @@ export function AdminFitterRequestsPage() {
               type="button"
               key={s}
               onClick={() => setFilter(filter === s ? "all" : s)}
+              // These are toggle filters with a visual selected state;
+              // without aria-pressed that state reaches sighted users
+              // only.
+              aria-pressed={filter === s}
               className="text-left border rounded-lg p-3 bg-white hover:shadow transition-shadow"
               style={{
                 borderColor: filter === s ? sty.fg : "hsl(var(--line-1))",
@@ -311,9 +315,13 @@ function RequestRow({
           </a>
         </div>
         <div className="text-xs text-slate-500">
-          <a className="hover:underline" href={`tel:${row.phone}`}>
-            {row.phone}
-          </a>
+          {row.phone ? (
+            <a className="hover:underline" href={`tel:${row.phone}`}>
+              {row.phone}
+            </a>
+          ) : (
+            <span className="text-slate-400 italic">Email only</span>
+          )}
           {row.dateOfBirth && (
             <>
               {" · "}

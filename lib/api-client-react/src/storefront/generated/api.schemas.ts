@@ -202,6 +202,10 @@ export const MaskEntryPriceTier = {
 
 export interface MaskEntry {
   id: string;
+  /** Which service line this interface may be dispensed on. Absent means
+   *  "adult" — the only default that fails safe, since an unmarked mask
+   *  must never reach a child. */
+  serviceLine?: "adult" | "pediatric" | "both";
   name: string;
   /** Penn Home Medical Supply SKU / model number for ordering */
   modelNumber: string;

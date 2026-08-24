@@ -20,7 +20,8 @@ export interface FitRequestRow {
   status: FitRequestStatus;
   fullName: string;
   email: string;
-  phone: string;
+  /** Null when the patient asked to be reached by email. */
+  phone: string | null;
   preferredContactMethod: "phone" | "email" | "text";
   preferredContactTime: string | null;
   dateOfBirth: string | null;

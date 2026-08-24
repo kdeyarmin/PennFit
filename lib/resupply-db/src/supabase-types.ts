@@ -1326,7 +1326,8 @@ export interface Database {
           status: "new" | "contacted" | "in_progress" | "closed";
           full_name: string;
           email: string;
-          phone: string;
+          /** Null when the patient asked to be reached by email. */
+          phone: string | null;
           preferred_contact_method: "phone" | "email" | "text";
           preferred_contact_time: string | null;
           date_of_birth: string | null;

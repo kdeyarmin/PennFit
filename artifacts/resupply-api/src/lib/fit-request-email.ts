@@ -38,7 +38,7 @@ export interface FitRequestEmailPayload {
   requestType: "full_details" | "callback";
   fullName: string;
   email: string;
-  phone: string;
+  phone: string | null;
   preferredContactMethod: "phone" | "email" | "text";
   preferredContactTime?: string | null;
   dateOfBirth?: string | null;
@@ -90,7 +90,6 @@ function notificationRows(
   const rows: Array<[string, string]> = [
     ["Patient name", payload.fullName],
     ["Email", payload.email],
-    ["Phone", payload.phone],
     [
       "Prefers",
       payload.preferredContactTime
@@ -102,6 +101,7 @@ function notificationRows(
       payload.population === "pediatric" ? "A child (under 18)" : "An adult",
     ],
   ];
+  if (payload.phone) rows.splice(2, 0, ["Phone", payload.phone]);
   if (payload.dateOfBirth) rows.push(["Date of birth", payload.dateOfBirth]);
   if (payload.recommendedMaskName) {
     rows.push([

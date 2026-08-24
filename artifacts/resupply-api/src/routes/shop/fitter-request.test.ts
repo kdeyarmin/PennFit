@@ -50,18 +50,26 @@ const db = vi.hoisted(() => ({
     expires_at: null as string | null,
   } as Record<string, unknown> | null,
   readFails: false,
+  /** Whether a claimed fit_session resolves for THIS tenant. */
+  ownsFitSession: true,
 }));
 vi.mock("@workspace/resupply-db", () => ({
   getOrgScopedClient: () => ({
-    from: () => {
+    from: (table: string) => {
       const chain: Record<string, unknown> = {};
       for (const m of ["select", "eq", "limit", "order"]) {
         chain[m] = () => chain;
       }
-      chain.maybeSingle = async () =>
-        db.readFails
+      chain.maybeSingle = async () => {
+        if (table === "fit_sessions") {
+          // The org-scoped client is what enforces ownership: a session
+          // belonging to another tenant simply doesn't resolve.
+          return { data: db.ownsFitSession ? { id: "x" } : null, error: null };
+        }
+        return db.readFails
           ? { data: null, error: { message: "db unreachable" } }
           : { data: db.invite, error: null };
+      };
       return chain;
     },
   }),
@@ -141,6 +149,7 @@ beforeEach(() => {
   orgResolveMock.mockResolvedValue(SEED_ORG);
   db.invite = { status: "opened", expires_at: null };
   db.readFails = false;
+  db.ownsFitSession = true;
 });
 
 describe("POST /shop/fitter-requests — invitation gate", () => {
@@ -323,5 +332,72 @@ describe("POST /shop/fitter-requests — the invite must still STAND", () => {
     const res = await postFreshInvite(FULL_DETAILS);
     expect(res.status).toBe(200);
     expect(recordMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("POST /shop/fitter-requests — the fitting context is verified, not trusted", () => {
+  const SESSION = "77777777-7777-4777-8777-777777777777";
+
+  it("keeps a fit-session link that belongs to this tenant", async () => {
+    const res = await postFreshInvite({
+      ...FULL_DETAILS,
+      fitSessionId: SESSION,
+    });
+    expect(res.status).toBe(200);
+    expect(recordMock.mock.calls[0]?.[0]).toMatchObject({
+      fitSessionId: SESSION,
+    });
+  });
+
+  it("DROPS a session id that does not resolve for this tenant", async () => {
+    // Staff act on this — the queue links it and the email cites it — so
+    // a caller holding one valid invite must not be able to attach
+    // another fitting's session. The request is still filed: it is the
+    // patient's, and a legacy-path request legitimately has no session
+    // either.
+    db.ownsFitSession = false;
+    const res = await postFreshInvite({
+      ...FULL_DETAILS,
+      fitSessionId: SESSION,
+    });
+    expect(res.status).toBe(200);
+    expect(recordMock.mock.calls[0]?.[0]).toMatchObject({ fitSessionId: null });
+  });
+});
+
+describe("POST /shop/fitter-requests — a phone is asked for only when it is the channel", () => {
+  it("accepts an email-only request when they chose email", async () => {
+    const res = await postFreshInvite({
+      requestType: "callback",
+      fullName: "Bob Smith",
+      email: "bob@example.com",
+      preferredContactMethod: "email",
+      population: "adult",
+    });
+    expect(res.status).toBe(200);
+    expect(recordMock.mock.calls[0]?.[0]).toMatchObject({ phone: null });
+  });
+
+  it("requires a number when they asked to be phoned", async () => {
+    const res = await postFreshInvite({
+      requestType: "callback",
+      fullName: "Bob Smith",
+      email: "bob@example.com",
+      preferredContactMethod: "phone",
+      population: "adult",
+    });
+    expect(res.status).toBe(400);
+    expect(recordMock).not.toHaveBeenCalled();
+  });
+
+  it("requires a number when they asked to be texted", async () => {
+    const res = await postFreshInvite({
+      requestType: "callback",
+      fullName: "Bob Smith",
+      email: "bob@example.com",
+      preferredContactMethod: "text",
+      population: "adult",
+    });
+    expect(res.status).toBe(400);
   });
 });

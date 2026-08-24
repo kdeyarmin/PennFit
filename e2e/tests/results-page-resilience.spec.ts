@@ -244,10 +244,12 @@ test("Results page never trips the ErrorBoundary when /api/masks returns non-JSO
   // eligible at all, and drifting onto the pediatric tile would rank
   // nothing (the legacy catalog is adult-only) and fail this test far
   // from its cause.
-  try {
-    await page.getByTestId("button-population-adult").click({ timeout: 5_000 });
-  } catch {
-    /* Already past the gate. */
+  // Present-or-absent, not try/catch — a blanket catch would swallow a
+  // genuinely broken tile and let the loop below answer the gate by
+  // accident, passing while proving nothing.
+  const adultTile = page.getByTestId("button-population-adult");
+  if ((await adultTile.count()) > 0) {
+    await adultTile.click({ timeout: 5_000 });
   }
 
   // 13 iterations is enough for the 11 current questions plus headroom.

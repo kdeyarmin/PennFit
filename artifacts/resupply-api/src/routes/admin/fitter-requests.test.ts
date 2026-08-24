@@ -35,6 +35,7 @@ vi.mock("@workspace/resupply-db", () => ({
         chain[m] = () => chain;
       }
       chain.maybeSingle = async () => ({ data: db.existing, error: null });
+      chain.is = () => chain;
       chain.update = (payload: Record<string, unknown>) => {
         db.updates.push(payload);
         const after: Record<string, unknown> = {
@@ -87,30 +88,30 @@ describe("PATCH /admin/fitter-requests/:id — a status change must not eat the 
       .patch(`/admin/fitter-requests/${ID}`)
       .send({ status: "contacted" });
     expect(res.status).toBe(200);
-    expect(db.updates).toHaveLength(1);
-    // The whole point: the column must not appear in the update at all.
-    expect(db.updates[0]).not.toHaveProperty("csr_note");
+    // Two updates now: the first-contact claim, then the patch. Neither
+    // may touch the note.
+    for (const u of db.updates) expect(u).not.toHaveProperty("csr_note");
   });
 
   it("clears the note only on an EXPLICIT null", async () => {
     await request(makeApp())
       .patch(`/admin/fitter-requests/${ID}`)
       .send({ csrNote: null });
-    expect(db.updates[0]).toHaveProperty("csr_note", null);
+    expect(db.updates.at(-1)).toHaveProperty("csr_note", null);
   });
 
   it("clears the note on an explicit empty string", async () => {
     await request(makeApp())
       .patch(`/admin/fitter-requests/${ID}`)
       .send({ csrNote: "   " });
-    expect(db.updates[0]).toHaveProperty("csr_note", null);
+    expect(db.updates.at(-1)).toHaveProperty("csr_note", null);
   });
 
   it("writes a real note", async () => {
     await request(makeApp())
       .patch(`/admin/fitter-requests/${ID}`)
       .send({ csrNote: "verified benefits, awaiting Rx" });
-    expect(db.updates[0]).toHaveProperty(
+    expect(db.updates.at(-1)).toHaveProperty(
       "csr_note",
       "verified benefits, awaiting Rx",
     );
@@ -126,36 +127,45 @@ describe("PATCH /admin/fitter-requests/:id — a status change must not eat the 
 });
 
 describe("PATCH /admin/fitter-requests/:id — lifecycle stamps", () => {
-  it("records who first reached the patient", async () => {
+  it("claims the first contact ATOMICALLY, in its own guarded update", async () => {
+    // Two CSRs can open the same request. A read-then-write here let both
+    // observe `contacted_at` as null and both write, so the LAST one won
+    // and the record showed the wrong person — the exact fact this column
+    // exists to preserve. The claim is now a separate update guarded on
+    // `contacted_at IS NULL`, so the database arbitrates.
     await request(makeApp())
       .patch(`/admin/fitter-requests/${ID}`)
       .send({ status: "contacted" });
-    expect(db.updates[0]).toHaveProperty("contacted_by", "csr@example.com");
-    expect(db.updates[0]).toHaveProperty("contacted_at");
+    expect(db.updates).toHaveLength(2);
+    const [claim, patch] = db.updates;
+    expect(claim).toHaveProperty("contacted_by", "csr@example.com");
+    expect(claim).toHaveProperty("contacted_at");
+    // The main patch carries the status and NOT the provenance stamp —
+    // otherwise it would overwrite whatever the claim decided.
+    expect(patch).toHaveProperty("status", "contacted");
+    expect(patch).not.toHaveProperty("contacted_at");
+    expect(patch).not.toHaveProperty("contacted_by");
   });
 
-  it("does NOT rewrite contacted_at on a later transition", async () => {
-    // "Who first reached this patient" has to survive a re-open, so the
-    // stamp is written once and then left alone.
-    db.existing = { contacted_at: "2026-08-01T00:00:00.000Z" };
+  it("does not attempt a claim on a transition that is not a first contact", async () => {
     await request(makeApp())
       .patch(`/admin/fitter-requests/${ID}`)
-      .send({ status: "in_progress" });
+      .send({ status: "closed" });
+    expect(db.updates).toHaveLength(1);
     expect(db.updates[0]).not.toHaveProperty("contacted_at");
-    expect(db.updates[0]).not.toHaveProperty("contacted_by");
   });
 
   it("stamps closed_at on close and clears it on re-open", async () => {
     await request(makeApp())
       .patch(`/admin/fitter-requests/${ID}`)
       .send({ status: "closed" });
-    expect(db.updates[0]!.closed_at).toBeTruthy();
+    expect(db.updates.at(-1)!.closed_at).toBeTruthy();
 
     db.updates = [];
     await request(makeApp())
       .patch(`/admin/fitter-requests/${ID}`)
       .send({ status: "new" });
-    expect(db.updates[0]).toHaveProperty("closed_at", null);
+    expect(db.updates.at(-1)).toHaveProperty("closed_at", null);
   });
 
   it("rejects a malformed id", async () => {
