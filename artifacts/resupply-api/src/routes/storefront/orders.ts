@@ -42,6 +42,7 @@ import {
   TwilioConfigError,
 } from "@workspace/resupply-telecom";
 import { logger } from "../../lib/logger.js";
+import { getFeatureFlagState } from "../../lib/feature-flags.js";
 import { resolveTenantSmsClientOptions } from "../../lib/messaging/tenant-telecom.js";
 import { recordOutboundMessageUsage } from "../../lib/metering/usage.js";
 import { redactDbErr } from "../../lib/redact-db-err.js";
@@ -85,6 +86,36 @@ router.post(
     }
 
     const order = parseResult.data;
+
+    // `fitter.lead_capture_only` — the tenant has said patients do not
+    // file their own insurance orders. The SPA already hides the form,
+    // but this endpoint is public: hiding a button is not a control, and
+    // the whole point of the flag is that a claim never starts from a
+    // patient's guess at their own member ID without a person looking at
+    // it. So refuse here too, and point the caller at the request
+    // endpoint that replaced this one.
+    //
+    // `enabled || degraded` — a lookup that never reached the tenant's
+    // row reads as ON. `isFeatureEnabled` would have absorbed the failure
+    // into "off" and quietly re-opened self-service ordering during a
+    // flag-store blip, which is the wrong direction for a control.
+    //
+    // Resolved against the HOST-resolved tenant (`req.orgId`), which
+    // `attachSignedIn` has already set; the seed org is the fallback the
+    // rest of this route uses too.
+    const flagOrgId = req.orgId ?? (await resolveSeedOrgId());
+    const leadCaptureState = await getFeatureFlagState(
+      "fitter.lead_capture_only",
+      flagOrgId ?? undefined,
+    );
+    if (leadCaptureState.enabled || leadCaptureState.degraded) {
+      res.status(409).json({
+        error: "self_service_ordering_disabled",
+        message:
+          "Orders are placed by our team, not from this form. Send your fitting through and we'll call you to confirm coverage and sizing before anything ships.",
+      });
+      return;
+    }
 
     // Hard requirement: never forward an order without explicit patient consent
     // to be contacted. The OpenAPI-generated zod only checks `boolean`; we

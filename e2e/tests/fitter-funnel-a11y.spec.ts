@@ -40,6 +40,12 @@ test("fitter funnel (capture → questionnaire → results) has no serious/criti
       "`pnpm test:e2e`.",
   );
 
+  // /questionnaire — the adult-or-child gate, which is the first thing
+  // the questionnaire shows and a screen the intake questions' own
+  // radiogroup markup does not cover.
+  await expectNoSeriousAxeViolations(page, "questionnaire-population-gate");
+  await page.getByTestId("button-population-adult").click();
+
   // /questionnaire — the intake questions.
   await expectNoSeriousAxeViolations(page, "questionnaire");
 

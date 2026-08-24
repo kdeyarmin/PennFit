@@ -14,11 +14,13 @@
 
 import { describe, it, expect } from "vitest";
 import type { MaskEntry } from "../../data/maskCatalog";
+import { maskCatalog } from "../../data/maskCatalog";
 import {
   getActiveContraindications,
   recommend,
   recommendSize,
   scoreAnswers,
+  servesPopulation,
   type FacialMeasurements,
   type QuestionnaireAnswers,
 } from "./recommendationEngine";
@@ -606,5 +608,72 @@ describe("recommend — magnetic clips are never a mobility selling point", () =
       .join(" ")
       .toLowerCase();
     expect(blob).not.toContain("magnetic clip");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Service line — a pediatric interface must never reach an adult, and an
+// adult-only interface must never reach a child (tier 1 of the clinical
+// engine, mirrored here for the legacy path).
+// ---------------------------------------------------------------------------
+
+describe("servesPopulation", () => {
+  it("treats an UNMARKED entry as adult-only", () => {
+    // The fail-safe direction: every entry in the shipped catalog is
+    // unmarked, and an unmarked mask must never be handed to a child.
+    const m = maskFixture({});
+    expect(m.serviceLine).toBeUndefined();
+    expect(servesPopulation(m, "adult")).toBe(true);
+    expect(servesPopulation(m, "pediatric")).toBe(false);
+  });
+
+  it("keeps a 'both' entry on either service line", () => {
+    const m = maskFixture({ serviceLine: "both" });
+    expect(servesPopulation(m, "adult")).toBe(true);
+    expect(servesPopulation(m, "pediatric")).toBe(true);
+  });
+
+  it("keeps a pediatric interface away from an adult", () => {
+    const m = maskFixture({ serviceLine: "pediatric" });
+    expect(servesPopulation(m, "pediatric")).toBe(true);
+    expect(servesPopulation(m, "adult")).toBe(false);
+  });
+});
+
+describe("recommend — population is a HARD filter", () => {
+  it("ranks nothing for a pediatric session against the adult-only catalog", () => {
+    // Not a degraded answer — the honest one. This array carries no
+    // pediatric interfaces and no pediatric size bands, so there is
+    // nothing here that could be fitted to a child. The route turns the
+    // empty result into a referral rather than a shrug.
+    const result = recommend(PROFILE_MEASUREMENTS, answers(), {
+      population: "pediatric",
+    });
+    expect(result.topRecommendations).toEqual([]);
+    expect(result.alternatives).toEqual([]);
+    // Still a well-formed response — the SPA renders the disclaimer.
+    expect(result.disclaimer).toBeTruthy();
+  });
+
+  it("defaults to adult when no population is given", () => {
+    // Back-compat: every caller that predates the adult-or-child question
+    // asks for an adult, and that is also the only safe default here.
+    const withoutOption = recommend(PROFILE_MEASUREMENTS, answers());
+    const explicitAdult = recommend(PROFILE_MEASUREMENTS, answers(), {
+      population: "adult",
+    });
+    expect(withoutOption.topRecommendations.map((m) => m.maskId)).toEqual(
+      explicitAdult.topRecommendations.map((m) => m.maskId),
+    );
+    expect(withoutOption.topRecommendations.length).toBeGreaterThan(0);
+  });
+
+  it("leaves the shipped catalog adult-only", () => {
+    // A guard, not a preference: adding a pediatric entry to this array
+    // without pediatric size bands would make the referral above silently
+    // stop firing and start sizing children off an adult envelope.
+    for (const mask of maskCatalog) {
+      expect(servesPopulation(mask, "pediatric")).toBe(false);
+    }
   });
 });

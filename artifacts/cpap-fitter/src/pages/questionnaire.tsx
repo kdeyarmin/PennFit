@@ -9,8 +9,10 @@ import { Progress } from "@/components/ui/progress";
 import { ArrowLeft, CheckCircle2, Lightbulb } from "lucide-react";
 import type { QuestionnaireAnswers } from "@workspace/api-client-react/storefront";
 import { QuestionnaireV2 } from "@/pages/questionnaire-v2";
+import { PopulationGate } from "@/components/population-gate";
 
 const PAGE_TITLE = "A few quick questions";
+const POPULATION_PAGE_TITLE = "Who is this fitting for?";
 
 type Question = {
   id: keyof QuestionnaireAnswers;
@@ -145,7 +147,27 @@ export function Questionnaire() {
   // Tenants that enabled `fitter.fit_profile_v2` (resolved with the
   // invite and stashed in the store) get the chaptered v2 Patient Fit
   // Profile; everyone else keeps this legacy 11-question flow unchanged.
-  const { fitProfileV2 } = useFitterStore();
+  const { fitProfileV2, population, setPopulation } = useFitterStore();
+
+  // Adult or child, asked once, ahead of BOTH question sets. It gates the
+  // flow rather than sitting inside one of them because it is a property
+  // of the session (service line, plausibility window, stored fit
+  // session) rather than an answer about the patient — see
+  // components/population-gate.tsx. No mask is ranked, and no engine is
+  // called, until it is answered.
+  useDocumentTitle(population ? PAGE_TITLE : POPULATION_PAGE_TITLE);
+  if (!population) {
+    return (
+      <PopulationGate
+        value={population}
+        onSelect={(value) => {
+          setPopulation(value);
+          track("fitting_population_selected", { population: value });
+        }}
+      />
+    );
+  }
+
   if (fitProfileV2) return <QuestionnaireV2 />;
   return <QuestionnaireV1 />;
 }

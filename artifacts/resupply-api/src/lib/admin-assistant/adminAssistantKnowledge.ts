@@ -218,7 +218,11 @@ ORDERS & SHOP:
         (/admin/shop/abandoned-carts), Back-in-Stock (/admin/shop/back-in-stock),
         Insurance Leads (/admin/shop/insurance-leads),
         Fitter Invites (/admin/fitter-invites) — text/email a fitting link to anyone,
-        including someone not yet in the system, Fitter Prospects (/admin/fitter-leads).
+        including someone not yet in the system,
+        Fit Requests (/admin/fitter-requests) — finished fittings where the patient
+        sent their details or asked to be called; nothing is ordered until someone
+        works the row, so this is the queue that has an SLA on it,
+        Fitter Prospects (/admin/fitter-leads).
 
 BILLING (the claims + revenue-cycle hub):
   - Dashboards (read-only money views):

@@ -160,8 +160,16 @@ describe("results — magnet screening is not skipped on clinical outage", () =>
   it("only uses the legacy engine when the tenant has clinical assessment off", () => {
     expect(SRC).toContain('result.kind === "not_enabled"');
     const notEnabledIdx = SRC.indexOf('result.kind === "not_enabled"');
-    const after = SRC.slice(notEnabledIdx, notEnabledIdx + 280);
-    expect(after).toContain('setClinicalState("legacy")');
+    // Bound the search by the END of that branch rather than by a
+    // character count. The window is here to prove the legacy fallback
+    // is INSIDE the `not_enabled` branch and nowhere else; a fixed
+    // char budget made that assertion hostage to comment length, and
+    // adding a comment inside the branch broke it without changing any
+    // behaviour.
+    const branchEnd = SRC.indexOf("\n      }", notEnabledIdx);
+    expect(branchEnd).toBeGreaterThan(notEnabledIdx);
+    const branch = SRC.slice(notEnabledIdx, branchEnd);
+    expect(branch).toContain('setClinicalState("legacy")');
   });
 
   it("does not treat a network/HTTP miss as a reason to skip magnet screening", () => {
@@ -223,82 +231,75 @@ describe("results — retake CTA gating", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Clinical cash-pay shop-key resolution — part number, then legacy fallback
+// The fitter no longer sells, and no longer takes the patient's own order
 // ---------------------------------------------------------------------------
 
-/**
- * Pure re-implementation of the shop-key resolution inside
- * `clinicalCashPayFor`, kept in lockstep with results.tsx.
- *
- * Two identifier spaces meet there: `shopByModelNumber` is keyed on the
- * TENANT's own SKU (Stripe metadata `model_number`, e.g. "PHM-RM-F20"),
- * while `mask_size_variants.manufacturer_part_number` is the
- * MANUFACTURER's part number — and the 0486 seed leaves it NULL besides.
- * Resolving on the part number alone matched nothing, which hid the
- * cash-pay CTA on the clinical path and, because that resolver is the
- * only writer of the fit→order link, left the fitter outcome loop
- * structurally empty. The fix falls back to the legacy catalog's
- * modelNumber for the same slug (0481 keeps the slug space identical
- * across both catalogs, which is what makes the fallback exact).
- */
-function resolveShopKey(
-  partNumber: string | null | undefined,
-  legacyModelNumber: string | null | undefined,
-  shopKeys: ReadonlySet<string>,
-): string | undefined {
-  return (
-    (partNumber && shopKeys.has(partNumber) ? partNumber : undefined) ??
-    (legacyModelNumber && shopKeys.has(legacyModelNumber)
-      ? legacyModelNumber
-      : undefined)
-  );
-}
-
-describe("results — clinical cash-pay shop-key fallback", () => {
-  it("prefers the manufacturer part number when the shop is keyed on it", () => {
-    const key = resolveShopKey(
-      "63400",
-      "PHM-RM-F20",
-      new Set(["63400", "PHM-RM-F20"]),
-    );
-    expect(key).toBe("63400");
-  });
-
-  it("falls back to the legacy modelNumber when the part number is NULL", () => {
-    // The 0486 seed's actual shape: every variant's part number is NULL,
-    // so before the fallback existed this resolved to nothing and the
-    // CTA never rendered on the clinical path.
-    const key = resolveShopKey(null, "PHM-RM-F20", new Set(["PHM-RM-F20"]));
-    expect(key).toBe("PHM-RM-F20");
-  });
-
-  it("falls back when the part number simply isn't a shop key", () => {
-    // Part number present but the tenant keys its shop on its own SKUs —
-    // the two identifier spaces are different, not just sparsely filled.
-    const key = resolveShopKey("63400", "PHM-RM-F20", new Set(["PHM-RM-F20"]));
-    expect(key).toBe("PHM-RM-F20");
-  });
-
-  it("returns undefined when neither key matches — the CTA stays hidden", () => {
-    // A mask we can't price is a mask we can't sell.
-    const key = resolveShopKey("63400", "PHM-RM-F20", new Set(["OTHER"]));
-    expect(key).toBeUndefined();
-    expect(resolveShopKey(null, undefined, new Set(["X"]))).toBeUndefined();
-  });
-
-  it("source keeps the fallback chain and passes the resolved key onward", () => {
-    // Pin the shape in results.tsx: resolve to `shopKey`, look up the
-    // product by it, and hand the SAME key to handleCashPayAdd so the
-    // cart line matches the product that priced it.
+describe("results — the page ends in a REQUEST, not an order", () => {
+  it("routes a chosen mask to /fit-request under lead-capture", () => {
+    // The whole point of `fitter.lead_capture_only`: the patient's
+    // selection produces a request a person works, not an order they
+    // filed. /order stays reachable ONLY for a tenant that deliberately
+    // turned the flag off.
     expect(SRC).toContain(
-      "const legacyModelNumber = catalogById.get(c.maskSlug)?.modelNumber;",
+      'setLocation(leadCaptureOnly ? "/fit-request" : "/order")',
     );
-    expect(SRC).toContain("shopByModelNumber?.has(partNumber)");
-    expect(SRC).toContain("shopByModelNumber?.has(legacyModelNumber)");
-    expect(SRC).toContain("shopByModelNumber?.get(shopKey)");
-    expect(SRC).toContain("{ maskId: c.maskId, modelNumber: shopKey }");
-    // The regression this guards against: resolving the product from the
-    // bare part number with no fallback.
-    expect(SRC).not.toContain("shopByModelNumber?.get(partNumber)");
+  });
+
+  it("offers a callback that does NOT require choosing a mask first", () => {
+    // The patient who wants a person is usually the one who could not
+    // choose between the cards; requiring a choice first would ask them
+    // to answer the question they came here with.
+    expect(SRC).toContain("const handleRequestCallback = (context?: {");
+    expect(SRC).toContain('setLocation("/fit-request?mode=callback")');
+    expect(SRC).toContain("<CallbackPanel");
+  });
+
+  it("no longer bridges the fitting into the cash-pay shop cart", () => {
+    // Removed with the self-serve order form: a fitting that ends in a
+    // checkout is still a patient placing their own order, just a paid
+    // one. The shop is unchanged and reachable on its own at /shop.
+    // These assertions are the guard against it drifting back in without
+    // a decision.
+    expect(SRC).not.toContain("cashPay");
+    expect(SRC).not.toContain("shopByModelNumber");
+    expect(SRC).not.toContain("handleCashPayAdd");
+    expect(SRC).not.toContain("rememberFitCheckoutContext");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Adult / child — the service line reaches BOTH engines
+// ---------------------------------------------------------------------------
+
+describe("results — population is sent to whichever engine answers", () => {
+  it("sends population on the clinical assess request", () => {
+    // Without this the route's buildProfile resolves every
+    // legacy-questionnaire fitting to "adult", and tier 1 hands a child
+    // adult-only masks.
+    expect(SRC).toContain("...(population ? { population } : {})");
+  });
+
+  it("sends population on the legacy /api/recommend request", () => {
+    expect(SRC).toContain("answers: fullAnswers,");
+    expect(SRC).toMatch(
+      /mutate\(\{\s*data: \{\s*measurements,\s*answers: fullAnswers,\s*\.\.\.\(population \? \{ population \} : \{\}\),/,
+    );
+  });
+
+  it("reads the ranked population off the RESPONSE, falling back to the store", () => {
+    // A server-side override — a chart-linked date of birth — must reach
+    // the patient's screen rather than being silently disagreed with by
+    // the client's own copy.
+    expect(SRC).toContain(
+      "const rankedPopulation = data.population ?? population;",
+    );
+  });
+
+  it("refers a pediatric fitting to staff instead of blaming the photo", () => {
+    // The legacy catalog carries no pediatric interfaces, so an empty
+    // ranking for a child is correct and a retake cannot fix it.
+    expect(SRC).toContain('rankedPopulation === "pediatric"');
+    expect(SRC).toContain("results-pediatric-referral");
+    expect(SRC).toContain("results-pediatric-callback");
   });
 });

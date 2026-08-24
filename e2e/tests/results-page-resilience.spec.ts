@@ -236,9 +236,21 @@ test("Results page never trips the ErrorBoundary when /api/masks returns non-JSO
     throw err;
   }
 
-  // /questionnaire — click any visible radio option per question
-  // until we land on /results. 13 iterations is enough for the
-  // 11 current questions plus headroom.
+  // /questionnaire — the adult-or-child gate first, then click any
+  // visible radio option per question until we land on /results.
+  //
+  // The gate is answered explicitly rather than left to the generic
+  // loop: it is the one screen where the answer decides which masks are
+  // eligible at all, and drifting onto the pediatric tile would rank
+  // nothing (the legacy catalog is adult-only) and fail this test far
+  // from its cause.
+  try {
+    await page.getByTestId("button-population-adult").click({ timeout: 5_000 });
+  } catch {
+    /* Already past the gate. */
+  }
+
+  // 13 iterations is enough for the 11 current questions plus headroom.
   for (let i = 0; i < 13; i++) {
     const noBtn = page
       .locator('[data-testid$="-no"]')

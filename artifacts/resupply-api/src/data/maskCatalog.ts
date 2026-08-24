@@ -38,6 +38,9 @@
 export type MaskType = "fullFace" | "nasal" | "nasalPillow" | "hybrid";
 export type HoseConnection = "front" | "top";
 export type PriceTier = "budget" | "standard" | "premium";
+/** Which service line an interface may be dispensed on. Mirrors
+ *  `mask_models.service_line` in the DB Mask Intelligence Catalog. */
+export type ServiceLine = "adult" | "pediatric" | "both";
 
 export interface FitRanges {
   noseWidthMin: number;
@@ -54,6 +57,21 @@ export interface MaskEntry {
   modelNumber: string;
   manufacturer: string;
   type: MaskType;
+  /**
+   * Adult, pediatric, or both. OPTIONAL, and absent means `"adult"` —
+   * which is what every entry in this array is today, and is also the
+   * only default that fails safe: an unmarked mask can never be handed
+   * to a child. A pediatric interface must opt in explicitly.
+   *
+   * `recommend()` treats this as a HARD filter, matching tier 1 of the
+   * clinical engine (`applySafetyExclusions` in lib/fitting/tiers.ts):
+   * a pediatric interface must never reach an adult, and an adult-only
+   * interface must never reach a child. This array carries no pediatric
+   * masks and no pediatric size bands, so a pediatric session ranks
+   * nothing here and is referred to the DME — see the legacy path's
+   * `population` handling in routes/storefront/recommend.ts.
+   */
+  serviceLine?: ServiceLine;
   description: string;
   fitRanges: FitRanges;
   features: string[];

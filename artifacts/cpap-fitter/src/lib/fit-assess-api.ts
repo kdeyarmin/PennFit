@@ -164,6 +164,14 @@ export interface FitAssessRequest {
   /** The expanded Patient Fit Profile, when `fitter.fit_profile_v2` is on. */
   profile?: Record<string, unknown>;
   /**
+   * Adult or child, from the questionnaire's population gate. Sent on
+   * BOTH question sets (the profile block only travels on v2), and the
+   * server applies it over whatever `buildProfile` produced — otherwise
+   * every legacy-questionnaire fitting is assessed as an adult, which is
+   * how a child would have been shown adult masks.
+   */
+  population?: "adult" | "pediatric";
+  /**
    * Per-frame scan quality. Omitting it makes the route fall back to its
    * neutral default (`measurementConfidence` 0.7), which sits below the
    * high-confidence scan floor — so an omitted scan silently caps every
@@ -193,6 +201,7 @@ export async function requestFitAssessment(
   const body: Record<string, unknown> = { measurements: req.measurements };
   if (req.answers) body.answers = req.answers;
   if (req.profile) body.profile = req.profile;
+  if (req.population) body.population = req.population;
   if (req.scan) body.scan = req.scan;
   if (req.safety) body.safety = req.safety;
   if (req.entryPoint) body.entryPoint = req.entryPoint;

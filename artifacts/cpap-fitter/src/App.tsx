@@ -102,6 +102,9 @@ const Results = lazyWithRetry(() =>
 const Order = lazyWithRetry(() =>
   import("@/pages/order").then((m) => ({ default: m.Order })),
 );
+const FitRequest = lazyWithRetry(() =>
+  import("@/pages/fit-request").then((m) => ({ default: m.FitRequest })),
+);
 const OrderSuccess = lazyWithRetry(() =>
   import("@/pages/order-success").then((m) => ({ default: m.OrderSuccess })),
 );
@@ -845,12 +848,18 @@ function GuardedQuestionnaire() {
   return <Questionnaire />;
 }
 function GuardedResults() {
-  const { measurements } = useFitterStore();
+  const { measurements, population } = useFitterStore();
   const invited = useFitterInviteGate();
   const consented = useFitterConsentGate();
   if (!invited) return <Redirect to="/fitter-invite" />;
   if (!consented) return <Redirect to="/consent" />;
   if (!measurements) return <Redirect to="/" />;
+  // No population means the questionnaire's adult-or-child gate was never
+  // answered — a deep link, or a session that predates the question. Both
+  // engines would then fall back to "adult", so send the patient back to
+  // the one screen that can say otherwise rather than guessing on their
+  // behalf.
+  if (!population) return <Redirect to="/questionnaire" replace />;
   return <Results />;
 }
 /**
@@ -904,12 +913,36 @@ function AccountHashRedirect({ hash }: { hash: "insights" | "orders" }) {
   return null;
 }
 
-function GuardedOrder() {
-  const { chosenMask, measurements } = useFitterStore();
+function GuardedFitRequest() {
+  const { measurements } = useFitterStore();
   const invited = useFitterInviteGate();
   const consented = useFitterConsentGate();
   if (!invited) return <Redirect to="/fitter-invite" />;
   if (!consented) return <Redirect to="/consent" />;
+  // Deliberately does NOT require `chosenMask`. The callback mode exists
+  // for the patient who could not pick between the cards — or whose
+  // fitting named no mask at all — and demanding one first would gate the
+  // request on the very decision they are asking for help with.
+  //
+  // It also does not re-check the invite TOKEN beyond
+  // `useFitterInviteGate`, which is satisfied by demo mode without one —
+  // the demo sandbox has no invite and must still walk this page.
+  if (!measurements) return <Redirect to="/" replace />;
+  return <FitRequest />;
+}
+
+function GuardedOrder() {
+  const { chosenMask, measurements, leadCaptureOnly } = useFitterStore();
+  const invited = useFitterInviteGate();
+  const consented = useFitterConsentGate();
+  if (!invited) return <Redirect to="/fitter-invite" />;
+  if (!consented) return <Redirect to="/consent" />;
+  // `fitter.lead_capture_only` — this tenant's patients don't file their
+  // own insurance orders. The results page no longer links here, but a
+  // bookmark, a back-button, or a mid-flow flag flip can still land on
+  // it, and the API refuses the POST anyway — so send them to the form
+  // that works rather than one that will fail at submit.
+  if (leadCaptureOnly) return <Redirect to="/fit-request" replace />;
   // An order without sizing data is a fulfillment problem for the DME
   // team — require measurements alongside the chosen mask. Both are
   // sessionStorage-backed, so a mid-flow refresh keeps the user here;
@@ -1308,6 +1341,7 @@ function PatientRouter() {
             <Route path="/measure" component={GuardedMeasure} />
             <Route path="/questionnaire" component={GuardedQuestionnaire} />
             <Route path="/results" component={GuardedResults} />
+            <Route path="/fit-request" component={GuardedFitRequest} />
             <Route path="/order" component={GuardedOrder} />
             <Route path="/order-success" component={GuardedOrderSuccess} />
 

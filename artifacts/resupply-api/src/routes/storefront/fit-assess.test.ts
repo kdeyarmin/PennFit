@@ -941,3 +941,94 @@ describe("POST /api/fit/assess — the invite records the fitting", () => {
     expect(res.body.fitSessionId).toBe("11111111-1111-4111-8111-111111111111");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Adult or child — the SESSION field, on both question sets
+// ---------------------------------------------------------------------------
+
+describe("POST /fit/assess — population", () => {
+  it("applies the top-level population over the legacy-answers mapping", async () => {
+    // The legacy questionnaire sends no `profile` block, so `buildProfile`
+    // resolves it from `emptyProfile()` — which defaults to "adult" for
+    // back-compat. Without this field every legacy-questionnaire fitting
+    // would be assessed as an adult, which is how a child gets shown
+    // adult-only masks.
+    db.persistOk = true;
+    const res = await post({
+      measurements: VALID_MEASUREMENTS,
+      answers: {
+        mouthBreather: false,
+        claustrophobic: false,
+        sideOrStomachSleeper: false,
+        heavyFacialHair: false,
+        wearsGlasses: false,
+        frequentCongestion: false,
+        priorMaskExperience: "none",
+        mobilityLimitations: false,
+        sensitiveSkin: false,
+        siliconeSensitivity: false,
+        cpapPressureSetting: "medium",
+      },
+      population: "pediatric",
+    });
+    expect(res.status).toBe(200);
+    const session = db.inserts.find((i) => i.table === "fit_sessions");
+    expect(session).toBeDefined();
+    expect((session!.payload as Record<string, unknown>).population).toBe(
+      "pediatric",
+    );
+  });
+
+  it("does NOT stamp the fitting as a v2 profile just to carry population", async () => {
+    // Why the field is top-level rather than a one-key `profile` block:
+    // `buildProfile` marks anything with a profile as a v2 profile, which
+    // decides the question set the fit report cites. Carrying population
+    // that way would make every legacy fitting claim it answered ~20
+    // questions it was never asked.
+    db.persistOk = true;
+    const res = await post({
+      measurements: VALID_MEASUREMENTS,
+      answers: {
+        mouthBreather: false,
+        claustrophobic: false,
+        sideOrStomachSleeper: false,
+        heavyFacialHair: false,
+        wearsGlasses: false,
+        frequentCongestion: false,
+        priorMaskExperience: "none",
+        mobilityLimitations: false,
+        sensitiveSkin: false,
+        siliconeSensitivity: false,
+        cpapPressureSetting: "medium",
+      },
+      population: "pediatric",
+    });
+    expect(res.status).toBe(200);
+    const session = db.inserts.find((i) => i.table === "fit_sessions");
+    expect(
+      (session!.payload as Record<string, unknown>).profile_version,
+    ).not.toBe("fit_profile_v2");
+  });
+
+  it("still defaults to adult when the field is omitted", async () => {
+    db.persistOk = true;
+    const res = await post({
+      measurements: VALID_MEASUREMENTS,
+      profile: VALID_PROFILE,
+    });
+    expect(res.status).toBe(200);
+    const session = db.inserts.find((i) => i.table === "fit_sessions");
+    expect((session!.payload as Record<string, unknown>).population).toBe(
+      "adult",
+    );
+  });
+
+  it("rejects a population that is not a known service line", async () => {
+    const res = await post({
+      measurements: VALID_MEASUREMENTS,
+      profile: VALID_PROFILE,
+      population: "teenager",
+    });
+    expect(res.status).toBe(400);
+  });
+});

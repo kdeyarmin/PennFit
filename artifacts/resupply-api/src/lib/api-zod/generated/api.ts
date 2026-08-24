@@ -503,6 +503,23 @@ export const GetRecommendationBody = zod.object({
     })
     .strict()
     .describe("Clinical questionnaire answers affecting mask type suitability"),
+  // Adult or child, asked at the head of the questionnaire. A SESSION
+  // property, not a questionnaire answer — it selects the plausibility
+  // window applied below and the engine's hard service-line filter, and
+  // it sits alongside `answers` rather than inside it because every
+  // other consumer of the 11-answer shape (the chatbot, the invite
+  // completion payload, `fromLegacyAnswers`) speaks that shape verbatim.
+  //
+  // Optional for back-compat: a client that predates the question sends
+  // nothing and the route reads "adult", which is what it has always
+  // assumed and is the only default that fails safe against this
+  // catalog's adult-only size bands.
+  population: zod
+    .enum(["adult", "pediatric"])
+    .optional()
+    .describe(
+      "Service line the fitting runs on. Omitted means adult. A pediatric session ranks nothing against this adult-only catalog and is referred to the DME.",
+    ),
 }).strict();
 
 export const getRecommendationResponseTopRecommendationsItemConfidenceMin = 0;

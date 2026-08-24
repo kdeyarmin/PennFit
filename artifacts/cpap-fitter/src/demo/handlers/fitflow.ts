@@ -26,8 +26,24 @@ export const fitflowHandlers: DemoHandler[] = [
     json({ ok: true, enrolled: true }),
   ),
 
-  // /order → place the order. Record it so it shows up in the demo
-  // customer's order history, then return the confirmation.
+  // /fit-request → file a fit request. This is how a fitting ENDS under
+  // `fitter.lead_capture_only` (the default): the patient sends their
+  // details or asks for a call, and staff place the order. There is
+  // deliberately no reference number in the response — it is not an
+  // order — so the demo returns exactly what the real route does.
+  route("POST", "/resupply-api/shop/fitter-requests", (req) => {
+    const body = req.json<{ requestType?: string }>() ?? {};
+    return json({
+      ok: true,
+      requestType: body.requestType ?? "full_details",
+      confirmationEmailed: true,
+    });
+  }),
+
+  // /order → place the order. Reachable only for a tenant that turned
+  // `fitter.lead_capture_only` OFF; kept so that path stays demoable.
+  // Record it so it shows up in the demo customer's order history, then
+  // return the confirmation.
   route("POST", "/api/orders", (req) => {
     const body =
       req.json<{

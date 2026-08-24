@@ -236,6 +236,19 @@ const assessBodySchema = z
     measurements: measurementsSchema,
     answers: legacyAnswersSchema.optional(),
     profile: profileSchema.optional(),
+    /**
+     * Adult or child, asked at the head of the questionnaire.
+     *
+     * It also exists inside `profile`, and both carry the same value —
+     * but only the v2 client sends a `profile` block at all, and
+     * `buildProfile` stamps any profile it receives as a v2 profile
+     * (which decides the question set the fit report cites). Sending a
+     * one-field profile just to carry the population would therefore
+     * make every LEGACY-questionnaire fitting claim it answered the v2
+     * question set. Hence a top-level field: a session property,
+     * transmitted as one, on both question sets.
+     */
+    population: z.enum(["adult", "pediatric"]).optional(),
     scan: scanSchema.optional(),
     safety: safetySchema.optional(),
     entryPoint: z
@@ -305,6 +318,15 @@ router.post("/fit/assess", assessLimiter, async (req, res) => {
 
   const body = parsed.data;
   let profile = buildProfile(body.answers ?? null, body.profile ?? null);
+
+  // The explicit session field outranks whatever the profile mapping
+  // produced — `emptyProfile()` defaults to "adult" for back-compat, and
+  // that default must not survive a patient telling us otherwise. Still
+  // below the chart override applied further down: a date of birth on a
+  // linked chart beats anything the browser says.
+  if (body.population) {
+    profile = { ...profile, population: body.population };
+  }
 
   const measurements: FitMeasurements = {
     noseWidth: body.measurements.noseWidth,

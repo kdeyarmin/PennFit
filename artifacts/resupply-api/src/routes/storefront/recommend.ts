@@ -21,6 +21,7 @@ import { maskCatalog } from "../../data/maskCatalog.js";
 import { verifyFitterInviteToken } from "../../lib/fitter-invite-token.js";
 import {
   ADULT_PLAUSIBILITY_BOUNDS,
+  PEDIATRIC_PLAUSIBILITY_BOUNDS,
   PLAUSIBILITY_FIELDS,
 } from "../../lib/fitting/index.js";
 
@@ -89,6 +90,8 @@ router.post("/recommend", (req, res) => {
   }
 
   const { measurements, answers } = parseResult.data;
+  // Omitted means adult — see the field's note on GetRecommendationBody.
+  const population = parseResult.data.population ?? "adult";
 
   // Plausibility guard: defense-in-depth for direct API callers. The
   // browser rejects out-of-window measurements before sending
@@ -97,14 +100,25 @@ router.post("/recommend", (req, res) => {
   // entirely. Zod enforces the shape; this rejects numerically
   // out-of-range values before they reach the recommender.
   //
-  // The ADULT window, deliberately: this legacy route has no chart and
-  // no date of birth, and its recommendation engine has no pediatric
-  // service line, so it must not start sizing adult masks for children.
-  // A pediatric face is turned away here and fitted through
-  // /api/fit/assess, which does know the population. Imported rather
-  // than transcribed — the copies of this table are what drifted apart.
+  // The window follows the POPULATION the patient just told us about.
+  //
+  // Before the adult-or-child question existed this was hardcoded to the
+  // adult window, deliberately: the route had no way to know it was
+  // looking at a child, so admitting a child-sized face would have meant
+  // sizing adult masks for children. Now that the session states its
+  // service line, a pediatric face is measured against pediatric bounds
+  // and turned away one step LATER — by the engine's service-line filter,
+  // which returns nothing because this catalog is adult-only — so the SPA
+  // can say "we can't fit a child here, a representative will call you"
+  // instead of blaming the photo for a measurement that was fine.
+  // Imported rather than transcribed — the copies of this table are what
+  // drifted apart.
+  const plausibilityBounds =
+    population === "pediatric"
+      ? PEDIATRIC_PLAUSIBILITY_BOUNDS
+      : ADULT_PLAUSIBILITY_BOUNDS;
   for (const field of PLAUSIBILITY_FIELDS) {
-    const [min, max] = ADULT_PLAUSIBILITY_BOUNDS[field];
+    const [min, max] = plausibilityBounds[field];
     const value = measurements[field];
     if (!Number.isFinite(value) || value < min || value > max) {
       res.status(400).json({
@@ -123,9 +137,24 @@ router.post("/recommend", (req, res) => {
     }
   }
 
-  const result = recommend(measurements, answers);
+  // A HARD filter in the engine, matching tier 1 of the clinical path.
+  // For a pediatric session against this adult-only catalog that yields
+  // an empty ranking, which is the honest answer: the array carries no
+  // pediatric interfaces and no pediatric size bands, so there is
+  // nothing here that could be fitted to a child.
+  const result = recommend(measurements, answers, { population });
 
-  res.json(result);
+  res.json({
+    ...result,
+    // Echoed so the SPA can distinguish "nothing ranked for a CHILD on a
+    // catalog that has no children's masks" (refer to the DME) from
+    // "nothing ranked for an adult" (a measurement problem — retake).
+    // Reading it off the response rather than off the request means a
+    // future server-side override (a chart-linked date of birth, say)
+    // reaches the patient's screen instead of being silently disagreed
+    // with by the client's own copy.
+    population,
+  });
 });
 
 /**

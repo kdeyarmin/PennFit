@@ -187,8 +187,24 @@ export async function captureToQuestionnaire(
   }
 }
 
-/** Answer each questionnaire item until the page lands on /results. */
+/**
+ * Answer the adult-or-child gate, then each questionnaire item, until
+ * the page lands on /results.
+ *
+ * The gate is answered EXPLICITLY rather than left to the generic
+ * radio-clicking loop below. It is the one screen where a wrong answer
+ * changes which masks are eligible at all (an adult-only catalog ranks
+ * nothing for a child), so a funnel walk that drifted onto the pediatric
+ * tile would fail somewhere far away with an unhelpful message.
+ */
 export async function questionnaireToResults(page: Page): Promise<void> {
+  const adultTile = page.getByTestId("button-population-adult");
+  try {
+    await adultTile.click({ timeout: 5_000 });
+  } catch {
+    /* Already past the gate (a resumed session carries the answer). */
+  }
+
   for (let i = 0; i < 13; i++) {
     const noBtn = page
       .locator('[data-testid$="-no"]')

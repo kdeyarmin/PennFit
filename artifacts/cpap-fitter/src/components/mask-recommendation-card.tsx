@@ -17,7 +17,7 @@ import {
   HelpCircle,
   Info,
   Layers,
-  ShoppingCart,
+  Send,
   Sparkles,
   Tag,
   Weight,
@@ -42,7 +42,6 @@ export function MaskRecommendationCard({
   details,
   isTopPick,
   onChoose,
-  cashPay,
   measurements,
 }: {
   mask: MaskRecommendation;
@@ -60,16 +59,6 @@ export function MaskRecommendationCard({
     noseToChin: number;
     mouthWidth: number;
   } | null;
-  /**
-   * Cash-pay path for this mask, present when it's sold in the shop
-   * and checkout is live. Renders a secondary "buy without insurance"
-   * CTA under the insurance-order button — the fitting funnel's
-   * bridge into the cash-pay shop. Omit to hide.
-   */
-  cashPay?: {
-    priceLabel: string;
-    onAddToCart: () => void;
-  };
 }) {
   const c = useCompanyContact();
   const confidencePct = Math.round(mask.confidence * 100);
@@ -350,31 +339,14 @@ export function MaskRecommendationCard({
               className={`w-full ${isTopPick ? "btn-primary-glow" : "glass-panel"}`}
               data-testid={`button-choose-${mask.maskId}`}
             >
-              <ShoppingCart className="w-4 h-4 mr-2" />
-              Order This Mask
+              <Send className="w-4 h-4 mr-2" />
+              Send this to {c.name}
             </Button>
             <p className="text-xs text-muted-foreground text-center mt-2">
-              We'll collect your insurance and shipping info, then send your
-              order to {c.name}.
+              We&apos;ll pass your fitting to the {c.name} team. They confirm
+              your coverage and sizing, and speak to you before anything is
+              ordered.
             </p>
-            {cashPay && (
-              <>
-                <Button
-                  onClick={cashPay.onAddToCart}
-                  size="lg"
-                  variant="ghost"
-                  className="w-full mt-3 glass-panel"
-                  data-testid={`button-cashpay-${mask.maskId}`}
-                >
-                  <ShoppingCart className="w-4 h-4 mr-2" />
-                  Buy without insurance — {cashPay.priceLabel}
-                </Button>
-                <p className="text-xs text-muted-foreground text-center mt-2">
-                  Skip the paperwork — ships from the {c.name} shop. HSA/FSA
-                  eligible.
-                </p>
-              </>
-            )}
           </div>
         </div>
       </div>

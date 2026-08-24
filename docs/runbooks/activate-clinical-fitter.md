@@ -17,7 +17,7 @@ which explains _why_ this matters commercially. This one is the _how_.
 > recommendations (the cap holds), it ships a fitter that routes almost
 > everything to human review, which looks broken. Do the sign-off first.
 
-All six switches are **runtime feature flags**, flipped in
+All seven switches below are **runtime feature flags**, flipped in
 **Control Center** (`/admin/control-center`), effective within ~5 s with
 no deploy. There are no env-var gates in this subsystem.
 
@@ -173,6 +173,53 @@ distance, head position, obstruction, movement).
 
 Seeded **ON** and staff-only. Nothing to do. Leave it on: it is the
 downloadable PDF that makes every step above auditable.
+
+### B7. `fitter.lead_capture_only` — already ON, and the one to leave alone
+
+Seeded **ON for every tenant** (migration 0516), which is what makes the
+fitter end in a **request a person works** rather than an order the
+patient files themselves.
+
+With it ON, `/results` offers two ways out — _send my details_ and _ask
+a representative to contact me_ — and both land in
+**Fitter → Fit Requests** (`/admin/fitter-requests`) as a
+`resupply.fitter_fit_requests` row. Nothing is ordered, billed or
+shipped until somebody works that row. Insurance details on the form are
+**optional by design**: staff verify benefits either way, so a patient
+who can't find their member ID is not stuck.
+
+`POST /api/orders` (the old self-serve insurance order) **refuses** while
+this flag is on — hiding the button is not a control, and the endpoint is
+public. It fails toward ON: a flag lookup that never reached the tenant's
+row reads as enabled, in the SPA and in the route alike, because the safe
+reading of "we don't know" is that a patient may not start a claim from
+their own guess at a member ID.
+
+- **Precondition:** none. Unlike B1–B5 this is not a clinical switch.
+- **Turning it OFF** restores the patient-submitted insurance order at
+  `/order`. Only do that if you actually want patients filing their own
+  orders unreviewed.
+- **Where the requests go:** `/admin/fitter-requests`, gated on
+  `conversations.manage` — the same CSR scope as Insurance Leads. The
+  matching prospect row in **Fitter Prospects** is stamped
+  `contact_requested_at` so the funnel view shows who raised their hand.
+
+### B8. The adult-or-child question — not a flag
+
+The questionnaire now opens with **"Who is this fitting for?"** on both
+question sets, and the answer is a **service line**, not an age. There is
+no toggle: it selects the measurement plausibility window, the tier-1
+service-line filter, and the `population` column on the stored fit
+session, all of which silently default to _adult_ when unset.
+
+A **pediatric** session is fitted from the DB catalog's pediatric models
+(`resmed-pixi`, `philips-wisp-pediatric`, `sleepnet-minime-2`,
+`circadiance-sleepweaver-advance-pediatric`), and adult-only interfaces
+are excluded outright. On the **legacy** `/api/recommend` path — a tenant
+with B1 off — the built-in catalog carries no pediatric interfaces and no
+pediatric size bands, so a child ranks nothing and the page says so
+plainly and offers the callback, instead of sending a parent back to the
+camera for a photo that was never the problem.
 
 ---
 
