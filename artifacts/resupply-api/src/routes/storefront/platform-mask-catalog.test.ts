@@ -344,38 +344,87 @@ describe("tenancy — EVERY read is platform-scoped, not just the first", () => 
   // because the file is allowlisted. That is the gap these close: they fail
   // if ANY query this route issues is missing its scope.
 
+  const PLATFORM_IDS = MODEL_ROWS.map((r) => r.id);
+
   /**
    * Does one invocation constrain itself to PLATFORM rows?
    *
-   * Three legitimate shapes, matching the three reads the route makes:
-   *   * `.is("org_id", null)`               — mask_models carries org_id itself
-   *   * `.is("mask_models.org_id", null)`   — child tables, across the !inner join
-   *   * `.in("mask_model_id", platformIds)` — the id-list fallback, whose ids
-   *     are derived from the already-platform-filtered model rows
+   * TABLE-AWARE on purpose. `mask_models` carries `org_id` itself, but the
+   * child tables do NOT (migration 0481 gives mask_size_variants /
+   * mask_components only a `mask_model_id` FK). So a table-agnostic
+   * predicate that accepted `.is("org_id", null)` anywhere would bless a
+   * child query filtering on a column that does not exist — and, more to
+   * the point, one that no longer rides the join back to `mask_models`.
+   * The mock does not validate PostgREST columns, so nothing else would
+   * catch that. Each table gets exactly the scope it can actually use:
+   *   * mask_models  → `.is("org_id", null)`
+   *   * child tables → `.is("mask_models.org_id", null)` across the !inner
+   *     join, or `.in("mask_model_id", …)` over platform ids only
    */
-  function scopedToPlatform(call: CapturedFilterCall[]): boolean {
+  function scopedToPlatform(
+    table: string,
+    call: CapturedFilterCall[],
+    platformIds: string[],
+  ): boolean {
+    const isNull = (col: string) =>
+      call.some(
+        (c) => c.verb === "is" && c.args[0] === col && c.args[1] === null,
+      );
+
+    if (table === "mask_models") return isNull("org_id");
+
+    // Child tables: across the join, or by an id list drawn ENTIRELY from
+    // already-platform-filtered models (an arbitrary id list is not a scope).
+    if (isNull("mask_models.org_id")) return true;
     return call.some(
       (c) =>
-        (c.verb === "is" &&
-          (c.args[0] === "org_id" || c.args[0] === "mask_models.org_id") &&
-          c.args[1] === null) ||
-        (c.verb === "in" && c.args[0] === "mask_model_id"),
+        c.verb === "in" &&
+        c.args[0] === "mask_model_id" &&
+        Array.isArray(c.args[1]) &&
+        c.args[1].length > 0 &&
+        (c.args[1] as unknown[]).every((id) =>
+          platformIds.includes(id as string),
+        ),
     );
   }
 
   /** Assert the invariant across every invocation, naming any that fails. */
-  function expectEveryReadScoped(table: string): void {
+  function expectEveryReadScoped(
+    table: string,
+    platformIds: string[] = PLATFORM_IDS,
+  ): void {
     const calls = getSupabaseFilterCallsByInvocation(table, "select");
     expect(calls.length).toBeGreaterThan(0);
     const unscoped = calls
       .map((call, i) => ({ i, call }))
-      .filter(({ call }) => !scopedToPlatform(call));
+      .filter(({ call }) => !scopedToPlatform(table, call, platformIds));
     expect(
       unscoped.map(
         ({ i, call }) => `${table} read #${i + 1}: ${JSON.stringify(call)}`,
       ),
     ).toEqual([]);
   }
+
+  it("rejects a child read that filters org_id directly instead of via the join", () => {
+    // The regression the table-aware predicate exists to catch: child tables
+    // have no org_id of their own, so this shape silently stops scoping.
+    const orgIdOnChild: CapturedFilterCall[] = [
+      { verb: "is", args: ["org_id", null] },
+    ];
+    expect(
+      scopedToPlatform("mask_size_variants", orgIdOnChild, PLATFORM_IDS),
+    ).toBe(false);
+    expect(scopedToPlatform("mask_models", orgIdOnChild, PLATFORM_IDS)).toBe(
+      true,
+    );
+    // And an id list that is not drawn from the platform roster is no scope.
+    const foreignIds: CapturedFilterCall[] = [
+      { verb: "in", args: ["mask_model_id", ["not-a-platform-id"]] },
+    ];
+    expect(scopedToPlatform("mask_components", foreignIds, PLATFORM_IDS)).toBe(
+      false,
+    );
+  });
 
   it("scopes every page of the model read, not just the first", async () => {
     // Three invocations: two data pages and the terminating empty page. A
