@@ -39,6 +39,10 @@ export interface CatalogCoverage {
  * Static snapshot — the platform catalog as of 2026-08-24, verified against
  * `resupply.mask_models` (seeded by migrations 0486 + 0493 + 0494).
  *
+ * `sizeVariants` counts only variants that actually carry a millimetre band
+ * (248 of 301 rows — the rest are dimensionless, mostly tube-up frames), to
+ * match the label the page prints and the filter the endpoint applies.
+ *
  * This is the pre-fetch first paint AND the fetch-failure state, so a
  * prospect never sees a spinner, a zero, or an empty roster. The live fetch
  * is what carries day-to-day additions; refresh this when the seeded catalog
@@ -69,7 +73,7 @@ export const FALLBACK_COVERAGE: CatalogCoverage = {
     models: 83,
     currentModels: 74,
     discontinuedModels: 9,
-    sizeVariants: 301,
+    sizeVariants: 248,
     components: 244,
   },
   lastUpdatedAt: null,
@@ -133,6 +137,11 @@ export function normalizeCoverage(body: unknown): CatalogCoverage | null {
     }))
     .filter((m) => m.name.length > 0 && m.models > 0);
   if (manufacturers.length === 0) return null;
+  // Salvaging the roster row by row means the server's own headline totals
+  // may now count rows we are NOT rendering. Derive them instead — the big
+  // number must never disagree with the rows beneath it, and the page would
+  // otherwise badge a mismatched payload as a live count.
+  const salvaged = manufacturers.length !== b.manufacturers.length;
 
   const interfaceTypes = Array.isArray(b.interfaceTypes)
     ? b.interfaceTypes
@@ -151,20 +160,23 @@ export function normalizeCoverage(body: unknown): CatalogCoverage | null {
     typeof b.totals === "object" && b.totals !== null
       ? (b.totals as Record<string, unknown>)
       : {};
-  // Derive the headline totals from the roster when the server omits them,
-  // so the panel's big numbers can never disagree with the rows beneath it.
+  // Derive the headline totals from the roster whenever the server omits them
+  // OR we dropped a row above, so the panel's big numbers can never disagree
+  // with the rows beneath them.
   const rosterModels = manufacturers.reduce((sum, m) => sum + m.models, 0);
 
   return {
     manufacturers,
     interfaceTypes,
     totals: {
-      manufacturers: isFiniteNumber(rawTotals.manufacturers)
-        ? rawTotals.manufacturers
-        : manufacturers.length,
-      models: isFiniteNumber(rawTotals.models)
-        ? rawTotals.models
-        : rosterModels,
+      manufacturers:
+        !salvaged && isFiniteNumber(rawTotals.manufacturers)
+          ? rawTotals.manufacturers
+          : manufacturers.length,
+      models:
+        !salvaged && isFiniteNumber(rawTotals.models)
+          ? rawTotals.models
+          : rosterModels,
       currentModels: countOrZero(rawTotals.currentModels),
       discontinuedModels: countOrZero(rawTotals.discontinuedModels),
       sizeVariants: countOrNull(rawTotals.sizeVariants),

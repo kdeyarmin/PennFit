@@ -63,6 +63,16 @@ export interface MaskCatalogCoverage {
   lastUpdatedAt: string | null;
 }
 
+/**
+ * Fail-soft responses are cacheable too, but briefly.
+ *
+ * Without a header every page load during a DB incident re-runs the failing
+ * query — most load exactly when the dependency is least able to take it. 30s
+ * sheds that traffic while still letting recovery show up promptly, rather
+ * than pinning an empty roster for the success path's full 5 minutes.
+ */
+const FAILSOFT_CACHE = "public, max-age=30";
+
 const EMPTY: MaskCatalogCoverage = {
   manufacturers: [],
   interfaceTypes: [],
@@ -87,6 +97,47 @@ type ChildTable = "mask_size_variants" | "mask_components";
 const MAX_IDS_IN_URL = 200;
 
 /**
+ * The millimetre-band columns on `mask_size_variants` (migration 0481).
+ *
+ * A variant counts as "sized" only when at least ONE of these is populated.
+ * The seed carries dimensionless rows — notably tube-up frame variants, whose
+ * size exists but has no facial band — and counting those would overstate the
+ * marketing figure the page labels "sized variants with millimetre bands"
+ * (301 raw rows vs 248 that actually carry a band, as of 2026-08-24).
+ *
+ * If a band column is ever added and not listed here the count UNDER-states,
+ * which is the safe direction for a public claim.
+ */
+const BAND_COLUMNS = [
+  "nose_width_min_mm",
+  "nose_width_max_mm",
+  "nose_height_min_mm",
+  "nose_height_max_mm",
+  "nose_to_chin_min_mm",
+  "nose_to_chin_max_mm",
+  "mouth_width_min_mm",
+  "mouth_width_max_mm",
+  "face_width_min_mm",
+  "face_width_max_mm",
+  "nostril_width_min_mm",
+  "nostril_width_max_mm",
+] as const;
+
+/** PostgREST `or=` expression: at least one band column is non-NULL. */
+const HAS_ANY_BAND = BAND_COLUMNS.map((c) => `${c}.not.is.null`).join(",");
+
+/**
+ * PostgREST caps a single response at its `db-max-rows` (Supabase ships a
+ * limit), so an unpaged select would SILENTLY return a prefix once the
+ * catalog outgrows it — every total, and `lastUpdatedAt`, quietly wrong while
+ * the child counts stayed exact. Page instead.
+ */
+const MODEL_PAGE_SIZE = 1000;
+
+/** Defensive bound so a misbehaving server cannot spin this loop forever. */
+const MAX_MODEL_PAGES = 25;
+
+/**
  * Count rows in a child table, restricted to children of PLATFORM models.
  *
  * `mask_size_variants` / `mask_components` carry no `org_id` of their own, so
@@ -106,7 +157,11 @@ async function countPlatformChildren(
   table: ChildTable,
   platformIds: string[],
 ): Promise<number | null> {
-  const embedded = await supabase
+  // Variants are only counted when they actually carry a band — see
+  // BAND_COLUMNS. Components have no equivalent qualifier.
+  const bandFilter = table === "mask_size_variants" ? HAS_ANY_BAND : null;
+
+  let embeddedQuery = supabase
     .schema("resupply")
     .from(table)
     .select("mask_model_id, mask_models!inner(org_id)", {
@@ -114,6 +169,8 @@ async function countPlatformChildren(
       head: true,
     })
     .is("mask_models.org_id", null);
+  if (bandFilter) embeddedQuery = embeddedQuery.or(bandFilter);
+  const embedded = await embeddedQuery;
   if (!embedded.error) return embedded.count ?? null;
 
   logger.warn(
@@ -124,11 +181,13 @@ async function countPlatformChildren(
   if (platformIds.length === 0 || platformIds.length > MAX_IDS_IN_URL) {
     return null;
   }
-  const byId = await supabase
+  let byIdQuery = supabase
     .schema("resupply")
     .from(table)
     .select("mask_model_id", { count: "exact", head: true })
     .in("mask_model_id", platformIds);
+  if (bandFilter) byIdQuery = byIdQuery.or(bandFilter);
+  const byId = await byIdQuery;
   if (byId.error) {
     logger.warn(
       {
@@ -143,27 +202,58 @@ async function countPlatformChildren(
   return byId.count ?? null;
 }
 
+/**
+ * Read EVERY platform model row, a page at a time.
+ *
+ * Advances by the number of rows actually returned rather than by the
+ * requested page size, so a server-side `db-max-rows` smaller than
+ * MODEL_PAGE_SIZE still walks the whole table instead of stopping at the
+ * first short page. Ordered by `id` because a paged read without a stable
+ * sort can repeat or skip rows between pages.
+ */
+async function fetchPlatformModels(
+  supabase: ReturnType<typeof getSupabaseServiceRoleClient>,
+): Promise<{ rows: ModelRow[]; error: unknown | null }> {
+  const rows: ModelRow[] = [];
+  for (let page = 0; page < MAX_MODEL_PAGES; page += 1) {
+    const res = await supabase
+      .schema("resupply")
+      .from("mask_models")
+      .select("id, manufacturer, status, interface_type, updated_at")
+      .is("org_id", null)
+      .order("id")
+      .range(rows.length, rows.length + MODEL_PAGE_SIZE - 1);
+    if (res.error) return { rows, error: res.error };
+    const batch = (res.data ?? []) as ModelRow[];
+    rows.push(...batch);
+    if (batch.length === 0) return { rows, error: null };
+  }
+  logger.warn(
+    { event: "mask_catalog_paging_capped", rows: rows.length },
+    "public mask catalog paging hit MAX_MODEL_PAGES; totals may be partial",
+  );
+  return { rows, error: null };
+}
+
 router.get("/platform/mask-catalog", async (_req, res) => {
   try {
     const supabase = getSupabaseServiceRoleClient();
 
-    const models = await supabase
-      .schema("resupply")
-      .from("mask_models")
-      .select("id, manufacturer, status, interface_type, updated_at")
-      .is("org_id", null);
+    const models = await fetchPlatformModels(supabase);
 
     if (models.error) {
       logger.error(
         { event: "mask_catalog_coverage_read_failed", err: models.error },
         "public mask catalog coverage read failed",
       );
+      res.set("Cache-Control", FAILSOFT_CACHE);
       res.json(EMPTY);
       return;
     }
 
-    const rows = (models.data ?? []) as ModelRow[];
+    const rows = models.rows;
     if (rows.length === 0) {
+      res.set("Cache-Control", FAILSOFT_CACHE);
       res.json(EMPTY);
       return;
     }
@@ -237,6 +327,7 @@ router.get("/platform/mask-catalog", async (_req, res) => {
       { event: "mask_catalog_coverage_read_threw", err },
       "public mask catalog coverage read threw",
     );
+    if (!res.headersSent) res.set("Cache-Control", FAILSOFT_CACHE);
     res.json(EMPTY);
   }
 });

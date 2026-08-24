@@ -117,7 +117,7 @@ export const ext10Handlers: DemoHandler[] = [
         models: 83,
         currentModels: 74,
         discontinuedModels: 9,
-        sizeVariants: 301,
+        sizeVariants: 248,
         components: 244,
       },
       lastUpdatedAt: daysAgo(2),

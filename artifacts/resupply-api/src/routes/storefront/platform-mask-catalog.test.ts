@@ -71,6 +71,15 @@ const MODEL_ROWS = [
   },
 ];
 
+/**
+ * The route pages the model read until a page comes back empty, so every
+ * test that stages model rows must stage that terminating empty page too.
+ */
+function stageModels(rows: unknown[]): void {
+  stageSupabaseResponse("mask_models", "select", { data: rows });
+  stageSupabaseResponse("mask_models", "select", { data: [] });
+}
+
 function stageChildCounts(sizeVariants: number, components: number): void {
   stageSupabaseResponse("mask_size_variants", "select", {
     data: null,
@@ -84,7 +93,7 @@ function stageChildCounts(sizeVariants: number, components: number): void {
 
 describe("GET /api/platform/mask-catalog", () => {
   it("aggregates per-manufacturer counts with a cache header", async () => {
-    stageSupabaseResponse("mask_models", "select", { data: MODEL_ROWS });
+    stageModels(MODEL_ROWS);
     stageChildCounts(301, 244);
 
     const res = await request(makeApp()).get("/platform/mask-catalog");
@@ -110,7 +119,7 @@ describe("GET /api/platform/mask-catalog", () => {
   });
 
   it("breaks the roster down by interface type, biggest first", async () => {
-    stageSupabaseResponse("mask_models", "select", { data: MODEL_ROWS });
+    stageModels(MODEL_ROWS);
     stageChildCounts(301, 244);
 
     const res = await request(makeApp()).get("/platform/mask-catalog");
@@ -122,7 +131,7 @@ describe("GET /api/platform/mask-catalog", () => {
   });
 
   it("counts PLATFORM rows only — never a tenant's private models", async () => {
-    stageSupabaseResponse("mask_models", "select", { data: MODEL_ROWS });
+    stageModels(MODEL_ROWS);
     stageChildCounts(301, 244);
 
     await request(makeApp()).get("/platform/mask-catalog");
@@ -143,7 +152,7 @@ describe("GET /api/platform/mask-catalog", () => {
   });
 
   it("never leaks model names, slugs, or any per-model detail", async () => {
-    stageSupabaseResponse("mask_models", "select", { data: MODEL_ROWS });
+    stageModels(MODEL_ROWS);
     stageChildCounts(301, 244);
 
     const res = await request(makeApp()).get("/platform/mask-catalog");
@@ -157,7 +166,7 @@ describe("GET /api/platform/mask-catalog", () => {
   });
 
   it("falls back to an explicit id list when the join embed is rejected", async () => {
-    stageSupabaseResponse("mask_models", "select", { data: MODEL_ROWS });
+    stageModels(MODEL_ROWS);
     // First call (the embed) errors, second (the id list) succeeds.
     stageSupabaseResponse("mask_size_variants", "select", {
       error: { message: "could not find a relationship" },
@@ -181,7 +190,7 @@ describe("GET /api/platform/mask-catalog", () => {
   });
 
   it("omits a child count (null) rather than printing a zero it can't stand behind", async () => {
-    stageSupabaseResponse("mask_models", "select", { data: MODEL_ROWS });
+    stageModels(MODEL_ROWS);
     // Both the embed and the id-list fallback fail.
     stageSupabaseResponse("mask_size_variants", "select", {
       error: { message: "boom" },
@@ -217,7 +226,7 @@ describe("GET /api/platform/mask-catalog", () => {
   });
 
   it("fail-soft: an empty catalog returns the empty roster, not a partial", async () => {
-    stageSupabaseResponse("mask_models", "select", { data: [] });
+    stageModels([]);
 
     const res = await request(makeApp()).get("/platform/mask-catalog");
 
@@ -225,5 +234,90 @@ describe("GET /api/platform/mask-catalog", () => {
     expect(res.body.manufacturers).toEqual([]);
     expect(res.body.interfaceTypes).toEqual([]);
     expect(res.body.lastUpdatedAt).toBeNull();
+  });
+});
+
+describe("GET /api/platform/mask-catalog — paging and cache posture", () => {
+  it("walks every page of the model catalog, not just the first", async () => {
+    // A server-side row cap returns a short page; the walk must continue
+    // until a page comes back empty rather than stopping at the first one.
+    stageSupabaseResponse("mask_models", "select", { data: MODEL_ROWS });
+    stageSupabaseResponse("mask_models", "select", {
+      data: [
+        {
+          id: "55555555-5555-4555-8555-555555555555",
+          manufacturer: "Sleepnet",
+          status: "current",
+          interface_type: "nasal",
+          updated_at: "2026-08-23T00:00:00.000Z",
+        },
+      ],
+    });
+    stageSupabaseResponse("mask_models", "select", { data: [] });
+    stageChildCounts(248, 244);
+
+    const res = await request(makeApp()).get("/platform/mask-catalog");
+
+    expect(res.body.totals.models).toBe(5);
+    expect(res.body.totals.manufacturers).toBe(3);
+    // The page-2 row also wins the freshness comparison.
+    expect(res.body.lastUpdatedAt).toBe("2026-08-23T00:00:00.000Z");
+  });
+
+  it("orders the paged read so rows can't repeat or be skipped", async () => {
+    stageModels(MODEL_ROWS);
+    stageChildCounts(248, 244);
+
+    await request(makeApp()).get("/platform/mask-catalog");
+
+    expect(getSupabaseFilterCalls("mask_models", "select")).toContainEqual({
+      verb: "order",
+      args: ["id"],
+    });
+  });
+
+  it("counts only size variants that carry a millimetre band", async () => {
+    stageModels(MODEL_ROWS);
+    stageChildCounts(248, 244);
+
+    await request(makeApp()).get("/platform/mask-catalog");
+
+    // The seed holds dimensionless rows (tube-up frames); counting them
+    // would overstate the "with millimetre bands" label the page prints.
+    const variantFilters = getSupabaseFilterCalls(
+      "mask_size_variants",
+      "select",
+    );
+    const or = variantFilters.find((c) => c.verb === "or");
+    expect(or).toBeDefined();
+    expect(String(or!.args[0])).toContain("nose_width_min_mm.not.is.null");
+    expect(String(or!.args[0])).toContain("nostril_width_max_mm.not.is.null");
+    // Components have no equivalent qualifier — every one is HCPCS-coded.
+    expect(
+      getSupabaseFilterCalls("mask_components", "select").some(
+        (c) => c.verb === "or",
+      ),
+    ).toBe(false);
+  });
+
+  it("caches the fail-soft response briefly so an outage isn't amplified", async () => {
+    stageSupabaseResponse("mask_models", "select", {
+      error: { message: "boom" },
+    });
+
+    const res = await request(makeApp()).get("/platform/mask-catalog");
+
+    expect(res.status).toBe(200);
+    // Short, not the success path's 5 minutes: shed load during an incident
+    // without pinning an empty roster once the DB recovers.
+    expect(res.headers["cache-control"]).toContain("max-age=30");
+  });
+
+  it("caches an empty catalog the same way", async () => {
+    stageModels([]);
+
+    const res = await request(makeApp()).get("/platform/mask-catalog");
+
+    expect(res.headers["cache-control"]).toContain("max-age=30");
   });
 });

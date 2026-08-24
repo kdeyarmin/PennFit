@@ -66,6 +66,29 @@ describe("normalizeCoverage", () => {
     ]);
   });
 
+  it("recomputes totals when it had to drop a row, ignoring the server's", () => {
+    const out = normalizeCoverage({
+      manufacturers: [
+        { name: "ResMed", models: 25, currentModels: 20 },
+        { name: "", models: 58, currentModels: 54 }, // dropped
+      ],
+      // The server counted the row we just rejected.
+      totals: { manufacturers: 2, models: 83 },
+    });
+    // Headline must match the roster actually rendered, not the payload.
+    expect(out?.manufacturers).toHaveLength(1);
+    expect(out?.totals.models).toBe(25);
+    expect(out?.totals.manufacturers).toBe(1);
+  });
+
+  it("keeps the server's totals when every row survived", () => {
+    // A clean payload is authoritative — the server counts statuses we
+    // never see per-row, so we must not second-guess it without cause.
+    const out = normalizeCoverage(LIVE_BODY);
+    expect(out?.totals.models).toBe(LIVE_BODY.totals.models);
+    expect(out?.totals.manufacturers).toBe(LIVE_BODY.totals.manufacturers);
+  });
+
   it("derives headline totals from the roster when the server omits them", () => {
     const out = normalizeCoverage({
       manufacturers: [
@@ -176,5 +199,18 @@ describe("summariseManufacturers", () => {
     expect(summariseManufacturers(FALLBACK_COVERAGE.manufacturers)).toBe(
       "ResMed, Philips Respironics, Fisher & Paykel and React Health, plus 6 more",
     );
+  });
+});
+
+describe("FALLBACK_COVERAGE — sizeVariants", () => {
+  it("counts only banded variants, matching the label the page prints", () => {
+    // 301 raw mask_size_variants rows exist, but 53 are dimensionless
+    // (mostly tube-up frames). The page says "with millimetre bands", so the
+    // snapshot — and the endpoint's filter — must exclude those.
+    expect(FALLBACK_COVERAGE.totals.sizeVariants).toBe(248);
+  });
+
+  it("never claims more banded variants than the catalog has rows", () => {
+    expect(FALLBACK_COVERAGE.totals.sizeVariants!).toBeLessThanOrEqual(301);
   });
 });
