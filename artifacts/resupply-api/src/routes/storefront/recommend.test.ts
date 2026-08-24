@@ -273,3 +273,37 @@ describe("POST /recommend — plausibility guard", () => {
     expect(res.body.details).toHaveLength(1);
   });
 });
+
+// ── Rate limiting ────────────────────────────────────────────────────
+//
+// The mask-scoring limiter used to be mounted app-level
+// (`app.use("/api/recommend", …)` in app.ts). That capped the route, but
+// it was invisible both to a reader of recommend.ts and to CodeQL's
+// js/missing-rate-limiting query, which only recognises a limiter at the
+// handler's own registration — so an authorization-performing route read
+// as unlimited. It now sits on the route itself.
+//
+// These tests mount the ROUTER alone, exactly as the app does, so a
+// regression that moved the limiter back out would fail here.
+
+describe("rate limiting", () => {
+  it("applies the shared mask-scoring limiter at the route", async () => {
+    const res = await postRecommend({
+      measurements: VALID_MEASUREMENTS,
+      answers: VALID_ANSWERS,
+    });
+    // draft-7 standard headers — present only if the limiter actually ran.
+    expect(res.headers["ratelimit"]).toBeDefined();
+    expect(res.headers["ratelimit-policy"]).toBeDefined();
+  });
+
+  it("runs the limiter BEFORE the invite gate, so an unauthorized flood is capped too", async () => {
+    // The limiter has to sit ahead of the authorization check or a
+    // caller with no token at all could hammer the route for free.
+    const res = await request(makeApp())
+      .post("/recommend")
+      .send({ measurements: VALID_MEASUREMENTS, answers: VALID_ANSWERS });
+    expect(res.status).toBe(403);
+    expect(res.headers["ratelimit"]).toBeDefined();
+  });
+});
