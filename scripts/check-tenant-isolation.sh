@@ -135,6 +135,13 @@ EXCLUDES=(
   # is the exact inverse of what this route needs. Same reviewed
   # global-table rationale as the platform-outreach and newsletter entries
   # above.
+  #
+  # BACKSTOP: because this exemption is file-scoped, it also covers reads
+  # nobody has written yet. The `tenancy — EVERY read is platform-scoped`
+  # block in platform-mask-catalog.test.ts stands in for the guard: it
+  # asserts that every query the route issues carries its platform filter
+  # (and that no other table is touched at all), so an unscoped read added
+  # here later fails the suite even though this file is allowlisted.
   --glob '!**/routes/storefront/platform-mask-catalog.ts'
 )
 

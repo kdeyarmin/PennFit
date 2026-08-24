@@ -15,6 +15,10 @@ import {
   installSupabaseMock,
   stageSupabaseResponse,
   getSupabaseFilterCalls,
+  getSupabaseFilterCallsByInvocation,
+  getSupabaseTouchedKeys,
+  getSupabaseTouchedRpcFns,
+  type CapturedFilterCall,
 } from "../../test-helpers/supabase-mock";
 
 const supabaseMock = installSupabaseMock();
@@ -319,5 +323,205 @@ describe("GET /api/platform/mask-catalog — paging and cache posture", () => {
     const res = await request(makeApp()).get("/platform/mask-catalog");
 
     expect(res.headers["cache-control"]).toContain("max-age=30");
+  });
+});
+
+describe("tenancy — EVERY read is platform-scoped, not just the first", () => {
+  // Why this block exists.
+  //
+  // This file is on the EXCLUDES allowlist in
+  // scripts/check-tenant-isolation.sh, so the CI guard that would otherwise
+  // fail the build on an unscoped getSupabaseServiceRoleClient() read here is
+  // deliberately off — and it is off for the whole FILE, permanently,
+  // including reads nobody has written yet. The exemption is only worth as
+  // much as the assertion standing in for it.
+  //
+  // The `toContainEqual` check above is not that assertion. It proves SOME
+  // read carried the tenancy filter, against a filter log the mock flattens
+  // across every invocation. Add a second, unfiltered `mask_models` read to
+  // this route tomorrow and it still passes — the first read's filter is
+  // still somewhere in the flattened array — while the CI guard stays silent
+  // because the file is allowlisted. That is the gap these close: they fail
+  // if ANY query this route issues is missing its scope.
+
+  const PLATFORM_IDS = MODEL_ROWS.map((r) => r.id);
+
+  /**
+   * Does one invocation constrain itself to PLATFORM rows?
+   *
+   * TABLE-AWARE on purpose. `mask_models` carries `org_id` itself, but the
+   * child tables do NOT (migration 0481 gives mask_size_variants /
+   * mask_components only a `mask_model_id` FK). So a table-agnostic
+   * predicate that accepted `.is("org_id", null)` anywhere would bless a
+   * child query filtering on a column that does not exist — and, more to
+   * the point, one that no longer rides the join back to `mask_models`.
+   * The mock does not validate PostgREST columns, so nothing else would
+   * catch that. Each table gets exactly the scope it can actually use:
+   *   * mask_models  → `.is("org_id", null)`
+   *   * child tables → `.is("mask_models.org_id", null)` across the !inner
+   *     join, or `.in("mask_model_id", …)` over platform ids only
+   */
+  function scopedToPlatform(
+    table: string,
+    call: CapturedFilterCall[],
+    platformIds: string[],
+  ): boolean {
+    const isNull = (col: string) =>
+      call.some(
+        (c) => c.verb === "is" && c.args[0] === col && c.args[1] === null,
+      );
+
+    if (table === "mask_models") return isNull("org_id");
+
+    // Child tables: across the join, or by an id list drawn ENTIRELY from
+    // already-platform-filtered models (an arbitrary id list is not a scope).
+    if (isNull("mask_models.org_id")) return true;
+    return call.some(
+      (c) =>
+        c.verb === "in" &&
+        c.args[0] === "mask_model_id" &&
+        Array.isArray(c.args[1]) &&
+        c.args[1].length > 0 &&
+        (c.args[1] as unknown[]).every((id) =>
+          platformIds.includes(id as string),
+        ),
+    );
+  }
+
+  /** Assert the invariant across every invocation, naming any that fails. */
+  function expectEveryReadScoped(
+    table: string,
+    platformIds: string[] = PLATFORM_IDS,
+  ): void {
+    const calls = getSupabaseFilterCallsByInvocation(table, "select");
+    expect(calls.length).toBeGreaterThan(0);
+    const unscoped = calls
+      .map((call, i) => ({ i, call }))
+      .filter(({ call }) => !scopedToPlatform(table, call, platformIds));
+    expect(
+      unscoped.map(
+        ({ i, call }) => `${table} read #${i + 1}: ${JSON.stringify(call)}`,
+      ),
+    ).toEqual([]);
+  }
+
+  it("rejects a child read that filters org_id directly instead of via the join", () => {
+    // The regression the table-aware predicate exists to catch: child tables
+    // have no org_id of their own, so this shape silently stops scoping.
+    const orgIdOnChild: CapturedFilterCall[] = [
+      { verb: "is", args: ["org_id", null] },
+    ];
+    expect(
+      scopedToPlatform("mask_size_variants", orgIdOnChild, PLATFORM_IDS),
+    ).toBe(false);
+    expect(scopedToPlatform("mask_models", orgIdOnChild, PLATFORM_IDS)).toBe(
+      true,
+    );
+    // And an id list that is not drawn from the platform roster is no scope.
+    const foreignIds: CapturedFilterCall[] = [
+      { verb: "in", args: ["mask_model_id", ["not-a-platform-id"]] },
+    ];
+    expect(scopedToPlatform("mask_components", foreignIds, PLATFORM_IDS)).toBe(
+      false,
+    );
+  });
+
+  it("scopes every page of the model read, not just the first", async () => {
+    // Three invocations: two data pages and the terminating empty page. A
+    // filter applied only to page one would leak a tenant's private models
+    // into the public total from page two onward.
+    stageSupabaseResponse("mask_models", "select", { data: MODEL_ROWS });
+    stageSupabaseResponse("mask_models", "select", {
+      data: [
+        {
+          id: "55555555-5555-4555-8555-555555555555",
+          manufacturer: "Sleepnet",
+          status: "current",
+          interface_type: "nasal",
+          updated_at: "2026-08-23T00:00:00.000Z",
+        },
+      ],
+    });
+    stageSupabaseResponse("mask_models", "select", { data: [] });
+    stageChildCounts(248, 244);
+
+    await request(makeApp()).get("/platform/mask-catalog");
+
+    expect(
+      getSupabaseFilterCallsByInvocation("mask_models", "select"),
+    ).toHaveLength(3);
+    expectEveryReadScoped("mask_models");
+  });
+
+  it("scopes every child-count read on the embed path", async () => {
+    stageModels(MODEL_ROWS);
+    stageChildCounts(301, 244);
+
+    await request(makeApp()).get("/platform/mask-catalog");
+
+    expectEveryReadScoped("mask_size_variants");
+    expectEveryReadScoped("mask_components");
+  });
+
+  it("scopes the fallback read too when the embed is rejected", async () => {
+    // Two invocations on the variants table: the embed that errors, and the
+    // id-list fallback. BOTH must be scoped — the fallback is the one that
+    // actually produces the published number.
+    stageModels(MODEL_ROWS);
+    stageSupabaseResponse("mask_size_variants", "select", {
+      error: { message: "could not find a relationship" },
+    });
+    stageSupabaseResponse("mask_size_variants", "select", {
+      data: null,
+      count: 301,
+    });
+    stageChildCounts(0, 244);
+
+    await request(makeApp()).get("/platform/mask-catalog");
+
+    const calls = getSupabaseFilterCallsByInvocation(
+      "mask_size_variants",
+      "select",
+    );
+    expect(calls).toHaveLength(2);
+    expectEveryReadScoped("mask_size_variants");
+    // And the fallback's id list is the platform roster — not an unbounded
+    // or tenant-inclusive set.
+    const ids = calls[1].find((c) => c.verb === "in")?.args[1];
+    expect(ids).toEqual(MODEL_ROWS.map((r) => r.id));
+  });
+
+  it("reads exactly three tables — the complete set, not a sample", async () => {
+    // A read the route is not supposed to make is the other way an exempted
+    // file drifts: the guard would have caught a new unscoped table here.
+    //
+    // Asserted as SET EQUALITY over everything the route touched, not as a
+    // denylist of tables we happened to think of. A denylist cannot fail for
+    // a table nobody named — and since an unstaged call resolves to a
+    // success envelope, a stray read from, say, `prescriptions` would
+    // neither throw nor be looked at. This fails on any table not listed.
+    stageModels(MODEL_ROWS);
+    stageChildCounts(301, 244);
+
+    await request(makeApp()).get("/platform/mask-catalog");
+
+    expect(getSupabaseTouchedKeys()).toEqual([
+      "mask_components.select",
+      "mask_models.select",
+      "mask_size_variants.select",
+    ]);
+    // Reads only — no insert/update/upsert/delete from a public endpoint —
+    // is implied by the `.select` suffix on every key above. An RPC would
+    // bypass the table log entirely, so pin that surface as empty too.
+    expect(getSupabaseTouchedRpcFns()).toEqual([]);
+
+    // ...and each of the three is platform-scoped on every invocation.
+    for (const table of [
+      "mask_models",
+      "mask_size_variants",
+      "mask_components",
+    ]) {
+      expectEveryReadScoped(table);
+    }
   });
 });
