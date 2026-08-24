@@ -23,6 +23,10 @@ import {
   ADULT_PLAUSIBILITY_BOUNDS,
   PLAUSIBILITY_FIELDS,
 } from "../../lib/fitting/index.js";
+import { loadCatalogVisibility } from "../../lib/fitting/catalog-store.js";
+import { resolveOrgIdForSignedRecord } from "../../lib/storefront/signed-link-org.js";
+import { requestHost } from "../../lib/request-host.js";
+import { resolveOrgIdByHost } from "../../lib/tenant-branding.js";
 
 const router = Router();
 
@@ -35,7 +39,7 @@ const router = Router();
  * Strict input validation via Zod. Any payload containing image data,
  * base64 strings, binary, or unexpected fields is rejected with 400.
  */
-router.post("/recommend", (req, res) => {
+router.post("/recommend", async (req, res) => {
   // Invitation-only gate. The virtual mask fitter is reachable only
   // through a signed invite link a DME company (a Breathe customer)
   // sends a patient by SMS or email; the link carries a token bound to
@@ -123,7 +127,25 @@ router.post("/recommend", (req, res) => {
     }
   }
 
-  const result = recommend(measurements, answers);
+  // Masks the tenant hid (formulary `exclude`, migration 0516) are dropped
+  // before scoring, so this legacy engine agrees with /api/fit/assess about
+  // what the provider actually carries. Resolved from the invite's OWN
+  // tenant rather than the request host, so a fitter opened on the platform
+  // domain still honours the inviting DME's formulary.
+  //
+  // This is a read, and it does not weaken the stateless gate above: the
+  // invite is still accepted on its signature alone, and a lookup that
+  // fails or times out simply hides nothing. The route's no-persistence
+  // design is untouched — nothing here writes.
+  const orgId = await resolveOrgIdForSignedRecord(
+    "fitter_invites",
+    verification.inviteId,
+  ).catch(() => null);
+  const visibility = await loadCatalogVisibility(orgId);
+
+  const result = recommend(measurements, answers, {
+    hiddenMaskIds: visibility.hiddenSlugs,
+  });
 
   res.json(result);
 });
@@ -131,12 +153,28 @@ router.post("/recommend", (req, res) => {
 /**
  * GET /api/masks
  *
- * Returns the full mask catalog. Public, no PHI involved.
+ * Returns the mask catalog this tenant carries. Public, no PHI involved.
+ *
+ * Tenant resolves by HOST — there is no token on this route — so a request
+ * that lands on the platform domain, or on a host with no tenant behind it,
+ * gets the unfiltered catalog. Fail-open is the right default for a public
+ * listing: this is a merchandising preference, not an access control.
  */
-router.get("/masks", (_req, res) => {
+router.get("/masks", async (req, res) => {
+  const orgId = await resolveOrgIdByHost(requestHost(req)).catch(() => null);
+  const visibility = await loadCatalogVisibility(orgId);
+  const masks = visibility.hiddenSlugs.size
+    ? maskCatalog.filter((m) => !visibility.hiddenSlugs.has(m.id))
+    : maskCatalog;
+
+  // The body now varies by tenant, and the custom domains sit behind
+  // Cloudflare — without this an edge cache could serve one tenant's
+  // filtered catalog to another. Same posture as GET /api/fit/catalog.
+  res.set("Cache-Control", "private, no-store");
+  res.set("Vary", "Host");
   res.json({
-    masks: maskCatalog,
-    total: maskCatalog.length,
+    masks,
+    total: masks.length,
   });
 });
 

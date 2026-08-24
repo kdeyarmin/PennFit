@@ -909,6 +909,20 @@ export interface RecommendOptions {
    * the engine behaves identically until feedback has accumulated.
    */
   fitAdjustments?: Record<string, number>;
+  /**
+   * Catalog ids the tenant does not carry, from an `exclude` rule in their
+   * formulary (migration 0516). Removed BEFORE scoring, not after, so the
+   * top-3 diversification and the alternatives backfill draw from what is
+   * actually dispensable rather than leaving holes where a hidden mask was.
+   *
+   * `maskCatalog[].id` and `mask_models.slug` are deliberately the same id
+   * space ('resmed-airfit-f20'), which is what lets this legacy engine
+   * honour a formulary it cannot otherwise see.
+   *
+   * Default: none hidden, so a caller that does not resolve a tenant (and
+   * every existing test) behaves exactly as before.
+   */
+  hiddenMaskIds?: ReadonlySet<string>;
 }
 
 export function recommend(
@@ -918,8 +932,13 @@ export function recommend(
 ): RecommendationResult {
   const typeWeights = scoreAnswers(answers);
   const fitAdjustments = options.fitAdjustments ?? {};
+  const hiddenMaskIds = options.hiddenMaskIds;
 
-  const scoredMasks = maskCatalog.map((mask) => {
+  const dispensable = hiddenMaskIds?.size
+    ? maskCatalog.filter((m) => !hiddenMaskIds.has(m.id))
+    : maskCatalog;
+
+  const scoredMasks = dispensable.map((mask) => {
     const fitScore = scoreFitMatch(mask, measurements);
     const typeScore = typeWeights[mask.type];
     const activeContras = getActiveContraindications(mask, answers);

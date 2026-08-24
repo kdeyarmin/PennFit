@@ -6,6 +6,26 @@
 //   PATCH  /admin/fitter/formulary              — posture / name / notes
 //   POST   /admin/fitter/formulary/publish      — bump the version
 //   POST   /admin/fitter/formulary/simulate     — dry-run against synthetic faces
+//   GET    /admin/fitter/formulary/manufacturers — per-brand show/hide state
+//   PUT    /admin/fitter/formulary/manufacturers/:name — show/hide one brand
+//
+// THE MANUFACTURER TOGGLE
+// -----------------------
+// "We dropped ResMed, stop listing them" is the single most common thing
+// an operator wants from this page, and expressing it as
+// `targetKind=manufacturer, effect=exclude, every scope axis blank` is
+// three correct choices in a form that offers a dozen. So the two
+// endpoints below present that one rule as a per-brand switch: the GET
+// lists every manufacturer in the tenant's catalog with a model count and
+// its current state, and the PUT writes or deletes exactly the org-wide
+// exclude rule that backs it.
+//
+// It is a VIEW over `formulary_rules`, not a second store — an operator who
+// prefers the rule form gets the same result, and the toggle reports a
+// brand as hidden however the rule was written. What the toggle will not do
+// is silently rewrite a scoped rule somebody else authored: un-hiding
+// removes only unscoped manufacturer excludes and reports what it left
+// behind.
 //
 // THE PUBLISH PRE-FLIGHT IS THE POINT OF THIS FILE
 // ------------------------------------------------
@@ -38,7 +58,10 @@ import {
   invalidateFittingContext,
   loadFittingContext,
 } from "../../lib/fitting/catalog-store";
-import { resolveFormulary } from "../../lib/fitting/formulary";
+import {
+  resolveCatalogVisibility,
+  resolveFormulary,
+} from "../../lib/fitting/formulary";
 import type {
   FitContext,
   FitMeasurements,
@@ -79,7 +102,7 @@ const ruleBody = z
       .optional(),
     targetMaskModelId: z.string().trim().uuid().nullable().optional(),
     targetSizeVariantId: z.string().trim().uuid().nullable().optional(),
-    effect: z.enum(["allow", "deny", "prefer", "deprioritize"]),
+    effect: z.enum(["allow", "deny", "exclude", "prefer", "deprioritize"]),
     preferenceRank: z.number().int().min(1).max(99).nullable().optional(),
     reasonCode: z.string().trim().max(64).nullable().optional(),
     reasonNote: z.string().trim().max(2000).nullable().optional(),
@@ -483,6 +506,305 @@ router.delete(
   },
 );
 
+// ── Manufacturer visibility ──────────────────────────────────────────
+
+const UNSCOPED_AXES = [
+  "locationId",
+  "payerProfileId",
+  "contractRef",
+  "serviceLine",
+  "therapyMode",
+] as const;
+
+/** An org-wide `exclude` on this manufacturer — what the toggle writes. */
+function isPlainManufacturerExclude(
+  rule: FormularyRule,
+  manufacturer?: string,
+): boolean {
+  if (rule.effect !== "exclude") return false;
+  if (rule.targetKind !== "manufacturer") return false;
+  if (!rule.targetManufacturer) return false;
+  if (
+    manufacturer !== undefined &&
+    rule.targetManufacturer.trim().toLowerCase() !==
+      manufacturer.trim().toLowerCase()
+  ) {
+    return false;
+  }
+  return UNSCOPED_AXES.every((axis) => rule[axis] === null);
+}
+
+/**
+ * GET /admin/fitter/formulary/manufacturers
+ *
+ * Every manufacturer in the tenant's catalog, with how many models it
+ * contributes and whether it is currently hidden.
+ *
+ * Two INDEPENDENT booleans, because they answer different questions and
+ * collapsing them into one is what makes a switch lie:
+ *
+ *   `hiddenByToggle` — does this switch's own rule exist? That is the
+ *                      switch's POSITION, and the only thing the PUT below
+ *                      can change.
+ *   `hidden`         — is anything of theirs still dispensable? That is the
+ *                      EFFECT, which other rules also contribute to.
+ *
+ * They come apart in both directions. A brand can carry the toggle rule and
+ * still be dispensable, because a narrower `allow` rescued one model. And a
+ * brand can be hidden with no toggle rule at all, by an exclusion somebody
+ * authored by hand — which this switch reports but will not silently
+ * rewrite, because deleting a rule the operator wrote deliberately is worse
+ * than making them go edit it.
+ */
+router.get(
+  "/admin/fitter/formulary/manufacturers",
+  requireAdmin,
+  requirePermission("clinical.read"),
+  adminRateLimit({ name: "formulary.manufacturers_read", preset: "query" }),
+  async (req, res) => {
+    const orgId = tenant(req);
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const context = await loadFittingContext(orgId);
+    const asOf = new Date().toISOString().slice(0, 10);
+    const visibility = resolveCatalogVisibility(
+      context.formulary,
+      context.catalog,
+      asOf,
+    );
+
+    // Group the catalog by manufacturer, preserving the spelling the
+    // catalog uses (that is what a rule has to match) while grouping
+    // case-insensitively so a "Resmed"/"ResMed" seed split doesn't render
+    // as two brands.
+    const byKey = new Map<
+      string,
+      { manufacturer: string; modelCount: number; hiddenModelCount: number }
+    >();
+    for (const mask of context.catalog) {
+      const name = mask.manufacturer.trim();
+      const key = name.toLowerCase();
+      const entry = byKey.get(key) ?? {
+        manufacturer: name,
+        modelCount: 0,
+        hiddenModelCount: 0,
+      };
+      entry.modelCount += 1;
+      if (visibility.hiddenSlugs.has(mask.slug)) entry.hiddenModelCount += 1;
+      byKey.set(key, entry);
+    }
+
+    const toggleRules = context.formulary.rules.filter((r) =>
+      isPlainManufacturerExclude(r),
+    );
+
+    const manufacturers = [...byKey.values()]
+      .map((entry) => {
+        const key = entry.manufacturer.toLowerCase();
+        const toggleRule = toggleRules.find(
+          (r) => r.targetManufacturer!.trim().toLowerCase() === key,
+        );
+        return {
+          ...entry,
+          // Nothing of theirs is dispensable — the effect.
+          hidden: entry.hiddenModelCount === entry.modelCount,
+          // This switch's own rule exists — its position.
+          hiddenByToggle: toggleRule !== undefined,
+          ruleId: toggleRule?.id ?? null,
+        };
+      })
+      .sort((a, b) => a.manufacturer.localeCompare(b.manufacturer));
+
+    res.json({
+      formulary: {
+        name: context.formulary.name,
+        version: context.formulary.version,
+        defaultPosture: context.formulary.defaultPosture,
+      },
+      degraded: context.degraded,
+      manufacturers,
+    });
+  },
+);
+
+const manufacturerVisibilityBody = z.object({ hidden: z.boolean() }).strict();
+
+/**
+ * PUT /admin/fitter/formulary/manufacturers/:name
+ *
+ * Hide or show one manufacturer. Idempotent: hiding an already-hidden
+ * brand, or showing one that was never hidden, succeeds and changes
+ * nothing.
+ *
+ * Hiding runs the SAME `formulary_would_exclude_all` pre-flight every
+ * other mutation on this router runs, and for the same reason: rules go
+ * live the moment they are written, with no draft state, so a brand that
+ * cannot be dropped without starving a patient profile has to be refused
+ * here rather than discovered by a patient mid-fitting.
+ */
+router.put(
+  "/admin/fitter/formulary/manufacturers/:name",
+  requireAdmin,
+  requirePermission("formulary.manage"),
+  adminRateLimit({ name: "formulary.manufacturer_toggle", preset: "mutation" }),
+  async (req, res) => {
+    const orgId = tenant(req);
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const name = z.string().trim().min(1).max(120).safeParse(req.params.name);
+    if (!name.success) {
+      res.status(400).json({ error: "invalid_manufacturer" });
+      return;
+    }
+    const body = manufacturerVisibilityBody.safeParse(req.body ?? {});
+    if (!body.success) {
+      res.status(400).json({ error: "invalid_body" });
+      return;
+    }
+    const formularyId = await activeFormularyId(orgId);
+    if (!formularyId) {
+      res.status(404).json({ error: "no_active_formulary" });
+      return;
+    }
+
+    const context = await loadFittingContext(orgId);
+    const key = name.data.toLowerCase();
+    // Resolve against the CATALOG's spelling, not the operator's: the rule
+    // has to match `mask_models.manufacturer` exactly for the resolver to
+    // fire, and a rule targeting "resmed" against a catalog that says
+    // "ResMed" would save cleanly and then hide nothing at all.
+    const canonical = context.catalog.find(
+      (m) => m.manufacturer.trim().toLowerCase() === key,
+    )?.manufacturer;
+    if (!canonical) {
+      res.status(404).json({
+        error: "unknown_manufacturer",
+        message:
+          "No mask in this tenant's catalog is made by that manufacturer.",
+      });
+      return;
+    }
+
+    const supabase = getOrgScopedClient(orgId);
+    const existing = context.formulary.rules.filter((r) =>
+      isPlainManufacturerExclude(r, canonical),
+    );
+
+    if (body.data.hidden) {
+      if (existing.length > 0) {
+        res.json({ ok: true, hidden: true, manufacturer: canonical });
+        return;
+      }
+      const pending: FormularyRule = {
+        id: "__pending__",
+        locationId: null,
+        payerProfileId: null,
+        contractRef: null,
+        serviceLine: null,
+        therapyMode: null,
+        targetKind: "manufacturer",
+        targetManufacturer: canonical,
+        targetInterfaceType: null,
+        targetMaskModelId: null,
+        targetSizeVariantId: null,
+        effect: "exclude",
+        preferenceRank: null,
+        reasonCode: "not_carried",
+        reasonNote: null,
+        effectiveFrom: null,
+        effectiveTo: null,
+        createdAt: new Date().toISOString(),
+      };
+      const starved = await starvedProfiles(orgId, { extraRule: pending });
+      if (starved.length > 0) {
+        res.status(409).json({
+          error: "formulary_would_exclude_all",
+          message:
+            `Hiding ${canonical} would leave at least one patient profile ` +
+            "with no mask at all, and a patient would see that as a " +
+            "clinical exclusion rather than a stocking decision. Hide a " +
+            "narrower set, or add the replacement line to your catalog first.",
+          starvedProfiles: starved,
+        });
+        return;
+      }
+
+      const { error } = await supabase.from("formulary_rules").insert({
+        formulary_id: formularyId,
+        location_id: null,
+        payer_profile_id: null,
+        contract_ref: null,
+        service_line: null,
+        therapy_mode: null,
+        target_kind: "manufacturer",
+        target_manufacturer: canonical,
+        target_interface_type: null,
+        target_mask_model_id: null,
+        target_size_variant_id: null,
+        effect: "exclude",
+        preference_rank: null,
+        reason_code: "not_carried",
+        reason_note: null,
+        effective_from: null,
+        effective_to: null,
+        created_by_email: req.adminEmail ?? null,
+      });
+      if (error) {
+        res
+          .status(500)
+          .json({ error: "insert_failed", message: error.message });
+        return;
+      }
+      invalidateFittingContext(orgId);
+      res.json({ ok: true, hidden: true, manufacturer: canonical });
+      return;
+    }
+
+    // Un-hide. Only the toggle's own rules are removed — a scoped or
+    // narrower exclusion is somebody's deliberate configuration, so it is
+    // left alone and reported back rather than quietly dropped.
+    for (const rule of existing) {
+      const { error } = await supabase
+        .from("formulary_rules")
+        .delete()
+        .eq("id", rule.id);
+      if (error) {
+        res
+          .status(500)
+          .json({ error: "delete_failed", message: error.message });
+        return;
+      }
+    }
+    invalidateFittingContext(orgId);
+
+    const refreshed = await loadFittingContext(orgId);
+    const stillHidden = resolveCatalogVisibility(
+      refreshed.formulary,
+      refreshed.catalog,
+      new Date().toISOString().slice(0, 10),
+    );
+    const remaining = refreshed.catalog.filter(
+      (m) =>
+        m.manufacturer.trim().toLowerCase() === key &&
+        stillHidden.hiddenSlugs.has(m.slug),
+    );
+
+    res.json({
+      ok: true,
+      hidden: false,
+      manufacturer: canonical,
+      // Non-zero means another rule is still hiding some of this brand.
+      // The UI surfaces it so "I turned it back on and it's still gone"
+      // has an answer on the page instead of in a support ticket.
+      stillHiddenModelCount: remaining.length,
+    });
+  },
+);
+
 router.post(
   "/admin/fitter/formulary/simulate",
   requireAdmin,
@@ -637,11 +959,19 @@ interface SimulationResult {
     label: string;
     allowedCount: number;
     deniedCount: number;
+    /**
+     * Of the denied, how many are HIDDEN outright rather than demoted.
+     * The distinction is the operator's whole decision: a demoted mask
+     * still reaches a clinician when nothing else survives, a hidden one
+     * never does.
+     */
+    hiddenCount: number;
     preferred: Array<{ mask: string; rank: number | null }>;
     denied: Array<{
       mask: string;
       reasonCode: string | null;
       ruleIds: string[];
+      hidden: boolean;
     }>;
   }>;
 }
@@ -678,6 +1008,7 @@ async function simulate(
       mask: string;
       reasonCode: string | null;
       ruleIds: string[];
+      hidden: boolean;
     }> = [];
 
     for (const mask of ctx.catalog) {
@@ -702,15 +1033,20 @@ async function simulate(
           mask: `${mask.manufacturer} ${mask.modelName}`,
           reasonCode: decision.denyReasonCode,
           ruleIds: decision.matchedRuleIds,
+          hidden: decision.excluded,
         });
       }
     }
 
     preferred.sort((a, b) => (a.rank ?? 99) - (b.rank ?? 99));
+    // Hidden first: they are the consequential half of the list, and the
+    // 25-row cap must not push them off the bottom behind demotions.
+    denied.sort((a, b) => Number(b.hidden) - Number(a.hidden));
     return {
       label: face.label,
       allowedCount,
       deniedCount: denied.length,
+      hiddenCount: denied.filter((d) => d.hidden).length,
       preferred: preferred.slice(0, 10),
       denied: denied.slice(0, 25),
     };

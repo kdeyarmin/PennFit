@@ -31,7 +31,12 @@ import {
   tallyOutcomesByMask,
 } from "../storefront/mask-fit-tuning.js";
 import { ADULT_PLAUSIBILITY_BOUNDS } from "./confidence.js";
-import { OPEN_FORMULARY } from "./formulary.js";
+import {
+  NO_HIDDEN_CATALOG,
+  OPEN_FORMULARY,
+  resolveCatalogVisibility,
+  type CatalogVisibility,
+} from "./formulary.js";
 import type {
   CatalogMask,
   Formulary,
@@ -315,6 +320,39 @@ export async function loadFittingContext(
     cache.set(orgId, { value: fallback, expiresAt: Date.now() + 10_000 });
     return fallback;
   }
+}
+
+/**
+ * What this tenant hides from surfaces that have no clinical context —
+ * the public catalog list, the legacy `/api/masks`, the storefront
+ * assistant, the shop.
+ *
+ * Fails OPEN, twice over, and both are deliberate:
+ *
+ *   * A tenant that cannot be resolved (no host match, a public request
+ *     with no invite) hides nothing.
+ *   * `loadFittingContext` degrades to the built-in catalog and an OPEN
+ *     formulary when the database is slow or unreachable, so a hidden
+ *     manufacturer briefly reappears during an outage.
+ *
+ * That second one is the service-boot contract talking: the storefront must
+ * not hard-depend on the database. Showing a mask the provider stopped
+ * carrying for a minute is a merchandising slip; a 500 on the storefront is
+ * an outage. This is the same trade the whole module already makes.
+ *
+ * Cheap to call — it reads the same 60s-cached fitting context every
+ * fitting already loads, and resolves over a catalog of a few hundred rows.
+ */
+export async function loadCatalogVisibility(
+  orgId: string | null | undefined,
+): Promise<CatalogVisibility> {
+  if (!orgId) return NO_HIDDEN_CATALOG;
+  const context = await loadFittingContext(orgId);
+  return resolveCatalogVisibility(
+    context.formulary,
+    context.catalog,
+    new Date().toISOString().slice(0, 10),
+  );
 }
 
 /**

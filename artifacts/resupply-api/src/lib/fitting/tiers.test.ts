@@ -788,3 +788,126 @@ describe("alternatives", () => {
     expect(result.alternatives.some((a) => a.maskSlug === "plain")).toBe(true);
   });
 });
+
+// ── Hidden manufacturers (migration 0516) ────────────────────────────
+//
+// The behavioural contract the operator is buying: hiding a manufacturer
+// takes their masks OUT of the result, while the existing `deny` keeps
+// demoting them into it. These two must never converge.
+
+describe("manufacturer exclusion", () => {
+  const CATALOG = [
+    mask({ slug: "resmed-a", manufacturer: "ResMed" }),
+    mask({ slug: "resmed-b", manufacturer: "ResMed" }),
+    mask({ slug: "fisher-a", manufacturer: "Fisher & Paykel" }),
+  ];
+
+  const withRules = (rules: FormularyRule[]) =>
+    input({
+      catalog: CATALOG,
+      formulary: {
+        id: "f",
+        name: "f",
+        version: 3,
+        defaultPosture: "open",
+        rules,
+      },
+    });
+
+  it("removes an excluded manufacturer from the result entirely", () => {
+    const result = assess(
+      withRules([
+        rule({
+          targetKind: "manufacturer",
+          targetManufacturer: "ResMed",
+          effect: "exclude",
+        }),
+      ]),
+    );
+    const shown = [
+      result.primary?.maskSlug,
+      ...result.alternatives.map((a) => a.maskSlug),
+    ].filter(Boolean);
+    expect(shown).not.toContain("resmed-a");
+    expect(shown).not.toContain("resmed-b");
+    expect(result.primary?.maskSlug).toBe("fisher-a");
+  });
+
+  it("keeps a DENIED manufacturer in the result, demoted and flagged", () => {
+    // The distinction that matters: deny is the clinical safety net.
+    const result = assess(
+      withRules([
+        rule({
+          targetKind: "manufacturer",
+          targetManufacturer: "ResMed",
+          effect: "deny",
+        }),
+      ]),
+    );
+    const shown = [
+      result.primary?.maskSlug,
+      ...result.alternatives.map((a) => a.maskSlug),
+    ].filter(Boolean);
+    expect(shown).toContain("resmed-a");
+    const demoted = [result.primary, ...result.alternatives].find(
+      (c) => c?.maskSlug === "resmed-a",
+    );
+    expect(demoted?.outsideFormulary).toBe(true);
+  });
+
+  it("records excluded slugs in provenance, never in the patient-visible list", () => {
+    const result = assess(
+      withRules([
+        rule({
+          targetKind: "manufacturer",
+          targetManufacturer: "ResMed",
+          effect: "exclude",
+        }),
+      ]),
+    );
+    expect(result.provenance.formularyExcludedSlugs.sort()).toEqual([
+      "resmed-a",
+      "resmed-b",
+    ]);
+    // `excluded` reaches the patient. A list of what their provider chose
+    // not to stock is exactly what hiding it was meant to prevent.
+    expect(result.excluded.map((e) => e.maskSlug)).not.toContain("resmed-a");
+  });
+
+  it("withholds a recommendation rather than crashing when everything is hidden", () => {
+    // The admin pre-flight refuses this configuration, but effective-date
+    // windows mean a formulary that was safe when saved can reach it
+    // later. It has to degrade to the existing withheld outcome.
+    const result = assess(
+      withRules([rule({ targetKind: "all", effect: "exclude" })]),
+    );
+    expect(result.primary).toBeNull();
+    expect(result.outcome).toBe("contraindicated");
+    expect(result.provenance.formularyExcludedSlugs).toHaveLength(3);
+  });
+
+  it("keeps the one model a narrower allow rescues", () => {
+    const result = assess(
+      withRules([
+        rule({
+          id: "brand",
+          targetKind: "manufacturer",
+          targetManufacturer: "ResMed",
+          effect: "exclude",
+        }),
+        rule({
+          id: "keep",
+          targetKind: "mask_model",
+          targetMaskModelId: "resmed-a",
+          effect: "allow",
+        }),
+      ]),
+    );
+    expect(result.provenance.formularyExcludedSlugs).toEqual(["resmed-b"]);
+    const shown = [
+      result.primary?.maskSlug,
+      ...result.alternatives.map((a) => a.maskSlug),
+    ];
+    expect(shown).toContain("resmed-a");
+  });
+});

@@ -29,6 +29,33 @@
  *
  * Together those are the mechanical implementation of "financial margin
  * must never override a clinical or safety exclusion".
+ *
+ * `deny` VS `exclude` — THE ONE DISTINCTION TO GET RIGHT
+ * -----------------------------------------------------
+ * `deny` above answers "we would rather not dispense this". It is NOT the
+ * answer to "we do not carry this at all", and using it for that was the
+ * gap 0516 closed. A provider that has dropped a manufacturer on price
+ * does not want a demoted, flagged ResMed mask at the bottom of a
+ * patient's list — showing a patient something the provider cannot
+ * actually dispense sets an expectation somebody then has to walk back.
+ *
+ *   deny    — demote and tag.   `allowed: false`, `excluded: false`.
+ *                               Ranking keeps it. Safety net intact.
+ *   exclude — hard hide.        `allowed: false`, `excluded: true`.
+ *                               Dropped from the pool and from every
+ *                               patient-facing catalog and search surface.
+ *
+ * Consumers that FILTER must branch on `excluded`, never on `!allowed`, or
+ * a deny quietly becomes a hide and the safety net disappears.
+ *
+ * The safety posture is unchanged in the direction that matters: `exclude`
+ * only ever REMOVES candidates, so it still cannot resurrect anything the
+ * clinical tiers threw out. The new failure mode runs the other way —
+ * hiding so much that a patient is left with nothing — and that is guarded
+ * in the app rather than here: the publish pre-flight and the
+ * manufacturer-visibility endpoint both refuse a configuration that
+ * empties the synthetic panel, and an empty candidate set still resolves
+ * to the existing withheld outcome rather than a blank page.
  */
 
 import type {
@@ -152,6 +179,7 @@ function compareRules(a: FormularyRule, b: FormularyRule): number {
 const NEUTRAL_ALLOW: FormularyDecision = {
   allowed: true,
   deniedByRule: false,
+  excluded: false,
   denyReasonCode: null,
   denyReasonNote: null,
   preferenceRank: null,
@@ -190,14 +218,16 @@ export function resolveFormulary(
 
   const matchedRuleIds = applicable.map((r) => r.id);
 
-  // ── Availability: the highest tier at which any allow/deny exists,
-  //    with deny winning inside that tier. ──
+  // ── Availability: the highest tier at which any allow/deny/exclude
+  //    exists, with exclude beating deny beating allow inside that tier. ──
   const availabilityRules = applicable.filter(
-    (r) => r.effect === "allow" || r.effect === "deny",
+    (r) =>
+      r.effect === "allow" || r.effect === "deny" || r.effect === "exclude",
   );
 
   let allowed: boolean;
   let deniedByRule = false;
+  let excluded = false;
   let denyReasonCode: string | null = null;
   let denyReasonNote: string | null = null;
 
@@ -213,11 +243,18 @@ export function resolveFormulary(
       (r) =>
         scopeSpecificity(r) === topScope && targetSpecificity(r) === topTarget,
     );
-    // Ties resolve conservatively: within one tier, deny beats allow.
-    const deny = sameTier.find((r) => r.effect === "deny");
+    // Ties resolve conservatively: within one tier, the strongest negative
+    // wins — exclude, then deny, then allow. A MORE SPECIFIC allow still
+    // beats a broader exclude, because it lands in a higher tier and this
+    // block never sees the broader rule; that is what makes
+    // "exclude manufacturer=ResMed" + "allow mask_model=AirFit F20" read as
+    // "we dropped ResMed except for the one model we still stock".
+    const exclude = sameTier.find((r) => r.effect === "exclude");
+    const deny = exclude ?? sameTier.find((r) => r.effect === "deny");
     if (deny) {
       allowed = false;
       deniedByRule = true;
+      excluded = exclude !== undefined;
       denyReasonCode = deny.reasonCode;
       denyReasonNote = deny.reasonNote;
     } else {
@@ -244,6 +281,7 @@ export function resolveFormulary(
   return {
     allowed,
     deniedByRule,
+    excluded,
     denyReasonCode,
     denyReasonNote,
     preferenceRank,
@@ -280,3 +318,124 @@ export const OPEN_FORMULARY: Formulary = {
   defaultPosture: "open",
   rules: [],
 };
+
+// ── Context-free visibility ──────────────────────────────────────────
+//
+// The fitting path resolves the formulary per candidate with a full
+// clinical context (location, payer, contract, population, therapy mode).
+// The other mask-facing surfaces have none of that: the public catalog
+// endpoint, the legacy `/api/masks` list, the storefront assistant, the
+// shop. They still have to honour "we do not carry ResMed", so they need
+// an answer without a context to resolve against.
+//
+// The rule is the same one `ruleApplies` already enforces, taken to its
+// conclusion: a rule with a non-null scope axis does not apply when that
+// context value is unknown. On a surface where EVERY axis is unknown, only
+// a fully unscoped rule can fire. So these surfaces see exactly the
+// org-wide, always-on rules — which is precisely what the manufacturer
+// visibility toggle writes — and a location- or payer-scoped exclusion
+// stays where it can actually be evaluated. Under-hiding on a surface that
+// cannot know the context is the safe direction: showing a mask the
+// provider does carry is a smaller harm than hiding one it does.
+
+/** A rule that applies to everyone, everywhere — no scope axis set. */
+function isUnscoped(rule: FormularyRule): boolean {
+  return (
+    rule.locationId === null &&
+    rule.payerProfileId === null &&
+    rule.contractRef === null &&
+    rule.serviceLine === null &&
+    rule.therapyMode === null
+  );
+}
+
+export interface CatalogVisibility {
+  /**
+   * Slugs the provider does not carry. Resolved through the SAME
+   * `resolveFormulary` precedence as the fitting path, so a narrower
+   * `allow` (one model of an otherwise-excluded manufacturer) keeps that
+   * model visible here too.
+   */
+  hiddenSlugs: Set<string>;
+  /**
+   * Manufacturer names, lowercased, that have nothing visible left.
+   *
+   * For surfaces keyed on a brand rather than a catalog slug — the Stripe
+   * shop, whose products carry `metadata.manufacturer`. A manufacturer
+   * with even one still-visible mask is NOT listed: the operator kept
+   * something of theirs, so the brand has not been dropped.
+   */
+  hiddenManufacturers: Set<string>;
+}
+
+export const NO_HIDDEN_CATALOG: CatalogVisibility = {
+  hiddenSlugs: new Set<string>(),
+  hiddenManufacturers: new Set<string>(),
+};
+
+/**
+ * What this tenant hides on surfaces with no clinical context.
+ *
+ * @param asOf - ISO date the effective-date windows are evaluated against.
+ *   Injected rather than read from the clock, like every other date in the
+ *   engine, so the result is a pure function of its inputs.
+ */
+export function resolveCatalogVisibility(
+  formulary: Formulary,
+  catalog: CatalogMask[],
+  asOf: string,
+): CatalogVisibility {
+  const rules = formulary.rules.filter(isUnscoped);
+  if (rules.length === 0) return NO_HIDDEN_CATALOG;
+
+  // Every remaining rule has null on every axis, so only `asOf` can change
+  // the outcome — the population/therapy values below are inert.
+  const context: FitContext = {
+    locationId: null,
+    payerProfileId: null,
+    contractRef: null,
+    population: "adult",
+    therapyMode: "pap",
+    asOf,
+  };
+  // `defaultPosture` is carried through unchanged. A `closed` posture
+  // DENIES (demotes) rather than excludes, so it correctly contributes
+  // nothing here — hiding the entire catalog is never something a posture
+  // default should do silently.
+  const unscoped: Formulary = { ...formulary, rules };
+
+  const hiddenSlugs = new Set<string>();
+  const visibleManufacturers = new Set<string>();
+  for (const mask of catalog) {
+    if (resolveFormulary(unscoped, mask, null, context).excluded) {
+      hiddenSlugs.add(mask.slug);
+    } else {
+      visibleManufacturers.add(mask.manufacturer.trim().toLowerCase());
+    }
+  }
+
+  const hiddenManufacturers = new Set<string>();
+  for (const rule of rules) {
+    if (rule.effect !== "exclude") continue;
+    if (rule.targetKind !== "manufacturer") continue;
+    const name = rule.targetManufacturer?.trim().toLowerCase();
+    if (!name) continue;
+    if (!ruleApplies(rule, context)) continue;
+    // Named by an exclude AND nothing of theirs survived. The second half
+    // is what stops a brand that only sells accessories — no mask in the
+    // catalog at all — from being hidden by a vacuous "all of them are
+    // hidden" over an empty set.
+    if (!visibleManufacturers.has(name)) hiddenManufacturers.add(name);
+  }
+
+  return { hiddenSlugs, hiddenManufacturers };
+}
+
+/** Whether `manufacturer` is hidden. Trim/case-insensitive. */
+export function isManufacturerHidden(
+  visibility: CatalogVisibility,
+  manufacturer: string | null | undefined,
+): boolean {
+  if (!manufacturer) return false;
+  return visibility.hiddenManufacturers.has(manufacturer.trim().toLowerCase());
+}

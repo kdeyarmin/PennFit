@@ -251,7 +251,7 @@ export interface FormularyRule {
   targetInterfaceType: string | null;
   targetMaskModelId: string | null;
   targetSizeVariantId: string | null;
-  effect: "allow" | "deny" | "prefer" | "deprioritize";
+  effect: "allow" | "deny" | "exclude" | "prefer" | "deprioritize";
   preferenceRank: number | null;
   reasonCode: string | null;
   reasonNote: string | null;
@@ -310,11 +310,14 @@ export interface SimulationResult {
     label: string;
     allowedCount: number;
     deniedCount: number;
+    /** Of the denied, how many are hidden outright rather than demoted. */
+    hiddenCount: number;
     preferred: Array<{ mask: string; rank: number | null }>;
     denied: Array<{
       mask: string;
       reasonCode: string | null;
       ruleIds: string[];
+      hidden: boolean;
     }>;
   }>;
 }
@@ -337,6 +340,54 @@ export function simulateFormulary(
 
 export function publishFormulary(): Promise<{ ok: true; version: number }> {
   return adminJsonFetch("/admin/fitter/formulary/publish", { method: "POST" });
+}
+
+// ── Manufacturer visibility ──────────────────────────────────────────
+
+export interface ManufacturerVisibility {
+  manufacturer: string;
+  /** Models this manufacturer contributes to the tenant's catalog. */
+  modelCount: number;
+  /** How many of those are currently hidden. */
+  hiddenModelCount: number;
+  /**
+   * The EFFECT: nothing of theirs is dispensable.
+   *
+   * Independent of `hiddenByToggle` in both directions — a brand can carry
+   * the toggle rule and still be dispensable (a narrower `allow` rescued a
+   * model), and a brand can be hidden with no toggle rule at all (an
+   * exclusion the operator authored by hand).
+   */
+  hidden: boolean;
+  /**
+   * The switch's POSITION: its own org-wide rule exists. The only thing
+   * the PUT can change, and therefore what the button's label follows.
+   */
+  hiddenByToggle: boolean;
+  ruleId: string | null;
+}
+
+export function fetchManufacturerVisibility(): Promise<{
+  formulary: { name: string; version: number; defaultPosture: string };
+  degraded: boolean;
+  manufacturers: ManufacturerVisibility[];
+}> {
+  return adminJsonFetch("/admin/fitter/formulary/manufacturers");
+}
+
+export function setManufacturerVisibility(
+  manufacturer: string,
+  hidden: boolean,
+): Promise<{
+  ok: true;
+  hidden: boolean;
+  manufacturer: string;
+  stillHiddenModelCount?: number;
+}> {
+  return adminJsonFetch(
+    `/admin/fitter/formulary/manufacturers/${encodeURIComponent(manufacturer)}`,
+    { method: "PUT", body: JSON.stringify({ hidden }) },
+  );
 }
 
 // ── Fit sessions ─────────────────────────────────────────────────────
