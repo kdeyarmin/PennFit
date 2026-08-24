@@ -257,7 +257,7 @@ correctness, not style:
   `/resupply-api/stripe/platform-webhook`. The `shop_*` tables are
   retained for historical rows and analytics; they take no new writes.
 - **The product catalog is Postgres, and stock only moves through the
-  RPC.** `resupply.products` (migration 0516) is the SKU registry that
+  RPC.** `resupply.products` (migration 0520) is the SKU registry that
   replaced the Stripe Products list; on-hand used to be
   `product.metadata.stock_count` and is now `products.stock_count`, where
   **NULL means untracked, not zero**. Never `UPDATE products.stock_count`
@@ -270,6 +270,34 @@ correctness, not style:
   lifecycle transition this app owns — PacWare marks things shipped out of
   band) and is deliberately fail-soft: an un-catalogued SKU is logged and
   skipped, never allowed to fail a resupply the patient is due.
+- **A patient never files their own order, and never gets a mask for the
+  wrong age.** Two invariants of the mask fitter, both added by
+  migration 0518:
+  - **The fitter ends in a REQUEST.** `fitter.lead_capture_only` is
+    seeded **ON for every tenant**: `/results` offers _send my details_
+    and _ask a representative to contact me_, both of which write a
+    `resupply.fitter_fit_requests` row that staff work at
+    `/admin/fitter-requests`. `POST /api/orders` **refuses** while the
+    flag is on — hiding the SPA button is not a control, the endpoint is
+    public, and a claim must not start from a patient's own guess at
+    their member ID. This flag fails toward **ON** (`enabled ||
+degraded`) in both the route and the SPA store: a lookup that never
+    reached the tenant's row means "we don't know", and the safe reading
+    of that is that self-service ordering stays off. Do not read it with
+    plain `isFeatureEnabled`, which absorbs every failure into "off".
+  - **Population is asked, never assumed.** The questionnaire opens with
+    an adult-or-child gate on BOTH question sets, and it has no "I'm not
+    sure" escape. The answer is a SERVICE LINE (never an age or a date
+    of birth) and it selects three things that all default to _adult_
+    when unset: the measurement plausibility window, the tier-1
+    service-line filter in `lib/fitting/tiers.ts`, and
+    `fit_sessions.population`. It travels as a TOP-LEVEL field on
+    `/api/recommend` and `/api/fit/assess` — not inside `profile`, which
+    `buildProfile` stamps as a v2 profile and would make every legacy
+    fitting claim it answered the v2 question set. The legacy
+    `data/maskCatalog.ts` is adult-only and an entry with no
+    `serviceLine` reads as `"adult"`: unmarked must never reach a child.
+
 - **No image logging anywhere in the backend.** Camera images and video
   frames never leave the browser; only numeric facial measurements are
   transmitted. Do not add log lines that include image bytes, base64,

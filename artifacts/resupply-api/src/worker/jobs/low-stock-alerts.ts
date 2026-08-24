@@ -2,7 +2,7 @@
 // email to admin staff for every SKU whose on-hand count has fallen at or
 // below its reorder point.
 //
-// The catalog moved from Stripe to Postgres (migration 0516) when patient
+// The catalog moved from Stripe to Postgres (migration 0520) when patient
 // card payments were retired. The dedup model below is unchanged — only the
 // source of the counts differs, and the key is now the warehouse SKU rather
 // than a Stripe product id.

@@ -25,6 +25,7 @@ import {
   Info,
   PhoneCall,
   RefreshCcw,
+  Send,
   ShieldAlert,
 } from "lucide-react";
 
@@ -37,33 +38,30 @@ import { getMaskImage, formatMaskType } from "@/lib/mask-images";
 import type { FitAssessment, FitCandidate } from "@/lib/fit-assess-api";
 
 /**
- * The optional "buy without insurance" CTA for one candidate. Shaped
- * like the legacy results card's `cashPay` so both engines offer the
- * same thing — before this existed, turning `fitter.clinical_assessment`
- * on silently took the cash-pay button away from every patient.
+ * The fitter no longer sells. A "buy without insurance" CTA used to sit
+ * beside each candidate and drop the mask into the Stripe cart; it was
+ * removed with the self-serve order form, because a fitting that ends in
+ * a checkout is still a patient placing their own order — just a paid
+ * one. The shop is unchanged and reachable on its own at /shop.
  */
-export interface ClinicalCashPay {
-  priceLabel: string;
-  onAddToCart: () => void;
-}
-
 export interface ClinicalResultsProps {
   assessment: FitAssessment;
   onChoose: (candidate: FitCandidate) => void;
   onRetake: () => void;
   /**
-   * Resolve the cash-pay offer for a candidate, or undefined when this
-   * mask isn't sold in the shop / checkout is off. Undefined by default,
-   * which renders exactly what this component rendered before.
+   * Where `onChoose` leads, so the CTA can tell the truth. ON (default)
+   * it files a request a person works; OFF it opens the legacy
+   * self-service order form. See the same prop on
+   * MaskRecommendationCard.
    */
-  cashPayFor?: (candidate: FitCandidate) => ClinicalCashPay | undefined;
+  leadCaptureOnly?: boolean;
 }
 
 export function ClinicalResults({
   assessment,
   onChoose,
   onRetake,
-  cashPayFor,
+  leadCaptureOnly = true,
 }: ClinicalResultsProps) {
   const primary = assessment.primary;
   if (!primary) return null;
@@ -108,7 +106,7 @@ export function ClinicalResults({
         isPrimary
         confidencePct={confidencePct}
         onChoose={() => onChoose(primary)}
-        cashPay={cashPayFor?.(primary)}
+        leadCaptureOnly={leadCaptureOnly}
       />
 
       {assessment.alternatives.length > 0 ? (
@@ -129,7 +127,7 @@ export function ClinicalResults({
               isPrimary={false}
               confidencePct={scaledPct(c)}
               onChoose={() => onChoose(c)}
-              cashPay={cashPayFor?.(c)}
+              leadCaptureOnly={leadCaptureOnly}
             />
           ))}
         </div>
@@ -170,13 +168,13 @@ function CandidateCard({
   isPrimary,
   confidencePct,
   onChoose,
-  cashPay,
+  leadCaptureOnly,
 }: {
   candidate: FitCandidate;
   isPrimary: boolean;
   confidencePct: number;
   onChoose: () => void;
-  cashPay?: ClinicalCashPay | undefined;
+  leadCaptureOnly: boolean;
 }) {
   const size = candidate.cushion ?? candidate.frame;
   return (
@@ -276,17 +274,9 @@ function CandidateCard({
 
           <div className="pt-1 flex flex-wrap items-center gap-2">
             <Button onClick={onChoose} data-testid="clinical-choose">
-              Choose this mask
+              <Send className="w-4 h-4 mr-2" />
+              {leadCaptureOnly ? "Send this to my provider" : "Order this mask"}
             </Button>
-            {cashPay ? (
-              <Button
-                variant="outline"
-                onClick={cashPay.onAddToCart}
-                data-testid="clinical-cashpay"
-              >
-                Buy without insurance — {cashPay.priceLabel}
-              </Button>
-            ) : null}
           </div>
         </div>
       </div>
@@ -345,7 +335,20 @@ function Provenance({ assessment }: { assessment: FitAssessment }) {
  * patients are referred to that tenant by name (with the neutral
  * platform identity as the pre-fetch/failure fallback).
  */
-export function FitWithheld({ assessment }: { assessment: FitAssessment }) {
+export function FitWithheld({
+  assessment,
+  onRequestCallback,
+}: {
+  assessment: FitAssessment;
+  /**
+   * File a callback request. Optional so this component still renders
+   * standalone, but it is the CTA that belongs first when present: a
+   * withheld fitting is precisely the case where the patient needs a
+   * person, and a request that lands in the DME's queue beats a
+   * /contact link the patient has to act on themselves.
+   */
+  onRequestCallback?: () => void;
+}) {
   const contact = useCompanyContact();
   // The two non-contraindicated withholds share the ending (stop + named
   // referral) but NOT one explanation: `low_confidence` can come from the
@@ -407,7 +410,20 @@ export function FitWithheld({ assessment }: { assessment: FitAssessment }) {
         <p className="text-xs text-muted-foreground">{assessment.disclaimer}</p>
 
         <div className="flex flex-wrap gap-3 pt-1">
-          <Button asChild data-testid="withheld-contact">
+          {onRequestCallback ? (
+            <Button
+              onClick={onRequestCallback}
+              data-testid="withheld-request-callback"
+            >
+              <PhoneCall className="h-4 w-4 mr-2" />
+              Ask {contact.name} to contact me
+            </Button>
+          ) : null}
+          <Button
+            asChild
+            variant={onRequestCallback ? "outline" : "default"}
+            data-testid="withheld-contact"
+          >
             <a href="/contact">Contact {contact.name}</a>
           </Button>
           {contact.phoneE164 ? (

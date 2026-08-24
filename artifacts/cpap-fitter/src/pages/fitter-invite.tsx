@@ -74,6 +74,7 @@ export function FitterInvite() {
     setInviteToken,
     setFitProfileV2,
     setMultiframeCapture,
+    setLeadCaptureOnly,
     setEntryPoint,
   } = useFitterStore();
   const [state, setState] = useState<State>({ kind: "loading" });
@@ -119,6 +120,12 @@ export function FitterInvite() {
         // /results ever probes the clinical route.
         setFitProfileV2(Boolean(res.fitProfileV2));
         setMultiframeCapture(Boolean(res.multiframeCapture));
+        // `!== false`, not `Boolean(...)`: an omitted field means the
+        // flag could not be resolved, and "we don't know" must not hand
+        // the patient the self-serve insurance order form. Only an
+        // explicit opt-out turns it back on. See the field's note on
+        // ResolveFitterInviteResult.
+        setLeadCaptureOnly(res.leadCaptureOnly !== false);
         // Re-anchor the entry channel to THIS invite's URL. Without it, a
         // fresh invite opened in the same tab (no `entry` param) inherits
         // whatever channel the previous fitting persisted — an ordinary
@@ -153,6 +160,7 @@ export function FitterInvite() {
     setInviteToken,
     setFitProfileV2,
     setMultiframeCapture,
+    setLeadCaptureOnly,
     setEntryPoint,
   ]);
 

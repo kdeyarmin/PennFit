@@ -55,6 +55,7 @@ import {
   ADULT_PLAUSIBILITY_BOUNDS,
   assess,
   PEDIATRIC_PLAUSIBILITY_BOUNDS,
+  resolveCatalogVisibility,
 } from "../../lib/fitting/index.js";
 import { buildProfile } from "../../lib/fitting/profile.js";
 import { RULES_ENGINE_VERSION } from "../../lib/fitting/versions.js";
@@ -236,6 +237,19 @@ const assessBodySchema = z
     measurements: measurementsSchema,
     answers: legacyAnswersSchema.optional(),
     profile: profileSchema.optional(),
+    /**
+     * Adult or child, asked at the head of the questionnaire.
+     *
+     * It also exists inside `profile`, and both carry the same value —
+     * but only the v2 client sends a `profile` block at all, and
+     * `buildProfile` stamps any profile it receives as a v2 profile
+     * (which decides the question set the fit report cites). Sending a
+     * one-field profile just to carry the population would therefore
+     * make every LEGACY-questionnaire fitting claim it answered the v2
+     * question set. Hence a top-level field: a session property,
+     * transmitted as one, on both question sets.
+     */
+    population: z.enum(["adult", "pediatric"]).optional(),
     scan: scanSchema.optional(),
     safety: safetySchema.optional(),
     entryPoint: z
@@ -305,6 +319,15 @@ router.post("/fit/assess", assessLimiter, async (req, res) => {
 
   const body = parsed.data;
   let profile = buildProfile(body.answers ?? null, body.profile ?? null);
+
+  // The explicit session field outranks whatever the profile mapping
+  // produced — `emptyProfile()` defaults to "adult" for back-compat, and
+  // that default must not survive a patient telling us otherwise. Still
+  // below the chart override applied further down: a date of birth on a
+  // linked chart beats anything the browser says.
+  if (body.population) {
+    profile = { ...profile, population: body.population };
+  }
 
   const measurements: FitMeasurements = {
     noseWidth: body.measurements.noseWidth,
@@ -538,7 +561,17 @@ router.post("/fit/assess", assessLimiter, async (req, res) => {
     calibrationMethod: body.measurements.calibrationMethod ?? null,
   });
 
-  res.json({ ...projectAssessment(assessment), fitSessionId: sessionId });
+  res.json({
+    ...projectAssessment(assessment),
+    fitSessionId: sessionId,
+    // The EFFECTIVE service line, after the chart override above — not
+    // whatever the browser claimed. This is what the engine filtered on
+    // and what the fit session records, so anything the SPA files later
+    // (a fit request, its queue badge, the team email) has to agree with
+    // it. Without this a chart-linked pediatric fitting could be filed
+    // as an adult request, or the reverse.
+    population: profile.population,
+  });
 });
 
 /**
@@ -549,7 +582,9 @@ router.post("/fit/assess", assessLimiter, async (req, res) => {
  * formulary preference and inventory margin rank (publishing it lets
  * anyone reconstruct the DME's commercial ordering, undoing the
  * "commercial signals never reach the patient" invariant),
- * `formularyRulesMatched` is internal rule ids, and `clinicianReason` is
+ * `formularyRulesMatched` is internal rule ids, `formularyExcludedSlugs`
+ * is the list of masks the provider chose not to carry (publishing it to
+ * the patient would undo the hiding it records), and `clinicianReason` is
  * the staff-facing wording. None of them are consumed by the SPA.
  */
 function projectAssessment(assessment: FitAssessment): Omit<
@@ -559,7 +594,10 @@ function projectAssessment(assessment: FitAssessment): Omit<
   primary: Partial<FitCandidate> | null;
   alternatives: Partial<FitCandidate>[];
   excluded: Omit<ExclusionRecord, "clinicianReason">[];
-  provenance: Omit<FitAssessment["provenance"], "formularyRulesMatched">;
+  provenance: Omit<
+    FitAssessment["provenance"],
+    "formularyRulesMatched" | "formularyExcludedSlugs"
+  >;
 } {
   const candidate = ({
     rankScore: _rankScore,
@@ -567,8 +605,14 @@ function projectAssessment(assessment: FitAssessment): Omit<
     patientFactorScore: _patientFactorScore,
     ...pub
   }: FitCandidate) => pub;
-  const { formularyRulesMatched: _rules, ...provenance } =
-    assessment.provenance;
+  // Both of these are clinician/audit-only. `formularyExcludedSlugs` in
+  // particular is the list of masks the provider chose not to carry —
+  // handing it to the patient would undo the hiding it records.
+  const {
+    formularyRulesMatched: _rules,
+    formularyExcludedSlugs: _hidden,
+    ...provenance
+  } = assessment.provenance;
   return {
     ...assessment,
     primary: assessment.primary ? candidate(assessment.primary) : null,
@@ -629,6 +673,28 @@ router.get("/fit/catalog", async (req, res) => {
   }
 
   const context = await loadFittingContext(orgId);
+  // Masks the tenant does not carry never appear here. This endpoint's whole
+  // job is "what can this provider fit you with", and it feeds the fitter's
+  // browse/compare UI, so a hidden manufacturer showing up in the list would
+  // be exactly the searchable listing the operator turned off. Resolved
+  // against the axes the invite actually knows (see below) so this endpoint
+  // and /fit/assess never disagree about what the same patient can be
+  // shown.
+  const visibility = resolveCatalogVisibility(
+    context.formulary,
+    context.catalog,
+    new Date().toISOString().slice(0, 10),
+    // The invite carries the location and payer, so pass them: without
+    // this, a location-scoped exclusion applied during /fit/assess while
+    // /fit/catalog — reached with the SAME token — still listed the mask,
+    // and an org-wide exclusion with a location-specific allow hid one the
+    // assessment was free to recommend. Population and therapy mode are
+    // still genuinely unknown here, so rules scoped to those stay inert.
+    { locationId: invite.locationId, payerProfileId: invite.payerProfileId },
+  );
+  const visibleMasks = context.catalog.filter(
+    (m) => !visibility.hiddenSlugs.has(m.slug),
+  );
   // The body varies by the tenant behind the invite token and can include a
   // tenant's PRIVATE mask models and formulary metadata. Both custom domains
   // sit behind Cloudflare, so `public` here would let an edge cache serve
@@ -637,13 +703,13 @@ router.get("/fit/catalog", async (req, res) => {
   res.set("Cache-Control", "private, no-store");
   res.set("Vary", "x-fitter-invite-token");
   res.json({
-    total: context.catalog.length,
+    total: visibleMasks.length,
     degraded: context.degraded,
     formulary: {
       name: context.formulary.name,
       version: context.formulary.version,
     },
-    masks: context.catalog.map((m) => ({
+    masks: visibleMasks.map((m) => ({
       slug: m.slug,
       manufacturer: m.manufacturer,
       modelName: m.modelName,
@@ -701,6 +767,40 @@ interface InviteContext {
  * moment". `"unavailable"` routes to the retryable screen instead. Never
  * throws, so the caller still can't 500 a patient.
  */
+/**
+ * Adult or pediatric from a date of birth, by the calendar.
+ *
+ * Exported for its own test: the boundary is a real clinical switch (it
+ * selects the service line a patient is fitted on), and an off-by-a-day
+ * there is invisible in every other test.
+ */
+export function classifyPopulationFromDob(
+  dateOfBirth: string,
+  fallback: "adult" | "pediatric" | null = null,
+  now: Date = new Date(),
+): "adult" | "pediatric" | null {
+  // Date-only, parsed as UTC calendar parts so a local timezone can't
+  // shift the birthday across midnight.
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(dateOfBirth.trim());
+  if (!m) return fallback;
+  const [, y, mo, d] = m;
+  const birthYear = Number(y);
+  const birthMonth = Number(mo);
+  const birthDay = Number(d);
+  if (!birthYear || !birthMonth || !birthDay) return fallback;
+
+  const nowYear = now.getUTCFullYear();
+  const nowMonth = now.getUTCMonth() + 1;
+  const nowDay = now.getUTCDate();
+
+  let age = nowYear - birthYear;
+  // Not yet reached this year's birthday → one year younger.
+  if (nowMonth < birthMonth || (nowMonth === birthMonth && nowDay < birthDay)) {
+    age -= 1;
+  }
+  return age < 18 ? "pediatric" : "adult";
+}
+
 async function loadInvite(
   orgId: string,
   inviteId: string,
@@ -734,11 +834,17 @@ async function loadInvite(
         .limit(1)
         .maybeSingle()) as { data: Record<string, unknown> | null };
       locationId = (patient?.location_id as string | null) ?? null;
-      const dob = Date.parse(String(patient?.date_of_birth ?? ""));
-      if (Number.isFinite(dob)) {
-        const ageYears = (Date.now() - dob) / (365.25 * 86_400_000);
-        chartPopulation = ageYears < 18 ? "pediatric" : "adult";
-      }
+      // CALENDAR comparison, not elapsed-days / 365.25. The average-year
+      // divisor is short of a real 18 years by however many leap days
+      // fell inside them, so a patient on their exact 18th birthday
+      // computed to 17.9986 and was classified PEDIATRIC for the day —
+      // which now decides the plausibility window, the service-line
+      // filter, and what the fit request tells staff. "Has their 18th
+      // birthday passed" is the actual question, so ask it directly.
+      chartPopulation = classifyPopulationFromDob(
+        String(patient?.date_of_birth ?? ""),
+        chartPopulation,
+      );
 
       // insurance_coverages stores a free-text `payer_name`, not a
       // payer_profiles id, so the payer axis has to be resolved by name.
@@ -911,6 +1017,12 @@ async function persistSession(input: PersistInput): Promise<string | null> {
         formulary_name: input.assessment.provenance.formularyName,
         formulary_rules_matched:
           input.assessment.provenance.formularyRulesMatched,
+        // What the formulary HID (migration 0517). Distinct from the
+        // matched-rule map above: an excluded mask never reaches scoring,
+        // and a rule id alone doesn't say whether its effect demoted or
+        // hid. Staff-only — redacted from the patient copy of the report.
+        formulary_excluded_slugs:
+          input.assessment.provenance.formularyExcludedSlugs,
         catalog_snapshot_version:
           input.assessment.provenance.catalogSnapshotVersion,
         degraded: input.assessment.provenance.degraded,

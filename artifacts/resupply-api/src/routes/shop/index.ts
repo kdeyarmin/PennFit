@@ -9,6 +9,7 @@ import { Router, type IRouter } from "express";
 
 import insuranceLeadRouter from "./insurance-lead";
 import fitterLeadRouter from "./fitter-lead";
+import fitterRequestRouter from "./fitter-request";
 import fitterCompleteRouter from "./fitter-complete";
 import fitterInviteRouter from "./fitter-invite";
 import quizLeadRouter from "./quiz-lead";
@@ -130,6 +131,11 @@ router.use(fitterCompleteRouter);
 // fitter; complete transmits the measurements/answers/recommendation
 // back and auto-attaches to a matching patient chart.
 router.use(fitterInviteRouter);
+// /shop/fitter-requests — how a fitting ENDS now that the patient no
+// longer files their own insurance order. Invitation-gated like the
+// recommendation endpoints; persists to resupply.fitter_fit_requests and
+// emails the tenant's lead mailbox. Creates no order and bills nothing.
+router.use(fitterRequestRouter);
 // Public email-capture for the sleep-apnea quiz on /learn. Posts a
 // fitter_leads row with source='sleep_apnea_quiz' and fires a
 // transactional results email so the patient has the score in

@@ -75,6 +75,7 @@ import { withRetry } from "../../lib/with-retry.js";
 import { getLlmBreaker } from "../../lib/llm-circuit-breaker.js";
 import { requestHost } from "../../lib/request-host.js";
 import { resolveOrgIdByHost } from "../../lib/tenant-branding.js";
+import { loadCatalogVisibility } from "../../lib/fitting/catalog-store.js";
 import {
   recordAiTokenUsage,
   recordTenantUsage,
@@ -201,18 +202,38 @@ const chatBodySchema = z
 // per-tenant company-identity rewrite is applied per request on top of
 // this base (so one cache serves every tenant correctly).
 const SYSTEM_PROMPT_TTL_MS = 10 * 60 * 1000;
-let cachedSystemPrompt: string | null = null;
-let cachedSystemPromptAtMs = 0;
-function getSystemPrompt(): string {
+// Keyed by the tenant's hidden-mask set, because that set changes which
+// masks the catalog section describes and a single global entry would
+// serve one tenant's filtered catalog to another. A tenant hiding nothing
+// (the common case, and every pre-0516 tenant) lands on the "" key and
+// gets byte-identical output to the old single-entry cache. Bounded so a
+// large tenant fan-out can't grow it without limit.
+const MAX_CACHED_PROMPTS = 25;
+const promptCache = new Map<string, { prompt: string; atMs: number }>();
+
+/** Stable cache key for a hidden-mask set. Empty string = nothing hidden. */
+function hiddenSignature(hiddenMaskIds: ReadonlySet<string>): string {
+  if (hiddenMaskIds.size === 0) return "";
+  return [...hiddenMaskIds].sort().join(",");
+}
+
+function getSystemPrompt(hiddenMaskIds: ReadonlySet<string>): string {
   const now = Date.now();
-  if (
-    cachedSystemPrompt === null ||
-    now - cachedSystemPromptAtMs > SYSTEM_PROMPT_TTL_MS
-  ) {
-    cachedSystemPrompt = buildChatSystemPromptBase();
-    cachedSystemPromptAtMs = now;
+  const key = hiddenSignature(hiddenMaskIds);
+  const hit = promptCache.get(key);
+  if (hit && now - hit.atMs <= SYSTEM_PROMPT_TTL_MS) return hit.prompt;
+
+  const prompt = buildChatSystemPromptBase(hiddenMaskIds);
+  // Evict only when adding a genuinely NEW key. A TTL refresh re-`set`s an
+  // existing key, which does not move it in insertion order, so evicting
+  // there would drop an unrelated tenant's entry on every refresh.
+  if (!promptCache.has(key) && promptCache.size >= MAX_CACHED_PROMPTS) {
+    // Oldest insertion first — Map preserves insertion order.
+    const oldest = promptCache.keys().next();
+    if (!oldest.done) promptCache.delete(oldest.value);
   }
-  return cachedSystemPrompt;
+  promptCache.set(key, { prompt, atMs: now });
+  return prompt;
 }
 
 /**
@@ -222,8 +243,7 @@ function getSystemPrompt(): string {
  * package barrel.
  */
 export function __invalidateChatSystemPromptCacheForTests(): void {
-  cachedSystemPrompt = null;
-  cachedSystemPromptAtMs = 0;
+  promptCache.clear();
 }
 
 /** OpenAI message shape, including tool roles. */
@@ -543,8 +563,20 @@ router.post("/chat", chatRateLimit, async (req, res) => {
   // swap the assistant-name tokens (PennBot → the storefront-assistant
   // name configured for orgId). Both fall back to the seed/default when
   // the host didn't resolve to a tenant, so single-tenant is unchanged.
+  // Masks this tenant hid (formulary `exclude`, migration 0516). Resolved
+  // once, past the offline/feature gates so a tenant with the assistant
+  // switched off never pays for it, and applied in BOTH directions: the
+  // catalog section of the system prompt, and every catalog tool via
+  // `toolCtx` below. Filtering only one of the two is worse than filtering
+  // neither — the model would describe a mask its own tools then refuse to
+  // look up.
+  const visibility = await loadCatalogVisibility(orgId);
+
   const systemPrompt = await applyPlatformBrandingForOrg(
-    applyCompanyIdentityToText(getSystemPrompt(), companyInfo),
+    applyCompanyIdentityToText(
+      getSystemPrompt(visibility.hiddenSlugs),
+      companyInfo,
+    ),
     orgId,
   );
 
@@ -587,6 +619,7 @@ router.post("/chat", chatRateLimit, async (req, res) => {
       .flatMap((m) => extractEmails(m.content)),
     rateLimitKey: clientIp + ":track",
     tools: brandedTools,
+    hiddenMaskIds: visibility.hiddenSlugs,
   };
 
   // Claude path — preferred when Anthropic is configured. Sonnet 4.6

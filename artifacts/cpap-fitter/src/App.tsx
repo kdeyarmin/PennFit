@@ -1,4 +1,4 @@
-import React, { Suspense, useEffect } from "react";
+import React, { Suspense, useEffect, useState } from "react";
 import {
   Switch,
   Route,
@@ -12,6 +12,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/not-found";
 import { Layout } from "@/components/layout";
 import { ErrorBoundary } from "@/components/error-boundary";
+import { getCompanyContact } from "@/lib/contact";
 import { lazyWithRetry } from "@/lib/lazy-with-retry";
 
 // The landing page is the ONE eagerly-imported route. It's the most
@@ -89,6 +90,12 @@ const Results = lazyWithRetry(() =>
 );
 const Order = lazyWithRetry(() =>
   import("@/pages/order").then((m) => ({ default: m.Order })),
+);
+const FitRequest = lazyWithRetry(() =>
+  import("@/pages/fit-request").then((m) => ({ default: m.FitRequest })),
+);
+const OrderSuccess = lazyWithRetry(() =>
+  import("@/pages/order-success").then((m) => ({ default: m.OrderSuccess })),
 );
 const ComfortGuaranteePage = lazyWithRetry(() =>
   import("@/pages/comfort-guarantee").then((m) => ({
@@ -773,12 +780,18 @@ function GuardedQuestionnaire() {
   return <Questionnaire />;
 }
 function GuardedResults() {
-  const { measurements } = useFitterStore();
+  const { measurements, population } = useFitterStore();
   const invited = useFitterInviteGate();
   const consented = useFitterConsentGate();
   if (!invited) return <Redirect to="/fitter-invite" />;
   if (!consented) return <Redirect to="/consent" />;
   if (!measurements) return <Redirect to="/" />;
+  // No population means the questionnaire's adult-or-child gate was never
+  // answered — a deep link, or a session that predates the question. Both
+  // engines would then fall back to "adult", so send the patient back to
+  // the one screen that can say otherwise rather than guessing on their
+  // behalf.
+  if (!population) return <Redirect to="/questionnaire" replace />;
   return <Results />;
 }
 /**
@@ -832,12 +845,42 @@ function AccountHashRedirect({ hash }: { hash: "insights" | "orders" }) {
   return null;
 }
 
-function GuardedOrder() {
-  const { chosenMask, measurements } = useFitterStore();
+function GuardedFitRequest() {
+  const { measurements, population } = useFitterStore();
   const invited = useFitterInviteGate();
   const consented = useFitterConsentGate();
   if (!invited) return <Redirect to="/fitter-invite" />;
   if (!consented) return <Redirect to="/consent" />;
+  // Deliberately does NOT require `chosenMask`. The callback mode exists
+  // for the patient who could not pick between the cards — or whose
+  // fitting named no mask at all — and demanding one first would gate the
+  // request on the very decision they are asking for help with.
+  //
+  // It also does not re-check the invite TOKEN beyond
+  // `useFitterInviteGate`, which is satisfied by demo mode without one —
+  // the demo sandbox has no invite and must still walk this page.
+  if (!measurements) return <Redirect to="/" replace />;
+  // Mirrors GuardedResults. Without it a session that never answered the
+  // gate — one predating this deployment, or a direct hop from /measure —
+  // reaches the form, which then serializes `population ?? "adult"`: the
+  // request row and the team email would claim an adult fitting nobody
+  // was ever asked about.
+  if (!population) return <Redirect to="/questionnaire" replace />;
+  return <FitRequest />;
+}
+
+function GuardedOrder() {
+  const { chosenMask, measurements, leadCaptureOnly } = useFitterStore();
+  const invited = useFitterInviteGate();
+  const consented = useFitterConsentGate();
+  if (!invited) return <Redirect to="/fitter-invite" />;
+  if (!consented) return <Redirect to="/consent" />;
+  // `fitter.lead_capture_only` — this tenant's patients don't file their
+  // own insurance orders. The results page no longer links here, but a
+  // bookmark, a back-button, or a mid-flow flag flip can still land on
+  // it, and the API refuses the POST anyway — so send them to the form
+  // that works rather than one that will fail at submit.
+  if (leadCaptureOnly) return <Redirect to="/fit-request" replace />;
   // An order without sizing data is a fulfillment problem for the DME
   // team — require measurements alongside the chosen mask. Both are
   // sessionStorage-backed, so a mid-flow refresh keeps the user here;
@@ -845,6 +888,125 @@ function GuardedOrder() {
   if (!measurements) return <Redirect to="/" replace />;
   if (!chosenMask) return <Redirect to="/results" />;
   return <Order />;
+}
+
+/**
+ * Order-success gating. The confirmation normally lives in
+ * sessionStorage (so a refresh after order doesn't re-submit). If
+ * that's gone — tab crashed, cache cleared, deep link from an email
+ * — we fall back to recovering the confirmation server-side using
+ * the ?ref + ?email URL params that /order appended on submit.
+ * The /api/orders/track endpoint already enforces matching email +
+ * rate limiting, so this doesn't widen the attack surface beyond
+ * the existing track-order page.
+ */
+function GuardedOrderSuccess() {
+  const [state, setState] = useState<"checking" | "ok" | "deny">("checking");
+  useEffect(() => {
+    let cancelled = false;
+    // Fast path: sessionStorage carries the confirmation from /order.
+    try {
+      const stored = sessionStorage.getItem("fitter_order_confirmation");
+      if (stored) {
+        setState("ok");
+        return;
+      }
+    } catch {
+      /* fall through to URL-param recovery */
+    }
+    // Recovery path: read ?ref + ?email from the URL and ask the
+    // server. If both are present and the lookup succeeds, prime
+    // sessionStorage so <OrderSuccess /> renders normally without
+    // its own retry needed.
+    let ref: string | null = null;
+    let email: string | null = null;
+    try {
+      const params = new URLSearchParams(window.location.search);
+      ref = params.get("ref");
+      email = params.get("email");
+    } catch {
+      /* ignore — URL parse failure falls through to deny */
+    }
+    if (!ref || !email) {
+      setState("deny");
+      return;
+    }
+    void (async () => {
+      try {
+        const res = await fetch("/api/orders/track", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: {
+            Accept: "application/json",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ orderReference: ref, email }),
+        });
+        if (cancelled) return;
+        if (!res.ok) {
+          setState("deny");
+          return;
+        }
+        const data = (await res.json()) as {
+          orderReference: string;
+          mask: {
+            name: string;
+            manufacturer: string | null;
+            modelNumber?: string | null;
+          };
+        };
+        // Prime sessionStorage in the same shape /order writes so the
+        // OrderSuccess component's existing hydration path Just Works.
+        // Recovered orders don't carry measurements (not returned by
+        // /api/orders/track — they live in the persisted order's
+        // payload jsonb and aren't part of the public lookup surface);
+        // <OrderSuccess /> already renders the measurements card
+        // conditionally so absence is a clean visual no-op.
+        try {
+          sessionStorage.setItem(
+            "fitter_order_confirmation",
+            JSON.stringify({
+              orderReference: data.orderReference,
+              message: `Your order has been sent to ${getCompanyContact().legalName}. A team member will contact you within 1 business day to confirm and arrange shipping.`,
+              mask: {
+                name: data.mask.name,
+                manufacturer: data.mask.manufacturer ?? "",
+                modelNumber: data.mask.modelNumber ?? "",
+              },
+            }),
+          );
+          setState("ok");
+        } catch {
+          // sessionStorage write failed (e.g. private browsing /
+          // storage disabled). Without it, OrderSuccess hydrates to
+          // null and the page is blank — better to deny+redirect so
+          // the patient at least sees the home page than to leave
+          // them staring at an empty "Order confirmed" frame.
+          setState("deny");
+          return;
+        }
+        // URL scrub runs ONLY after successful recovery so that a
+        // transient fetch failure leaves the ?ref + ?email intact —
+        // the patient can refresh and retry from the same URL.
+        // Scrubbing earlier would burn the recovery inputs on the
+        // first attempt and bounce them to "/" with no way back.
+        try {
+          const scrubbedUrl = `${window.location.pathname}${window.location.hash}`;
+          window.history.replaceState(window.history.state, "", scrubbedUrl);
+        } catch {
+          /* ignore — best-effort URL scrub */
+        }
+      } catch {
+        if (!cancelled) setState("deny");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  if (state === "checking") return <RouteFallback />;
+  if (state === "deny") return <Redirect to="/" />;
+  return <OrderSuccess />;
 }
 
 function GuardedAccount() {
@@ -1082,7 +1244,9 @@ function PatientRouter() {
             <Route path="/measure" component={GuardedMeasure} />
             <Route path="/questionnaire" component={GuardedQuestionnaire} />
             <Route path="/results" component={GuardedResults} />
+            <Route path="/fit-request" component={GuardedFitRequest} />
             <Route path="/order" component={GuardedOrder} />
+            <Route path="/order-success" component={GuardedOrderSuccess} />
 
             <Route component={NotFound} />
           </Switch>

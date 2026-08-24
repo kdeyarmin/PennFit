@@ -8,7 +8,7 @@
 //
 // The catalog used to be the Stripe Products list, with on-hand living in
 // `product.metadata.stock_count`. Patients are insurance-only now, so both
-// moved to Postgres (migration 0516) — this is the surface that manages
+// moved to Postgres (migration 0520) — this is the surface that manages
 // them. Supplies still ship against a claim, so a DME still needs to know
 // what a SKU is and how many are on the shelf.
 //

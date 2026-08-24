@@ -1,4 +1,4 @@
-import React, { useId, isValidElement, cloneElement } from "react";
+import React from "react";
 import { useLocation, Link } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -40,6 +40,9 @@ import {
 import { useEffect } from "react";
 import { track } from "@/lib/track";
 import { FacialMeasurementsCard } from "@/components/facial-measurements-card";
+// Shared with /fit-request so both patient-facing forms keep one
+// label + aria-invalid/describedby contract.
+import { Field } from "@/components/form-field";
 import {
   DOB_MIN,
   isPlausibleDob,
@@ -168,8 +171,19 @@ export function Order() {
     setChosenMask,
     measurements,
     email: fitterEmail,
+    inviteToken,
   } = useFitterStore();
-  const { mutate, isPending, error } = useSubmitOrder();
+  // Carry the invite so the server resolves `fitter.lead_capture_only`
+  // against the tenant whose FITTING this is, not the host. A tenant
+  // without a verified custom domain serves its invite links from the
+  // platform host, where host-resolution lands on the seed org — whose
+  // flag is ON — and a tenant that deliberately re-enabled self-service
+  // ordering would have its own patients 409'd.
+  const { mutate, isPending, error } = useSubmitOrder(
+    inviteToken
+      ? { request: { headers: { "x-fitter-invite-token": inviteToken } } }
+      : undefined,
+  );
 
   const {
     register,
@@ -980,88 +994,6 @@ export function Order() {
           </Button>
         </div>
       </form>
-    </div>
-  );
-}
-
-/**
- * Field — labels every form input with an auto-generated id and binds
- * the <Label htmlFor> to the input via React.cloneElement. Without this,
- * users navigating with screen readers (or who tap the label on mobile
- * to focus the input) get no association between label and control.
- *
- * For composite controls like our Select (which renders a Radix trigger
- * button — not a real form control), set `skipHtmlFor` and the wrapping
- * label is rendered without a `for` attribute (the underlying button
- * gets its own accessible name from its placeholder/value).
- */
-function Field({
-  label,
-  required,
-  error,
-  className,
-  skipHtmlFor,
-  children,
-}: {
-  label: string;
-  required?: boolean;
-  error?: string;
-  className?: string;
-  skipHtmlFor?: boolean;
-  children: React.ReactNode;
-}) {
-  const generatedId = useId();
-  const errorId = `${generatedId}-error`;
-  // When the field has an error we clone the child so screen readers
-  // announce both the invalid state (aria-invalid) and the error
-  // text (via aria-describedby). The role="alert" on the message
-  // also re-announces it when it appears or changes.
-  type ChildProps = {
-    id?: string;
-    "aria-invalid"?: boolean | "true" | "false";
-    "aria-describedby"?: string;
-    "aria-required"?: boolean;
-  };
-  const child =
-    !skipHtmlFor && isValidElement(children)
-      ? cloneElement(children as React.ReactElement<ChildProps>, {
-          id:
-            (children as React.ReactElement<ChildProps>).props.id ??
-            generatedId,
-          // Forward the required state to assistive tech — the visual `*`
-          // alone never reaches a screen reader.
-          ...(required ? { "aria-required": true } : {}),
-          ...(error
-            ? {
-                "aria-invalid": true,
-                "aria-describedby": errorId,
-              }
-            : {}),
-        })
-      : children;
-  const inputId = skipHtmlFor
-    ? undefined
-    : isValidElement(children)
-      ? ((children as React.ReactElement<{ id?: string }>).props.id ??
-        generatedId)
-      : undefined;
-
-  return (
-    <div className={className}>
-      <Label htmlFor={inputId} className="text-sm font-medium mb-1.5 block">
-        {label}
-        {required && (
-          <span className="text-destructive ml-0.5" aria-hidden="true">
-            *
-          </span>
-        )}
-      </Label>
-      {child}
-      {error && (
-        <p id={errorId} role="alert" className="text-xs text-destructive mt-1">
-          {error}
-        </p>
-      )}
     </div>
   );
 }

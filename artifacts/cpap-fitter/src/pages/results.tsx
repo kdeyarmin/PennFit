@@ -22,6 +22,7 @@ import {
   ChevronRight,
   ChevronDown,
   AlertCircle,
+  PhoneCall,
   Ruler,
 } from "lucide-react";
 import { track } from "@/lib/track";
@@ -59,9 +60,13 @@ export function Results() {
     scanSignals,
     answers,
     fitAnswers,
+    population,
+    setPopulation,
     fitProfileV2,
+    leadCaptureOnly,
     resetForNewFitting,
     setChosenMask,
+    setFitSessionId,
     email,
     emailConsent,
     inviteToken,
@@ -100,9 +105,15 @@ export function Results() {
   const profilePayload = React.useMemo(
     () =>
       fitProfileV2 && Object.keys(fitAnswers).length > 0
-        ? toProfilePayload(fitAnswers)
+        ? // The population also travels as its own top-level field (see
+          // `runAssessment`), which is what carries it on the LEGACY
+          // question set. Threading it in here too keeps the two blocks
+          // from disagreeing on the same request.
+          toProfilePayload(fitAnswers, {
+            ...(population ? { population } : {}),
+          })
         : null,
-    [fitProfileV2, fitAnswers],
+    [fitProfileV2, fitAnswers, population],
   );
 
   // Best-effort campaign-enrollment ping. Fires once when the
@@ -122,6 +133,7 @@ export function Results() {
     modelNumber: string;
     manufacturer: string;
     size?: string | null;
+    maskType?: string | null;
   }) => {
     setChosenMask({
       maskId: mask.maskId,
@@ -129,9 +141,45 @@ export function Results() {
       modelNumber: mask.modelNumber,
       manufacturer: mask.manufacturer,
       size: mask.size ?? null,
+      maskType: mask.maskType ?? null,
     });
     track("mask_chosen", { mask: mask.modelNumber });
-    setLocation("/order");
+    // `fitter.lead_capture_only` (the default): the patient sends a
+    // REQUEST a person works, not an order they file themselves. Only a
+    // tenant that deliberately turned the flag off still reaches /order,
+    // whose own guard re-checks this.
+    setLocation(leadCaptureOnly ? "/fit-request" : "/order");
+  };
+
+  /**
+   * "Have a representative contact me" — the other way out of this page.
+   *
+   * Deliberately does NOT require a chosen mask. A patient who is unsure
+   * which of three cards is right, or whose fitting named no mask at all,
+   * is exactly the patient who most needs a person; making them pick one
+   * first would be asking them to answer the question they came here
+   * with.
+   */
+  const handleRequestCallback = (context?: {
+    maskId: string;
+    name: string;
+    modelNumber: string;
+    manufacturer: string;
+    size?: string | null;
+    maskType?: string | null;
+  }) => {
+    if (context) {
+      setChosenMask({
+        maskId: context.maskId,
+        name: context.name,
+        modelNumber: context.modelNumber,
+        manufacturer: context.manufacturer,
+        size: context.size ?? null,
+        maskType: context.maskType ?? null,
+      });
+    }
+    track("fit_callback_requested", { hadMask: Boolean(context) });
+    setLocation("/fit-request?mode=callback");
   };
 
   // The mask fitter is invitation-only: the recommendation endpoint
@@ -198,6 +246,10 @@ export function Results() {
         // The v2 Patient Fit Profile, when the tenant runs it. The
         // route merges it over the legacy answers.
         ...(profilePayload ? { profile: profilePayload } : {}),
+        // Adult or child, on BOTH question sets. Without it the route's
+        // `buildProfile` resolves every legacy-questionnaire fitting to
+        // "adult", and tier 1 would hand a child adult-only masks.
+        ...(population ? { population } : {}),
         // Real per-frame quality from /measure. Omitted only when the
         // probe failed, in which case the route applies its neutral
         // default.
@@ -213,6 +265,23 @@ export function Results() {
 
       if (result.kind === "assessment") {
         setAssessment(result.assessment);
+        // Carried into the fit request so a CSR opening the queue can
+        // jump straight to the fitting that produced it. Null on the
+        // legacy path, which records no session — and the request says
+        // so rather than inventing a link.
+        setFitSessionId(result.assessment.fitSessionId);
+        // Adopt the EFFECTIVE service line. For a chart-linked invite the
+        // route overrides the browser's answer from the patient's date of
+        // birth, and that override is what filtered the masks and what
+        // the fit session records. Leaving the store on the stale browser
+        // value would let the fit request, its queue badge and the team
+        // email label a pediatric fitting as adult (or the reverse).
+        if (
+          result.assessment.population &&
+          result.assessment.population !== population
+        ) {
+          setPopulation(result.assessment.population);
+        }
         setSafetyScreen(null);
         setClinicalState("clinical");
         track("fit_assessment_completed", {
@@ -254,6 +323,12 @@ export function Results() {
       // migration 0500 (clinical + magnet screening ON for every
       // tenant) whenever /api/fit/assess was briefly unreachable.
       if (result.kind === "not_enabled") {
+        // The legacy engine records no fit session, so there is nothing
+        // for a later fit request to link to. Clear it explicitly rather
+        // than letting a value persisted by an earlier clinical fitting
+        // in this tab ride along — a request pointing at a fitting it did
+        // not come from is worse than one pointing at nothing.
+        setFitSessionId(null);
         setClinicalState("legacy");
         return;
       }
@@ -277,8 +352,11 @@ export function Results() {
       inviteToken,
       fullAnswers,
       profilePayload,
+      population,
       scanSignals,
       entryPoint,
+      setFitSessionId,
+      setPopulation,
     ],
   );
 
@@ -305,6 +383,7 @@ export function Results() {
     // error handling say so rather than duplicating the message here.
     if (!inviteToken) {
       hasProbedClinical.current = true;
+      setFitSessionId(null);
       setClinicalState("legacy");
       return;
     }
@@ -414,8 +493,19 @@ export function Results() {
   // ones staff never saw. The server now records the clinical path
   // itself, at the moment it decides; this stays as the safety net for
   // the legacy engine and for a failed session write.
+  // "No mask" is an answer. The legacy engine ranking NOTHING for a
+  // pediatric session is a completed fitting — the catalog is adult-only,
+  // so that empty result IS the finding, and it is precisely the fitting
+  // staff most need to see. Requiring a `topPick` left those invites at
+  // "opened" forever: the patient could file a callback request while the
+  // invite queue and completion metrics never learned the fitting had
+  // happened at all.
+  const legacyAnsweredEmpty =
+    clinicalState === "legacy" && data !== undefined && data !== null;
   const fittingAnswered =
-    (clinicalState === "clinical" && assessment !== null) || topPick !== null;
+    (clinicalState === "clinical" && assessment !== null) ||
+    topPick !== null ||
+    legacyAnsweredEmpty;
   const hasTransmittedInvite = useRef(false);
   useEffect(() => {
     if (hasTransmittedInvite.current) return;
@@ -458,9 +548,15 @@ export function Results() {
       // recommendation engine can distinguish "the patient said no" from
       // "the patient declined to answer", with "none"/"unknown"
       // sentinels for the two enum fields.
-      mutate({ data: { measurements, answers: fullAnswers } });
+      mutate({
+        data: {
+          measurements,
+          answers: fullAnswers,
+          ...(population ? { population } : {}),
+        },
+      });
     }
-  }, [measurements, fullAnswers, mutate, clinicalState]);
+  }, [measurements, fullAnswers, population, mutate, clinicalState]);
 
   if (!measurements) return null;
 
@@ -470,7 +566,17 @@ export function Results() {
   // loop — and the patient is referred to the DME company by name (see
   // FitWithheld for the reasoning).
   if (assessment && isWithheld(assessment.outcome)) {
-    return <FitWithheld assessment={assessment} />;
+    return (
+      <FitWithheld
+        assessment={assessment}
+        // A withheld fitting named no mask, so the request carries none —
+        // which is the honest record: staff need to know this patient was
+        // stopped, not which card they happened to be looking at.
+        onRequestCallback={
+          leadCaptureOnly ? () => handleRequestCallback() : undefined
+        }
+      />
+    );
   }
 
   // The safety screen outranks every other branch below, including the
@@ -589,7 +695,13 @@ export function Results() {
           {!isPermanent && (
             <Button
               onClick={() =>
-                mutate({ data: { measurements, answers: fullAnswers } })
+                mutate({
+                  data: {
+                    measurements,
+                    answers: fullAnswers,
+                    ...(population ? { population } : {}),
+                  },
+                })
               }
               data-testid="results-retry"
             >
@@ -632,6 +744,7 @@ export function Results() {
         </div>
         <ClinicalResults
           assessment={assessment}
+          leadCaptureOnly={leadCaptureOnly}
           onChoose={(c) =>
             handleChooseMask({
               maskId: c.maskSlug,
@@ -642,6 +755,10 @@ export function Results() {
                 c.frame?.manufacturerPartNumber ??
                 c.maskSlug,
               size: c.cushion?.sizeLabel ?? c.frame?.sizeLabel ?? null,
+              // The clinical engine's seven interface types collapse to
+              // the legacy four for the request record, so a CSR reading
+              // the queue sees the same vocabulary either engine used.
+              maskType: toLegacyMaskType(c.interfaceType),
             })
           }
           onRetake={() => {
@@ -651,6 +768,9 @@ export function Results() {
             setLocation("/capture");
           }}
         />
+        {leadCaptureOnly && (
+          <CallbackPanel onRequest={() => handleRequestCallback()} />
+        )}
       </div>
     );
   }
@@ -670,6 +790,58 @@ export function Results() {
     );
   }
 
+  // Nothing ranked. WHY decides what to say, and the two reasons need
+  // opposite advice.
+  //
+  // For a CHILD on the legacy engine there is nothing wrong with the
+  // photo: that catalog carries no pediatric interfaces and no pediatric
+  // size bands, so the service-line filter correctly removed everything.
+  // Telling this patient to retake the photo would send them round a loop
+  // that cannot succeed. `data.population` is the server's own word for
+  // what it ranked against, so a server-side override (a chart-linked
+  // date of birth) reaches this branch instead of the client's guess.
+  const rankedPopulation = data.population ?? population;
+  if (
+    data.topRecommendations.length === 0 &&
+    rankedPopulation === "pediatric"
+  ) {
+    return (
+      <div className="container max-w-2xl mx-auto px-4 py-12">
+        <div className="glass-card rounded-2xl p-8 space-y-5">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="h-6 w-6 text-amber-600 shrink-0 mt-0.5" />
+            <div>
+              <h1 className="text-xl font-semibold">
+                Children&apos;s masks are fitted in person
+              </h1>
+              <p
+                className="text-sm text-muted-foreground mt-2"
+                data-testid="results-pediatric-referral"
+              >
+                Masks for children are a separate product line, sized and tested
+                for smaller faces, and this online tool doesn&apos;t carry them.
+                Your measurements were fine — there&apos;s nothing to retake.
+                Leave your details and the <BrandName /> team will fit your
+                child properly.
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-3 pt-1">
+            <Button
+              onClick={() => handleRequestCallback()}
+              data-testid="results-pediatric-callback"
+            >
+              Ask <BrandName /> to contact me
+            </Button>
+            <Button variant="outline" onClick={() => setLocation("/contact")}>
+              Contact details
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (data.topRecommendations.length === 0) {
     return (
       <div className="container max-w-2xl mx-auto px-4 py-12">
@@ -679,13 +851,23 @@ export function Results() {
           <p className="text-sm text-muted-foreground">
             We weren't able to rank masks for these measurements. This can
             happen when the facial dimensions are outside our current model
-            range. Try retaking the photo or browsing the full catalog.
+            range. Try retaking the photo, browsing the full catalog, or letting
+            our team fit you in person.
           </p>
           <div className="flex flex-wrap justify-center gap-3 pt-2">
             <Button onClick={() => setLocation("/capture")}>
               <RefreshCcw className="h-4 w-4 mr-2" />
               Retake photo
             </Button>
+            {leadCaptureOnly && (
+              <Button
+                variant="outline"
+                onClick={() => handleRequestCallback()}
+                data-testid="results-empty-callback"
+              >
+                Ask us to contact you
+              </Button>
+            )}
             <Button variant="outline" onClick={() => setLocation("/masks")}>
               Browse all masks
             </Button>
@@ -888,27 +1070,33 @@ export function Results() {
             on any card to see the breakdown.
           </p>
         </div>
-        {data.topRecommendations.map((mask, idx) => {
-          return (
-            <MaskRecommendationCard
-              key={mask.maskId}
-              mask={mask}
-              details={catalogById.get(mask.maskId)}
-              isTopPick={idx === 0}
-              // The legacy engine names a size too (`recommendedSize`,
-              // shown on this very card) — carry it onto the order
-              // rather than dropping the field on the rename.
-              onChoose={() =>
-                handleChooseMask({
-                  ...mask,
-                  size: mask.recommendedSize ?? null,
-                })
-              }
-              measurements={measurements}
-            />
-          );
-        })}
+        {data.topRecommendations.map((mask, idx) => (
+          <MaskRecommendationCard
+            key={mask.maskId}
+            mask={mask}
+            details={catalogById.get(mask.maskId)}
+            isTopPick={idx === 0}
+            leadCaptureOnly={leadCaptureOnly}
+            // The legacy engine names a size too (`recommendedSize`,
+            // shown on this very card) — carry it onto the request
+            // rather than dropping the field on the rename.
+            onChoose={() =>
+              handleChooseMask({
+                ...mask,
+                size: mask.recommendedSize ?? null,
+                maskType: mask.type,
+              })
+            }
+            measurements={measurements}
+          />
+        ))}
       </div>
+
+      {leadCaptureOnly && (
+        <div className="mb-8">
+          <CallbackPanel onRequest={() => handleRequestCallback()} />
+        </div>
+      )}
 
       <ComfortGuarantee variant="callout" className="mb-8" />
 
@@ -975,6 +1163,43 @@ function Measurement({
         {value.toFixed(1)}{" "}
         <span className="text-xs font-normal text-muted-foreground">mm</span>
       </div>
+    </div>
+  );
+}
+
+/**
+ * "Or have someone call you" — the second way out of the results page.
+ *
+ * Sits under the mask cards on BOTH engines' renderings. Deliberately
+ * separate from the per-card CTA: the patient who wants this is usually
+ * the one who could not choose between the cards, so making them pick a
+ * card to reach it would defeat the point.
+ */
+function CallbackPanel({ onRequest }: { onRequest: () => void }) {
+  return (
+    <div
+      className="glass-card rounded-2xl p-6 flex flex-col md:flex-row items-center justify-between gap-6"
+      data-testid="results-callback-panel"
+    >
+      <div className="space-y-2">
+        <h3 className="font-semibold text-lg tracking-tight">
+          Would you rather talk it through?
+        </h3>
+        <p className="text-sm text-muted-foreground max-w-xl leading-relaxed">
+          Leave your name and number and the <BrandName /> team will call you to
+          go through these results, check your coverage, and confirm the fit.
+          Nothing is ordered until you&apos;ve spoken to someone.
+        </p>
+      </div>
+      <Button
+        variant="outline"
+        className="shrink-0 glass-panel"
+        onClick={onRequest}
+        data-testid="results-request-callback"
+      >
+        <PhoneCall className="mr-2 w-4 h-4" />
+        Ask us to contact me
+      </Button>
     </div>
   );
 }

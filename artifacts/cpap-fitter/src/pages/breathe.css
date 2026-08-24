@@ -6669,6 +6669,257 @@
   align-items: center;
 }
 
+/* One-line catalog proof under the home page's fitter-band CTAs
+   (breathe.tsx §FitterCatalogLine) — the teaser for the full roster below. */
+.bx-fit-catalog {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 9px;
+  max-width: 760px;
+  margin: 20px auto 0;
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--bx-text-dim);
+  text-align: left;
+}
+.bx-fit-catalog svg {
+  flex: none;
+  margin-top: 3px;
+  color: var(--bx-gold-soft);
+}
+.bx-fit-catalog b {
+  font-weight: 600;
+  color: var(--bx-text);
+}
+.bx-fit-catalog a {
+  color: var(--bx-cyan);
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.bx-fit-catalog a:hover {
+  text-decoration: underline;
+}
+@media (max-width: 560px) {
+  .bx-fit-catalog {
+    font-size: 12.5px;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   Mask catalog coverage — the manufacturer roster on
+   /breathe/mask-fitting (breathe-mask-fitting.tsx §CatalogCoverage).
+
+   Why it looks like a ledger rather than a logo wall: the point of the
+   section is that the numbers are REAL and countable — a per-manufacturer
+   model count read live out of resupply.mask_models. A logo wall implies
+   partnership; a counted roster implies coverage, which is the honest
+   claim and the one a DME is actually asking about. The bar behind each
+   row is the manufacturer's share of the catalog, so the shape of the
+   roster reads at a glance without a chart library.
+   ═══════════════════════════════════════════════════════════════════ */
+
+.bx-mfg-panel {
+  border: 1px solid var(--bx-line);
+  border-radius: 20px;
+  background: var(--bx-panel-2);
+  overflow: hidden;
+}
+
+/* Headline totals across the top of the panel. */
+.bx-mfg-totals {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1px;
+  background: var(--bx-line);
+  border-bottom: 1px solid var(--bx-line);
+}
+.bx-mfg-total {
+  background: var(--bx-panel-3);
+  padding: 24px 20px;
+  text-align: center;
+}
+.bx-mfg-total b {
+  display: block;
+  font-family: var(--bx-display);
+  font-optical-sizing: auto;
+  font-size: clamp(28px, 3.4vw, 40px);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  background: linear-gradient(120deg, #fff, var(--bx-cyan));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.bx-mfg-total.gold b {
+  background: linear-gradient(120deg, #fff, var(--bx-gold-soft));
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+.bx-mfg-total span {
+  display: block;
+  margin-top: 6px;
+  font-size: 12.5px;
+  line-height: 1.35;
+  color: var(--bx-text-dim);
+}
+
+/* The roster itself. */
+.bx-mfg-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.bx-mfg-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: baseline;
+  gap: 16px;
+  padding: 15px 26px;
+  border-bottom: 1px solid var(--bx-line);
+}
+.bx-mfg-row:last-child {
+  border-bottom: 0;
+}
+/* Share-of-catalog bar, painted behind the row rather than as its own
+   column so the manufacturer name never gets squeezed on a phone. */
+.bx-mfg-bar {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: linear-gradient(
+    90deg,
+    rgba(84, 200, 255, 0.16),
+    rgba(47, 111, 230, 0.04)
+  );
+  border-right: 1px solid rgba(84, 200, 255, 0.28);
+  pointer-events: none;
+}
+.bx-mfg-name {
+  position: relative;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--bx-text);
+}
+.bx-mfg-count {
+  position: relative;
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  white-space: nowrap;
+}
+.bx-mfg-count b {
+  font-family: var(--bx-display);
+  font-optical-sizing: auto;
+  font-size: 21px;
+  font-weight: 600;
+  color: var(--bx-text);
+  letter-spacing: -0.01em;
+}
+.bx-mfg-count i {
+  font-style: normal;
+  font-family: var(--bx-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--bx-text-faint);
+}
+
+/* Current vs discontinued split, under the roster. */
+.bx-mfg-caption {
+  margin: 0;
+  padding: 14px 26px;
+  border-top: 1px solid var(--bx-line);
+  font-size: 12.5px;
+  color: var(--bx-text-faint);
+}
+.bx-mfg-caption b {
+  font-weight: 600;
+  color: var(--bx-text-dim);
+}
+
+/* Interface-type chips under the roster. */
+.bx-mfg-types {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 18px 26px;
+  border-top: 1px solid var(--bx-line);
+  background: var(--bx-panel-3);
+}
+.bx-mfg-type {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 7px;
+  padding: 6px 12px;
+  border: 1px solid var(--bx-line);
+  border-radius: 999px;
+  font-size: 12.5px;
+  color: var(--bx-text-dim);
+}
+.bx-mfg-type b {
+  font-weight: 600;
+  color: var(--bx-text);
+}
+
+/* The two explanatory cards under the panel. */
+.bx-mfg-notes {
+  margin-top: 28px;
+}
+
+/* "Live from the catalog" freshness line under the panel. */
+.bx-mfg-foot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 16px 0 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--bx-text-faint);
+  text-align: center;
+}
+.bx-mfg-foot svg {
+  flex: none;
+  color: var(--bx-mint);
+}
+.bx-mfg-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--bx-mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--bx-mint);
+}
+.bx-mfg-live .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--bx-mint);
+  box-shadow: 0 0 0 3px rgba(111, 240, 194, 0.18);
+}
+
+@media (max-width: 860px) {
+  .bx-mfg-totals {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+@media (max-width: 560px) {
+  .bx-mfg-row,
+  .bx-mfg-caption,
+  .bx-mfg-types {
+    padding-left: 18px;
+    padding-right: 18px;
+  }
+  .bx-mfg-total {
+    padding: 20px 14px;
+  }
+}
+
 /* ── Responsive collapse chain ──────────────────────────────────────── */
 @media (max-width: 1180px) {
   .bx-deepgrid {

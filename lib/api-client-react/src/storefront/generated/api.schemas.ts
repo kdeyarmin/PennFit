@@ -93,9 +93,21 @@ export interface QuestionnaireAnswers {
   cpapPressureSetting: QuestionnaireAnswersCpapPressureSetting;
 }
 
+/** Service line a fitting runs on. Mirrors `mask_models.service_line`
+ *  and `fit_sessions.population` on the API side. */
+export type FittingPopulation = "adult" | "pediatric";
+
 export interface RecommendationRequest {
   measurements: FacialMeasurements;
   answers: QuestionnaireAnswers;
+  /**
+   * Adult or child, from the questionnaire's population gate. Sits
+   * alongside `answers` rather than inside it because every other
+   * consumer of the 11-answer shape speaks that shape verbatim.
+   * Optional for back-compat; the server reads an omitted value as
+   * "adult", which is what it assumed before the question existed.
+   */
+  population?: FittingPopulation;
 }
 
 export type MaskRecommendationType =
@@ -137,6 +149,14 @@ export interface RecommendationResponse {
   topRecommendations: MaskRecommendation[];
   alternatives: MaskRecommendation[];
   disclaimer: string;
+  /**
+   * The service line the ranking actually ran on. Echoed so the caller
+   * can tell an empty `topRecommendations` for a CHILD (this catalog
+   * carries no pediatric interfaces — refer to the DME) apart from an
+   * empty one for an adult (a measurement problem — retake the photo).
+   * Optional: a server that predates the question omits it.
+   */
+  population?: FittingPopulation;
 }
 
 export type MaskEntryType = (typeof MaskEntryType)[keyof typeof MaskEntryType];
@@ -182,6 +202,10 @@ export const MaskEntryPriceTier = {
 
 export interface MaskEntry {
   id: string;
+  /** Which service line this interface may be dispensed on. Absent means
+   *  "adult" — the only default that fails safe, since an unmarked mask
+   *  must never reach a child. */
+  serviceLine?: "adult" | "pediatric" | "both";
   name: string;
   /** Penn Home Medical Supply SKU / model number for ordering */
   modelNumber: string;

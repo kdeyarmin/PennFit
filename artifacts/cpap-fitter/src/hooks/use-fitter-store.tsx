@@ -27,6 +27,13 @@ export interface CapturedFrame {
   source: "burst" | "guided";
 }
 
+/**
+ * Which service line the fitting runs on. Mirrors `Population` in the
+ * API's clinical engine (`lib/fitting/types.ts`) and the `population`
+ * column on `fit_sessions` — the SPA sends this string verbatim.
+ */
+export type Population = "adult" | "pediatric";
+
 export interface ChosenMask {
   maskId: string;
   name: string;
@@ -40,6 +47,15 @@ export interface ChosenMask {
    * mask ordered in the wrong size fits no better than the wrong mask.
    */
   size?: string | null;
+  /**
+   * The interface family, normalized to the legacy four
+   * (`fullFace | nasal | nasalPillow | hybrid`). Carried so a fit
+   * REQUEST can name the kind of mask the patient was shown without the
+   * CSR opening the fitting record — the clinical path speaks
+   * `interfaceType` (seven values) and the legacy path speaks `type`,
+   * and `toLegacyMaskType` is what reconciles them at the call site.
+   */
+  maskType?: string | null;
 }
 
 interface FitterState {
@@ -64,8 +80,37 @@ interface FitterState {
    * campaign ping) keeps working unchanged.
    */
   fitAnswers: FitAnswers;
+  /**
+   * Who the fitting is FOR — an adult or a child. Asked once at the head
+   * of the questionnaire (see `PopulationGate`), because it is a property
+   * of the SESSION rather than an answer about the patient's breathing:
+   * it selects the plausibility windows, the tier-1 service-line filter
+   * in the clinical engine, and the `population` column on the stored fit
+   * session. `null` means "not asked yet" — the questionnaire refuses to
+   * advance past the gate until it is set, so no engine is ever asked to
+   * fit a face whose population we are guessing at.
+   */
+  population: Population | null;
+  /**
+   * The clinical fit session this fitting produced, when the clinical
+   * path answered. Null on the legacy `/api/recommend` path, which
+   * records no session at all — so a fit request from a legacy fitting
+   * files with no session link, and that is accurate rather than a gap.
+   */
+  fitSessionId: string | null;
   /** Whether this tenant's invite resolved with the v2 questionnaire on. */
   fitProfileV2: boolean;
+  /**
+   * Whether this tenant runs the fitter in LEAD-CAPTURE mode
+   * (`fitter.lead_capture_only`): the patient sees their recommendation
+   * and asks the DME to take it from there, instead of self-submitting an
+   * insurance order the DME never reviewed.
+   *
+   * Defaults to TRUE and fails soft to TRUE — a flag lookup that never
+   * reached the tenant's row must not hand a patient the self-serve order
+   * form. Only an explicit tenant opt-out turns it off.
+   */
+  leadCaptureOnly: boolean;
   /** Whether this tenant's invite resolved with guided multi-angle capture
    *  on (`fitter.multiframe_capture`). Off = the single-frame capture. */
   multiframeCapture: boolean;
@@ -144,7 +189,14 @@ interface FitterContextType extends FitterState {
    *  never delete a key, and pruning answers from abandoned branches is
    *  exactly a deletion. */
   replaceFitAnswers: (answers: FitAnswers) => void;
+  /** `null` REOPENS the adult-or-child gate. The questionnaire's first
+   *  Back does exactly that: a misclick on this one answer silently
+   *  changes which masks are eligible, so it must be correctable
+   *  without a full reset. */
+  setPopulation: (value: Population | null) => void;
+  setFitSessionId: (value: string | null) => void;
   setFitProfileV2: (on: boolean) => void;
+  setLeadCaptureOnly: (on: boolean) => void;
   setMultiframeCapture: (on: boolean) => void;
   setCapturedImage: (image: string | null) => void;
   setCapturedFrames: (frames: CapturedFrame[] | null) => void;
@@ -324,6 +376,31 @@ export function FitterProvider({ children }: { children: ReactNode }) {
       return {};
     }
   });
+  const [population, setPopulationState] = useState<Population | null>(() => {
+    try {
+      const stored = sessionStorage.getItem("fitter_population");
+      return stored === "adult" || stored === "pediatric" ? stored : null;
+    } catch {
+      return null;
+    }
+  });
+  const [fitSessionId, setFitSessionIdState] = useState<string | null>(() => {
+    try {
+      return sessionStorage.getItem("fitter_fit_session_id");
+    } catch {
+      return null;
+    }
+  });
+  // Fails soft to TRUE in both directions — an unreadable storage key and
+  // an unresolvable flag both mean "we could not confirm this tenant lets
+  // patients self-order", and the safe answer there is that they cannot.
+  const [leadCaptureOnly, setLeadCaptureOnlyState] = useState<boolean>(() => {
+    try {
+      return sessionStorage.getItem("fitter_lead_capture_only") !== "0";
+    } catch {
+      return true;
+    }
+  });
   const [fitProfileV2, setFitProfileV2State] = useState<boolean>(() => {
     try {
       return sessionStorage.getItem("fitter_profile_v2") === "1";
@@ -464,6 +541,38 @@ export function FitterProvider({ children }: { children: ReactNode }) {
       sessionStorage.setItem("fitter_fit_answers", JSON.stringify(next));
     } catch (e) {
       console.error("Failed to save fit answers to sessionStorage", e);
+    }
+  };
+
+  const setPopulation = (value: Population | null) => {
+    setPopulationState(value);
+    try {
+      if (value) sessionStorage.setItem("fitter_population", value);
+      else sessionStorage.removeItem("fitter_population");
+    } catch (e) {
+      console.error("Failed to persist fitting population", e);
+    }
+  };
+
+  const setFitSessionId = (value: string | null) => {
+    setFitSessionIdState(value);
+    try {
+      if (value) sessionStorage.setItem("fitter_fit_session_id", value);
+      else sessionStorage.removeItem("fitter_fit_session_id");
+    } catch (e) {
+      console.error("Failed to persist fit session id", e);
+    }
+  };
+
+  const setLeadCaptureOnly = (on: boolean) => {
+    setLeadCaptureOnlyState(on);
+    try {
+      // Only the OPT-OUT is written. An absent key reads as "on", which
+      // keeps the fail-soft default aligned with the initializer above.
+      if (on) sessionStorage.removeItem("fitter_lead_capture_only");
+      else sessionStorage.setItem("fitter_lead_capture_only", "0");
+    } catch (e) {
+      console.error("Failed to persist lead-capture flag", e);
     }
   };
 
@@ -612,12 +721,20 @@ export function FitterProvider({ children }: { children: ReactNode }) {
     setScanSignalsState(null);
     setAnswers({});
     setFitAnswers({});
+    // The population is an ANSWER about this fitting, not identity — a
+    // "Start Over" that kept it would silently carry an adult session's
+    // service line into a re-fit that a parent started for their child.
+    setPopulationState(null);
+    // Belongs to the fitting that just ended, not to the next one.
+    setFitSessionIdState(null);
     setCapturedImage(null);
     setCapturedFrames(null);
     setChosenMaskState(null);
     try {
       sessionStorage.removeItem("fitter_answers");
       sessionStorage.removeItem("fitter_fit_answers");
+      sessionStorage.removeItem("fitter_population");
+      sessionStorage.removeItem("fitter_fit_session_id");
       sessionStorage.removeItem("fitter_chosen_mask");
       sessionStorage.removeItem(MEASUREMENTS_STORAGE_KEY);
       sessionStorage.removeItem(SCAN_SIGNALS_STORAGE_KEY);
@@ -629,6 +746,9 @@ export function FitterProvider({ children }: { children: ReactNode }) {
   const reset = () => {
     resetForNewFitting();
     setFitProfileV2State(false);
+    // Back to the fail-soft default, not to `false`: a fresh invite that
+    // never resolves must not leave the previous tenant's opt-out behind.
+    setLeadCaptureOnlyState(true);
     setMultiframeCaptureState(false);
     setEmail(null);
     setEmailConsentState(false);
@@ -645,6 +765,7 @@ export function FitterProvider({ children }: { children: ReactNode }) {
       // Measurements + scan signals were already cleared by
       // resetForNewFitting() above (via the storage-key constants).
       sessionStorage.removeItem("fitter_profile_v2");
+      sessionStorage.removeItem("fitter_lead_capture_only");
       sessionStorage.removeItem("fitter_multiframe");
       sessionStorage.removeItem("fitter_email");
       sessionStorage.removeItem("fitter_email_consent");
@@ -663,7 +784,10 @@ export function FitterProvider({ children }: { children: ReactNode }) {
         scanSignals,
         answers,
         fitAnswers,
+        population,
+        fitSessionId,
         fitProfileV2,
+        leadCaptureOnly,
         multiframeCapture,
         capturedImage,
         capturedFrames,
@@ -679,7 +803,10 @@ export function FitterProvider({ children }: { children: ReactNode }) {
         updateAnswers,
         updateFitAnswers,
         replaceFitAnswers,
+        setPopulation,
+        setFitSessionId,
         setFitProfileV2,
+        setLeadCaptureOnly,
         setMultiframeCapture,
         setCapturedImage,
         setCapturedFrames,

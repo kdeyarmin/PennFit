@@ -60,6 +60,15 @@ export type TrackStep =
   | "results_viewed"
   | "mask_chosen"
   | "mask_cashpay_added"
+  // Adult-or-child, asked at the head of the questionnaire. The VALUE is
+  // a service line, not a patient attribute — no age, no date of birth.
+  | "fitting_population_selected"
+  // The fitter's new ending: a request a person works, in place of an
+  // order the patient filed. Three points, so the funnel between them is
+  // measurable — panel seen, form opened, request sent.
+  | "fit_callback_requested"
+  | "fit_request_started"
+  | "fit_request_submitted"
   | "order_started"
   | "order_submitted_success"
   | "cart_items_dropped"
@@ -98,61 +107,73 @@ type MetadataForStep<T extends TrackStep> = T extends "capture_blocked"
       cameraReady: boolean;
       runtimeReady?: boolean;
     }
-  : T extends "results_retake_requested"
-    ? { topConfidencePct?: number; outcome?: string }
-    : T extends "fit_assessment_completed"
-      ? { outcome: string; degraded: boolean }
-      : T extends "fit_safety_screen_shown"
-        ? // The screen's version only. No answer is ever tracked — these
-          // are implant questions about the patient and their household.
-          { version: string }
-        : T extends "fit_invite_invalid"
-          ? // Why the invite was dead on /results (revoked/expired/gone).
-            { reason: string }
-          : T extends "chat_opened"
-            ? { path: string }
-            : T extends "chat_sent"
-              ? { path: string; chars: number; suggested?: boolean }
-              : T extends "chat_replied"
-                ? {
-                    path: string;
-                    meta?:
-                      | "offline"
-                      | "degraded"
-                      | "rate-limited"
-                      | "unavailable";
-                    durationMs: number;
-                  }
-                : T extends "chat_feedback"
-                  ? { path: string; kind: "up" | "down" }
-                  : T extends "fitter_lead_submit_failed"
-                    ? {
-                        // Low-cardinality bucket for graphing. "http_4xx" /
-                        // "http_5xx" come from the parsed status; "network"
-                        // covers fetch rejections (offline, DNS, connection
-                        // reset); "other" is the catch-all for anything we
-                        // couldn't categorise. Keeps the failure dashboard
-                        // queryable without us storing arbitrary error text.
-                        category: "http_4xx" | "http_5xx" | "network" | "other";
-                        // The raw status when the fetch resolved; null when
-                        // we never reached an HTTP response.
-                        httpStatus: number | null;
-                        // First 64 chars of the thrown Error.message. Used
-                        // for incident drilldown only — the categories above
-                        // are what dashboards group on. Truncated so an
-                        // arbitrarily long server-side error string can't
-                        // blow the 500-char track() payload cap.
-                        errorCode: string;
-                      }
-                    : T extends "web_vital"
+  : T extends "fitting_population_selected"
+    ? { population: "adult" | "pediatric" }
+    : T extends "fit_callback_requested"
+      ? // Whether the patient had settled on a mask first. Nothing about
+        // the mask itself — the request row carries that.
+        { hadMask: boolean }
+      : T extends "fit_request_started" | "fit_request_submitted"
+        ? { mode: "full_details" | "callback" }
+        : T extends "results_retake_requested"
+          ? { topConfidencePct?: number; outcome?: string }
+          : T extends "fit_assessment_completed"
+            ? { outcome: string; degraded: boolean }
+            : T extends "fit_safety_screen_shown"
+              ? // The screen's version only. No answer is ever tracked — these
+                // are implant questions about the patient and their household.
+                { version: string }
+              : T extends "fit_invite_invalid"
+                ? // Why the invite was dead on /results (revoked/expired/gone).
+                  { reason: string }
+                : T extends "chat_opened"
+                  ? { path: string }
+                  : T extends "chat_sent"
+                    ? { path: string; chars: number; suggested?: boolean }
+                    : T extends "chat_replied"
                       ? {
-                          name: "LCP" | "CLS" | "INP" | "FCP" | "TTFB";
-                          value: number;
-                          rating: "good" | "needs-improvement" | "poor";
-                          navigationType: string;
                           path: string;
+                          meta?:
+                            | "offline"
+                            | "degraded"
+                            | "rate-limited"
+                            | "unavailable";
+                          durationMs: number;
                         }
-                      : Record<string, unknown>;
+                      : T extends "chat_feedback"
+                        ? { path: string; kind: "up" | "down" }
+                        : T extends "fitter_lead_submit_failed"
+                          ? {
+                              // Low-cardinality bucket for graphing. "http_4xx" /
+                              // "http_5xx" come from the parsed status; "network"
+                              // covers fetch rejections (offline, DNS, connection
+                              // reset); "other" is the catch-all for anything we
+                              // couldn't categorise. Keeps the failure dashboard
+                              // queryable without us storing arbitrary error text.
+                              category:
+                                | "http_4xx"
+                                | "http_5xx"
+                                | "network"
+                                | "other";
+                              // The raw status when the fetch resolved; null when
+                              // we never reached an HTTP response.
+                              httpStatus: number | null;
+                              // First 64 chars of the thrown Error.message. Used
+                              // for incident drilldown only — the categories above
+                              // are what dashboards group on. Truncated so an
+                              // arbitrarily long server-side error string can't
+                              // blow the 500-char track() payload cap.
+                              errorCode: string;
+                            }
+                          : T extends "web_vital"
+                            ? {
+                                name: "LCP" | "CLS" | "INP" | "FCP" | "TTFB";
+                                value: number;
+                                rating: "good" | "needs-improvement" | "poor";
+                                navigationType: string;
+                                path: string;
+                              }
+                            : Record<string, unknown>;
 
 export function track<T extends TrackStep>(
   step: T,

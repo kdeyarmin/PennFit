@@ -17,7 +17,7 @@ which explains _why_ this matters commercially. This one is the _how_.
 > recommendations (the cap holds), it ships a fitter that routes almost
 > everything to human review, which looks broken. Do the sign-off first.
 
-All six switches are **runtime feature flags**, flipped in
+All seven switches below are **runtime feature flags**, flipped in
 **Control Center** (`/admin/control-center`), effective within ~5 s with
 no deploy. There are no env-var gates in this subsystem.
 
@@ -174,6 +174,53 @@ distance, head position, obstruction, movement).
 Seeded **ON** and staff-only. Nothing to do. Leave it on: it is the
 downloadable PDF that makes every step above auditable.
 
+### B7. `fitter.lead_capture_only` — already ON, and the one to leave alone
+
+Seeded **ON for every tenant** (migration 0518), which is what makes the
+fitter end in a **request a person works** rather than an order the
+patient files themselves.
+
+With it ON, `/results` offers two ways out — _send my details_ and _ask
+a representative to contact me_ — and both land in
+**Fitter → Fit Requests** (`/admin/fitter-requests`) as a
+`resupply.fitter_fit_requests` row. Nothing is ordered, billed or
+shipped until somebody works that row. Insurance details on the form are
+**optional by design**: staff verify benefits either way, so a patient
+who can't find their member ID is not stuck.
+
+`POST /api/orders` (the old self-serve insurance order) **refuses** while
+this flag is on — hiding the button is not a control, and the endpoint is
+public. It fails toward ON: a flag lookup that never reached the tenant's
+row reads as enabled, in the SPA and in the route alike, because the safe
+reading of "we don't know" is that a patient may not start a claim from
+their own guess at a member ID.
+
+- **Precondition:** none. Unlike B1–B5 this is not a clinical switch.
+- **Turning it OFF** restores the patient-submitted insurance order at
+  `/order`. Only do that if you actually want patients filing their own
+  orders unreviewed.
+- **Where the requests go:** `/admin/fitter-requests`, gated on
+  `conversations.manage` — the same CSR scope as Insurance Leads. The
+  matching prospect row in **Fitter Prospects** is stamped
+  `contact_requested_at` so the funnel view shows who raised their hand.
+
+### B8. The adult-or-child question — not a flag
+
+The questionnaire now opens with **"Who is this fitting for?"** on both
+question sets, and the answer is a **service line**, not an age. There is
+no toggle: it selects the measurement plausibility window, the tier-1
+service-line filter, and the `population` column on the stored fit
+session, all of which silently default to _adult_ when unset.
+
+A **pediatric** session is fitted from the DB catalog's pediatric models
+(`resmed-pixi`, `philips-wisp-pediatric`, `sleepnet-minime-2`,
+`circadiance-sleepweaver-advance-pediatric`), and adult-only interfaces
+are excluded outright. On the **legacy** `/api/recommend` path — a tenant
+with B1 off — the built-in catalog carries no pediatric interfaces and no
+pediatric size bands, so a child ranks nothing and the page says so
+plainly and offers the callback, instead of sending a parent back to the
+camera for a photo that was never the problem.
+
 ---
 
 ## C. The re-fit campaign is gated twice — flag alone does nothing
@@ -197,6 +244,61 @@ confirm the deploy, then flip the flag.
 - **Check:** after a nightly run (19:20 UTC), look for a
   `refit_campaign.tick` log line with a non-zero `sent`.
 - **Rollback:** flip the flag OFF; sending stops within ~5s, no deploy needed.
+
+---
+
+## C2. Dropping a manufacturer you no longer carry
+
+**Where:** `/admin/fitter/formulary` → **Manufacturers**.
+**Who:** `formulary.manage`.
+**Takes effect:** within ~60 s (the fitting-context cache TTL); no deploy,
+no flag.
+
+When you stop carrying a line — on price, on a contract change, on
+anything — flip that manufacturer to **Hidden**. Their masks then
+disappear from:
+
+- the clinical fitter (`/api/fit/assess`) and its catalog browse,
+- the legacy recommendation engine (so it survives a `B1` rollback),
+- `/masks`, the storefront's mask browse page,
+- the storefront assistant — both its catalog tools _and_ the mask list
+  in its system prompt,
+- the shop's product grid and search, for products whose Stripe
+  `metadata.manufacturer` names that brand.
+
+**Hidden is not the same as "Do not dispense."** The distinction is the
+whole reason both exist:
+
+|                              | Where it lives      | What the patient sees                                               | What a clinician sees                                                          |
+| ---------------------------- | ------------------- | ------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| **Hidden**                   | Manufacturers panel | Nothing. It is gone.                                                | Nothing in the result; the withheld slugs are in the fit session's provenance. |
+| **Do not dispense** (`deny`) | Add-a-rule form     | Ranked last, flagged "not part of your provider's usual selection". | The mask, still there, when the clinical tiers leave nothing else.             |
+
+Use `deny` when you still _can_ dispense it and would rather not — it
+keeps the clinical safety net. Use **Hidden** when you genuinely cannot,
+because showing a patient a mask you can't order sets up a conversation
+somebody then has to walk back.
+
+Notes:
+
+- **The switch refuses to starve a patient.** Hiding a brand that would
+  leave any synthetic profile with no dispensable mask returns
+  `formulary_would_exclude_all` and saves nothing. Add the replacement
+  line to the catalog first (step A), then hide the old one.
+- **Keeping one model of a dropped line** is a rule, not a toggle: hide
+  the manufacturer, then add an **Allow** rule targeting that one mask
+  model. Target specificity does the rest. The panel then shows the brand
+  as shown-with-_n_-hidden rather than hidden.
+- **Scoped exclusions stay yours.** If a brand is hidden by a rule scoped
+  to one location or payer, the toggle reports it but will not remove it
+  — edit that rule in the rule list instead.
+- **A database hiccup fails open.** The catalog degrades to the built-in
+  fallback with an open formulary, so a hidden brand can reappear for the
+  duration. That is the storefront's standing service-boot trade (a
+  merchandising slip beats an outage), not a bug to chase.
+- **Check:** `/admin/fitter/formulary` → **Test a scenario**. Denied masks
+  are now labelled `Hidden` or `Demoted` per face, with counts in the
+  header badges.
 
 ---
 

@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import healthRouter from "./health.js";
 import companyInfoRouter from "./company-info.js";
 import platformPricingRouter from "./platform-pricing.js";
+import platformMaskCatalogRouter from "./platform-mask-catalog.js";
 import storefrontBrandingRouter from "./storefront-branding.js";
 import recommendRouter from "./recommend.js";
 import fitAssessRouter from "./fit-assess.js";
@@ -35,6 +36,11 @@ router.use(companyInfoRouter);
 // super-admin edits, so a price change reaches the marketing page with no
 // redeploy. Never exposes Stripe ids or tenant data.
 router.use(platformPricingRouter);
+// /api/platform/mask-catalog — PUBLIC mask-catalog coverage stats
+// (per-manufacturer model counts) for the platform marketing site.
+// Counts PLATFORM rows only (`org_id IS NULL`); a tenant's private
+// formulary additions are never included in a public figure.
+router.use(platformMaskCatalogRouter);
 // /api/storefront-branding — public, host-resolved per-tenant brand
 // (storefront name, tagline, logo). Drives the storefront's header/hero
 // so a tenant on a verified custom domain sees their own identity.

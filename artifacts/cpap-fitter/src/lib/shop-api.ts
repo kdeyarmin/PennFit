@@ -1011,6 +1011,17 @@ export interface ResolveFitterInviteResult {
   fitProfileV2?: boolean;
   /** True when this tenant runs the guided multi-angle capture. */
   multiframeCapture?: boolean;
+  /**
+   * True when this tenant ends the fitter with a REQUEST a person works
+   * rather than an order the patient files (`fitter.lead_capture_only`).
+   *
+   * Read with `!== false`, never `Boolean(...)`: an older server, a
+   * degraded flag lookup, or a malformed body all omit the field, and
+   * the safe reading of "we don't know" here is that the self-serve
+   * order form stays hidden. Only an explicit `false` — a tenant that
+   * deliberately turned the flag off — restores it.
+   */
+  leadCaptureOnly?: boolean;
 }
 
 export async function resolveFitterInvite(

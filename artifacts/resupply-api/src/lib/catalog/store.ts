@@ -1,7 +1,7 @@
 // Product catalog reads + writes.
 //
 // The catalog moved out of Stripe when patient card payments were retired
-// (migration 0516). Everything here goes through the ORG-SCOPED facade, so
+// (migration 0520). Everything here goes through the ORG-SCOPED facade, so
 // a tenant only ever sees its own SKUs and inserts carry `org_id`
 // automatically.
 //

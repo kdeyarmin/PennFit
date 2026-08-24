@@ -2,7 +2,7 @@
 //
 // The catalog used to be the Stripe Products list, with on-hand living in
 // each product's metadata. Patients are insurance-only now, so both moved
-// to Postgres (migration 0516) and this is the surface that manages them.
+// to Postgres (migration 0520) and this is the surface that manages them.
 //
 // Two things staff do here, and the page is arranged around them:
 //   1. "What's running out?" — the low-stock filter, front and centre.

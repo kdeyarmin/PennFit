@@ -66,6 +66,11 @@ const FITTER = [
   "fitter.clinical_assessment",
   "fitter.magnet_screening",
   "fitter.confidence_gating",
+  // The fitter ends in a request a person works, not an order the
+  // patient files. Every plan that includes the fitter gets it: a new
+  // tenant should not start out letting patients submit their own
+  // insurance orders, and a tenant that wants that can turn it off.
+  "fitter.lead_capture_only",
 ] as const;
 
 /** Resupply reminders — the Launch-tier core. */

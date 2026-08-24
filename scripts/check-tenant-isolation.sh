@@ -123,6 +123,26 @@ EXCLUDES=(
   # requireAdmin (reads auth.users to attach req.orgId before any tenant
   # context exists); the unscoped call is confined to that one bootstrap step.
   --glob '!**/lib/billing/patient-payment.ts'
+  # The public mask-catalog coverage endpoint reads the PLATFORM rows of
+  # resupply.mask_models — the Mask Intelligence Catalog is platform
+  # reference data with a NULLABLE org_id, following the same pattern as
+  # resupply.hcpcs_codes (migration 0481's header says so explicitly): NULL
+  # is a shared row every tenant sees, and the route filters
+  # `org_id IS NULL` so a tenant's private formulary additions are the one
+  # thing it can never count. It is an anonymous marketing endpoint on
+  # cmbreathe.com with no tenant context at all — there is no org to scope
+  # to, and getOrgScopedClient's facade would HIDE every shared row, which
+  # is the exact inverse of what this route needs. Same reviewed
+  # global-table rationale as the platform-outreach and newsletter entries
+  # above.
+  #
+  # BACKSTOP: because this exemption is file-scoped, it also covers reads
+  # nobody has written yet. The `tenancy — EVERY read is platform-scoped`
+  # block in platform-mask-catalog.test.ts stands in for the guard: it
+  # asserts that every query the route issues carries its platform filter
+  # (and that no other table is touched at all), so an unscoped read added
+  # here later fails the suite even though this file is allowlisted.
+  --glob '!**/routes/storefront/platform-mask-catalog.ts'
 )
 
 # Match a CALL (open paren) so bare `import { getSupabaseServiceRoleClient }`

@@ -24,6 +24,7 @@ import {
 } from "../../lib/fitter-invite-token";
 import {
   ADULT_PLAUSIBILITY_BOUNDS,
+  PEDIATRIC_PLAUSIBILITY_BOUNDS,
   PLAUSIBILITY_FIELDS,
 } from "../../lib/fitting/index";
 
@@ -271,5 +272,121 @@ describe("POST /recommend — plausibility guard", () => {
     });
     expect(res.status).toBe(400);
     expect(res.body.details).toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Adult or child — the service line the fitting runs on
+// ---------------------------------------------------------------------------
+
+describe("POST /recommend — population", () => {
+  it("echoes 'adult' when the field is omitted (back-compat)", async () => {
+    // A client that predates the adult-or-child question sends nothing.
+    // The route has always assumed an adult, and that is also the only
+    // default that fails safe against this catalog's adult-only bands.
+    const res = await postRecommend({
+      measurements: VALID_MEASUREMENTS,
+      answers: VALID_ANSWERS,
+    });
+    expect(res.status).toBe(200);
+    expect(res.body.population).toBe("adult");
+    expect(res.body.topRecommendations.length).toBeGreaterThan(0);
+  });
+
+  it("ranks nothing for a pediatric session, and says so", async () => {
+    // Not a failure: the catalog carries no pediatric interfaces. The
+    // SPA reads the echoed population to tell this apart from an adult
+    // whose measurements simply didn't rank, and refers the patient to
+    // the DME instead of sending them back to the camera.
+    const res = await postRecommend({
+      measurements: VALID_MEASUREMENTS,
+      answers: VALID_ANSWERS,
+      population: "pediatric",
+    });
+    expect(res.status).toBe(200);
+    expect(res.body.population).toBe("pediatric");
+    expect(res.body.topRecommendations).toEqual([]);
+    expect(res.body.alternatives).toEqual([]);
+  });
+
+  it("measures a pediatric session against the PEDIATRIC window", async () => {
+    // A genuinely child-sized face: every dimension sits just above the
+    // pediatric FLOOR and below the adult one. (The two windows share a
+    // ceiling by construction — an adolescent has adult dimensions — so
+    // only the floor can tell them apart.)
+    const childFace = Object.fromEntries(
+      PLAUSIBILITY_FIELDS.map((f) => {
+        const [pediatricMin] = PEDIATRIC_PLAUSIBILITY_BOUNDS[f];
+        const [adultMin] = ADULT_PLAUSIBILITY_BOUNDS[f];
+        expect(pediatricMin).toBeLessThan(adultMin);
+        return [f, pediatricMin + 1];
+      }),
+    );
+    const measurements = { ...childFace, calibrationMethod: "iris" as const };
+
+    // As a CHILD the numbers are plausible, so the request reaches the
+    // engine — which then declines on service line, and the SPA can say
+    // "children are fitted in person" instead of blaming the photo.
+    const asChild = await postRecommend({
+      measurements,
+      answers: VALID_ANSWERS,
+      population: "pediatric",
+    });
+    expect(asChild.status).toBe(200);
+    expect(asChild.body.population).toBe("pediatric");
+    expect(asChild.body.topRecommendations).toEqual([]);
+
+    // The same face claimed as an ADULT is still implausible, and still
+    // rejected — widening the window is scoped to the stated service
+    // line, not applied to everyone.
+    const asAdult = await postRecommend({
+      measurements,
+      answers: VALID_ANSWERS,
+      population: "adult",
+    });
+    expect(asAdult.status).toBe(400);
+  });
+
+  it("rejects a payload whose population is not a known service line", async () => {
+    const res = await postRecommend({
+      measurements: VALID_MEASUREMENTS,
+      answers: VALID_ANSWERS,
+      population: "teenager",
+    });
+    expect(res.status).toBe(400);
+  });
+});
+
+// ── Rate limiting ────────────────────────────────────────────────────
+//
+// The mask-scoring limiter used to be mounted app-level
+// (`app.use("/api/recommend", …)` in app.ts). That capped the route, but
+// it was invisible both to a reader of recommend.ts and to CodeQL's
+// js/missing-rate-limiting query, which only recognises a limiter at the
+// handler's own registration — so an authorization-performing route read
+// as unlimited. It now sits on the route itself.
+//
+// These tests mount the ROUTER alone, exactly as the app does, so a
+// regression that moved the limiter back out would fail here.
+
+describe("rate limiting", () => {
+  it("applies the shared mask-scoring limiter at the route", async () => {
+    const res = await postRecommend({
+      measurements: VALID_MEASUREMENTS,
+      answers: VALID_ANSWERS,
+    });
+    // draft-7 standard headers — present only if the limiter actually ran.
+    expect(res.headers["ratelimit"]).toBeDefined();
+    expect(res.headers["ratelimit-policy"]).toBeDefined();
+  });
+
+  it("runs the limiter BEFORE the invite gate, so an unauthorized flood is capped too", async () => {
+    // The limiter has to sit ahead of the authorization check or a
+    // caller with no token at all could hammer the route for free.
+    const res = await request(makeApp())
+      .post("/recommend")
+      .send({ measurements: VALID_MEASUREMENTS, answers: VALID_ANSWERS });
+    expect(res.status).toBe(403);
+    expect(res.headers["ratelimit"]).toBeDefined();
   });
 });

@@ -1144,7 +1144,7 @@ async function doStartWorker(): Promise<void> {
   );
 
   // Every 6 hours — warehouse low-stock digest. Reads the Postgres product
-  // catalog (migration 0516), dedups per-SKU via
+  // catalog (migration 0520), dedups per-SKU via
   // resupply.low_stock_alert_state, and emails the tenant's super-admins one
   // rollup per tick.
   await safeRegister(
