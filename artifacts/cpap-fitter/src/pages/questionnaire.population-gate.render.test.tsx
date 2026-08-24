@@ -34,7 +34,7 @@ const store = {
 vi.mock("@/hooks/use-fitter-store", () => ({
   useFitterStore: () => ({
     population: store.population,
-    setPopulation: (value: "adult" | "pediatric") => {
+    setPopulation: (value: "adult" | "pediatric" | null) => {
       store.population = value;
     },
     fitProfileV2: store.fitProfileV2,
@@ -48,7 +48,13 @@ vi.mock("@/hooks/use-fitter-store", () => ({
 // The v2 flow is a separate page; stub it so this file only ever
 // exercises the gate and the v1 hand-off.
 vi.mock("@/pages/questionnaire-v2", () => ({
-  QuestionnaireV2: () => <div data-testid="questionnaire-v2" />,
+  QuestionnaireV2: ({ onReopenGate }: { onReopenGate?: () => void }) => (
+    <div data-testid="questionnaire-v2">
+      <button data-testid="v2-back" onClick={() => onReopenGate?.()}>
+        back
+      </button>
+    </div>
+  ),
 }));
 
 import { Questionnaire } from "./questionnaire";
@@ -131,5 +137,53 @@ describe("questionnaire — the adult-or-child gate", () => {
     fireEvent.keyDown(window, { key: "2" });
     rerender(<Questionnaire />);
     expect(store.population).toBe("pediatric");
+  });
+});
+
+describe("questionnaire — the gate answer stays correctable", () => {
+  // A mis-tap here is not like a mis-tap on any other question: it
+  // silently decides which masks are eligible at all, and it survives a
+  // reload. Before this, the only correction was a full reset — which a
+  // patient has no reason to look for — so a parent who fat-fingered
+  // "An adult" would be shown adult masks for their child.
+  it("Back from the FIRST legacy question reopens the gate", () => {
+    const { rerender } = render(<Questionnaire />);
+    fireEvent.click(screen.getByTestId("button-population-adult"));
+    rerender(<Questionnaire />);
+    expect(screen.getByTestId("button-priorMaskExperience-none")).toBeTruthy();
+
+    // The Back control is enabled on question one now, and goes to the
+    // gate rather than nowhere.
+    const back = screen.getByLabelText("Back to who this fitting is for");
+    expect(back.hasAttribute("disabled")).toBe(false);
+    fireEvent.click(back);
+    rerender(<Questionnaire />);
+
+    expect(store.population).toBeNull();
+    expect(screen.getByTestId("button-population-adult")).toBeTruthy();
+  });
+
+  it("hands the v2 flow the same way back", () => {
+    store.fitProfileV2 = true;
+    const { rerender } = render(<Questionnaire />);
+    fireEvent.click(screen.getByTestId("button-population-adult"));
+    rerender(<Questionnaire />);
+    fireEvent.click(screen.getByTestId("v2-back"));
+    rerender(<Questionnaire />);
+    expect(store.population).toBeNull();
+    expect(screen.getByTestId("button-population-adult")).toBeTruthy();
+  });
+
+  it("shows the previous choice when the gate is reopened", () => {
+    // Coming back to a blank gate would make the patient wonder whether
+    // their first answer registered at all.
+    const { rerender } = render(<Questionnaire />);
+    fireEvent.click(screen.getByTestId("button-population-pediatric"));
+    rerender(<Questionnaire />);
+    fireEvent.click(screen.getByLabelText("Back to who this fitting is for"));
+    rerender(<Questionnaire />);
+    // Re-answering is what the screen is for; the tiles are live again.
+    fireEvent.click(screen.getByTestId("button-population-adult"));
+    expect(store.population).toBe("adult");
   });
 });

@@ -692,6 +692,26 @@ export function AdminFitterLeadsPage() {
                           {r.email}
                         </span>
                       </div>
+                      {/* Stated interest, not inferred: this prospect
+                          finished a fitting and asked to be contacted
+                          (mig 0516). The full request — contact details,
+                          any insurance, the mask they saw — is in
+                          Fitter > Fit Requests; this badge is why they
+                          sort to the top of this queue. */}
+                      {r.contactRequestedAt && (
+                        <a
+                          href="/admin/fitter-requests"
+                          className="inline-block mt-1 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider hover:underline"
+                          style={{
+                            backgroundColor: "#dcfce7",
+                            color: "#14532d",
+                          }}
+                          title="This prospect asked to be contacted — open the fit request queue"
+                          data-testid={`lead-contact-requested-${r.id}`}
+                        >
+                          Asked to be contacted
+                        </a>
+                      )}
                       {r.phoneE164 && (
                         <div className="text-xs text-slate-500">
                           {r.phoneE164}

@@ -41,6 +41,32 @@ vi.mock("../../lib/storefront/signed-link-org", () => ({
   resolveOrgIdForSignedRecord: (...args: unknown[]) => orgResolveMock(...args),
 }));
 
+// The STATEFUL invite check. `db.invite` is what the fitter_invites read
+// returns — set it to a revoked or expired row to exercise those
+// branches, or make the read fail to exercise the retryable one.
+const db = vi.hoisted(() => ({
+  invite: {
+    status: "opened",
+    expires_at: null as string | null,
+  } as Record<string, unknown> | null,
+  readFails: false,
+}));
+vi.mock("@workspace/resupply-db", () => ({
+  getOrgScopedClient: () => ({
+    from: () => {
+      const chain: Record<string, unknown> = {};
+      for (const m of ["select", "eq", "limit", "order"]) {
+        chain[m] = () => chain;
+      }
+      chain.maybeSingle = async () =>
+        db.readFails
+          ? { data: null, error: { message: "db unreachable" } }
+          : { data: db.invite, error: null };
+      return chain;
+    },
+  }),
+}));
+
 import fitterRequestRouter from "./fitter-request";
 import { signFitterInviteToken } from "../../lib/fitter-invite-token";
 
@@ -86,6 +112,22 @@ function post(body: object, token = signFitterInviteToken(INVITE_ID)) {
     .send(body);
 }
 
+/**
+ * Post under a FRESH invite id.
+ *
+ * The route's rate limiter is keyed per invite and its bucket is
+ * module-level, so it persists across tests in this file. Reusing one id
+ * everywhere means later tests 429 on the limiter rather than exercising
+ * what they are about — a fresh id per case keeps each in its own bucket.
+ * The org resolver is mocked, so any well-formed uuid resolves the same.
+ */
+let inviteSeq = 0;
+function postFreshInvite(body: object) {
+  inviteSeq += 1;
+  const id = `44444444-4444-4444-8444-${String(inviteSeq).padStart(12, "0")}`;
+  return post(body, signFitterInviteToken(id));
+}
+
 beforeEach(() => {
   recordMock.mockReset();
   recordMock.mockResolvedValue({ id: "fit_request_1" });
@@ -97,6 +139,8 @@ beforeEach(() => {
   });
   orgResolveMock.mockReset();
   orgResolveMock.mockResolvedValue(SEED_ORG);
+  db.invite = { status: "opened", expires_at: null };
+  db.readFails = false;
 });
 
 describe("POST /shop/fitter-requests — invitation gate", () => {
@@ -225,5 +269,59 @@ describe("POST /shop/fitter-requests — failure handling", () => {
     expect(res.body).toEqual({ ok: true });
     expect(recordMock).not.toHaveBeenCalled();
     expect(emailMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("POST /shop/fitter-requests — the invite must still STAND", () => {
+  // The signed token stays cryptographically valid for its whole
+  // lifetime, so the HMAC alone cannot see a revoke. This endpoint
+  // persists PHI and emails staff, so it has to load the row — the same
+  // reasoning /api/fit/assess documents for itself.
+  it("refuses a REVOKED invite before writing or emailing anything", async () => {
+    db.invite = { status: "revoked", expires_at: null };
+    const res = await postFreshInvite(FULL_DETAILS);
+    expect(res.status).toBe(403);
+    expect(res.body.error).toBe("invite_invalid");
+    expect(recordMock).not.toHaveBeenCalled();
+    expect(emailMock).not.toHaveBeenCalled();
+  });
+
+  it("refuses an EXPIRED invite", async () => {
+    db.invite = {
+      status: "opened",
+      expires_at: new Date(Date.now() - 60_000).toISOString(),
+    };
+    const res = await postFreshInvite(FULL_DETAILS);
+    expect(res.status).toBe(403);
+    expect(recordMock).not.toHaveBeenCalled();
+  });
+
+  it("refuses an invite whose row is gone", async () => {
+    db.invite = null;
+    const res = await postFreshInvite(FULL_DETAILS);
+    expect(res.status).toBe(403);
+    expect(recordMock).not.toHaveBeenCalled();
+  });
+
+  it("treats a failed LOOKUP as retryable, not as a dead link", async () => {
+    // The patient has just typed a form. A DB blip must not tell them
+    // their fitting link is dead — that is a permanent-sounding dead end
+    // for a transient fault.
+    db.readFails = true;
+    const res = await postFreshInvite(FULL_DETAILS);
+    expect(res.status).toBe(503);
+    expect(res.body.error).toBe("invite_lookup_unavailable");
+    expect(res.body.message).toMatch(/try again/i);
+    expect(recordMock).not.toHaveBeenCalled();
+  });
+
+  it("accepts a live invite", async () => {
+    db.invite = {
+      status: "opened",
+      expires_at: new Date(Date.now() + 86_400_000).toISOString(),
+    };
+    const res = await postFreshInvite(FULL_DETAILS);
+    expect(res.status).toBe(200);
+    expect(recordMock).toHaveBeenCalledTimes(1);
   });
 });

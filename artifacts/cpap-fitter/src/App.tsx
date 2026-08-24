@@ -914,7 +914,7 @@ function AccountHashRedirect({ hash }: { hash: "insights" | "orders" }) {
 }
 
 function GuardedFitRequest() {
-  const { measurements } = useFitterStore();
+  const { measurements, population } = useFitterStore();
   const invited = useFitterInviteGate();
   const consented = useFitterConsentGate();
   if (!invited) return <Redirect to="/fitter-invite" />;
@@ -928,6 +928,12 @@ function GuardedFitRequest() {
   // `useFitterInviteGate`, which is satisfied by demo mode without one —
   // the demo sandbox has no invite and must still walk this page.
   if (!measurements) return <Redirect to="/" replace />;
+  // Mirrors GuardedResults. Without it a session that never answered the
+  // gate — one predating this deployment, or a direct hop from /measure —
+  // reaches the form, which then serializes `population ?? "adult"`: the
+  // request row and the team email would claim an adult fitting nobody
+  // was ever asked about.
+  if (!population) return <Redirect to="/questionnaire" replace />;
   return <FitRequest />;
 }
 

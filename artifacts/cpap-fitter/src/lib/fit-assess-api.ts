@@ -94,6 +94,14 @@ export interface FitAssessment {
     degraded: boolean;
   };
   fitSessionId: string | null;
+  /**
+   * The service line the engine ACTUALLY filtered on. Normally the
+   * population the client sent, but a chart-linked invite whose date of
+   * birth disagrees is overridden server-side — the chart outranks the
+   * browser. Anything filed afterwards must use THIS value, not the
+   * store's. Optional: a server predating the field omits it.
+   */
+  population?: "adult" | "pediatric";
 }
 
 export interface SafetyScreenPrompt {

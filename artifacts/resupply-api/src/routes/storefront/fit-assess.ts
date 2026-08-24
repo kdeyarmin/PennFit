@@ -560,7 +560,17 @@ router.post("/fit/assess", assessLimiter, async (req, res) => {
     calibrationMethod: body.measurements.calibrationMethod ?? null,
   });
 
-  res.json({ ...projectAssessment(assessment), fitSessionId: sessionId });
+  res.json({
+    ...projectAssessment(assessment),
+    fitSessionId: sessionId,
+    // The EFFECTIVE service line, after the chart override above — not
+    // whatever the browser claimed. This is what the engine filtered on
+    // and what the fit session records, so anything the SPA files later
+    // (a fit request, its queue badge, the team email) has to agree with
+    // it. Without this a chart-linked pediatric fitting could be filed
+    // as an adult request, or the reverse.
+    population: profile.population,
+  });
 });
 
 /**

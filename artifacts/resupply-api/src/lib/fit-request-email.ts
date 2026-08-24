@@ -145,7 +145,12 @@ function renderNotificationHtml(
     brandName,
     brandTagline: "Mask fitting request",
     heading: `New fit request from ${payload.fullName}`,
-    preheader: `${payload.fullName} finished a mask fitting and is waiting to hear from you.`,
+    // PHI-free, exactly like the subject. `preheader` is inbox-preview
+    // text: mail clients render it in the message list and on lock
+    // screens, before anyone opens (or authenticates to) the mailbox. The
+    // patient's name belongs in the body, which is behind that auth.
+    preheader:
+      "A patient finished a mask fitting and is waiting to hear from you.",
     contentHtml: [
       paragraph(escapeHtml(lede)),
       `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border:1px solid ${BREATHE_COLORS.hairline};border-radius:8px;margin-top:8px;">${tableRows}</table>`,

@@ -43,6 +43,8 @@ import {
 } from "@workspace/resupply-telecom";
 import { logger } from "../../lib/logger.js";
 import { getFeatureFlagState } from "../../lib/feature-flags.js";
+import { verifyFitterInviteToken } from "../../lib/fitter-invite-token.js";
+import { resolveOrgIdForSignedRecord } from "../../lib/storefront/signed-link-org.js";
 import { resolveTenantSmsClientOptions } from "../../lib/messaging/tenant-telecom.js";
 import { recordOutboundMessageUsage } from "../../lib/metering/usage.js";
 import { redactDbErr } from "../../lib/redact-db-err.js";
@@ -100,10 +102,27 @@ router.post(
     // into "off" and quietly re-opened self-service ordering during a
     // flag-store blip, which is the wrong direction for a control.
     //
-    // Resolved against the HOST-resolved tenant (`req.orgId`), which
-    // `attachSignedIn` has already set; the seed org is the fallback the
-    // rest of this route uses too.
-    const flagOrgId = req.orgId ?? (await resolveSeedOrgId());
+    // Resolved against the tenant whose FITTING this is, when we can tell.
+    //
+    // `req.orgId` comes from host resolution, and a tenant without a
+    // verified custom domain serves its invite links from the platform
+    // host — where that resolves to the SEED org. Reading the seed's flag
+    // would then 409 the patients of a tenant that deliberately turned
+    // self-service ordering back on. The signed invite token names the
+    // real tenant, so prefer it; fall back to the host, then the seed org,
+    // exactly as the rest of this route does.
+    const inviteToken = req.header("x-fitter-invite-token");
+    const inviteVerification =
+      typeof inviteToken === "string"
+        ? verifyFitterInviteToken(inviteToken)
+        : null;
+    const inviteOrgId = inviteVerification?.valid
+      ? await resolveOrgIdForSignedRecord(
+          "fitter_invites",
+          inviteVerification.inviteId,
+        ).catch(() => null)
+      : null;
+    const flagOrgId = inviteOrgId ?? req.orgId ?? (await resolveSeedOrgId());
     const leadCaptureState = await getFeatureFlagState(
       "fitter.lead_capture_only",
       flagOrgId ?? undefined,

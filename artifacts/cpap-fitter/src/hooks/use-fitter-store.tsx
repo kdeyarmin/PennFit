@@ -189,7 +189,11 @@ interface FitterContextType extends FitterState {
    *  never delete a key, and pruning answers from abandoned branches is
    *  exactly a deletion. */
   replaceFitAnswers: (answers: FitAnswers) => void;
-  setPopulation: (value: Population) => void;
+  /** `null` REOPENS the adult-or-child gate. The questionnaire's first
+   *  Back does exactly that: a misclick on this one answer silently
+   *  changes which masks are eligible, so it must be correctable
+   *  without a full reset. */
+  setPopulation: (value: Population | null) => void;
   setFitSessionId: (value: string | null) => void;
   setFitProfileV2: (on: boolean) => void;
   setLeadCaptureOnly: (on: boolean) => void;
@@ -540,10 +544,11 @@ export function FitterProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const setPopulation = (value: Population) => {
+  const setPopulation = (value: Population | null) => {
     setPopulationState(value);
     try {
-      sessionStorage.setItem("fitter_population", value);
+      if (value) sessionStorage.setItem("fitter_population", value);
+      else sessionStorage.removeItem("fitter_population");
     } catch (e) {
       console.error("Failed to persist fitting population", e);
     }

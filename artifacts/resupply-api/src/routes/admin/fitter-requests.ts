@@ -64,12 +64,19 @@ const patchBody = z
     status: z
       .enum([...STATUSES] as [FitRequestStatus, ...FitRequestStatus[]])
       .optional(),
+    // `undefined` MUST survive the transform. The route decides whether
+    // to touch the column by `csrNote !== undefined`, so folding an
+    // omitted key into `null` here made every status-only PATCH — the
+    // most common mutation on this queue — silently delete the CSR's
+    // note. Only an EXPLICIT null or empty string means "clear it".
     csrNote: z
       .string()
       .trim()
       .max(2000)
       .nullish()
-      .transform((v) => (v === undefined || v === null || v === "" ? null : v)),
+      .transform((v) =>
+        v === undefined ? undefined : v === null || v === "" ? null : v,
+      ),
   })
   .strict()
   .refine((b) => b.status !== undefined || b.csrNote !== undefined, {

@@ -1032,3 +1032,49 @@ describe("POST /fit/assess — population", () => {
     expect(res.status).toBe(400);
   });
 });
+
+describe("POST /fit/assess — the response states the EFFECTIVE service line", () => {
+  it("echoes the population the engine actually filtered on", async () => {
+    db.persistOk = true;
+    const res = await post({
+      measurements: VALID_MEASUREMENTS,
+      profile: VALID_PROFILE,
+      population: "pediatric",
+    });
+    expect(res.status).toBe(200);
+    expect(res.body.population).toBe("pediatric");
+  });
+
+  it("returns the CHART's population when it overrides the browser's", async () => {
+    // The chart outranks the client: a date of birth under 18 makes the
+    // fitting pediatric no matter what the browser sent, and the SPA has
+    // to be told — otherwise the fit request it files afterwards labels a
+    // pediatric fitting as adult in the queue and the team email.
+    db.persistOk = true;
+    db.rows.patients = {
+      location_id: null,
+      date_of_birth: new Date(Date.now() - 10 * 365 * 86_400_000)
+        .toISOString()
+        .slice(0, 10),
+    };
+    db.invite = {
+      patient_id: "66666666-6666-4666-8666-666666666666",
+      status: "opened",
+      expires_at: null,
+    };
+
+    const res = await post({
+      measurements: VALID_MEASUREMENTS,
+      profile: VALID_PROFILE,
+      population: "adult",
+    });
+    expect(res.status).toBe(200);
+    expect(res.body.population).toBe("pediatric");
+    // And the stored session agrees — the response is not a separate
+    // opinion, it is what the engine used.
+    const session = db.inserts.find((i) => i.table === "fit_sessions");
+    expect((session!.payload as Record<string, unknown>).population).toBe(
+      "pediatric",
+    );
+  });
+});

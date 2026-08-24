@@ -171,8 +171,19 @@ export function Order() {
     setChosenMask,
     measurements,
     email: fitterEmail,
+    inviteToken,
   } = useFitterStore();
-  const { mutate, isPending, error } = useSubmitOrder();
+  // Carry the invite so the server resolves `fitter.lead_capture_only`
+  // against the tenant whose FITTING this is, not the host. A tenant
+  // without a verified custom domain serves its invite links from the
+  // platform host, where host-resolution lands on the seed org — whose
+  // flag is ON — and a tenant that deliberately re-enabled self-service
+  // ordering would have its own patients 409'd.
+  const { mutate, isPending, error } = useSubmitOrder(
+    inviteToken
+      ? { request: { headers: { "x-fitter-invite-token": inviteToken } } }
+      : undefined,
+  );
 
   const {
     register,

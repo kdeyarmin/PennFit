@@ -380,9 +380,24 @@ test("consented /results without measurements goes home; /order re-routes to the
   // hand the patient a form that will fail at submit. It re-routes to
   // the request form, which — unlike /order — needs no chosen mask.
   await seedMeasurements(page);
+  await seedPopulation(page);
   await page.goto("/order");
   await page.waitForURL(/\/fit-request/, { timeout: 5_000 });
   await expect(page.getByTestId("button-fit-request-submit")).toBeVisible();
+});
+
+test("/fit-request without an adult-or-child answer returns to the questionnaire", async ({
+  page,
+}) => {
+  // The same guard GuardedResults applies. Without it the form would
+  // serialize `population ?? "adult"`, so the filed request and the team
+  // email would claim an adult fitting nobody was ever asked about.
+  await seedInviteToken(page);
+  await seedConsentedEmail(page);
+  await seedMeasurements(page);
+  await page.goto("/fit-request");
+  await page.waitForURL(/\/questionnaire/, { timeout: 5_000 });
+  await expect(page.getByTestId("button-population-adult")).toBeVisible();
 });
 
 test("/results with measurements but no adult-or-child answer returns to the questionnaire", async ({

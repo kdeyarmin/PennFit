@@ -303,3 +303,38 @@ describe("results — population is sent to whichever engine answers", () => {
     expect(SRC).toContain("results-pediatric-callback");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Review follow-ups (Codex, PR #1313)
+// ---------------------------------------------------------------------------
+
+describe("results — a pediatric legacy fitting still completes its invite", () => {
+  it("treats an answered-but-empty legacy result as a finished fitting", () => {
+    // The legacy catalog is adult-only, so a pediatric session ALWAYS
+    // ranks nothing — `topPick` stays null. Gating the invite
+    // transmission on `topPick` therefore left exactly those invites at
+    // "opened" forever: the patient could file a callback request while
+    // the invite queue never learned the fitting had happened.
+    expect(SRC).toContain("legacyAnsweredEmpty");
+    expect(SRC).toContain("topPick !== null ||");
+  });
+});
+
+describe("results — the effective service line wins over the browser's", () => {
+  it("adopts the population the assessment actually filtered on", () => {
+    // A chart-linked invite whose date of birth disagrees with the tap is
+    // overridden server-side. Leaving the store on the stale value would
+    // let the fit request label the fitting the wrong way round.
+    expect(SRC).toContain("result.assessment.population");
+    expect(SRC).toContain("setPopulation(result.assessment.population)");
+  });
+});
+
+describe("results — the CTA tells the truth about where it leads", () => {
+  it("passes the lead-capture mode into both renderers", () => {
+    // With the flag OFF the same click opens the legacy self-service
+    // order form, so an unconditional "we'll speak to you before anything
+    // is ordered" would be a false promise.
+    expect(SRC).toContain("leadCaptureOnly={leadCaptureOnly}");
+  });
+});

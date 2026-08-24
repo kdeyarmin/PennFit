@@ -17,12 +17,21 @@
 //
 // GATING
 // ------
-// Invitation-only, exactly like /api/recommend and /api/fit/assess: the
-// signed `x-fitter-invite-token` proves an invite was issued, and the
-// tenant is resolved FROM that invite rather than from the request host,
-// so a request always files against the DME whose fitting produced it.
-// The check is stateless (HMAC + expiry) to match the sibling routes;
-// revocation is enforced on the stateful assess/complete endpoints.
+// Invitation-only, and gated TWICE, exactly like /api/fit/assess.
+//
+// The signed `x-fitter-invite-token` proves an invite was once issued
+// (stateless HMAC + expiry) and resolves the owning tenant, so a request
+// always files against the DME whose fitting produced it. But that
+// signature stays cryptographically valid for the token's whole lifetime
+// and says nothing about whether the invite still STANDS — so this route
+// also loads the invite row and refuses a revoked or expired one.
+//
+// /api/recommend gets away with the stateless check alone because it is
+// stateless itself: it writes nothing and sends nothing. This endpoint
+// persists PHI and emails the tenant's staff, so accepting a revoked
+// token would keep filing patient details (and firing mail) after staff
+// explicitly stopped the fitting — easily reachable from a tab left open
+// when the revoke happened.
 //
 // PHI
 // ---
@@ -34,6 +43,8 @@
 import { Router, type IRouter } from "express";
 import rateLimit, { ipKeyGenerator } from "express-rate-limit";
 import { z } from "zod";
+
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { verifyFitterInviteToken } from "../../lib/fitter-invite-token";
 import { sendFitRequestEmails } from "../../lib/fit-request-email";
@@ -149,6 +160,27 @@ router.post("/shop/fitter-requests", requestLimiter, async (req, res) => {
     return;
   }
 
+  // STATEFUL invite check — see the gating note in the header.
+  const invite = await loadInviteState(orgId, verification.inviteId);
+  if (invite === "unavailable") {
+    // A DB blip, not a dead invite. Retryable, and said so: the patient
+    // has typed a form and must not be told their link is dead.
+    res.status(503).json({
+      error: "invite_lookup_unavailable",
+      message:
+        "We couldn't send that to the team just now. Please try again in a moment.",
+    });
+    return;
+  }
+  if (!invite || invite.status === "revoked" || invite.expired) {
+    res.status(403).json({
+      error: "invite_invalid",
+      message:
+        "This fitting link is no longer active. Ask your DME company for a new one.",
+    });
+    return;
+  }
+
   const ip =
     req.ip ||
     req.socket?.remoteAddress ||
@@ -248,5 +280,40 @@ router.post("/shop/fitter-requests", requestLimiter, async (req, res) => {
     confirmationEmailed: emailed.confirmationDelivered,
   });
 });
+
+/**
+ * Load just enough of the invite to decide whether it still stands.
+ *
+ * Distinguishes "couldn't look it up" from "isn't valid": the first is
+ * retryable and must not tell a patient their link is dead, the second
+ * is a dead end. Mirrors `loadInvite` in routes/storefront/fit-assess.ts,
+ * minus the chart joins this route has no use for.
+ */
+async function loadInviteState(
+  orgId: string,
+  inviteId: string,
+): Promise<{ status: string; expired: boolean } | null | "unavailable"> {
+  try {
+    const supabase = getOrgScopedClient(orgId);
+    const { data, error } = (await supabase
+      .from("fitter_invites")
+      .select("status, expires_at")
+      .eq("id", inviteId)
+      .limit(1)
+      .maybeSingle()) as {
+      data: Record<string, unknown> | null;
+      error: { message: string } | null;
+    };
+    if (error) return "unavailable";
+    if (!data) return null;
+    const expiresAt = (data.expires_at as string | null) ?? null;
+    return {
+      status: String(data.status ?? ""),
+      expired: expiresAt !== null && Date.parse(expiresAt) < Date.now(),
+    };
+  } catch {
+    return "unavailable";
+  }
+}
 
 export default router;

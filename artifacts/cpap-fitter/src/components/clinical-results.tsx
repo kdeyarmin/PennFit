@@ -48,12 +48,20 @@ export interface ClinicalResultsProps {
   assessment: FitAssessment;
   onChoose: (candidate: FitCandidate) => void;
   onRetake: () => void;
+  /**
+   * Where `onChoose` leads, so the CTA can tell the truth. ON (default)
+   * it files a request a person works; OFF it opens the legacy
+   * self-service order form. See the same prop on
+   * MaskRecommendationCard.
+   */
+  leadCaptureOnly?: boolean;
 }
 
 export function ClinicalResults({
   assessment,
   onChoose,
   onRetake,
+  leadCaptureOnly = true,
 }: ClinicalResultsProps) {
   const primary = assessment.primary;
   if (!primary) return null;
@@ -98,6 +106,7 @@ export function ClinicalResults({
         isPrimary
         confidencePct={confidencePct}
         onChoose={() => onChoose(primary)}
+        leadCaptureOnly={leadCaptureOnly}
       />
 
       {assessment.alternatives.length > 0 ? (
@@ -118,6 +127,7 @@ export function ClinicalResults({
               isPrimary={false}
               confidencePct={scaledPct(c)}
               onChoose={() => onChoose(c)}
+              leadCaptureOnly={leadCaptureOnly}
             />
           ))}
         </div>
@@ -158,11 +168,13 @@ function CandidateCard({
   isPrimary,
   confidencePct,
   onChoose,
+  leadCaptureOnly,
 }: {
   candidate: FitCandidate;
   isPrimary: boolean;
   confidencePct: number;
   onChoose: () => void;
+  leadCaptureOnly: boolean;
 }) {
   const size = candidate.cushion ?? candidate.frame;
   return (
@@ -263,7 +275,7 @@ function CandidateCard({
           <div className="pt-1 flex flex-wrap items-center gap-2">
             <Button onClick={onChoose} data-testid="clinical-choose">
               <Send className="w-4 h-4 mr-2" />
-              Send this to my provider
+              {leadCaptureOnly ? "Send this to my provider" : "Order this mask"}
             </Button>
           </div>
         </div>

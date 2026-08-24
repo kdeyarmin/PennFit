@@ -54,10 +54,9 @@ export interface RecordFitRequestResult {
  * `/consent`, so they have no `fitter_leads` row at all. That is a normal
  * outcome, not an error, and it must not cost them their fit request.
  */
-async function linkFitterLead(
+async function findFitterLead(
   orgId: string,
   email: string,
-  nowIso: string,
 ): Promise<string | null> {
   try {
     const supabase = getOrgScopedClient(orgId);
@@ -72,25 +71,42 @@ async function linkFitterLead(
       .limit(1)
       .maybeSingle();
     if (error) throw error;
-    const leadId = data?.id ?? null;
-    if (!leadId) return null;
-
-    const { error: stampError } = await supabase
-      .from("fitter_leads")
-      .update({ contact_requested_at: nowIso })
-      .eq("id", leadId);
-    // A failed stamp costs the queue a sort hint, nothing more — the
-    // request itself is already filed, so keep the link either way.
-    if (stampError) {
-      logger.warn(
-        { err: stampError },
-        "fit-request-record: contact_requested_at stamp failed",
-      );
-    }
-    return leadId;
+    return data?.id ?? null;
   } catch (err) {
     logger.warn({ err }, "fit-request-record: lead link lookup failed");
     return null;
+  }
+}
+
+/**
+ * Mark the prospect as having raised their hand.
+ *
+ * Deliberately SEPARATE from the lookup, and called only after the
+ * request row exists. Stamping first meant a failed insert left the
+ * prospects queue claiming a patient had asked to be contacted while no
+ * actionable request existed and the patient had been told to try again
+ * — two queues disagreeing about the same person.
+ *
+ * A failed stamp costs the queue a sort hint and nothing more, so it
+ * never fails the request.
+ */
+async function stampContactRequested(
+  orgId: string,
+  leadId: string,
+  nowIso: string,
+): Promise<void> {
+  try {
+    const supabase = getOrgScopedClient(orgId);
+    const { error } = await supabase
+      .from("fitter_leads")
+      .update({ contact_requested_at: nowIso })
+      .eq("id", leadId);
+    if (error) throw error;
+  } catch (err) {
+    logger.warn(
+      { err },
+      "fit-request-record: contact_requested_at stamp failed",
+    );
   }
 }
 
@@ -98,7 +114,7 @@ export async function recordFitRequest(
   input: RecordFitRequestInput,
 ): Promise<RecordFitRequestResult> {
   const nowIso = new Date().toISOString();
-  const fitterLeadId = await linkFitterLead(input.orgId, input.email, nowIso);
+  const fitterLeadId = await findFitterLead(input.orgId, input.email);
 
   try {
     const supabase = getOrgScopedClient(input.orgId);
@@ -132,7 +148,13 @@ export async function recordFitRequest(
       .limit(1)
       .maybeSingle();
     if (error) throw error;
-    return { id: data?.id ?? null };
+    const id = data?.id ?? null;
+    // Only now — the request exists, so the prospects queue can honestly
+    // say this person raised their hand.
+    if (id && fitterLeadId) {
+      await stampContactRequested(input.orgId, fitterLeadId, nowIso);
+    }
+    return { id };
   } catch (err) {
     // Pass the Error object so pino's err.* redact rules engage.
     logger.error({ err }, "fit-request-record: insert failed");

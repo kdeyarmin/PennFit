@@ -61,6 +61,7 @@ export function Results() {
     answers,
     fitAnswers,
     population,
+    setPopulation,
     fitProfileV2,
     leadCaptureOnly,
     resetForNewFitting,
@@ -269,6 +270,18 @@ export function Results() {
         // legacy path, which records no session — and the request says
         // so rather than inventing a link.
         setFitSessionId(result.assessment.fitSessionId);
+        // Adopt the EFFECTIVE service line. For a chart-linked invite the
+        // route overrides the browser's answer from the patient's date of
+        // birth, and that override is what filtered the masks and what
+        // the fit session records. Leaving the store on the stale browser
+        // value would let the fit request, its queue badge and the team
+        // email label a pediatric fitting as adult (or the reverse).
+        if (
+          result.assessment.population &&
+          result.assessment.population !== population
+        ) {
+          setPopulation(result.assessment.population);
+        }
         setSafetyScreen(null);
         setClinicalState("clinical");
         track("fit_assessment_completed", {
@@ -343,6 +356,7 @@ export function Results() {
       scanSignals,
       entryPoint,
       setFitSessionId,
+      setPopulation,
     ],
   );
 
@@ -479,8 +493,19 @@ export function Results() {
   // ones staff never saw. The server now records the clinical path
   // itself, at the moment it decides; this stays as the safety net for
   // the legacy engine and for a failed session write.
+  // "No mask" is an answer. The legacy engine ranking NOTHING for a
+  // pediatric session is a completed fitting — the catalog is adult-only,
+  // so that empty result IS the finding, and it is precisely the fitting
+  // staff most need to see. Requiring a `topPick` left those invites at
+  // "opened" forever: the patient could file a callback request while the
+  // invite queue and completion metrics never learned the fitting had
+  // happened at all.
+  const legacyAnsweredEmpty =
+    clinicalState === "legacy" && data !== undefined && data !== null;
   const fittingAnswered =
-    (clinicalState === "clinical" && assessment !== null) || topPick !== null;
+    (clinicalState === "clinical" && assessment !== null) ||
+    topPick !== null ||
+    legacyAnsweredEmpty;
   const hasTransmittedInvite = useRef(false);
   useEffect(() => {
     if (hasTransmittedInvite.current) return;
@@ -719,6 +744,7 @@ export function Results() {
         </div>
         <ClinicalResults
           assessment={assessment}
+          leadCaptureOnly={leadCaptureOnly}
           onChoose={(c) =>
             handleChooseMask({
               maskId: c.maskSlug,
@@ -1050,6 +1076,7 @@ export function Results() {
             mask={mask}
             details={catalogById.get(mask.maskId)}
             isTopPick={idx === 0}
+            leadCaptureOnly={leadCaptureOnly}
             // The legacy engine names a size too (`recommendedSize`,
             // shown on this very card) — carry it onto the request
             // rather than dropping the field on the rename.
