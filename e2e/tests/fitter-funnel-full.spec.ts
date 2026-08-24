@@ -100,6 +100,29 @@ async function seedMeasurements(page: Page): Promise<void> {
   });
 }
 
+/**
+ * Seed the answered adult-or-child gate (the questionnaire's first
+ * screen).
+ *
+ * Part of the pre-/results flow state, not decoration: /results refuses
+ * to render without it and sends the patient back to the questionnaire,
+ * because every engine reads an unset population as "adult" and a
+ * seeded state that skipped the question would be silently asserting an
+ * answer the patient never gave.
+ */
+async function seedPopulation(
+  page: Page,
+  population: "adult" | "pediatric" = "adult",
+): Promise<void> {
+  await page.addInitScript((value) => {
+    try {
+      sessionStorage.setItem("fitter_population", value);
+    } catch {
+      /* ignore */
+    }
+  }, population);
+}
+
 /** Minimal legacy /api/recommend payload in the shape the results page
  * renders (mirrors the demo fixture's MaskRecommendation fields). */
 const LEGACY_RECOMMENDATION = {
@@ -138,10 +161,10 @@ async function completeConsent(page: Page): Promise<void> {
 }
 
 // ────────────────────────────────────────────────────────────────────
-// 1. The complete funnel, demo mode: consent → placed order.
+// 1. The complete funnel, demo mode: consent → filed fit request.
 // ────────────────────────────────────────────────────────────────────
 
-test("demo mode: entire fitter funnel from consent to placed order", async ({
+test("demo mode: entire fitter funnel from consent to filed fit request", async ({
   page,
 }) => {
   const pageErrors: string[] = [];
@@ -170,41 +193,75 @@ test("demo mode: entire fitter funnel from consent to placed order", async ({
   ).toBeVisible({ timeout: 10_000 });
   await expect(page.getByTestId("error-boundary-fallback")).toBeHidden();
 
-  // Choose the top mask → /order.
+  // Choose the top mask → /fit-request.
+  //
+  // NOT /order. Under `fitter.lead_capture_only` — on by default, and
+  // what the store falls back to when a flag can't be resolved — the
+  // patient no longer files their own insurance order. The fitting ends
+  // in a request a person at the DME works.
   await page.locator('[data-testid^="button-choose-"]').first().click();
-  await page.waitForURL(/\/order/, { timeout: 5_000 });
+  await page.waitForURL(/\/fit-request/, { timeout: 5_000 });
 
-  // The chosen mask carries through to the order summary.
-  await expect(page.getByTestId("button-submit-order")).toBeVisible();
+  // The chosen mask carries through to the request.
+  await expect(page.getByTestId("fit-request-mask")).toBeVisible();
 
-  // Fill the order form. Email is prefilled from the consent gate.
-  await expect(page.getByTestId("input-email")).toHaveValue("e2e@example.com");
-  await page.getByTestId("input-firstName").fill("Casey");
-  await page.getByTestId("input-lastName").fill("Example");
-  await page.getByTestId("input-dob").fill("1970-01-15");
-  await page.getByTestId("input-phone").fill("5551234567");
-  await page.getByTestId("input-street1").fill("123 Main St");
-  await page.getByTestId("input-city").fill("Philadelphia");
-  // Selecting "PA" by clicking inside the open dropdown is unstable
-  // under headless Chromium: Radix's item-aligned popper keeps options
-  // low in the list outside the clickable viewport (it scrolls via
-  // hover buttons, and re-clamps programmatic scrolls), so the click
-  // retries forever. Use Radix's CLOSED-trigger typeahead instead —
-  // printable keys on the focused trigger select the matching option
-  // directly, no popper geometry involved.
-  const stateTrigger = page.getByTestId("select-state");
-  await stateTrigger.focus();
-  await page.keyboard.type("PA", { delay: 80 });
-  await expect(stateTrigger).toContainText("PA");
-  await page.getByTestId("input-zip").fill("19104");
-  await page.getByTestId("input-insurance-provider").fill("Test Insurance");
-  await page.getByTestId("input-member-id").fill("MEM-12345");
+  // Fill the request. Email is prefilled from the consent gate, and —
+  // the point of the change — insurance is left entirely blank, because
+  // staff verify benefits either way.
+  await expect(page.getByTestId("input-fit-request-email")).toHaveValue(
+    "e2e@example.com",
+  );
+  await page.getByTestId("input-fit-request-name").fill("Casey Example");
+  await page.getByTestId("input-fit-request-phone").fill("5551234567");
 
-  await page.getByTestId("button-submit-order").click();
+  await page.getByTestId("button-fit-request-submit").click();
 
-  // Demo /api/orders answers with a confirmation → /order-success.
-  await page.waitForURL(/\/order-success/, { timeout: 10_000 });
-  await expect(page.getByTestId("order-success-track-link")).toBeVisible({
+  // The confirmation is in place, and deliberately carries NO order
+  // number: nothing has been ordered.
+  await expect(page.getByText(/We have your request/i)).toBeVisible({
+    timeout: 10_000,
+  });
+  await expect(page.getByText(/Nothing has been ordered/i)).toBeVisible();
+
+  expect(pageErrors).toEqual([]);
+});
+
+// ────────────────────────────────────────────────────────────────────
+// 1b. The other way out of /results: ask for a call, no mask chosen.
+// ────────────────────────────────────────────────────────────────────
+
+test("demo mode: a patient can ask for a call without choosing a mask", async ({
+  page,
+}) => {
+  const pageErrors: string[] = [];
+  page.on("pageerror", (err) => pageErrors.push(`${err.name}: ${err.message}`));
+
+  const intercept: InterceptState = { moduleIntercepted: false };
+  await enableDemoMode(page);
+  await mockCameraAndMediaPipe(page, intercept);
+  await completeConsent(page);
+
+  const advanced = await captureToQuestionnaire(page, intercept);
+  test.skip(
+    !advanced,
+    "Requires the Vite dev server: @mediapipe/tasks-vision is bundled in " +
+      "this build so the module stub cannot take effect.",
+  );
+  await questionnaireToResults(page);
+
+  // The callback panel sits under the cards and needs no selection —
+  // the patient who wants a person is usually the one who could not
+  // choose between them.
+  await page.getByTestId("results-request-callback").click();
+  await page.waitForURL(/\/fit-request\?mode=callback/, { timeout: 5_000 });
+
+  // Callback mode asks for contact details only.
+  await expect(page.getByTestId("input-fit-request-carrier")).toHaveCount(0);
+  await page.getByTestId("input-fit-request-name").fill("Casey Example");
+  await page.getByTestId("input-fit-request-phone").fill("5551234567");
+  await page.getByTestId("button-fit-request-submit").click();
+
+  await expect(page.getByText(/We have your request/i)).toBeVisible({
     timeout: 10_000,
   });
 
@@ -233,6 +290,16 @@ test("refresh on /questionnaire resumes; /measure with saved measurements fast-f
   await expect(page.locator('[role="radio"]').first()).toBeVisible({
     timeout: 5_000,
   });
+
+  // The adult-or-child answer is rehydrated too. Re-asking it after a
+  // refresh would not merely annoy — every engine reads an unset
+  // population as "adult", so a gate that forgets is a gate that can
+  // silently switch a child's fitting onto the adult service line.
+  await page.getByTestId("button-population-adult").click();
+  await expect(page.getByTestId("button-population-adult")).toHaveCount(0);
+  await page.reload();
+  await expect(page).toHaveURL(/\/questionnaire/);
+  await expect(page.getByTestId("button-population-adult")).toHaveCount(0);
 
   // Navigating to /measure with measurements already extracted (the
   // captured image is memory-only and gone after any refresh) must
@@ -297,7 +364,7 @@ test("a prefilled invite email is not consent — /capture still bounces to /con
   await page.waitForURL(/\/consent/, { timeout: 5_000 });
 });
 
-test("consented /results without measurements goes home; /order without a mask returns to /results", async ({
+test("consented /results without measurements goes home; /order re-routes to the request form", async ({
   page,
 }) => {
   await seedInviteToken(page);
@@ -308,10 +375,44 @@ test("consented /results without measurements goes home; /order without a mask r
     { timeout: 5_000 },
   );
 
-  // With measurements but no chosen mask, /order re-routes to /results.
+  // /order is a dead end under `fitter.lead_capture_only`: the API
+  // refuses the POST, so a bookmark or a back-button landing must not
+  // hand the patient a form that will fail at submit. It re-routes to
+  // the request form, which — unlike /order — needs no chosen mask.
   await seedMeasurements(page);
+  await seedPopulation(page);
   await page.goto("/order");
-  await page.waitForURL(/\/results/, { timeout: 5_000 });
+  await page.waitForURL(/\/fit-request/, { timeout: 5_000 });
+  await expect(page.getByTestId("button-fit-request-submit")).toBeVisible();
+});
+
+test("/fit-request without an adult-or-child answer returns to the questionnaire", async ({
+  page,
+}) => {
+  // The same guard GuardedResults applies. Without it the form would
+  // serialize `population ?? "adult"`, so the filed request and the team
+  // email would claim an adult fitting nobody was ever asked about.
+  await seedInviteToken(page);
+  await seedConsentedEmail(page);
+  await seedMeasurements(page);
+  await page.goto("/fit-request");
+  await page.waitForURL(/\/questionnaire/, { timeout: 5_000 });
+  await expect(page.getByTestId("button-population-adult")).toBeVisible();
+});
+
+test("/results with measurements but no adult-or-child answer returns to the questionnaire", async ({
+  page,
+}) => {
+  // Not a cosmetic guard. Every engine reads an unset population as
+  // "adult", so a deep link straight to /results would quietly fit a
+  // child against the adult service line rather than failing. Send them
+  // back to the one screen that can say otherwise.
+  await seedInviteToken(page);
+  await seedConsentedEmail(page);
+  await seedMeasurements(page);
+  await page.goto("/results");
+  await page.waitForURL(/\/questionnaire/, { timeout: 5_000 });
+  await expect(page.getByTestId("button-population-adult")).toBeVisible();
 });
 
 // ────────────────────────────────────────────────────────────────────
@@ -408,6 +509,7 @@ async function gotoResultsWithState(page: Page): Promise<void> {
   await seedInviteToken(page);
   await seedConsentedEmail(page);
   await seedMeasurements(page);
+  await seedPopulation(page);
   await page.goto("/results");
 }
 

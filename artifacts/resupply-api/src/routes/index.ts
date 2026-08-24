@@ -154,6 +154,7 @@ import shopSubsMetricsRouter from "./admin/shop-subscriptions-metrics.js";
 import insuranceLeadsAdminRouter from "./admin/insurance-leads.js";
 import fitterLeadsAdminRouter from "./admin/fitter-leads.js";
 import fitterInvitesAdminRouter from "./admin/fitter-invites.js";
+import fitterRequestsAdminRouter from "./admin/fitter-requests.js";
 import payerProfilesRouter from "./admin/payer-profiles.js";
 import officeAllySubmissionsRouter from "./admin/office-ally-submissions.js";
 import officeAllyUploadAckRouter from "./admin/office-ally-upload-ack.js";
@@ -446,6 +447,12 @@ router.use(fitterLeadsAdminRouter);
 // measurements + answers + recommendation come back via
 // /shop/fitter-invite/complete and auto-attach to a matching chart.
 router.use(fitterInvitesAdminRouter);
+// /admin/fitter-requests/* — the worklist a fitting ends in under
+// `fitter.lead_capture_only`: the patient sends their details or asks
+// for a call, and staff place the order. Distinct from Fitter Prospects
+// (the marketing funnel) and from Insurance Leads (benefit checks with
+// no fitting behind them).
+router.use(fitterRequestsAdminRouter);
 // /admin/payer-profiles/* — Pennsylvania payer catalog (migration
 // 0128). Read by every admin; write restricted to requireAdminOnly.
 // Drives 837P NM1*PR loop population on Office Ally submissions.

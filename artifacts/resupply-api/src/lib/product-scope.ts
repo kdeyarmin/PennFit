@@ -204,6 +204,7 @@ const MASK_FITTER_ALLOWED_PREFIXES: readonly string[] = [
   "/admin/agreements", // onboarding accept screen (also exempted upstream)
   "/admin/fitter-invites", // THE product: send links, review results/sizes
   "/admin/fitter-leads", // fitter funnel / prospects
+  "/admin/fitter-requests", // fittings waiting for staff to place the order
   // The clinical fitting core. These ARE the product for a fitter-only
   // tenant — the RT review queue, the downloadable fit report, the mask
   // catalog they fit against, and their own formulary.

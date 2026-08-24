@@ -17,6 +17,10 @@ export interface MaskEntry {
   modelNumber: string;
   manufacturer: string;
   type: MaskEntryType;
+  /** Which service line this interface may be dispensed on. Absent means
+   *  "adult" — the only default that fails safe, since an unmarked mask
+   *  must never reach a child. See data/maskCatalog.ts. */
+  serviceLine?: "adult" | "pediatric" | "both";
   /** Marketing-style description of the mask */
   description: string;
   fitRanges: MaskEntryFitRanges;

@@ -94,11 +94,16 @@ router.get(
     let rowsQuery = supabase
       .from("fitter_leads")
       .select(
-        "id, email, phone_e164, sms_opt_in, marketing_opt_in, source, journey_stage, recommended_mask_id, recommended_mask_name, recommended_mask_type, first_name, campaign_touch_count, last_campaign_touch_at, next_campaign_touch_at, first_order_id, first_order_placed_at, unsubscribed_at, completed_at, created_at, engagement_score, hot_lead_at, click_count, csr_contacted_at, csr_contacted_by, last_open_at, last_click_at, csr_notes, cold_skipped_at",
+        "id, email, phone_e164, sms_opt_in, marketing_opt_in, source, journey_stage, recommended_mask_id, recommended_mask_name, recommended_mask_type, first_name, campaign_touch_count, last_campaign_touch_at, next_campaign_touch_at, first_order_id, first_order_placed_at, unsubscribed_at, completed_at, created_at, engagement_score, hot_lead_at, click_count, csr_contacted_at, csr_contacted_by, last_open_at, last_click_at, csr_notes, cold_skipped_at, contact_requested_at",
       )
-      // Hot leads sort to the top when present (CSR outreach queue);
-      // otherwise most-recently-completed first; falls back to
-      // created_at for rows that never reached /results.
+      // A prospect who ASKED to be contacted outranks even a hot lead:
+      // engagement scoring infers interest, this one stated it, and there
+      // is a person waiting on a reply (mig 0518). Their full request
+      // lives in Fitter > Fit Requests; this is the funnel-side signal.
+      .order("contact_requested_at", { ascending: false, nullsFirst: false })
+      // Hot leads next (CSR outreach queue); otherwise
+      // most-recently-completed first; falls back to created_at for rows
+      // that never reached /results.
       .order("hot_lead_at", { ascending: false, nullsFirst: false })
       .order("completed_at", { ascending: false, nullsFirst: false })
       .order("created_at", { ascending: false })
@@ -250,6 +255,7 @@ router.get(
           lastClickAt: r.last_click_at,
           csrNotes: r.csr_notes,
           coldSkippedAt: r.cold_skipped_at,
+          contactRequestedAt: r.contact_requested_at,
         }),
       ),
       counts,

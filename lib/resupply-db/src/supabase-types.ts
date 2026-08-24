@@ -1305,9 +1305,59 @@ export interface Database {
           // Mig 0156 — CSR free-text notes + cold-skip marker.
           csr_notes: string | null;
           cold_skipped_at: string | null;
+          // Mig 0518 — the prospect asked the DME to contact them at the
+          // end of their fitting. Set by POST /shop/fitter-requests; the
+          // full request lives in `fitter_fit_requests`.
+          contact_requested_at: string | null;
         };
         Insert: Partial<Database["resupply"]["Tables"]["fitter_leads"]["Row"]>;
         Update: Partial<Database["resupply"]["Tables"]["fitter_leads"]["Row"]>;
+        Relationships: [];
+      };
+      // Mig 0518 — what the patient asks for at the end of a fitting,
+      // now that they no longer file their own order. Fulfilment-side
+      // and PHI-bearing; deliberately NOT the marketing `fitter_leads`
+      // table, which exists to be mailed from.
+      fitter_fit_requests: {
+        Row: {
+          id: string;
+          org_id: string;
+          request_type: "full_details" | "callback";
+          status: "new" | "contacted" | "in_progress" | "closed";
+          full_name: string;
+          email: string;
+          /** Null when the patient asked to be reached by email. */
+          phone: string | null;
+          preferred_contact_method: "phone" | "email" | "text";
+          preferred_contact_time: string | null;
+          date_of_birth: string | null;
+          insurance_carrier: string | null;
+          member_id: string | null;
+          group_number: string | null;
+          prescribing_physician: string | null;
+          notes: string | null;
+          population: "adult" | "pediatric";
+          fitter_lead_id: string | null;
+          fit_session_id: string | null;
+          recommended_mask_id: string | null;
+          recommended_mask_name: string | null;
+          recommended_mask_type: string | null;
+          recommended_mask_size: string | null;
+          csr_note: string | null;
+          contacted_at: string | null;
+          contacted_by: string | null;
+          closed_at: string | null;
+          submitter_ip: string | null;
+          user_agent: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["fitter_fit_requests"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["fitter_fit_requests"]["Row"]
+        >;
         Relationships: [];
       };
       // Mig 0243 — staff-initiated AI mask-fitter invitations.

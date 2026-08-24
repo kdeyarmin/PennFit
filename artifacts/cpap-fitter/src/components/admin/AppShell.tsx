@@ -741,6 +741,13 @@ export const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             hint: "Invite patients to the AI mask fitter + review results",
           },
           {
+            href: "/admin/fitter-requests",
+            label: "Fit Requests",
+            icon: Inbox,
+            matchPrefix: "/admin/fitter-requests",
+            hint: "Finished fittings waiting for you to place the order",
+          },
+          {
             href: "/admin/fitter-leads",
             label: "Fitter Prospects",
             icon: UsersRound,
@@ -1480,6 +1487,13 @@ export const MASK_FITTER_NAV_GROUPS: ReadonlyArray<NavGroup> = [
         hint: "Invite patients to the AI mask fitter + review the mask & size that come back",
       },
       {
+        label: "Fit Requests",
+        icon: Inbox,
+        href: "/admin/fitter-requests",
+        matchPrefix: "/admin/fitter-requests",
+        hint: "Finished fittings waiting for you to place the order",
+      },
+      {
         label: "Fitter Prospects",
         icon: UsersRound,
         href: "/admin/fitter-leads",
@@ -1591,6 +1605,7 @@ export const MASK_FITTER_NAV_GROUPS: ReadonlyArray<NavGroup> = [
  *  operational claims worklists under /admin/billing/ stay blocked. */
 export const MASK_FITTER_ALLOWED_ROUTE_PREFIXES: readonly string[] = [
   "/admin/fitter-invites",
+  "/admin/fitter-requests",
   "/admin/fitter-leads",
   // The clinical fitting core. These were already in MASK_FITTER_NAV_GROUPS
   // above and already allowed by the server, but were missing here — so the

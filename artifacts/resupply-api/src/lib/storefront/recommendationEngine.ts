@@ -22,6 +22,20 @@ import {
   type MaskType,
 } from "../../data/maskCatalog.js";
 import { resolveSizeRunBuckets } from "../size-run.js";
+import type { Population } from "../fitting/types.js";
+
+/**
+ * Service-line gate. An entry with no `serviceLine` is adult-only — see
+ * the field's doc comment in data/maskCatalog.ts for why that default
+ * is the safe one.
+ */
+export function servesPopulation(
+  mask: MaskEntry,
+  population: Population,
+): boolean {
+  const line = mask.serviceLine ?? "adult";
+  return line === "both" || line === population;
+}
 
 export interface FacialMeasurements {
   noseWidth: number;
@@ -910,6 +924,22 @@ export interface RecommendOptions {
    */
   fitAdjustments?: Record<string, number>;
   /**
+   * Which service line the fitting runs on. Defaults to `"adult"` —
+   * every caller that predates the adult-or-child question asks for an
+   * adult, and that is also the only default that fails safe here (this
+   * catalog is adult-only, so an unstated population must not be allowed
+   * to silently mean "pediatric is fine").
+   *
+   * A HARD filter, matching tier 1 of the clinical engine: a mask whose
+   * `serviceLine` is neither `"both"` nor the session's population is
+   * removed from consideration entirely rather than merely demoted. This
+   * catalog carries no pediatric interfaces, so a pediatric session ranks
+   * NOTHING here — which is the honest answer, because it also carries no
+   * pediatric size bands. The route turns that empty result into a
+   * referral rather than a shrug.
+   */
+  population?: Population;
+  /**
    * Catalog ids the tenant does not carry, from an `exclude` rule in their
    * formulary (migration 0516). Removed BEFORE scoring, not after, so the
    * top-3 diversification and the alternatives backfill draw from what is
@@ -932,11 +962,17 @@ export function recommend(
 ): RecommendationResult {
   const typeWeights = scoreAnswers(answers);
   const fitAdjustments = options.fitAdjustments ?? {};
+  const population = options.population ?? "adult";
   const hiddenMaskIds = options.hiddenMaskIds;
 
-  const dispensable = hiddenMaskIds?.size
-    ? maskCatalog.filter((m) => !hiddenMaskIds.has(m.id))
-    : maskCatalog;
+  // Both exclusions are HARD and both happen before scoring, so the top-3
+  // diversification and the alternatives backfill draw only from masks the
+  // tenant can actually dispense to this patient. One pass, two reasons:
+  // wrong service line for the session, or hidden by the tenant's formulary.
+  const dispensable = maskCatalog.filter(
+    (mask) =>
+      servesPopulation(mask, population) && !hiddenMaskIds?.has(mask.id),
+  );
 
   const scoredMasks = dispensable.map((mask) => {
     const fitScore = scoreFitMatch(mask, measurements);

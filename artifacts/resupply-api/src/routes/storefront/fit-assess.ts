@@ -237,6 +237,19 @@ const assessBodySchema = z
     measurements: measurementsSchema,
     answers: legacyAnswersSchema.optional(),
     profile: profileSchema.optional(),
+    /**
+     * Adult or child, asked at the head of the questionnaire.
+     *
+     * It also exists inside `profile`, and both carry the same value —
+     * but only the v2 client sends a `profile` block at all, and
+     * `buildProfile` stamps any profile it receives as a v2 profile
+     * (which decides the question set the fit report cites). Sending a
+     * one-field profile just to carry the population would therefore
+     * make every LEGACY-questionnaire fitting claim it answered the v2
+     * question set. Hence a top-level field: a session property,
+     * transmitted as one, on both question sets.
+     */
+    population: z.enum(["adult", "pediatric"]).optional(),
     scan: scanSchema.optional(),
     safety: safetySchema.optional(),
     entryPoint: z
@@ -306,6 +319,15 @@ router.post("/fit/assess", assessLimiter, async (req, res) => {
 
   const body = parsed.data;
   let profile = buildProfile(body.answers ?? null, body.profile ?? null);
+
+  // The explicit session field outranks whatever the profile mapping
+  // produced — `emptyProfile()` defaults to "adult" for back-compat, and
+  // that default must not survive a patient telling us otherwise. Still
+  // below the chart override applied further down: a date of birth on a
+  // linked chart beats anything the browser says.
+  if (body.population) {
+    profile = { ...profile, population: body.population };
+  }
 
   const measurements: FitMeasurements = {
     noseWidth: body.measurements.noseWidth,
@@ -539,7 +561,17 @@ router.post("/fit/assess", assessLimiter, async (req, res) => {
     calibrationMethod: body.measurements.calibrationMethod ?? null,
   });
 
-  res.json({ ...projectAssessment(assessment), fitSessionId: sessionId });
+  res.json({
+    ...projectAssessment(assessment),
+    fitSessionId: sessionId,
+    // The EFFECTIVE service line, after the chart override above — not
+    // whatever the browser claimed. This is what the engine filtered on
+    // and what the fit session records, so anything the SPA files later
+    // (a fit request, its queue badge, the team email) has to agree with
+    // it. Without this a chart-linked pediatric fitting could be filed
+    // as an adult request, or the reverse.
+    population: profile.population,
+  });
 });
 
 /**
@@ -735,6 +767,40 @@ interface InviteContext {
  * moment". `"unavailable"` routes to the retryable screen instead. Never
  * throws, so the caller still can't 500 a patient.
  */
+/**
+ * Adult or pediatric from a date of birth, by the calendar.
+ *
+ * Exported for its own test: the boundary is a real clinical switch (it
+ * selects the service line a patient is fitted on), and an off-by-a-day
+ * there is invisible in every other test.
+ */
+export function classifyPopulationFromDob(
+  dateOfBirth: string,
+  fallback: "adult" | "pediatric" | null = null,
+  now: Date = new Date(),
+): "adult" | "pediatric" | null {
+  // Date-only, parsed as UTC calendar parts so a local timezone can't
+  // shift the birthday across midnight.
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(dateOfBirth.trim());
+  if (!m) return fallback;
+  const [, y, mo, d] = m;
+  const birthYear = Number(y);
+  const birthMonth = Number(mo);
+  const birthDay = Number(d);
+  if (!birthYear || !birthMonth || !birthDay) return fallback;
+
+  const nowYear = now.getUTCFullYear();
+  const nowMonth = now.getUTCMonth() + 1;
+  const nowDay = now.getUTCDate();
+
+  let age = nowYear - birthYear;
+  // Not yet reached this year's birthday → one year younger.
+  if (nowMonth < birthMonth || (nowMonth === birthMonth && nowDay < birthDay)) {
+    age -= 1;
+  }
+  return age < 18 ? "pediatric" : "adult";
+}
+
 async function loadInvite(
   orgId: string,
   inviteId: string,
@@ -768,11 +834,17 @@ async function loadInvite(
         .limit(1)
         .maybeSingle()) as { data: Record<string, unknown> | null };
       locationId = (patient?.location_id as string | null) ?? null;
-      const dob = Date.parse(String(patient?.date_of_birth ?? ""));
-      if (Number.isFinite(dob)) {
-        const ageYears = (Date.now() - dob) / (365.25 * 86_400_000);
-        chartPopulation = ageYears < 18 ? "pediatric" : "adult";
-      }
+      // CALENDAR comparison, not elapsed-days / 365.25. The average-year
+      // divisor is short of a real 18 years by however many leap days
+      // fell inside them, so a patient on their exact 18th birthday
+      // computed to 17.9986 and was classified PEDIATRIC for the day —
+      // which now decides the plausibility window, the service-line
+      // filter, and what the fit request tells staff. "Has their 18th
+      // birthday passed" is the actual question, so ask it directly.
+      chartPopulation = classifyPopulationFromDob(
+        String(patient?.date_of_birth ?? ""),
+        chartPopulation,
+      );
 
       // insurance_coverages stores a free-text `payer_name`, not a
       // payer_profiles id, so the payer axis has to be resolved by name.

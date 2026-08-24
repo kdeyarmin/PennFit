@@ -23,7 +23,7 @@ import { z } from "zod";
 
 import { getOrgScopedClient } from "@workspace/resupply-db";
 
-import { isFeatureEnabled } from "../../lib/feature-flags";
+import { getFeatureFlagState, isFeatureEnabled } from "../../lib/feature-flags";
 import { completeInviteFromFitting } from "../../lib/fitting/complete-invite";
 import {
   type PlausibilityField,
@@ -160,10 +160,24 @@ router.get("/shop/fitter-invite/resolve", resolveLimiter, async (req, res) => {
   // /capture renders long before /results, and it is the page that has to
   // know whether to run the guided multi-angle scan or the single-frame
   // capture. Fail-soft to single-frame.
-  const [fitProfileV2, multiframeCapture] = await Promise.all([
-    isFeatureEnabled("fitter.fit_profile_v2", orgId).catch(() => false),
-    isFeatureEnabled("fitter.multiframe_capture", orgId).catch(() => false),
-  ]);
+  //
+  // `fitter.lead_capture_only` travels the same way and for the same
+  // reason — /results and /order both need it — but it resolves in the
+  // OPPOSITE direction on failure. The other two fail soft to "off"
+  // because the safe fallback there is the simpler experience; this one
+  // decides whether a patient may file their own insurance order, so a
+  // lookup that never reached the tenant's row must read as ON.
+  // `isFeatureEnabled` absorbs every failure into its own fail-closed
+  // posture (making a `.catch()` around it dead code), so this uses
+  // `getFeatureFlagState`, which reports whether the boolean is real.
+  const [fitProfileV2, multiframeCapture, leadCaptureState] = await Promise.all(
+    [
+      isFeatureEnabled("fitter.fit_profile_v2", orgId).catch(() => false),
+      isFeatureEnabled("fitter.multiframe_capture", orgId).catch(() => false),
+      getFeatureFlagState("fitter.lead_capture_only", orgId),
+    ],
+  );
+  const leadCaptureOnly = leadCaptureState.enabled || leadCaptureState.degraded;
 
   res.json({
     valid: true,
@@ -171,6 +185,7 @@ router.get("/shop/fitter-invite/resolve", resolveLimiter, async (req, res) => {
     name: inOffice ? null : invite.recipient_name,
     fitProfileV2,
     multiframeCapture,
+    leadCaptureOnly,
   });
 });
 

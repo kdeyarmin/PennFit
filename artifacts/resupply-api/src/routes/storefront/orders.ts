@@ -42,6 +42,9 @@ import {
   TwilioConfigError,
 } from "@workspace/resupply-telecom";
 import { logger } from "../../lib/logger.js";
+import { getFeatureFlagState } from "../../lib/feature-flags.js";
+import { verifyFitterInviteToken } from "../../lib/fitter-invite-token.js";
+import { resolveOrgIdForSignedRecord } from "../../lib/storefront/signed-link-org.js";
 import { resolveTenantSmsClientOptions } from "../../lib/messaging/tenant-telecom.js";
 import { recordOutboundMessageUsage } from "../../lib/metering/usage.js";
 import { redactDbErr } from "../../lib/redact-db-err.js";
@@ -85,6 +88,53 @@ router.post(
     }
 
     const order = parseResult.data;
+
+    // `fitter.lead_capture_only` — the tenant has said patients do not
+    // file their own insurance orders. The SPA already hides the form,
+    // but this endpoint is public: hiding a button is not a control, and
+    // the whole point of the flag is that a claim never starts from a
+    // patient's guess at their own member ID without a person looking at
+    // it. So refuse here too, and point the caller at the request
+    // endpoint that replaced this one.
+    //
+    // `enabled || degraded` — a lookup that never reached the tenant's
+    // row reads as ON. `isFeatureEnabled` would have absorbed the failure
+    // into "off" and quietly re-opened self-service ordering during a
+    // flag-store blip, which is the wrong direction for a control.
+    //
+    // Resolved against the tenant whose FITTING this is, when we can tell.
+    //
+    // `req.orgId` comes from host resolution, and a tenant without a
+    // verified custom domain serves its invite links from the platform
+    // host — where that resolves to the SEED org. Reading the seed's flag
+    // would then 409 the patients of a tenant that deliberately turned
+    // self-service ordering back on. The signed invite token names the
+    // real tenant, so prefer it; fall back to the host, then the seed org,
+    // exactly as the rest of this route does.
+    const inviteToken = req.header("x-fitter-invite-token");
+    const inviteVerification =
+      typeof inviteToken === "string"
+        ? verifyFitterInviteToken(inviteToken)
+        : null;
+    const inviteOrgId = inviteVerification?.valid
+      ? await resolveOrgIdForSignedRecord(
+          "fitter_invites",
+          inviteVerification.inviteId,
+        ).catch(() => null)
+      : null;
+    const flagOrgId = inviteOrgId ?? req.orgId ?? (await resolveSeedOrgId());
+    const leadCaptureState = await getFeatureFlagState(
+      "fitter.lead_capture_only",
+      flagOrgId ?? undefined,
+    );
+    if (leadCaptureState.enabled || leadCaptureState.degraded) {
+      res.status(409).json({
+        error: "self_service_ordering_disabled",
+        message:
+          "Orders are placed by our team, not from this form. Send your fitting through and we'll call you to confirm coverage and sizing before anything ships.",
+      });
+      return;
+    }
 
     // Hard requirement: never forward an order without explicit patient consent
     // to be contacted. The OpenAPI-generated zod only checks `boolean`; we

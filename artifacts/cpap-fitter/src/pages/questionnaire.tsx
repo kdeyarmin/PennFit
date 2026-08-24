@@ -9,8 +9,10 @@ import { Progress } from "@/components/ui/progress";
 import { ArrowLeft, CheckCircle2, Lightbulb } from "lucide-react";
 import type { QuestionnaireAnswers } from "@workspace/api-client-react/storefront";
 import { QuestionnaireV2 } from "@/pages/questionnaire-v2";
+import { PopulationGate } from "@/components/population-gate";
 
 const PAGE_TITLE = "A few quick questions";
+const POPULATION_PAGE_TITLE = "Who is this fitting for?";
 
 type Question = {
   id: keyof QuestionnaireAnswers;
@@ -145,12 +147,37 @@ export function Questionnaire() {
   // Tenants that enabled `fitter.fit_profile_v2` (resolved with the
   // invite and stashed in the store) get the chaptered v2 Patient Fit
   // Profile; everyone else keeps this legacy 11-question flow unchanged.
-  const { fitProfileV2 } = useFitterStore();
-  if (fitProfileV2) return <QuestionnaireV2 />;
-  return <QuestionnaireV1 />;
+  const { fitProfileV2, population, setPopulation } = useFitterStore();
+
+  // Adult or child, asked once, ahead of BOTH question sets. It gates the
+  // flow rather than sitting inside one of them because it is a property
+  // of the session (service line, plausibility window, stored fit
+  // session) rather than an answer about the patient — see
+  // components/population-gate.tsx. No mask is ranked, and no engine is
+  // called, until it is answered.
+  useDocumentTitle(population ? PAGE_TITLE : POPULATION_PAGE_TITLE);
+  if (!population) {
+    return (
+      <PopulationGate
+        value={population}
+        onSelect={(value) => {
+          setPopulation(value);
+          track("fitting_population_selected", { population: value });
+        }}
+      />
+    );
+  }
+
+  // Both flows take a way BACK to the gate. A mis-tap here silently
+  // decides which masks are eligible at all, and the value survives a
+  // reload — so without this the only correction was a full reset, which
+  // a patient has no reason to look for.
+  const reopenGate = () => setPopulation(null);
+  if (fitProfileV2) return <QuestionnaireV2 onReopenGate={reopenGate} />;
+  return <QuestionnaireV1 onReopenGate={reopenGate} />;
 }
 
-function QuestionnaireV1() {
+function QuestionnaireV1({ onReopenGate }: { onReopenGate?: () => void }) {
   useDocumentTitle(PAGE_TITLE);
   const [, setLocation] = useLocation();
   // The route-level <ProtectedRoute> in App.tsx already guarantees that
@@ -183,9 +210,14 @@ function QuestionnaireV1() {
     }
   };
 
+  // From the FIRST question, Back reopens the adult-or-child gate rather
+  // than dead-ending — see the note on `reopenGate` above.
+  const canGoBack = currentIndex > 0 || Boolean(onReopenGate);
   const handleBack = () => {
     if (currentIndex > 0) {
       setCurrentIndex((curr) => curr - 1);
+    } else {
+      onReopenGate?.();
     }
   };
 
@@ -204,7 +236,7 @@ function QuestionnaireV1() {
       if (e.metaKey || e.ctrlKey || e.altKey) return;
 
       if (e.key === "ArrowLeft" || e.key === "Backspace") {
-        if (currentIndex > 0) {
+        if (canGoBack) {
           e.preventDefault();
           handleBack();
         }
@@ -237,8 +269,12 @@ function QuestionnaireV1() {
             variant="ghost"
             size="icon"
             onClick={handleBack}
-            disabled={currentIndex === 0}
-            aria-label="Previous question"
+            disabled={!canGoBack}
+            aria-label={
+              currentIndex === 0
+                ? "Back to who this fitting is for"
+                : "Previous question"
+            }
             className="h-9 w-9 rounded-full glass-panel border-0 disabled:opacity-40"
           >
             <ArrowLeft className="h-4 w-4" />
@@ -402,7 +438,7 @@ function QuestionnaireV1() {
 
       <p className="mt-4 hidden text-center text-xs text-muted-foreground sm:block">
         Tip: press a number key (1, 2, 3…) to choose an answer
-        {currentIndex > 0 ? ", or ← to go back" : ""}.
+        {canGoBack ? ", or ← to go back" : ""}.
       </p>
     </div>
   );

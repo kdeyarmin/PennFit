@@ -243,6 +243,34 @@ expects a port distinct from the SPA (typically 3000). On Railway,
 These are non-negotiable invariants of the codebase. Treat them as
 correctness, not style:
 
+- **A patient never files their own order, and never gets a mask for the
+  wrong age.** Two invariants of the mask fitter, both added by
+  migration 0518:
+  - **The fitter ends in a REQUEST.** `fitter.lead_capture_only` is
+    seeded **ON for every tenant**: `/results` offers _send my details_
+    and _ask a representative to contact me_, both of which write a
+    `resupply.fitter_fit_requests` row that staff work at
+    `/admin/fitter-requests`. `POST /api/orders` **refuses** while the
+    flag is on — hiding the SPA button is not a control, the endpoint is
+    public, and a claim must not start from a patient's own guess at
+    their member ID. This flag fails toward **ON** (`enabled ||
+degraded`) in both the route and the SPA store: a lookup that never
+    reached the tenant's row means "we don't know", and the safe reading
+    of that is that self-service ordering stays off. Do not read it with
+    plain `isFeatureEnabled`, which absorbs every failure into "off".
+  - **Population is asked, never assumed.** The questionnaire opens with
+    an adult-or-child gate on BOTH question sets, and it has no "I'm not
+    sure" escape. The answer is a SERVICE LINE (never an age or a date
+    of birth) and it selects three things that all default to _adult_
+    when unset: the measurement plausibility window, the tier-1
+    service-line filter in `lib/fitting/tiers.ts`, and
+    `fit_sessions.population`. It travels as a TOP-LEVEL field on
+    `/api/recommend` and `/api/fit/assess` — not inside `profile`, which
+    `buildProfile` stamps as a v2 profile and would make every legacy
+    fitting claim it answered the v2 question set. The legacy
+    `data/maskCatalog.ts` is adult-only and an entry with no
+    `serviceLine` reads as `"adult"`: unmarked must never reach a child.
+
 - **No image logging anywhere in the backend.** Camera images and video
   frames never leave the browser; only numeric facial measurements are
   transmitted. Do not add log lines that include image bytes, base64,

@@ -148,6 +148,13 @@ export const FEATURE_FLAG_KEYS = [
   // Proactive re-fit outreach to patients already on service (0490).
   // Seeded OFF — unsolicited patient contact is the tenant's call.
   "fitter.refit_campaign",
+  // End the fitter with a REQUEST a person works, not an order the
+  // patient files themselves (migration 0518). The one fitter flag
+  // seeded ON, and the one that fails toward ENABLED on a degraded
+  // lookup: putting a human between a patient's guess at their member ID
+  // and a claim is the safe direction, so an unresolvable flag must not
+  // hand them the self-serve order form.
+  "fitter.lead_capture_only",
 ] as const;
 
 export type FeatureFlagKey = (typeof FEATURE_FLAG_KEYS)[number];

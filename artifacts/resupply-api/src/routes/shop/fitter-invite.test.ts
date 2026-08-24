@@ -30,10 +30,20 @@ vi.mock("../../lib/storefront/signed-link-org", () => ({
   resolveOrgIdForSignedRecord: vi.fn(async () => SEED_ORG),
 }));
 
-// Resolve reports the tenant's v2 fit-profile flag; default everything off.
-const featureFlags = vi.hoisted(() => ({ enabled: new Set<string>() }));
+// Resolve reports the tenant's capture-shaping flags; default everything
+// off. `degraded` models a lookup that never reached the tenant's row —
+// `fitter.lead_capture_only` is the one flag that must resolve to ON in
+// that case, so it is settable independently.
+const featureFlags = vi.hoisted(() => ({
+  enabled: new Set<string>(),
+  degraded: false,
+}));
 vi.mock("../../lib/feature-flags", () => ({
   isFeatureEnabled: vi.fn(async (key: string) => featureFlags.enabled.has(key)),
+  getFeatureFlagState: vi.fn(async (key: string) => ({
+    enabled: featureFlags.enabled.has(key),
+    degraded: featureFlags.degraded,
+  })),
 }));
 
 import fitterInviteRouter from "./fitter-invite";
@@ -102,6 +112,10 @@ describe("GET /shop/fitter-invite/resolve", () => {
       // default.
       fitProfileV2: false,
       multiframeCapture: false,
+      // `fitter.lead_capture_only` is NOT in `enabled` here, and is not
+      // degraded, so this is a tenant that deliberately opted out: the
+      // patient may still file their own order.
+      leadCaptureOnly: false,
     });
     // The tenant was resolved from the token's invite, not a fixed seed.
     expect(vi.mocked(resolveOrgIdForSignedRecord)).toHaveBeenCalledWith(
@@ -148,6 +162,54 @@ describe("GET /shop/fitter-invite/resolve", () => {
     expect(res.status).toBe(200);
     expect(res.body.multiframeCapture).toBe(true);
     expect(res.body.fitProfileV2).toBe(false);
+  });
+
+  it("carries leadCaptureOnly:true when the tenant has the flag on", async () => {
+    featureFlags.enabled = new Set(["fitter.lead_capture_only"]);
+    const token = signFitterInviteToken(INVITE_ID);
+    stageSupabaseResponse("fitter_invites", "select", {
+      data: {
+        id: INVITE_ID,
+        status: "opened",
+        recipient_email: "p@example.com",
+        recipient_name: "Pat Q",
+        expires_at: new Date(Date.now() + 86_400_000).toISOString(),
+      },
+    });
+    const res = await request(makeApp()).get(
+      `/resupply-api/shop/fitter-invite/resolve?t=${encodeURIComponent(token)}`,
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.leadCaptureOnly).toBe(true);
+  });
+
+  it("fails leadCaptureOnly toward ON when the flag lookup is degraded", async () => {
+    // The opposite direction from the other two flags, deliberately. A
+    // lookup that never reached the tenant's row means we do not know
+    // whether this tenant allows patient self-service ordering, and the
+    // safe reading of "we don't know" is that it does not — otherwise a
+    // flag-store blip quietly re-opens the self-serve order form.
+    featureFlags.enabled = new Set();
+    featureFlags.degraded = true;
+    const token = signFitterInviteToken(INVITE_ID);
+    stageSupabaseResponse("fitter_invites", "select", {
+      data: {
+        id: INVITE_ID,
+        status: "opened",
+        recipient_email: "p@example.com",
+        recipient_name: "Pat Q",
+        expires_at: new Date(Date.now() + 86_400_000).toISOString(),
+      },
+    });
+    const res = await request(makeApp()).get(
+      `/resupply-api/shop/fitter-invite/resolve?t=${encodeURIComponent(token)}`,
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.leadCaptureOnly).toBe(true);
+    // The capture-shaping flags keep their own fail-soft-to-OFF posture.
+    expect(res.body.fitProfileV2).toBe(false);
+    expect(res.body.multiframeCapture).toBe(false);
+    featureFlags.degraded = false;
   });
 
   it("returns valid:false for a bad signature", async () => {

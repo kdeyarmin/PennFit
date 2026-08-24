@@ -66,6 +66,7 @@ const EXCLUDED_EXACT = new Set([
   "/measure",
   "/questionnaire",
   "/results",
+  "/fit-request",
   "/order",
   "/order-success",
   // Tokenized / signed-link landings — useless (or an error) without the

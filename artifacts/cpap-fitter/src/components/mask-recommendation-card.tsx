@@ -17,6 +17,7 @@ import {
   HelpCircle,
   Info,
   Layers,
+  Send,
   ShoppingCart,
   Sparkles,
   Tag,
@@ -42,7 +43,7 @@ export function MaskRecommendationCard({
   details,
   isTopPick,
   onChoose,
-  cashPay,
+  leadCaptureOnly = true,
   measurements,
 }: {
   mask: MaskRecommendation;
@@ -61,15 +62,16 @@ export function MaskRecommendationCard({
     mouthWidth: number;
   } | null;
   /**
-   * Cash-pay path for this mask, present when it's sold in the shop
-   * and checkout is live. Renders a secondary "buy without insurance"
-   * CTA under the insurance-order button — the fitting funnel's
-   * bridge into the cash-pay shop. Omit to hide.
+   * Where `onChoose` actually leads, so the label can tell the truth.
+   *
+   * ON (the default, and the seeded state) the click files a REQUEST a
+   * person works. OFF — a tenant that deliberately re-enabled patient
+   * self-service — it opens the legacy order form, where the patient
+   * enters their own insurance and files the order themselves. Promising
+   * "we'll speak to you before anything is ordered" on that path would
+   * be false.
    */
-  cashPay?: {
-    priceLabel: string;
-    onAddToCart: () => void;
-  };
+  leadCaptureOnly?: boolean;
 }) {
   const c = useCompanyContact();
   const confidencePct = Math.round(mask.confidence * 100);
@@ -350,31 +352,32 @@ export function MaskRecommendationCard({
               className={`w-full ${isTopPick ? "btn-primary-glow" : "glass-panel"}`}
               data-testid={`button-choose-${mask.maskId}`}
             >
-              <ShoppingCart className="w-4 h-4 mr-2" />
-              Order This Mask
+              {leadCaptureOnly ? (
+                <>
+                  <Send className="w-4 h-4 mr-2" />
+                  Send this to {c.name}
+                </>
+              ) : (
+                <>
+                  <ShoppingCart className="w-4 h-4 mr-2" />
+                  Order This Mask
+                </>
+              )}
             </Button>
             <p className="text-xs text-muted-foreground text-center mt-2">
-              We'll collect your insurance and shipping info, then send your
-              order to {c.name}.
+              {leadCaptureOnly ? (
+                <>
+                  We&apos;ll pass your fitting to the {c.name} team. They
+                  confirm your coverage and sizing, and speak to you before
+                  anything is ordered.
+                </>
+              ) : (
+                <>
+                  We&apos;ll collect your insurance and shipping info, then send
+                  your order to {c.name}.
+                </>
+              )}
             </p>
-            {cashPay && (
-              <>
-                <Button
-                  onClick={cashPay.onAddToCart}
-                  size="lg"
-                  variant="ghost"
-                  className="w-full mt-3 glass-panel"
-                  data-testid={`button-cashpay-${mask.maskId}`}
-                >
-                  <ShoppingCart className="w-4 h-4 mr-2" />
-                  Buy without insurance — {cashPay.priceLabel}
-                </Button>
-                <p className="text-xs text-muted-foreground text-center mt-2">
-                  Skip the paperwork — ships from the {c.name} shop. HSA/FSA
-                  eligible.
-                </p>
-              </>
-            )}
           </div>
         </div>
       </div>

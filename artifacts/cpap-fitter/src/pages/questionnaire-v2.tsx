@@ -42,7 +42,14 @@ import {
 
 const PAGE_TITLE = "Your fit profile";
 
-export function QuestionnaireV2() {
+export function QuestionnaireV2({
+  onReopenGate,
+}: {
+  /** Reopen the adult-or-child gate from the first question. See the
+   *  note on `reopenGate` in questionnaire.tsx — a mis-tap there decides
+   *  which masks are eligible and must stay correctable. */
+  onReopenGate?: () => void;
+}) {
   useDocumentTitle(PAGE_TITLE);
   const [, setLocation] = useLocation();
   const { fitAnswers, replaceFitAnswers, updateAnswers } = useFitterStore();
@@ -93,9 +100,13 @@ export function QuestionnaireV2() {
     else setCurrentIndex(next);
   };
 
+  const canGoBack =
+    previousQuestionIndex(currentIndex, fitAnswers) !== null ||
+    Boolean(onReopenGate);
   const handleBack = () => {
     const prev = previousQuestionIndex(currentIndex, fitAnswers);
     if (prev !== null) setCurrentIndex(prev);
+    else onReopenGate?.();
   };
 
   // Keyboard navigation, mirroring the v1 flow: number keys pick the
@@ -111,7 +122,7 @@ export function QuestionnaireV2() {
       if (e.metaKey || e.ctrlKey || e.altKey) return;
 
       if (e.key === "ArrowLeft" || e.key === "Backspace") {
-        if (previousQuestionIndex(currentIndex, fitAnswers) !== null) {
+        if (canGoBack) {
           e.preventDefault();
           handleBack();
         }
@@ -161,8 +172,12 @@ export function QuestionnaireV2() {
             variant="ghost"
             size="icon"
             onClick={handleBack}
-            disabled={previousQuestionIndex(currentIndex, fitAnswers) === null}
-            aria-label="Previous question"
+            disabled={!canGoBack}
+            aria-label={
+              previousQuestionIndex(currentIndex, fitAnswers) === null
+                ? "Back to who this fitting is for"
+                : "Previous question"
+            }
             className="h-9 w-9 rounded-full glass-panel border-0 disabled:opacity-40"
           >
             <ArrowLeft className="h-4 w-4" />
