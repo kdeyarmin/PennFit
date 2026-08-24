@@ -520,7 +520,16 @@ const UNSCOPED_AXES = [
   "therapyMode",
 ] as const;
 
-/** An org-wide `exclude` on this manufacturer — what the toggle writes. */
+/**
+ * An org-wide, always-on `exclude` on this manufacturer — the exact shape
+ * the PUT below writes, and therefore the only shape it may claim to own.
+ *
+ * The effective-date check is not pedantry. A future-dated or expired rule
+ * is NOT hiding anything today, so reporting it as the switch's position
+ * would show a brand as switched-off while visibility correctly reports it
+ * shown — and worse, "Show" would delete a deliberately scheduled rule
+ * whose whole point is to fire later.
+ */
 function isPlainManufacturerExclude(
   rule: FormularyRule,
   manufacturer?: string,
@@ -528,6 +537,7 @@ function isPlainManufacturerExclude(
   if (rule.effect !== "exclude") return false;
   if (rule.targetKind !== "manufacturer") return false;
   if (!rule.targetManufacturer) return false;
+  if (rule.effectiveFrom !== null || rule.effectiveTo !== null) return false;
   if (
     manufacturer !== undefined &&
     rule.targetManufacturer.trim().toLowerCase() !==
@@ -913,6 +923,26 @@ router.post(
 );
 
 /**
+ * Cap on how many distinct rule scopes one save will simulate. Each scope
+ * costs 4 simulations (2 populations x 2 therapy modes), so this bounds a
+ * tenant with a large scoped rule set to a predictable amount of work.
+ */
+const MAX_PREFLIGHT_SCOPES = 12;
+
+/** Name the scope in a starvation message, so the operator knows WHERE. */
+function describeScopeSuffix(scope: {
+  locationId: string | null;
+  payerProfileId: string | null;
+  contractRef: string | null;
+}): string {
+  const parts: string[] = [];
+  if (scope.locationId) parts.push("at one location");
+  if (scope.payerProfileId) parts.push("for one payer");
+  if (scope.contractRef) parts.push(`under contract ${scope.contractRef}`);
+  return parts.length > 0 ? `, ${parts.join(", ")}` : "";
+}
+
+/**
  * Which synthetic patient profiles would end up with NOTHING dispensable.
  *
  * A non-empty result means the formulary (as it would stand after the
@@ -943,28 +973,79 @@ async function starvedProfiles(
     rules,
   };
 
+  // WHICH SCOPES TO CHECK
+  // --------------------
+  // Simulating only the all-null context waves through exactly the rules
+  // most able to do damage quietly: a rule scoped to one location or payer
+  // does NOT apply when those are unknown (`ruleApplies` never fires on an
+  // assumption), so it passes preflight and then strips every candidate
+  // for the real patients who DO carry that scope.
+  //
+  // The scopes worth checking are the ones some rule actually names —
+  // nothing else changes an outcome. Each rule's own tuple is the minimal
+  // context in which it can fire, so checking those plus the unscoped
+  // baseline catches every single-rule starvation. (Two rules with
+  // DIFFERENT scopes that only starve in combination would need the cross
+  // product; that is deliberately not attempted here, and the publish
+  // preflight plus the engine's own withheld outcome remain the backstop.)
+  const scopeTuples = new Map<
+    string,
+    {
+      locationId: string | null;
+      payerProfileId: string | null;
+      contractRef: string | null;
+    }
+  >();
+  scopeTuples.set("::", {
+    locationId: null,
+    payerProfileId: null,
+    contractRef: null,
+  });
+  for (const r of rules) {
+    if (
+      r.locationId === null &&
+      r.payerProfileId === null &&
+      r.contractRef === null
+    ) {
+      continue;
+    }
+    const key = `${r.locationId ?? ""}:${r.payerProfileId ?? ""}:${r.contractRef ?? ""}`;
+    if (!scopeTuples.has(key)) {
+      scopeTuples.set(key, {
+        locationId: r.locationId,
+        payerProfileId: r.payerProfileId,
+        contractRef: r.contractRef,
+      });
+    }
+    // Bounded so a tenant with a large scoped rule set can't turn one save
+    // into an unbounded fan-out of simulations.
+    if (scopeTuples.size >= MAX_PREFLIGHT_SCOPES) break;
+  }
+
   // Check both service lines: a rule scoped to `pediatric` starves only
   // pediatric fittings, and checking adults alone would wave it through.
   const starved = new Set<string>();
-  for (const population of ["adult", "pediatric"] as const) {
-    for (const therapyMode of ["pap", "niv"] as const) {
-      const result = await simulate(
-        orgId,
-        {
-          locationId: null,
-          payerProfileId: null,
-          contractRef: null,
-          population,
-          therapyMode,
-          asOf: new Date().toISOString().slice(0, 10),
-        },
-        proposed,
-      );
-      for (const p of result.panel) {
-        if (p.allowedCount === 0) {
-          starved.add(
-            `${p.label} (${population}, ${therapyMode.toUpperCase()})`,
-          );
+  const asOf = new Date().toISOString().slice(0, 10);
+  for (const scope of scopeTuples.values()) {
+    for (const population of ["adult", "pediatric"] as const) {
+      for (const therapyMode of ["pap", "niv"] as const) {
+        const result = await simulate(
+          orgId,
+          { ...scope, population, therapyMode, asOf },
+          proposed,
+        );
+        for (const p of result.panel) {
+          // `eligibleCount === 0` means the clinical tiers, not the
+          // formulary, left nothing — a PAP-only tenant has no NIV masks
+          // to dispense no matter what the formulary says, and calling
+          // that "starved" would refuse every save this tenant ever makes.
+          // Only a profile the tenant COULD serve, left with nothing by
+          // the formulary, is a configuration problem.
+          if (p.eligibleCount > 0 && p.allowedCount === 0) {
+            starved.add(
+              `${p.label} (${population}, ${therapyMode.toUpperCase()}${describeScopeSuffix(scope)})`,
+            );
+          }
         }
       }
     }
@@ -976,6 +1057,14 @@ interface SimulationResult {
   formulary: { name: string; version: number; defaultPosture: string };
   panel: Array<{
     label: string;
+    /**
+     * Masks the CLINICAL tiers leave available for this profile, before
+     * the formulary has any say. The denominator starvation has to be read
+     * against: zero here means the tenant simply carries nothing for this
+     * therapy/population, which no formulary edit can fix and which must
+     * therefore never be reported as a formulary problem.
+     */
+    eligibleCount: number;
     allowedCount: number;
     deniedCount: number;
     /**
@@ -1030,6 +1119,7 @@ async function simulate(
       hidden: boolean;
     }> = [];
 
+    let eligibleCount = 0;
     for (const mask of ctx.catalog) {
       if (mask.status === "discontinued") continue;
       if (
@@ -1038,6 +1128,12 @@ async function simulate(
       ) {
         continue;
       }
+      // Therapy compatibility is tier 2 — it runs BEFORE the formulary in
+      // the real engine, so a preflight that skips it counts PAP-only
+      // masks as available to an NIV patient and can approve hiding the
+      // last NIV-capable brand while NIV fittings quietly return nothing.
+      if (!mask.therapyModes.includes(context.therapyMode)) continue;
+      eligibleCount += 1;
       const decision = resolveFormulary(ctx.formulary, mask, null, context);
       if (decision.allowed) {
         allowedCount += 1;
@@ -1063,6 +1159,7 @@ async function simulate(
     denied.sort((a, b) => Number(b.hidden) - Number(a.hidden));
     return {
       label: face.label,
+      eligibleCount,
       allowedCount,
       deniedCount: denied.length,
       hiddenCount: denied.filter((d) => d.hidden).length,

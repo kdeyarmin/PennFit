@@ -108,6 +108,28 @@ function hiddenManufacturerNames(
   return [...dropped.values()].sort((a, b) => a.localeCompare(b));
 }
 
+/**
+ * Masks hidden individually, named for the prohibition block.
+ *
+ * Excludes anything whose whole line is already named — repeating "AirFit
+ * F20" under a heading that just said all of ResMed is gone spends prompt
+ * budget to say nothing new.
+ */
+function hiddenModelNames(
+  hiddenMaskIds: ReadonlySet<string> | undefined,
+  droppedLines: string[],
+): string[] {
+  if (!hiddenMaskIds?.size) return [];
+  const dropped = new Set(droppedLines.map((n) => n.trim().toLowerCase()));
+  const names: string[] = [];
+  for (const m of maskCatalog) {
+    if (!hiddenMaskIds.has(m.id)) continue;
+    if (dropped.has(m.manufacturer.trim().toLowerCase())) continue;
+    names.push(`${m.manufacturer} ${m.name}`);
+  }
+  return names.sort((a, b) => a.localeCompare(b));
+}
+
 function buildMaskCatalogSection(hiddenMaskIds?: ReadonlySet<string>): string {
   const groups: Record<MaskType, MaskEntry[]> = {
     fullFace: [],
@@ -143,18 +165,28 @@ function buildMaskCatalogSection(hiddenMaskIds?: ReadonlySet<string>): string {
   // honest answer for the patient — "we don't carry that, here's what we'd
   // fit you with instead" beats silence.
   const droppedLines = hiddenManufacturerNames(carried, hiddenMaskIds);
-  if (droppedLines.length > 0) {
-    sections.push(
-      [
-        `## Lines Penn Home Medical Supply no longer carries`,
-        `${droppedLines.join(", ")} — NOT carried. Do not recommend, price,`,
-        `compare, or offer to order anything from ${droppedLines.length === 1 ? "this line" : "these lines"},`,
-        `even if a patient asks for one by name and even if it appears as an`,
-        `example elsewhere in this knowledge. Say plainly that we don't carry`,
-        `it, then offer the closest mask from the catalog above. Never imply`,
-        `it can be special-ordered.`,
-      ].join("\n"),
+  // Individually hidden models get the same treatment, and for the same
+  // reason. A whole-line prohibition misses the two commonest shapes: one
+  // `mask_model` exclusion, and a hidden brand with one model rescued by a
+  // narrower allow. In both, models are gone that the model can still name
+  // from its own knowledge of the market.
+  const droppedModels = hiddenModelNames(hiddenMaskIds, droppedLines);
+  if (droppedLines.length > 0 || droppedModels.length > 0) {
+    const lines = [`## What Penn Home Medical Supply no longer carries`];
+    if (droppedLines.length > 0) {
+      lines.push(`Entire lines: ${droppedLines.join(", ")}.`);
+    }
+    if (droppedModels.length > 0) {
+      lines.push(`Individual models: ${droppedModels.join(", ")}.`);
+    }
+    lines.push(
+      `NOT carried. Do not recommend, price, compare, or offer to order any`,
+      `of the above, even if a patient asks for one by name and even if it`,
+      `appears as an example elsewhere in this knowledge. Say plainly that we`,
+      `don't carry it, then offer the closest mask from the catalog above.`,
+      `Never imply it can be special-ordered.`,
     );
+    sections.push(lines.join("\n"));
   }
   sections.push(
     `Style overview: nasal pillows sit at the nostrils (smallest contact, great for side/stomach sleepers and glasses wearers); nasal masks cover just the nose (good middle ground for nasal breathers); full-face masks cover nose and mouth (best for mouth breathers, congestion, or higher prescribed pressure); hybrid masks combine an under-nose cushion with mouth coverage and a top-of-head hose for active sleepers who breathe through the mouth.`,

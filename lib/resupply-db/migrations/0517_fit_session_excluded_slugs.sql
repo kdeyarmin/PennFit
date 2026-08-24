@@ -1,0 +1,41 @@
+-- 0517_fit_session_excluded_slugs — keep the record of what was HIDDEN.
+--
+-- Why
+-- ---
+-- 0516 gave the formulary a hard `exclude` effect: a mask the provider
+-- does not carry is dropped from the candidate pool entirely rather than
+-- demoted. `assess()` records those slugs on the assessment's provenance
+-- so a clinician can see what was withheld — but the assessment is an
+-- in-memory object. `fit_sessions` had nowhere to put it, so the record
+-- died with the HTTP response.
+--
+-- That is the one field where losing it actually costs something. A
+-- demoted mask still appears in the stored `alternatives`, so its absence
+-- from the top of the list is self-evident. A hidden mask appears
+-- NOWHERE: reading the session back a year later, there is no way to tell
+-- "the engine considered it and ranked it last" from "the provider didn't
+-- carry it" from "it never existed in the catalog". Formularies change,
+-- so the rule that hid it may not even be there to consult by then —
+-- which is exactly when a payer, an RT, or an auditor asks.
+--
+-- `formulary_rules_matched` does not cover this. It records which rules
+-- matched each mask the engine SCORED; an excluded mask never reaches
+-- scoring, and a matched rule id says nothing about whether its effect
+-- was `deny` (demote) or `exclude` (hide).
+--
+-- Nullable and additive: every existing row keeps its exact meaning, and
+-- a session written before this column existed reads back as NULL, which
+-- the report layer renders as "not recorded" rather than "nothing was
+-- hidden".
+--
+-- STAFF-ONLY. Listed in fit-report.ts's PATIENT_REDACTED_FIELDS and
+-- stripped by `redactForPatient` alongside `formularyRulesMatched`:
+-- handing a patient the list of masks their provider chose not to stock
+-- would undo the hiding it records.
+--
+-- PHI: none. Catalog slugs only — no patient data.
+--
+-- Per ADR 003 — versioned hand-authored migration.
+
+ALTER TABLE "resupply"."fit_sessions"
+  ADD COLUMN IF NOT EXISTS "formulary_excluded_slugs" jsonb;

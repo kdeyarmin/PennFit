@@ -658,6 +658,57 @@ describe("resolveCatalogVisibility", () => {
     expect(v.hiddenSlugs.size).toBe(0);
   });
 
+  it("hides a brand whose models were excluded one at a time", () => {
+    // Same intent as naming the brand, said the long way round. The admin
+    // panel already reports this brand as hidden; the shop has to agree.
+    const v = resolveCatalogVisibility(
+      formulary([
+        rule({
+          id: "m1",
+          targetKind: "mask_model",
+          targetManufacturer: null,
+          targetMaskModelId: "model-1",
+          effect: "exclude",
+        }),
+        rule({
+          id: "m3",
+          targetKind: "mask_model",
+          targetManufacturer: null,
+          targetMaskModelId: "model-3",
+          effect: "exclude",
+        }),
+      ]),
+      [MASK, SECOND_ACME, OTHER],
+      ASOF,
+    );
+    expect(v.hiddenSlugs.has("acme-mask")).toBe(true);
+    expect(v.hiddenSlugs.has("acme-mask-two")).toBe(true);
+    expect(v.hiddenManufacturers.has("acme")).toBe(true);
+    expect(v.hiddenManufacturers.has("globex")).toBe(false);
+  });
+
+  it("does not drop a vendor the shop still sells just because a category rule emptied them", () => {
+    // "We don't do full face" is a statement about mask shapes, not about
+    // a vendor. Inferring "stop selling their tubing too" from it would
+    // pull sellable stock off the shelf nobody asked to remove.
+    const v = resolveCatalogVisibility(
+      formulary([
+        rule({
+          targetKind: "interface_type",
+          targetManufacturer: null,
+          targetInterfaceType: "full_face",
+          effect: "exclude",
+        }),
+      ]),
+      [MASK, SECOND_ACME],
+      ASOF,
+    );
+    // The masks themselves are still hidden from the fitter — only the
+    // brand-level shop inference is withheld.
+    expect(v.hiddenSlugs.size).toBe(2);
+    expect(v.hiddenManufacturers.size).toBe(0);
+  });
+
   it("matches a manufacturer case- and whitespace-insensitively", () => {
     const v = resolveCatalogVisibility(
       formulary([

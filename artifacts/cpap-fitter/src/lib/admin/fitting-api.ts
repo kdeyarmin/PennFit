@@ -308,6 +308,8 @@ export interface SimulationResult {
   formulary: { name: string; version: number; defaultPosture: string };
   panel: Array<{
     label: string;
+    /** Masks the clinical tiers leave available, before the formulary. */
+    eligibleCount: number;
     allowedCount: number;
     deniedCount: number;
     /** Of the denied, how many are hidden outright rather than demoted. */

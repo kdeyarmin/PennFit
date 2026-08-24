@@ -69,9 +69,22 @@ vi.mock("@workspace/resupply-db", () => {
       table === "formularies"
         ? { data: { id: FORMULARY_ID, version: 1 }, error: null }
         : { data: null, error: null };
-    chain.insert = async (payload: unknown) => {
+    // `insert` is used two ways in this router: awaited directly (the
+    // manufacturer toggle) and chained through `.select().single()` (the
+    // generic rule endpoint). Return a thenable that supports both.
+    chain.insert = (payload: unknown) => {
       db.writes.push({ table, op: "insert", payload });
-      return { data: { id: "new-rule" }, error: null };
+      const result = { data: { id: "new-rule" }, error: null };
+      return {
+        select: () => ({
+          single: async () => result,
+          maybeSingle: async () => result,
+        }),
+        then: (
+          resolve: (v: typeof result) => unknown,
+          reject?: (e: unknown) => unknown,
+        ) => Promise.resolve(result).then(resolve, reject),
+      };
     };
     chain.delete = () => ({
       eq: async (_col: string, id: string) => {
@@ -264,6 +277,32 @@ describe("GET /admin/fitter/formulary/manufacturers", () => {
     expect(resmed).toMatchObject({ hidden: false, hiddenByToggle: false });
   });
 
+  it("does not claim ownership of a scheduled rule", async () => {
+    // A future-dated exclusion is not hiding anything today. Reporting it
+    // as the switch's position would show the brand switched-off while
+    // visibility correctly reports it shown — and "Show" would delete a
+    // rule whose whole point is to fire later.
+    rules.current = [rule({ id: "scheduled", effectiveFrom: "2099-01-01" })];
+    const res = await request(app).get(
+      "/resupply-api/admin/fitter/formulary/manufacturers",
+    );
+    const resmed = res.body.manufacturers.find(
+      (m: { manufacturer: string }) => m.manufacturer === "ResMed",
+    );
+    expect(resmed).toMatchObject({
+      hidden: false,
+      hiddenByToggle: false,
+      ruleId: null,
+    });
+  });
+
+  it("leaves a scheduled rule in place when showing a brand again", async () => {
+    rules.current = [rule({ id: "scheduled", effectiveTo: "2020-01-01" })];
+    const res = await put("ResMed", false);
+    expect(res.status).toBe(200);
+    expect(db.deletes).toEqual([]);
+  });
+
   it("separates the switch's position from its net effect", async () => {
     // Switched off, but a narrower allow keeps one model dispensable. The
     // two booleans must disagree here — collapsing them would either hide
@@ -290,6 +329,41 @@ describe("GET /admin/fitter/formulary/manufacturers", () => {
       modelCount: 2,
       hiddenModelCount: 1,
     });
+  });
+});
+
+describe("POST /admin/fitter/formulary/rules — scoped preflight", () => {
+  const LOCATION_ID = "77777777-7777-4777-8777-777777777777";
+
+  it("refuses a scoped exclusion that starves that scope", async () => {
+    // The trap: `ruleApplies` never fires on an unknown axis, so a
+    // location-scoped rule is inert in the all-null context the preflight
+    // used to simulate. It passed the save, then stripped every candidate
+    // for the real patients attached to that location.
+    const res = await request(app)
+      .post("/resupply-api/admin/fitter/formulary/rules")
+      .send({
+        locationId: LOCATION_ID,
+        targetKind: "all",
+        effect: "exclude",
+      });
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe("formulary_would_exclude_all");
+    expect(res.body.starvedProfiles.join(" ")).toContain("at one location");
+    expect(db.writes).toHaveLength(0);
+  });
+
+  it("still allows a scoped exclusion that leaves something dispensable", async () => {
+    const res = await request(app)
+      .post("/resupply-api/admin/fitter/formulary/rules")
+      .send({
+        locationId: LOCATION_ID,
+        targetKind: "manufacturer",
+        targetManufacturer: "ResMed",
+        effect: "exclude",
+      });
+    expect(res.status).toBe(201);
+    expect(db.writes).toHaveLength(1);
   });
 });
 
@@ -360,6 +434,55 @@ describe("PUT /admin/fitter/formulary/manufacturers/:name", () => {
     const res = await put("ResMed", false);
     expect(res.status).toBe(200);
     expect(db.deletes).toEqual([]);
+  });
+
+  it("refuses to hide the last NIV-capable brand", async () => {
+    // The preflight must run the CLINICAL therapy tier, not just the
+    // formulary: counting PAP-only masks as available to an NIV patient
+    // approves hiding the only brand that can actually ventilate them.
+    catalog.current = [
+      mask({
+        slug: "resmed-pap",
+        manufacturer: "ResMed",
+        serviceLine: "both",
+        therapyModes: ["pap"],
+      }),
+      mask({
+        slug: "philips-niv",
+        manufacturer: "Philips Respironics",
+        serviceLine: "both",
+        therapyModes: ["pap", "niv"],
+      }),
+    ];
+    const res = await put("Philips Respironics", true);
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe("formulary_would_exclude_all");
+    expect(res.body.starvedProfiles.join(" ")).toContain("NIV");
+    expect(db.writes).toHaveLength(0);
+  });
+
+  it("still lets a PAP-only tenant hide a brand", async () => {
+    // The other half of the same rule. A tenant carrying no NIV masks has
+    // no NIV patients to starve, so "nothing allowed for NIV" is the
+    // clinical baseline, not a configuration error — treating it as one
+    // would refuse every save this tenant ever makes.
+    catalog.current = [
+      mask({
+        slug: "resmed-pap",
+        manufacturer: "ResMed",
+        serviceLine: "both",
+        therapyModes: ["pap"],
+      }),
+      mask({
+        slug: "philips-pap",
+        manufacturer: "Philips Respironics",
+        serviceLine: "both",
+        therapyModes: ["pap"],
+      }),
+    ];
+    const res = await put("ResMed", true);
+    expect(res.status).toBe(200);
+    expect(db.writes).toHaveLength(1);
   });
 
   it("rejects a body that isn't a visibility flag", async () => {

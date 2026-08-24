@@ -180,16 +180,33 @@ describe("assistant system prompt", () => {
     // constraint has to be stated, not implied.
     const filtered = buildChatSystemPromptBase(HIDDEN);
     expect(filtered).toContain("no longer carries");
-    expect(filtered).toContain(`${HIDDEN_BRAND} — NOT carried`);
-    expect(filtered).not.toContain(`${VISIBLE_BRAND} — NOT carried`);
+    expect(filtered).toContain(`Entire lines: ${HIDDEN_BRAND}`);
+    expect(filtered).not.toContain(`Entire lines: ${VISIBLE_BRAND}`);
   });
 
-  it("does not call a partially-hidden brand 'no longer carried'", () => {
+  it("does not call a partially-hidden brand a dropped line", () => {
     // One model hidden is not a dropped line, and telling the model
     // otherwise would make it refuse masks we still sell.
     const oneModel = new Set([[...HIDDEN][0]!]);
     const filtered = buildChatSystemPromptBase(oneModel);
-    expect(filtered).not.toContain("no longer carries");
+    expect(filtered).not.toContain(`Entire lines: ${HIDDEN_BRAND}`);
+  });
+
+  it("names an individually hidden model so the model cannot offer it", () => {
+    // Filtering the catalog entry is not enough on its own — the model
+    // knows the mask market, and one hidden model of a line that is
+    // otherwise carried never reaches the dropped-lines list.
+    const oneId = [...HIDDEN][0]!;
+    const one = maskCatalog.find((m) => m.id === oneId)!;
+    const filtered = buildChatSystemPromptBase(new Set([oneId]));
+    expect(filtered).toContain("Individual models:");
+    expect(filtered).toContain(`${one.manufacturer} ${one.name}`);
+  });
+
+  it("does not repeat a model whose whole line is already named", () => {
+    const filtered = buildChatSystemPromptBase(HIDDEN);
+    expect(filtered).toContain(`Entire lines: ${HIDDEN_BRAND}`);
+    expect(filtered).not.toContain("Individual models:");
   });
 
   it("reports the CARRIED model count, not the catalog's", () => {

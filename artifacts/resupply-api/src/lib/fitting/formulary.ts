@@ -338,15 +338,41 @@ export const OPEN_FORMULARY: Formulary = {
 // cannot know the context is the safe direction: showing a mask the
 // provider does carry is a smaller harm than hiding one it does.
 
-/** A rule that applies to everyone, everywhere — no scope axis set. */
-function isUnscoped(rule: FormularyRule): boolean {
-  return (
-    rule.locationId === null &&
-    rule.payerProfileId === null &&
-    rule.contractRef === null &&
-    rule.serviceLine === null &&
-    rule.therapyMode === null
-  );
+/**
+ * Whether a rule can be honestly evaluated given what this surface knows.
+ *
+ * An axis the caller KNOWS may be matched against; an axis it does not know
+ * must be null on the rule, exactly as `ruleApplies` treats an unknown
+ * context value. So a surface that knows nothing sees only fully unscoped
+ * rules, and one that knows the location and payer (the fitter's catalog
+ * endpoint, which has them from the invite) also sees rules scoped to
+ * those — which is what keeps that endpoint's answer consistent with the
+ * assessment run from the same invite.
+ */
+function isResolvableHere(rule: FormularyRule, known: KnownScope): boolean {
+  // Never known on any of these surfaces.
+  if (rule.contractRef !== null) return false;
+  if (rule.serviceLine !== null) return false;
+  if (rule.therapyMode !== null) return false;
+  if (
+    rule.locationId !== null &&
+    rule.locationId !== (known.locationId ?? null)
+  ) {
+    return false;
+  }
+  if (
+    rule.payerProfileId !== null &&
+    rule.payerProfileId !== (known.payerProfileId ?? null)
+  ) {
+    return false;
+  }
+  return true;
+}
+
+/** Scope axes a caller can supply when it genuinely knows them. */
+export interface KnownScope {
+  locationId?: string | null;
+  payerProfileId?: string | null;
 }
 
 export interface CatalogVisibility {
@@ -379,20 +405,26 @@ export const NO_HIDDEN_CATALOG: CatalogVisibility = {
  * @param asOf - ISO date the effective-date windows are evaluated against.
  *   Injected rather than read from the clock, like every other date in the
  *   engine, so the result is a pure function of its inputs.
+ * @param known - Scope axes the caller genuinely knows. Omit on a surface
+ *   with no context (the shop, `/api/masks`, the assistant); pass the
+ *   invite's location/payer on the fitter's catalog endpoint so it agrees
+ *   with the assessment run from the same invite.
  */
 export function resolveCatalogVisibility(
   formulary: Formulary,
   catalog: CatalogMask[],
   asOf: string,
+  known: KnownScope = {},
 ): CatalogVisibility {
-  const rules = formulary.rules.filter(isUnscoped);
+  const rules = formulary.rules.filter((r) => isResolvableHere(r, known));
   if (rules.length === 0) return NO_HIDDEN_CATALOG;
 
-  // Every remaining rule has null on every axis, so only `asOf` can change
-  // the outcome — the population/therapy values below are inert.
+  // Every remaining rule is null on service line and therapy mode, so the
+  // values below are inert; location and payer carry whatever the caller
+  // actually knows, so scope specificity ranks correctly against them.
   const context: FitContext = {
-    locationId: null,
-    payerProfileId: null,
+    locationId: known.locationId ?? null,
+    payerProfileId: known.payerProfileId ?? null,
     contractRef: null,
     population: "adult",
     therapyMode: "pap",
@@ -404,45 +436,55 @@ export function resolveCatalogVisibility(
   // default should do silently.
   const unscoped: Formulary = { ...formulary, rules };
 
-  const hiddenSlugs = new Set<string>();
-  const visibleManufacturers = new Set<string>();
-  // Every brand the catalog knows about, visible or not. Tracked
-  // separately from `visibleManufacturers` because "all of this brand's
-  // masks are hidden" and "this brand has no masks" are the same emptiness
-  // when you only look at what survived — see the guard below.
-  const catalogManufacturers = new Set<string>();
-  for (const mask of catalog) {
-    const key = mask.manufacturer.trim().toLowerCase();
-    catalogManufacturers.add(key);
-    if (resolveFormulary(unscoped, mask, null, context).excluded) {
-      hiddenSlugs.add(mask.slug);
-    } else {
-      visibleManufacturers.add(key);
+  // What the operator named EXPLICITLY in an exclude. This is how brand
+  // intent is told apart from a brand that merely ended up empty: an
+  // `interface_type` exclusion ("we don't do full face") can zero out a
+  // vendor that only makes full-face masks, and pulling that vendor's
+  // tubing off the shop would be an expensive thing to infer from a
+  // rule about mask shapes.
+  const brandNamed = new Set<string>();
+  const modelNamed = new Set<string>();
+  for (const rule of rules) {
+    if (rule.effect !== "exclude" || !ruleApplies(rule, context)) continue;
+    if (rule.targetKind === "manufacturer" && rule.targetManufacturer) {
+      brandNamed.add(rule.targetManufacturer.trim().toLowerCase());
+    } else if (rule.targetKind === "mask_model" && rule.targetMaskModelId) {
+      modelNamed.add(rule.targetMaskModelId);
     }
   }
 
+  const hiddenSlugs = new Set<string>();
+  // Keyed by manufacturer, so a brand only ever appears here when the
+  // catalog actually has masks by it — which is what stops a brand with NO
+  // masks (a typo, a stale rule, an accessories-only line) from satisfying
+  // "nothing of theirs survived" vacuously.
+  const byManufacturer = new Map<
+    string,
+    { visible: number; everyModelNamed: boolean }
+  >();
+  for (const mask of catalog) {
+    const key = mask.manufacturer.trim().toLowerCase();
+    const excluded = resolveFormulary(unscoped, mask, null, context).excluded;
+    if (excluded) hiddenSlugs.add(mask.slug);
+    const entry = byManufacturer.get(key) ?? {
+      visible: 0,
+      everyModelNamed: true,
+    };
+    if (!excluded) entry.visible += 1;
+    if (!modelNamed.has(mask.id)) entry.everyModelNamed = false;
+    byManufacturer.set(key, entry);
+  }
+
   const hiddenManufacturers = new Set<string>();
-  for (const rule of rules) {
-    if (rule.effect !== "exclude") continue;
-    if (rule.targetKind !== "manufacturer") continue;
-    const name = rule.targetManufacturer?.trim().toLowerCase();
-    if (!name) continue;
-    if (!ruleApplies(rule, context)) continue;
-    // A brand is hidden only when the catalog HAS masks by it and every
-    // one of them is gone. Both halves are load-bearing, and the first is
-    // the one that is easy to leave out: without it, a brand with no masks
-    // at all passes "nothing of theirs survived" vacuously, and a rule
-    // naming a mask-less brand — a typo, a stale rule, or an
-    // accessories-only line somebody excluded by hand — would silently
-    // pull that brand's stock off the shop.
-    //
-    // This helper only knows the MASK catalog, so `hiddenManufacturers` is
-    // a claim it can only honestly make about brands in it. The operator
-    // asking to hide a brand it has never heard of is answered where that
-    // can be said out loud: the manufacturer toggle 404s on an unknown
-    // name rather than saving a rule that would do nothing visible.
-    if (!catalogManufacturers.has(name)) continue;
-    if (!visibleManufacturers.has(name)) hiddenManufacturers.add(name);
+  for (const [name, entry] of byManufacturer) {
+    // Something of theirs is still dispensable — the line was not dropped.
+    if (entry.visible > 0) continue;
+    // Empty AND deliberate. The operator either named the brand, or named
+    // every one of its models one at a time; both are "we dropped this
+    // vendor" said out loud. A brand emptied by a broader category rule
+    // reaches neither, and keeps its shop listing.
+    if (!brandNamed.has(name) && !entry.everyModelNamed) continue;
+    hiddenManufacturers.add(name);
   }
 
   return { hiddenSlugs, hiddenManufacturers };

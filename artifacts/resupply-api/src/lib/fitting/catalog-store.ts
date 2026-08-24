@@ -36,6 +36,7 @@ import {
   OPEN_FORMULARY,
   resolveCatalogVisibility,
   type CatalogVisibility,
+  type KnownScope,
 } from "./formulary.js";
 import type {
   CatalogMask,
@@ -345,6 +346,7 @@ export async function loadFittingContext(
  */
 export async function loadCatalogVisibility(
   orgId: string | null | undefined,
+  known: KnownScope = {},
 ): Promise<CatalogVisibility> {
   if (!orgId) return NO_HIDDEN_CATALOG;
   const context = await loadFittingContext(orgId);
@@ -352,6 +354,7 @@ export async function loadCatalogVisibility(
     context.formulary,
     context.catalog,
     new Date().toISOString().slice(0, 10),
+    known,
   );
 }
 

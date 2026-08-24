@@ -645,13 +645,20 @@ router.get("/fit/catalog", async (req, res) => {
   // job is "what can this provider fit you with", and it feeds the fitter's
   // browse/compare UI, so a hidden manufacturer showing up in the list would
   // be exactly the searchable listing the operator turned off. Resolved
-  // context-free (see `resolveCatalogVisibility`): this request carries no
-  // location, payer, or therapy mode, so only the tenant's org-wide rules
-  // can fire.
+  // against the axes the invite actually knows (see below) so this endpoint
+  // and /fit/assess never disagree about what the same patient can be
+  // shown.
   const visibility = resolveCatalogVisibility(
     context.formulary,
     context.catalog,
     new Date().toISOString().slice(0, 10),
+    // The invite carries the location and payer, so pass them: without
+    // this, a location-scoped exclusion applied during /fit/assess while
+    // /fit/catalog — reached with the SAME token — still listed the mask,
+    // and an org-wide exclusion with a location-specific allow hid one the
+    // assessment was free to recommend. Population and therapy mode are
+    // still genuinely unknown here, so rules scoped to those stay inert.
+    { locationId: invite.locationId, payerProfileId: invite.payerProfileId },
   );
   const visibleMasks = context.catalog.filter(
     (m) => !visibility.hiddenSlugs.has(m.slug),
@@ -938,6 +945,12 @@ async function persistSession(input: PersistInput): Promise<string | null> {
         formulary_name: input.assessment.provenance.formularyName,
         formulary_rules_matched:
           input.assessment.provenance.formularyRulesMatched,
+        // What the formulary HID (migration 0517). Distinct from the
+        // matched-rule map above: an excluded mask never reaches scoring,
+        // and a rule id alone doesn't say whether its effect demoted or
+        // hid. Staff-only — redacted from the patient copy of the report.
+        formulary_excluded_slugs:
+          input.assessment.provenance.formularyExcludedSlugs,
         catalog_snapshot_version:
           input.assessment.provenance.catalogSnapshotVersion,
         degraded: input.assessment.provenance.degraded,

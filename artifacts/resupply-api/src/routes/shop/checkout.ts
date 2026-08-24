@@ -45,6 +45,7 @@ import { getActivePickupLocationById } from "../../lib/pickup/locations";
 import { getOrCreateStripeCustomer } from "../../lib/stripe/customer";
 import { stripeAccountRequestOptions } from "../../lib/stripe/connect";
 import { validateCartItems } from "../../lib/stripe/validate-cart";
+import { loadCatalogVisibility } from "../../lib/fitting/catalog-store";
 import {
   reserveCartInventory,
   attachSessionToReservations,
@@ -306,10 +307,17 @@ router.post(
     // Validate against the SAME account the Checkout session is created on
     // (connectOptions) so a connected tenant's cart is checked against their
     // catalog, not the platform's — otherwise every line is price_not_found.
+    // Brands the tenant dropped are refused at the till, not just hidden
+    // on the shelf. A cart lives in the shopper's localStorage and a
+    // reorder replays an older purchase, so a line added before the brand
+    // was hidden still reaches here — and taking payment for something
+    // the provider will not ship is exactly what hiding it was meant to
+    // prevent. Fail-open on a lookup miss, like every other read of this.
     const cartValidation = await validateCartItems(
       stripe,
       items,
       connectOptions,
+      (await loadCatalogVisibility(req.orgId)).hiddenManufacturers,
     );
     if (!cartValidation.ok) {
       req.log?.warn(

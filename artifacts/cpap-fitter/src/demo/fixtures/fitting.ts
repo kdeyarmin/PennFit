@@ -121,7 +121,7 @@ interface DemoFormularyRule {
   targetInterfaceType: string | null;
   targetMaskModelId: string | null;
   targetSizeVariantId: string | null;
-  effect: "allow" | "deny" | "prefer" | "deprioritize";
+  effect: "allow" | "deny" | "exclude" | "prefer" | "deprioritize";
   preferenceRank: number | null;
   reasonCode: string | null;
   reasonNote: string | null;
@@ -1010,13 +1010,16 @@ export function demoSimulateFormulary(
         mask: string;
         reasonCode: string | null;
         ruleIds: string[];
+        hidden: boolean;
       }> = [];
       const preferred: Array<{ mask: string; rank: number | null }> = [];
       let allowedCount = 0;
 
       for (const m of candidates) {
         const hits = s.rules.filter((r) => applies(r, m));
-        const denyRule = hits.find((r) => r.effect === "deny");
+        // Mirrors the server's precedence: exclude beats deny beats allow.
+        const excludeRule = hits.find((r) => r.effect === "exclude");
+        const denyRule = excludeRule ?? hits.find((r) => r.effect === "deny");
         if (
           denyRule ||
           (s.formulary.defaultPosture === "closed" &&
@@ -1026,6 +1029,7 @@ export function demoSimulateFormulary(
             mask: `${m.manufacturer} ${m.modelName}`,
             reasonCode: denyRule?.reasonCode ?? "closed_formulary",
             ruleIds: denyRule ? [denyRule.id] : [],
+            hidden: excludeRule !== undefined,
           });
           continue;
         }
@@ -1039,14 +1043,149 @@ export function demoSimulateFormulary(
         }
       }
       preferred.sort((a, b) => (a.rank ?? 99) - (b.rank ?? 99));
+      denied.sort((a, b) => Number(b.hidden) - Number(a.hidden));
       return {
         label: p.label,
+        eligibleCount: candidates.length,
         allowedCount,
         deniedCount: denied.length,
+        hiddenCount: denied.filter((d) => d.hidden).length,
         preferred,
         denied,
       };
     }),
+  };
+}
+
+// ── Manufacturer visibility ─────────────────────────────────────────
+//
+// Backs the Manufacturers panel. Same view-over-rules shape as the server:
+// hiding writes one org-wide `exclude` rule and it shows up in the rule
+// list below, so the demo shows the real mechanism rather than a mock
+// toggle with its own private state.
+
+/** An org-wide, always-on manufacturer exclude — the toggle's own rule. */
+function isDemoToggleRule(r: DemoFormularyRule, manufacturer?: string) {
+  if (r.effect !== "exclude" || r.targetKind !== "manufacturer") return false;
+  if (!r.targetManufacturer) return false;
+  if (r.locationId || r.payerProfileId || r.contractRef) return false;
+  if (r.serviceLine || r.therapyMode) return false;
+  if (r.effectiveFrom || r.effectiveTo) return false;
+  if (
+    manufacturer !== undefined &&
+    r.targetManufacturer.trim().toLowerCase() !==
+      manufacturer.trim().toLowerCase()
+  ) {
+    return false;
+  }
+  return true;
+}
+
+/** Whether any applicable rule hard-hides this model. */
+function demoIsModelHidden(s: ReturnType<typeof get>, m: DemoMaskModel) {
+  return s.rules.some((r) => {
+    if (r.effect !== "exclude") return false;
+    if (r.locationId || r.payerProfileId || r.contractRef) return false;
+    if (r.serviceLine || r.therapyMode) return false;
+    switch (r.targetKind) {
+      case "manufacturer":
+        return r.targetManufacturer === m.manufacturer;
+      case "interface_type":
+        return r.targetInterfaceType === m.interfaceType;
+      case "mask_model":
+        return r.targetMaskModelId === m.id;
+      case "all":
+        return true;
+      default:
+        return false;
+    }
+  });
+}
+
+/** GET /admin/fitter/formulary/manufacturers */
+export function demoManufacturerVisibility() {
+  const s = get();
+  const byKey = new Map<
+    string,
+    { manufacturer: string; modelCount: number; hiddenModelCount: number }
+  >();
+  for (const m of s.models) {
+    const key = m.manufacturer.trim().toLowerCase();
+    const entry = byKey.get(key) ?? {
+      manufacturer: m.manufacturer.trim(),
+      modelCount: 0,
+      hiddenModelCount: 0,
+    };
+    entry.modelCount += 1;
+    if (demoIsModelHidden(s, m)) entry.hiddenModelCount += 1;
+    byKey.set(key, entry);
+  }
+
+  return {
+    formulary: {
+      name: s.formulary.name,
+      version: s.formulary.version,
+      defaultPosture: s.formulary.defaultPosture,
+    },
+    degraded: false,
+    manufacturers: [...byKey.values()]
+      .map((entry) => {
+        const toggleRule = s.rules.find((r) =>
+          isDemoToggleRule(r, entry.manufacturer),
+        );
+        return {
+          ...entry,
+          hidden: entry.hiddenModelCount === entry.modelCount,
+          hiddenByToggle: toggleRule !== undefined,
+          ruleId: toggleRule?.id ?? null,
+        };
+      })
+      .sort((a, b) => a.manufacturer.localeCompare(b.manufacturer)),
+  };
+}
+
+/** PUT /admin/fitter/formulary/manufacturers/:name */
+export function demoSetManufacturerVisibility(
+  name: string,
+  body: { hidden?: boolean } | undefined,
+) {
+  const s = get();
+  const key = name.trim().toLowerCase();
+  const canonical = s.models.find(
+    (m) => m.manufacturer.trim().toLowerCase() === key,
+  )?.manufacturer;
+  if (!canonical) return null;
+
+  const existing = s.rules.filter((r) => isDemoToggleRule(r, canonical));
+  if (body?.hidden) {
+    if (existing.length === 0) {
+      // Refuse a hide that would leave nothing, exactly as the API does.
+      const survivors = s.models.filter(
+        (m) => m.manufacturer !== canonical && m.status === "current",
+      );
+      if (survivors.length === 0) return "starved" as const;
+      demoCreateFormularyRule({
+        targetKind: "manufacturer",
+        targetManufacturer: canonical,
+        effect: "exclude",
+        reasonCode: "not_carried",
+        effectiveFrom: null,
+      });
+    }
+    return { ok: true as const, hidden: true, manufacturer: canonical };
+  }
+
+  const removing = new Set(existing.map((r) => r.id));
+  s.rules = s.rules.filter((r) => !removing.has(r.id));
+  const stillHidden = s.models.filter(
+    (m) =>
+      m.manufacturer.trim().toLowerCase() === key && demoIsModelHidden(s, m),
+  ).length;
+  return {
+    ok: true as const,
+    hidden: false,
+    manufacturer: canonical,
+    stillHiddenModelCount: stillHidden,
   };
 }
 
