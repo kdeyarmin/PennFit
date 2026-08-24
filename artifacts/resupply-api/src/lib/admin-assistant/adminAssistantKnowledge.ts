@@ -221,7 +221,12 @@ ORDERS & SHOP:
         including someone not yet in the system,
         Fit Requests (/admin/fitter-requests) — finished fittings where the patient
         sent their details or asked to be called; nothing is ordered until someone
-        works the row, so this is the queue that has an SLA on it,
+        works the row, so this is the queue that has an SLA on it. Closing a row
+        asks HOW it turned out (fulfilled / not proceeding / couldn't reach them /
+        duplicate). Only "fulfilled" — meaning the patient actually has the mask —
+        marks the fitting as dispensed, which is what Fitter outcomes counts and
+        what the re-fit campaign reads; the others just close the row. A duplicate
+        submission from the same patient does not create a second row,
         Fitter Prospects (/admin/fitter-leads).
 
 BILLING (the claims + revenue-cycle hub):
