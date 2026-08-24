@@ -49,7 +49,11 @@ import { z } from "zod";
 
 import { getOrgScopedClient } from "@workspace/resupply-db";
 
-import { adminRateLimit } from "../../middlewares/admin-rate-limit";
+import {
+  adminRateLimit,
+  adminReadRateLimiter,
+  adminWriteRateLimiter,
+} from "../../middlewares/admin-rate-limit";
 import {
   requireAdmin,
   requirePermission,
@@ -558,6 +562,15 @@ function isPlainManufacturerExclude(
  */
 router.get(
   "/admin/fitter/formulary/manufacturers",
+  // Shared pre-auth net FIRST, then the per-actor budget.
+  //
+  // Both halves earn their place. `requireAdmin` does a DB-backed session
+  // lookup, and the app-level `adminMutationLooseLimit` deliberately skips
+  // safe methods — so without a limiter ahead of the gate, an
+  // unauthenticated GET flood reaches Postgres unbounded. `adminRateLimit`
+  // below cannot cover that: it keys on `req.adminUserId`, which only
+  // exists once the gate has already run.
+  adminReadRateLimiter,
   requireAdmin,
   requirePermission("clinical.read"),
   adminRateLimit({ name: "formulary.manufacturers_read", preset: "query" }),
@@ -646,6 +659,12 @@ const manufacturerVisibilityBody = z.object({ hidden: z.boolean() }).strict();
  */
 router.put(
   "/admin/fitter/formulary/manufacturers/:name",
+  // Same layering as the GET above. The app-level `adminMutationLooseLimit`
+  // does bound this one (it is a non-safe method under `/…/admin`), but
+  // that net is per-IP and shared with every other admin mutation; this
+  // caps the flood at the auth gate the way the rest of the admin tree
+  // does, before the session lookup runs.
+  adminWriteRateLimiter,
   requireAdmin,
   requirePermission("formulary.manage"),
   adminRateLimit({ name: "formulary.manufacturer_toggle", preset: "mutation" }),

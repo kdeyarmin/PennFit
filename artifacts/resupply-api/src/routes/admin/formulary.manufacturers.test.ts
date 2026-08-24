@@ -53,6 +53,11 @@ vi.mock("../../middlewares/admin-rate-limit", () => ({
     _res: import("express").Response,
     next: import("express").NextFunction,
   ) => next(),
+  adminReadRateLimiter: (
+    _req: import("express").Request,
+    _res: import("express").Response,
+    next: import("express").NextFunction,
+  ) => next(),
 }));
 
 vi.mock("@workspace/resupply-db", () => {
