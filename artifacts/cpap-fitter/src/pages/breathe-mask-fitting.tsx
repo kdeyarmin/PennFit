@@ -685,7 +685,7 @@ const COVERAGE_NOTES: {
  * appears when the live numbers land would never receive `.in` and would
  * stay permanently invisible.
  */
-function CatalogCoverageSection() {
+export function CatalogCoverageSection() {
   const { coverage, isLive } = useMaskCatalogCoverage();
   const { manufacturers, interfaceTypes, totals, lastUpdatedAt } = coverage;
   // Share-of-catalog bar widths, scaled to the biggest roster rather than
