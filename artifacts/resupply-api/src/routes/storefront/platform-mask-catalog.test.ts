@@ -15,6 +15,8 @@ import {
   installSupabaseMock,
   stageSupabaseResponse,
   getSupabaseFilterCalls,
+  getSupabaseFilterCallsByInvocation,
+  type CapturedFilterCall,
 } from "../../test-helpers/supabase-mock";
 
 const supabaseMock = installSupabaseMock();
@@ -319,5 +321,151 @@ describe("GET /api/platform/mask-catalog — paging and cache posture", () => {
     const res = await request(makeApp()).get("/platform/mask-catalog");
 
     expect(res.headers["cache-control"]).toContain("max-age=30");
+  });
+});
+
+describe("tenancy — EVERY read is platform-scoped, not just the first", () => {
+  // Why this block exists.
+  //
+  // This file is on the EXCLUDES allowlist in
+  // scripts/check-tenant-isolation.sh, so the CI guard that would otherwise
+  // fail the build on an unscoped getSupabaseServiceRoleClient() read here is
+  // deliberately off — and it is off for the whole FILE, permanently,
+  // including reads nobody has written yet. The exemption is only worth as
+  // much as the assertion standing in for it.
+  //
+  // The `toContainEqual` check above is not that assertion. It proves SOME
+  // read carried the tenancy filter, against a filter log the mock flattens
+  // across every invocation. Add a second, unfiltered `mask_models` read to
+  // this route tomorrow and it still passes — the first read's filter is
+  // still somewhere in the flattened array — while the CI guard stays silent
+  // because the file is allowlisted. That is the gap these close: they fail
+  // if ANY query this route issues is missing its scope.
+
+  /**
+   * Does one invocation constrain itself to PLATFORM rows?
+   *
+   * Three legitimate shapes, matching the three reads the route makes:
+   *   * `.is("org_id", null)`               — mask_models carries org_id itself
+   *   * `.is("mask_models.org_id", null)`   — child tables, across the !inner join
+   *   * `.in("mask_model_id", platformIds)` — the id-list fallback, whose ids
+   *     are derived from the already-platform-filtered model rows
+   */
+  function scopedToPlatform(call: CapturedFilterCall[]): boolean {
+    return call.some(
+      (c) =>
+        (c.verb === "is" &&
+          (c.args[0] === "org_id" || c.args[0] === "mask_models.org_id") &&
+          c.args[1] === null) ||
+        (c.verb === "in" && c.args[0] === "mask_model_id"),
+    );
+  }
+
+  /** Assert the invariant across every invocation, naming any that fails. */
+  function expectEveryReadScoped(table: string): void {
+    const calls = getSupabaseFilterCallsByInvocation(table, "select");
+    expect(calls.length).toBeGreaterThan(0);
+    const unscoped = calls
+      .map((call, i) => ({ i, call }))
+      .filter(({ call }) => !scopedToPlatform(call));
+    expect(
+      unscoped.map(
+        ({ i, call }) => `${table} read #${i + 1}: ${JSON.stringify(call)}`,
+      ),
+    ).toEqual([]);
+  }
+
+  it("scopes every page of the model read, not just the first", async () => {
+    // Three invocations: two data pages and the terminating empty page. A
+    // filter applied only to page one would leak a tenant's private models
+    // into the public total from page two onward.
+    stageSupabaseResponse("mask_models", "select", { data: MODEL_ROWS });
+    stageSupabaseResponse("mask_models", "select", {
+      data: [
+        {
+          id: "55555555-5555-4555-8555-555555555555",
+          manufacturer: "Sleepnet",
+          status: "current",
+          interface_type: "nasal",
+          updated_at: "2026-08-23T00:00:00.000Z",
+        },
+      ],
+    });
+    stageSupabaseResponse("mask_models", "select", { data: [] });
+    stageChildCounts(248, 244);
+
+    await request(makeApp()).get("/platform/mask-catalog");
+
+    expect(
+      getSupabaseFilterCallsByInvocation("mask_models", "select"),
+    ).toHaveLength(3);
+    expectEveryReadScoped("mask_models");
+  });
+
+  it("scopes every child-count read on the embed path", async () => {
+    stageModels(MODEL_ROWS);
+    stageChildCounts(301, 244);
+
+    await request(makeApp()).get("/platform/mask-catalog");
+
+    expectEveryReadScoped("mask_size_variants");
+    expectEveryReadScoped("mask_components");
+  });
+
+  it("scopes the fallback read too when the embed is rejected", async () => {
+    // Two invocations on the variants table: the embed that errors, and the
+    // id-list fallback. BOTH must be scoped — the fallback is the one that
+    // actually produces the published number.
+    stageModels(MODEL_ROWS);
+    stageSupabaseResponse("mask_size_variants", "select", {
+      error: { message: "could not find a relationship" },
+    });
+    stageSupabaseResponse("mask_size_variants", "select", {
+      data: null,
+      count: 301,
+    });
+    stageChildCounts(0, 244);
+
+    await request(makeApp()).get("/platform/mask-catalog");
+
+    const calls = getSupabaseFilterCallsByInvocation(
+      "mask_size_variants",
+      "select",
+    );
+    expect(calls).toHaveLength(2);
+    expectEveryReadScoped("mask_size_variants");
+    // And the fallback's id list is the platform roster — not an unbounded
+    // or tenant-inclusive set.
+    const ids = calls[1].find((c) => c.verb === "in")?.args[1];
+    expect(ids).toEqual(MODEL_ROWS.map((r) => r.id));
+  });
+
+  it("issues no read at all against any other table", async () => {
+    // A read the route is not supposed to make is the other way an exempted
+    // file drifts: the guard would have caught a new unscoped table here.
+    stageModels(MODEL_ROWS);
+    stageChildCounts(301, 244);
+
+    await request(makeApp()).get("/platform/mask-catalog");
+
+    for (const table of [
+      "mask_models",
+      "mask_size_variants",
+      "mask_components",
+    ]) {
+      expectEveryReadScoped(table);
+    }
+    // Tables a tenancy filter could not save us from — assert they are never
+    // touched by this public, anonymous endpoint at all.
+    for (const table of [
+      "patients",
+      "orders",
+      "organizations",
+      "mask_formulary",
+    ]) {
+      expect(getSupabaseFilterCallsByInvocation(table, "select")).toHaveLength(
+        0,
+      );
+    }
   });
 });

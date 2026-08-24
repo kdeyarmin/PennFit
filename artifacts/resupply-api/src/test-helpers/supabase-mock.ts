@@ -65,6 +65,18 @@ export interface CapturedFilterCall {
   args: unknown[];
 }
 const filterCalls = new Map<string, CapturedFilterCall[]>();
+// Per-(table, op) log of filter verbs GROUPED BY INVOCATION — one inner
+// array per query the route issued, in order, INCLUDING queries that applied
+// no filters at all (recorded as an empty array).
+//
+// `filterCalls` above flattens every invocation into a single list, so it can
+// only answer "did SOME query carry this filter?". A tenancy assertion needs
+// the strictly stronger "did EVERY query carry it?", and flattening is
+// precisely what destroys that distinction: a route that scopes its first
+// read and forgets the second still satisfies the flattened check. Routes
+// exempted from scripts/check-tenant-isolation.sh have no CI guard left to
+// catch that, so they assert their scoping invariant through this.
+const filterCallsByInvocation = new Map<string, CapturedFilterCall[][]>();
 
 // Separate FIFO queues for `supabase.schema(...).rpc(fnName, args)`
 // calls. Keyed by function name. Counters and arg-payload lists are
@@ -206,12 +218,18 @@ function makeTableBuilder(table: string): TableBuilder {
     };
 
   const finalizeWithFilters = (): Promise<StagedSupabaseResponse> => {
+    const k = key(table, op ?? "select");
     if (op !== null && pendingFilters.length > 0) {
-      const k = key(table, op);
       const existing = filterCalls.get(k) ?? [];
       existing.push(...pendingFilters);
       filterCalls.set(k, existing);
     }
+    // Recorded for EVERY invocation, filters or not: a query that applied
+    // none is exactly what an "every read is scoped" assertion must catch,
+    // so it must show up here as an empty array rather than not at all.
+    const perCall = filterCallsByInvocation.get(k) ?? [];
+    perCall.push([...pendingFilters]);
+    filterCallsByInvocation.set(k, perCall);
     return finalize();
   };
 
@@ -398,6 +416,19 @@ export interface SupabaseMockHandle {
    * any filter/order verbs.
    */
   filterCalls(table: string, op: SupabaseOp): CapturedFilterCall[];
+  /**
+   * Like `filterCalls`, but grouped per invocation: one inner array for
+   * each query issued against `(table, op)` since the last `reset()`, in
+   * order, including queries that applied no filters (an empty array).
+   *
+   * Use this over `filterCalls` for any "EVERY read did X" assertion —
+   * notably tenancy scoping, where the flattened view cannot distinguish
+   * one scoped read from one scoped and one unscoped.
+   */
+  filterCallsByInvocation(
+    table: string,
+    op: SupabaseOp,
+  ): CapturedFilterCall[][];
 }
 
 /**
@@ -420,6 +451,7 @@ export function installSupabaseMock(): SupabaseMockHandle {
       callCounts.clear();
       writePayloads.clear();
       filterCalls.clear();
+      filterCallsByInvocation.clear();
       rpcQueues.clear();
       rpcCallCounts.clear();
       rpcCallArgs.clear();
@@ -435,6 +467,9 @@ export function installSupabaseMock(): SupabaseMockHandle {
     },
     filterCalls(table, op) {
       return filterCalls.get(key(table, op)) ?? [];
+    },
+    filterCallsByInvocation(table, op) {
+      return filterCallsByInvocation.get(key(table, op)) ?? [];
     },
   };
 
@@ -464,4 +499,17 @@ export function getSupabaseFilterCalls(
   op: SupabaseOp,
 ): CapturedFilterCall[] {
   return filterCalls.get(key(table, op)) ?? [];
+}
+
+/**
+ * Standalone alias for `installSupabaseMock().filterCallsByInvocation(...)`.
+ *
+ * One entry per query issued, in order, so a test can assert an invariant
+ * holds across ALL of them rather than merely somewhere among them.
+ */
+export function getSupabaseFilterCallsByInvocation(
+  table: string,
+  op: SupabaseOp,
+): CapturedFilterCall[][] {
+  return filterCallsByInvocation.get(key(table, op)) ?? [];
 }
