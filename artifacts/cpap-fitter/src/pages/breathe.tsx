@@ -58,6 +58,10 @@ import {
   Zap,
 } from "lucide-react";
 import { useDocumentTitle } from "@/hooks/use-document-title";
+import {
+  summariseManufacturers,
+  useMaskCatalogCoverage,
+} from "@/lib/mask-catalog-coverage";
 import { useNoIndexExceptApex } from "@/hooks/use-noindex-except-apex";
 import { ADDON_DETAILS } from "@/lib/admin/addon-details";
 import "./breathe.css";
@@ -2081,6 +2085,34 @@ const FIT_ACTIVATION: string[] = [
   "Flip the switches yourself in the console — no deploy, no ticket, no waiting on us",
 ];
 
+/**
+ * The catalog answer, compressed to one line.
+ *
+ * "Does it already know the masks I dispense?" is the first question a DME
+ * asks about a fitter, and until this line the home page never answered it —
+ * the roster lived a click away on /breathe/mask-fitting. Numbers come from
+ * the same shared hook that page uses (lib/mask-catalog-coverage.ts), so the
+ * two surfaces can never quote different totals, and both fall back to the
+ * verified snapshot when the endpoint is unreachable.
+ */
+function FitterCatalogLine() {
+  const { coverage } = useMaskCatalogCoverage();
+  const { manufacturers, totals } = coverage;
+  const roster = summariseManufacturers(manufacturers);
+  if (!roster) return null;
+  return (
+    <p className="bx-fit-catalog">
+      <Database size={14} />
+      <span>
+        <b>{totals.models.toLocaleString("en-US")} mask models</b> from{" "}
+        <b>{totals.manufacturers.toLocaleString("en-US")} manufacturers</b> are
+        already loaded — {roster}. Nothing to import.{" "}
+        <Link href="/breathe/mask-fitting#catalog">See the roster</Link>
+      </span>
+    </p>
+  );
+}
+
 function FitterBand() {
   return (
     <section className="bx-section bx-fitband" id="fitter">
@@ -2110,6 +2142,7 @@ function FitterBand() {
               Compare with a stand-alone fitter
             </Link>
           </div>
+          <FitterCatalogLine />
         </div>
 
         {/* Entry points — the thing a link-only fitter cannot do. */}

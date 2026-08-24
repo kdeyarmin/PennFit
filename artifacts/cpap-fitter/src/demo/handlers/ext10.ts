@@ -85,6 +85,45 @@ export const ext10Handlers: DemoHandler[] = [
   // GET /api/platform/pricing — see routes/storefront/platform-pricing.ts.
   // Public SaaS plan + add-on catalog for the Breathe marketing page.
   // Never exposes Stripe ids or tenant data.
+  // ── Platform mask-catalog coverage (cmbreathe.com) ────────────────
+  // GET /api/platform/mask-catalog — see
+  // routes/storefront/platform-mask-catalog.ts. Aggregate-only coverage
+  // stats for the /breathe/mask-fitting roster. Product facts, no tenant
+  // data; these mirror the seeded platform catalog (migrations 0486 +
+  // 0493 + 0494) so the sandbox shows the same shape production does.
+  route("GET", "/api/platform/mask-catalog", () =>
+    json({
+      manufacturers: [
+        { name: "ResMed", models: 25, currentModels: 20 },
+        { name: "Philips Respironics", models: 17, currentModels: 16 },
+        { name: "Fisher & Paykel", models: 13, currentModels: 10 },
+        { name: "React Health", models: 8, currentModels: 8 },
+        { name: "Rain8", models: 5, currentModels: 5 },
+        { name: "Sleepnet", models: 5, currentModels: 5 },
+        { name: "Circadiance", models: 4, currentModels: 4 },
+        { name: "Inogen", models: 3, currentModels: 3 },
+        { name: "Bleep Sleep", models: 2, currentModels: 2 },
+        { name: "Hans Rudolph", models: 1, currentModels: 1 },
+      ],
+      interfaceTypes: [
+        { type: "nasal", models: 32 },
+        { type: "full_face", models: 28 },
+        { type: "nasal_pillow", models: 18 },
+        { type: "hybrid", models: 4 },
+        { type: "total_face", models: 1 },
+      ],
+      totals: {
+        manufacturers: 10,
+        models: 83,
+        currentModels: 74,
+        discontinuedModels: 9,
+        sizeVariants: 248,
+        components: 244,
+      },
+      lastUpdatedAt: daysAgo(2),
+    }),
+  ),
+
   route("GET", "/api/platform/pricing", () =>
     json({
       plans: [
