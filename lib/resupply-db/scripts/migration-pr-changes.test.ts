@@ -459,6 +459,25 @@ describe.skipIf(!dbUrl)(
       await pool.end();
     });
 
+    /**
+     * Remove everything a 0519 test inserted.
+     *
+     * These run against whatever `DATABASE_URL` points at — in CI a
+     * throwaway service container, but locally often a long-lived
+     * database. Without this, every run leaves another tenant and a
+     * handful of queue rows behind, and the operational reports someone
+     * later reads off that database quietly fill with test fixtures.
+     */
+    const cleanup = async (orgId: string) => {
+      await pool.query(
+        `DELETE FROM resupply.fitter_fit_requests WHERE org_id = $1`,
+        [orgId],
+      );
+      await pool.query(`DELETE FROM resupply.organizations WHERE id = $1`, [
+        orgId,
+      ]);
+    };
+
     // ── 0519 fit-request idempotency + close outcome ────────────────
     //
     // The whole duplicate-submission guarantee is this index. The route
@@ -520,6 +539,8 @@ describe.skipIf(!dbUrl)(
         [orgId],
       );
       expect(Number(nulls.rows[0]!.n)).toBe(2);
+
+      await cleanup(orgId);
     }, 20_000);
 
     it("accepts the four close outcomes and rejects anything else", async () => {
@@ -553,6 +574,8 @@ describe.skipIf(!dbUrl)(
       await expect(withOutcome("fulfiled")).rejects.toThrow(
         /check constraint/i,
       );
+
+      await cleanup(orgId);
     }, 20_000);
 
     // ── 0516 formulary `exclude` effect ─────────────────────────────

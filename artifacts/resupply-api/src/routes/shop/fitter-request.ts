@@ -56,6 +56,7 @@ import { z } from "zod";
 import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { verifyFitterInviteToken } from "../../lib/fitter-invite-token";
+import { redactDbErr } from "../../lib/redact-db-err";
 import { sendFitRequestEmails } from "../../lib/fit-request-email";
 import { recordFitRequest } from "../../lib/fit-request-record";
 import { resolveOrgIdForSignedRecord } from "../../lib/storefront/signed-link-org";
@@ -308,7 +309,10 @@ router.post("/shop/fitter-requests", requestLimiter, async (req, res) => {
     recommendedMaskName: data.recommendedMaskName,
     recommendedMaskSize: data.recommendedMaskSize,
   }).catch((err: unknown) => {
-    req.log?.warn?.({ err }, "shop/fitter-requests: email send threw");
+    req.log?.warn?.(
+      { err: redactDbErr(err) },
+      "shop/fitter-requests: email send threw",
+    );
     return {
       configured: false,
       notificationDelivered: false,
@@ -374,7 +378,7 @@ async function resolveOwnedFitSession(
     return fitSessionId;
   } catch (err) {
     req.log?.warn?.(
-      { err },
+      { err: redactDbErr(err) },
       "shop/fitter-requests: fit session ownership check failed — filing without the link",
     );
     return null;

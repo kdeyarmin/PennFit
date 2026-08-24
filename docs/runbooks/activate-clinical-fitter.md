@@ -244,7 +244,18 @@ written on the row — status, note, who made contact — is touched.
 
 Once you **close** a request, the same patient can file a fresh one. That
 is deliberate: a person coming back weeks later is a new ask, not a
-duplicate.
+duplicate. Two fittings are also two requests even from one person — a
+parent who fits themselves and then their child gets a row each, because
+the dedupe key includes who the fitting is _for_, not just who is asking.
+
+> **One-off, on the deploy that introduces this:** requests that were
+> already sitting open when migration `0519` shipped predate the dedupe
+> key, so a re-submit of one of _those_ can still produce a second row.
+> It cannot be back-filled — the key is a hash computed in the
+> application, and storing the raw name/email/phone to compare instead
+> would put patient details in a column that exists only to be matched.
+> The window closes as staff work the pre-existing queue down. If you see
+> an obvious pair in the first day or two, close one as **Duplicate**.
 
 ### B8. The adult-or-child question — not a flag
 

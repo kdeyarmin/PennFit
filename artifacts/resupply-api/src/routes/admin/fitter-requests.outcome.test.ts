@@ -34,9 +34,16 @@ const db = vi.hoisted(() => ({
     recommended_mask_id: "resmed-airfit-f20" as string | null,
     updated_at: "2026-08-24T00:00:00.000Z",
   },
+  /** Error the update resolves with, if any. */
+  updateError: null as { code?: string; message: string } | null,
+  /** When true the guarded update matches no row. */
+  updateMatchesNothing: false,
 }));
 
-const stamp = vi.hoisted(() => ({ calls: [] as unknown[] }));
+const stamp = vi.hoisted(() => ({
+  calls: [] as unknown[],
+  clears: [] as unknown[],
+}));
 
 vi.mock("@workspace/resupply-db", () => ({
   getOrgScopedClient: () => ({
@@ -49,9 +56,12 @@ vi.mock("@workspace/resupply-db", () => ({
       chain.update = (payload: Record<string, unknown>) => {
         db.updates.push(payload);
         const after: Record<string, unknown> = {
-          maybeSingle: async () => ({ data: db.row, error: null }),
+          maybeSingle: async () => ({
+            data: db.updateError || db.updateMatchesNothing ? null : db.row,
+            error: db.updateError,
+          }),
         };
-        for (const m of ["select", "eq", "order", "limit", "is"]) {
+        for (const m of ["select", "eq", "neq", "order", "limit", "is"]) {
           after[m] = () => after;
         }
         return after;
@@ -65,6 +75,10 @@ vi.mock("../../lib/fitting/order-link", () => ({
   markFitSessionDispensedById: async (orgId: string, input: unknown) => {
     stamp.calls.push({ orgId, input });
     return { stamped: true };
+  },
+  clearFitSessionDispenseById: async (orgId: string, id: string) => {
+    stamp.clears.push({ orgId, id });
+    return { cleared: true };
   },
 }));
 
@@ -98,7 +112,10 @@ const patch = (body: Record<string, unknown>) =>
 beforeEach(() => {
   db.updates = [];
   db.existing = { contacted_at: null };
+  db.updateError = null;
+  db.updateMatchesNothing = false;
   stamp.calls = [];
+  stamp.clears = [];
   db.row = {
     ...db.row,
     status: "closed",
@@ -212,5 +229,63 @@ describe("PATCH /admin/fitter-requests/:id — the dispense stamp", () => {
     const res = await patch({ status: "closed", closedOutcome: "fulfilled" });
     expect(res.status).toBe(200);
     expect(res.body.closedOutcome).toBe("fulfilled");
+  });
+});
+
+describe("PATCH /admin/fitter-requests/:id — guards Codex found", () => {
+  it("withdraws the dispense when a fulfilled outcome is corrected", async () => {
+    // A mis-click on "Fulfilled" stamps the fitting immediately. If the
+    // correction did not reach the fitting, the outcomes dashboard would
+    // keep counting a dispense that never happened and the re-fit
+    // campaign would chase a patient about a mask they never received.
+    db.row = { ...db.row, closed_outcome: "not_proceeding" };
+
+    await patch({ closedOutcome: "not_proceeding" });
+
+    expect(stamp.calls).toHaveLength(0);
+    expect(stamp.clears).toHaveLength(1);
+    expect(stamp.clears[0]).toMatchObject({
+      id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    });
+  });
+
+  it("withdraws the dispense when the request is re-opened", async () => {
+    db.row = { ...db.row, status: "in_progress", closed_outcome: null };
+    await patch({ status: "in_progress" });
+    expect(stamp.clears).toHaveLength(1);
+  });
+
+  it("refuses an outcome-only patch once the request is no longer closed", async () => {
+    // Another CSR re-opened it while this queue view was stale. Writing
+    // `fulfilled` onto the open row would leave it waiting there, and the
+    // next plain close would stamp the fitting before anyone recorded
+    // what actually happened.
+    db.updateMatchesNothing = true;
+
+    const res = await patch({ closedOutcome: "fulfilled" });
+
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe("request_not_closed");
+    expect(stamp.calls).toHaveLength(0);
+  });
+
+  it("turns a re-open that collides with a newer identical request into a 409", async () => {
+    // The dedupe index allows a fresh identical ask once the first is
+    // closed. Re-opening the old one would then put two open copies in
+    // the queue — the database refuses, and the CSR needs to be told
+    // which request is the live one, not handed a 500.
+    db.updateError = { code: "23505", message: "duplicate key value" };
+
+    const res = await patch({ status: "in_progress" });
+
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe("duplicate_open_request");
+  });
+
+  it("still surfaces a genuine 404 for a request that does not exist", async () => {
+    // The 409s above must not swallow the missing-row case.
+    db.updateMatchesNothing = true;
+    const res = await patch({ status: "contacted" });
+    expect(res.status).toBe(404);
   });
 });

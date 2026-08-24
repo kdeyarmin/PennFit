@@ -313,6 +313,11 @@ function RequestRow({
   nowMs: number;
 }) {
   const [noteDraft, setNoteDraft] = useState(row.csrNote ?? "");
+  /** Staged close: the row holds still and asks how it turned out. */
+  const [closing, setClosing] = useState(false);
+  const [outcomeDraft, setOutcomeDraft] = useState<
+    FitRequestClosedOutcome | ""
+  >("");
   const sty = STATUS_STYLE[row.status];
   const hasInsurance = Boolean(row.insuranceCarrier || row.memberId);
 
@@ -419,12 +424,34 @@ function RequestRow({
           >
             {sty.label}
           </span>
+          {/* Closing is a TWO-FIELD submit, not a status change that
+              happens to reveal a second control.
+
+              The queue defaults to the `new` filter. Sending
+              status='closed' on its own invalidates the list, the row
+              leaves the current view immediately, and the outcome
+              selector it was about to show goes with it — so in the
+              ordinary workflow a CSR closes requests without ever
+              recording an outcome, and a fulfilled fitting never gets
+              its dispense stamp. That is the whole feature failing
+              quietly.
+
+              Picking "Closed" therefore stages the change instead of
+              sending it: the row stays put, asks how it turned out, and
+              submits status + outcome in ONE patch. */}
           <select
-            value={row.status}
+            value={closing ? "closed" : row.status}
             disabled={pending}
-            onChange={(e) =>
-              onPatch({ status: e.target.value as FitRequestStatus })
-            }
+            onChange={(e) => {
+              const next = e.target.value as FitRequestStatus;
+              if (next === "closed") {
+                setClosing(true);
+                setOutcomeDraft(row.closedOutcome ?? "");
+                return;
+              }
+              setClosing(false);
+              onPatch({ status: next });
+            }}
             className="text-xs border rounded px-1 py-0.5 mt-1"
             style={{ borderColor: "hsl(var(--line-1))" }}
             data-testid={`fit-request-status-${row.id}`}
@@ -436,35 +463,67 @@ function RequestRow({
               </option>
             ))}
           </select>
-          {/* Only a closed request has an outcome to record, and only
-              `fulfilled` reaches beyond this queue — it stamps the linked
-              fitting as dispensed, which is what /admin/analytics/
-              fitter-outcomes counts. Left unset it stays "not recorded"
-              rather than being guessed. */}
-          {row.status === "closed" && (
-            <select
-              value={row.closedOutcome ?? ""}
-              disabled={pending}
-              onChange={(e) =>
-                onPatch({
-                  closedOutcome:
-                    e.target.value === ""
-                      ? null
-                      : (e.target.value as FitRequestClosedOutcome),
-                })
-              }
-              className="text-xs border rounded px-1 py-0.5 mt-1"
-              style={{ borderColor: "hsl(var(--line-1))" }}
-              data-testid={`fit-request-outcome-${row.id}`}
-              aria-label="How it turned out"
-            >
-              <option value="">How did it turn out?</option>
-              {CLOSED_OUTCOME_ORDER.map((o) => (
-                <option key={o} value={o}>
-                  {CLOSED_OUTCOME_LABEL[o]}
-                </option>
-              ))}
-            </select>
+
+          {(closing || row.status === "closed") && (
+            <>
+              <select
+                value={closing ? outcomeDraft : (row.closedOutcome ?? "")}
+                disabled={pending}
+                onChange={(e) => {
+                  const value = e.target.value as FitRequestClosedOutcome | "";
+                  if (closing) {
+                    setOutcomeDraft(value);
+                    return;
+                  }
+                  // Already closed: this is a correction, applied now.
+                  onPatch({ closedOutcome: value === "" ? null : value });
+                }}
+                className="text-xs border rounded px-1 py-0.5 mt-1"
+                style={{ borderColor: "hsl(var(--line-1))" }}
+                data-testid={`fit-request-outcome-${row.id}`}
+                aria-label="How it turned out"
+              >
+                <option value="">How did it turn out?</option>
+                {CLOSED_OUTCOME_ORDER.map((o) => (
+                  <option key={o} value={o}>
+                    {CLOSED_OUTCOME_LABEL[o]}
+                  </option>
+                ))}
+              </select>
+              {closing && (
+                <div className="flex gap-2 mt-1">
+                  <button
+                    type="button"
+                    disabled={pending}
+                    onClick={() => {
+                      onPatch({
+                        status: "closed",
+                        closedOutcome:
+                          outcomeDraft === "" ? null : outcomeDraft,
+                      });
+                      setClosing(false);
+                    }}
+                    className="text-xs font-semibold disabled:opacity-50"
+                    style={{ color: "hsl(var(--ink-1))" }}
+                    data-testid={`fit-request-confirm-close-${row.id}`}
+                  >
+                    {pending ? "Closing…" : "Close request"}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={pending}
+                    onClick={() => {
+                      setClosing(false);
+                      setOutcomeDraft("");
+                    }}
+                    className="text-xs text-slate-500 disabled:opacity-50"
+                    data-testid={`fit-request-cancel-close-${row.id}`}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              )}
+            </>
           )}
           {row.contactedBy && (
             <span className="text-[10px] text-slate-400 mt-1">

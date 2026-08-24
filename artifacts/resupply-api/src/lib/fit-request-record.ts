@@ -16,6 +16,7 @@ import { createHash } from "node:crypto";
 import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "./logger";
+import { redactDbErr } from "./redact-db-err";
 
 export interface RecordFitRequestInput {
   /** Tenant the fitting belonged to, resolved from the invite. */
@@ -86,6 +87,8 @@ export function computeFitRequestDedupeHash(input: {
   fullName: string;
   email: string;
   phone: string | null;
+  population: string;
+  fitSessionId?: string | null;
 }): string {
   const text = (v: string) => v.trim().toLowerCase().replace(/\s+/g, " ");
   const digits = (v: string | null) => (v ?? "").replace(/\D+/g, "");
@@ -94,6 +97,21 @@ export function computeFitRequestDedupeHash(input: {
     text(input.fullName),
     text(input.email),
     digits(input.phone),
+    // WHO THE FITTING IS FOR, not just who is asking.
+    //
+    // A parent fits themselves and then their child from the same
+    // device, under their own name, email and phone. Without these two
+    // the second ask hashes identically to the first, gets suppressed,
+    // and its session and chosen mask overwrite the adult row through
+    // enrichment — leaving one request whose population says "adult"
+    // while its fitting is the child's. That is the wrong-age failure
+    // the fitter exists to prevent, arriving through the back door.
+    //
+    // The session id is the sharper of the two (two children are two
+    // sessions); population catches the case where there is no session
+    // at all, which is every callback request.
+    input.population,
+    (input.fitSessionId ?? "").trim(),
   ];
   // A separator that cannot occur in any normalized part, so
   // ("ab", "c") and ("a", "bc") cannot collide into one key.
@@ -128,7 +146,10 @@ async function findFitterLead(
     if (error) throw error;
     return data?.id ?? null;
   } catch (err) {
-    logger.warn({ err }, "fit-request-record: lead link lookup failed");
+    logger.warn(
+      { err: redactDbErr(err) },
+      "fit-request-record: lead link lookup failed",
+    );
     return null;
   }
 }
@@ -159,7 +180,7 @@ async function stampContactRequested(
     if (error) throw error;
   } catch (err) {
     logger.warn(
-      { err },
+      { err: redactDbErr(err) },
       "fit-request-record: contact_requested_at stamp failed",
     );
   }
@@ -184,6 +205,11 @@ function enrichmentPatch(input: RecordFitRequestInput): Record<string, string> {
     const trimmed = typeof value === "string" ? value.trim() : "";
     if (trimmed) patch[column] = trimmed;
   };
+  // The channel the patient asked to be reached on. NOT part of the key
+  // — switching from a call to a text is a correction to the same ask,
+  // not a new one — but it must still reach staff, or they keep phoning
+  // someone who has since asked to be texted.
+  put("preferred_contact_method", input.preferredContactMethod);
   put("preferred_contact_time", input.preferredContactTime);
   put("date_of_birth", input.dateOfBirth);
   put("insurance_carrier", input.insuranceCarrier);
@@ -191,7 +217,10 @@ function enrichmentPatch(input: RecordFitRequestInput): Record<string, string> {
   put("group_number", input.groupNumber);
   put("prescribing_physician", input.prescribingPhysician);
   put("notes", input.notes);
-  put("fit_session_id", input.fitSessionId);
+  // `fit_session_id` is deliberately absent: it is part of the dedupe
+  // key now, so a row that matched already has this exact session and a
+  // different session is a different row. Enriching it could only ever
+  // move a fitting from one request to another.
   put("recommended_mask_id", input.recommendedMaskId);
   put("recommended_mask_name", input.recommendedMaskName);
   put("recommended_mask_type", input.recommendedMaskType);
@@ -216,7 +245,45 @@ async function adoptExistingOpenRequest(
   input: RecordFitRequestInput,
 ): Promise<string | null> {
   const supabase = getOrgScopedClient(orgId);
+
+  // ONE statement, not a SELECT then an UPDATE.
+  //
+  // A read-then-write here has the same flaw the insert does: a CSR can
+  // close the matching request in the gap, and the update then lands on
+  // a row staff have already finished — while the patient is told their
+  // ask is in the queue when nothing of theirs is open. Guarding the
+  // UPDATE itself on `status <> 'closed'` makes the database decide, and
+  // the returned row is proof an open request existed at that instant.
+  //
+  // `dedupe_hash` is written back to the value it already holds so the
+  // statement is a valid UPDATE even when the patient supplied nothing
+  // new. It is a no-op on the column and keeps this to one round trip.
   const { data, error } = (await supabase
+    .from("fitter_fit_requests")
+    .update({ dedupe_hash: dedupeHash, ...enrichmentPatch(input) })
+    .eq("dedupe_hash", dedupeHash)
+    .neq("status", "closed")
+    .select("id")
+    .limit(1)
+    .maybeSingle()) as {
+    data: { id?: string } | null;
+    error: { code?: string; message: string } | null;
+  };
+
+  if (!error) return data?.id ?? null;
+
+  // The enrichment write failed. The conflict itself was real — the
+  // insert proved an open row with this hash exists — so the patient IS
+  // queued, and returning null here would send the caller back to insert
+  // a second row (or worse, tell the patient their request failed while
+  // it sits in the queue). Fall back to reading the id without patching:
+  // losing the extra detail is the small loss, losing the request is not.
+  logger.warn(
+    { err: redactDbErr(error), event: "fit_request_duplicate_enrich_failed" },
+    "fit-request-record: could not enrich the existing request",
+  );
+
+  const { data: fallback, error: readErr } = (await supabase
     .from("fitter_fit_requests")
     .select("id")
     .eq("dedupe_hash", dedupeHash)
@@ -226,26 +293,8 @@ async function adoptExistingOpenRequest(
     data: { id?: string } | null;
     error: { message: string } | null;
   };
-  if (error) throw error;
-  const id = data?.id ?? null;
-  if (!id) return null;
-
-  const patch = enrichmentPatch(input);
-  if (Object.keys(patch).length > 0) {
-    const { error: patchErr } = await supabase
-      .from("fitter_fit_requests")
-      .update(patch)
-      .eq("id", id);
-    if (patchErr) {
-      // The request stands and the patient is in the queue; only the
-      // extra detail is missing. Never fail the submission over it.
-      logger.warn(
-        { err: patchErr, event: "fit_request_duplicate_enrich_failed" },
-        "fit-request-record: could not enrich the existing request",
-      );
-    }
-  }
-  return id;
+  if (readErr) throw readErr;
+  return fallback?.id ?? null;
 }
 
 export async function recordFitRequest(
@@ -258,6 +307,8 @@ export async function recordFitRequest(
     fullName: input.fullName,
     email: input.email,
     phone: input.phone,
+    population: input.population,
+    fitSessionId: input.fitSessionId,
   });
 
   const row = {
@@ -337,8 +388,10 @@ export async function recordFitRequest(
     // told to try again rather than shown a confirmation over nothing.
     return { id: null, error: "fit request insert conflicted repeatedly" };
   } catch (err) {
-    // Pass the Error object so pino's err.* redact rules engage.
-    logger.error({ err }, "fit-request-record: insert failed");
+    logger.error(
+      { err: redactDbErr(err) },
+      "fit-request-record: insert failed",
+    );
     return { id: null, error: describeError(err) };
   }
 }
@@ -349,16 +402,17 @@ export async function recordFitRequest(
  * PostgREST rejects with a plain `{ code, message, details, hint }`
  * object, not an Error — so the obvious `String(err)` renders the one
  * thing an operator needs to diagnose a failed write as
- * "[object Object]". `details` and `hint` are deliberately NOT included:
- * they echo row values, and this string reaches a log line.
+ * "[object Object]".
+ *
+ * Built ON redactDbErr rather than reading the error itself, so there is
+ * exactly ONE definition of which fields are safe to surface. `details`
+ * and `hint` are the dangerous ones: on a constraint violation Postgres
+ * puts the whole offending row in them ("Failing row contains (…, Dana
+ * Ruiz, dana@example.com, 1961-04-02, …)"), which is PHI, and this
+ * string reaches a log line.
  */
 function describeError(err: unknown): string {
-  if (err instanceof Error) return err.message;
-  if (err && typeof err === "object") {
-    const { code, message } = err as { code?: unknown; message?: unknown };
-    if (typeof message === "string" && message) {
-      return typeof code === "string" && code ? `${code}: ${message}` : message;
-    }
-  }
-  return String(err);
+  const { code, message } = redactDbErr(err);
+  if (!message) return code ?? "unknown database error";
+  return code ? `${code}: ${message}` : message;
 }

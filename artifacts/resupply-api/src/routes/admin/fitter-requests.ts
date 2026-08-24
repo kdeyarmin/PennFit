@@ -25,7 +25,11 @@ import { z } from "zod";
 
 import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
-import { markFitSessionDispensedById } from "../../lib/fitting/order-link";
+import {
+  clearFitSessionDispenseById,
+  markFitSessionDispensedById,
+} from "../../lib/fitting/order-link";
+import { redactDbErr } from "../../lib/redact-db-err";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
 
@@ -243,6 +247,8 @@ router.patch(
 
     const nowIso = new Date().toISOString();
     const update: FitRequestUpdate = {};
+    /** True when the patch records an outcome without moving the status. */
+    let outcomeOnly = false;
     if (parse.data.status !== undefined) {
       update.status = parse.data.status;
       // Stamp the lifecycle timestamps from the transition rather than
@@ -274,7 +280,15 @@ router.patch(
     } else if (parse.data.closedOutcome !== undefined) {
       // Outcome-only patch: a CSR recording (or correcting) how an
       // already-closed request turned out, without touching its status.
+      //
+      // Guarded on the row still being closed further down. An open
+      // request has not turned out yet, and letting a stale closed-row
+      // UI write an outcome onto one another CSR just re-opened would
+      // leave `fulfilled` waiting on the row — so the next plain close
+      // would stamp the fitting as dispensed before anyone recorded
+      // what actually happened.
       update.closed_outcome = parse.data.closedOutcome;
+      outcomeOnly = true;
     }
     if (parse.data.csrNote !== undefined) update.csr_note = parse.data.csrNote;
 
@@ -309,22 +323,54 @@ router.patch(
       // change the CSR actually asked for — so it is logged, not thrown.
       if (claimErr) {
         req.log?.warn?.(
-          { err: claimErr, id: idParam },
+          { err: redactDbErr(claimErr), id: idParam },
           "admin/fitter-requests: first-contact claim failed",
         );
       }
     }
 
-    const { data: row, error } = await supabase
+    let query = supabase
       .from("fitter_fit_requests")
       .update(update)
-      .eq("id", idParam)
+      .eq("id", idParam);
+    if (outcomeOnly) query = query.eq("status", "closed");
+
+    const { data: row, error } = await query
       .select(
         "id, status, csr_note, contacted_at, contacted_by, closed_at, closed_outcome, fit_session_id, recommended_mask_id, updated_at",
       )
       .maybeSingle();
-    if (error) throw error;
+
+    if (error) {
+      // 23505 = unique_violation, and the only unique constraint this
+      // update can trip is the open-request dedupe index (migration
+      // 0519). It means re-opening this request would put a SECOND open
+      // copy of the same ask in the queue, because the patient already
+      // filed an identical one after this was closed. Tell the CSR that
+      // rather than handing them a 500 — the other request is the live
+      // one, and this row should stay closed.
+      if ((error as { code?: string }).code === "23505") {
+        res.status(409).json({
+          error: "duplicate_open_request",
+          message:
+            "This patient already has an identical request open. Work that one instead of re-opening this.",
+        });
+        return;
+      }
+      throw error;
+    }
     if (!row) {
+      // An outcome-only patch that matched nothing means the row is no
+      // longer closed — someone re-opened it while this queue view was
+      // stale. Distinguishable from a genuinely missing request.
+      if (outcomeOnly) {
+        res.status(409).json({
+          error: "request_not_closed",
+          message:
+            "This request was re-opened. Close it again to record how it turned out.",
+        });
+        return;
+      }
       res.status(404).json({ error: "not_found" });
       return;
     }
@@ -345,16 +391,32 @@ router.patch(
     // work. The stamp is guarded on `dispensed_at IS NULL` at the
     // database, so re-closing a request never moves a date already set.
     let dispenseStamped = false;
-    if (
-      row.status === "closed" &&
-      row.closed_outcome === "fulfilled" &&
-      row.fit_session_id
-    ) {
-      const stamp = await markFitSessionDispensedById(orgId, {
-        fitSessionId: row.fit_session_id,
-        orderedMaskSlug: row.recommended_mask_id,
-      }).catch(() => ({ stamped: false }));
-      dispenseStamped = stamp.stamped;
+    let dispenseCleared = false;
+    const fulfilled =
+      row.status === "closed" && row.closed_outcome === "fulfilled";
+    if (row.fit_session_id) {
+      if (fulfilled) {
+        const stamp = await markFitSessionDispensedById(orgId, {
+          fitSessionId: row.fit_session_id,
+          orderedMaskSlug: row.recommended_mask_id,
+        }).catch(() => ({ stamped: false }));
+        dispenseStamped = stamp.stamped;
+      } else if (
+        parse.data.closedOutcome !== undefined ||
+        parse.data.status !== undefined
+      ) {
+        // The row is NOT fulfilled and this patch touched what decides
+        // that — a corrected outcome, or a re-open. If an earlier
+        // `fulfilled` had already stamped the fitting, that stamp is now
+        // a claim nobody stands behind, so it is withdrawn. Guarded at
+        // the data layer on the fitting having no shop order, so a
+        // carrier-confirmed delivery is never erased from here.
+        const cleared = await clearFitSessionDispenseById(
+          orgId,
+          row.fit_session_id,
+        ).catch(() => ({ cleared: false }));
+        dispenseCleared = cleared.cleared;
+      }
     }
 
     req.log?.info?.(
@@ -363,6 +425,7 @@ router.patch(
         status: row.status,
         closedOutcome: row.closed_outcome,
         dispenseStamped,
+        dispenseCleared,
         actor: req.adminEmail ?? null,
       },
       "admin/fitter-requests: updated",
