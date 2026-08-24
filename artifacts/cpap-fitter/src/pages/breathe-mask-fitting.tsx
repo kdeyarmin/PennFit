@@ -7,6 +7,7 @@ import {
   Check,
   ChevronDown,
   ClipboardCheck,
+  Database,
   Eye,
   FileCheck2,
   Filter,
@@ -19,6 +20,7 @@ import {
   Minus,
   QrCode,
   Repeat,
+  RefreshCw,
   Ruler,
   ScanFace,
   ShieldAlert,
@@ -31,6 +33,10 @@ import {
 } from "lucide-react";
 
 import { useDocumentTitle } from "@/hooks/use-document-title";
+import {
+  interfaceLabel,
+  useMaskCatalogCoverage,
+} from "@/lib/mask-catalog-coverage";
 
 import { BreatheShell, ClosingCta, PageHead } from "./breathe";
 import "./breathe.css";
@@ -614,6 +620,209 @@ function Depth() {
   );
 }
 
+/* Two things the roster count alone doesn't say: that the catalog keeps
+   growing without anything asked of the DME, and that a "model" here is a
+   deep record rather than a name in a dropdown. Both are load-bearing for
+   the "complete solution" claim and both are true of shipped code. */
+const COVERAGE_NOTES: {
+  icon: React.ReactNode;
+  title: string;
+  summary: string;
+  points: string[];
+  gold?: boolean;
+}[] = [
+  {
+    icon: <RefreshCw size={20} />,
+    title: "New masks arrive already loaded",
+    summary:
+      "The catalog is platform data, so an addition is live for every tenant at once.",
+    points: [
+      "We add new releases centrally as manufacturers ship them — no upgrade, no migration, no request ticket from you",
+      "Because catalog rows are shared platform data rather than per-customer copies, an addition reaches your fitter the moment it lands",
+      "Discontinued models stay in the catalog on purpose, so a patient still wearing one is recognised rather than unmatched",
+      "Where a manufacturer ships a magnet-free twin of a mask, both are carried — the safety screen can offer the twin instead of a different mask entirely",
+    ],
+    gold: true,
+  },
+  {
+    icon: <Layers size={20} />,
+    title: "Each one is a record, not a row",
+    summary:
+      "A name in a dropdown cannot be reasoned over. These carry the facts the engine filters on.",
+    points: [
+      "Per-size millimetre bands for cushion and frame, resolved independently — the size is recommended, not guessed",
+      "Structured contraindications with a severity, so an exclusion is a rule the engine enforces rather than free text someone has to read",
+      "Vented vs non-vented, PAP vs NIV, adult vs pediatric, magnetic components, pressure range, hose position",
+      "Replacement components with HCPCS codes and payer replacement categories, which is what turns a fitting into a billable resupply line",
+    ],
+  },
+];
+
+/* ── Catalog coverage ── */
+/**
+ * The manufacturer roster, counted live out of the platform catalog.
+ *
+ * Why this section exists: everything above it argues about how the engine
+ * REASONS. The first question a DME actually asks is narrower and comes
+ * first — "does it already know the masks I dispense?" Left unanswered, the
+ * rest of the page reads as a demo rather than a product you could switch
+ * to on Monday.
+ *
+ * It is deliberately a counted ledger, not a logo wall. A logo wall implies
+ * a partnership we do not claim; a per-manufacturer model count is the
+ * literal contents of `resupply.mask_models` and is checkable. Numbers come
+ * from GET /api/platform/mask-catalog (routes/storefront/platform-mask-catalog.ts),
+ * which counts PLATFORM rows only — a tenant's private formulary additions
+ * are that tenant's commercial data and never appear here.
+ *
+ * Fail-soft, same posture as the pricing page: `FALLBACK_COVERAGE`
+ * (lib/mask-catalog-coverage.ts, alongside the parsing) is both the
+ * pre-fetch first paint and the fetch-failure state, so a prospect never
+ * sees a spinner or a zero.
+ *
+ * Keep `.bx-reveal` on the stable wrapper only, never on a row —
+ * `useRevealOnScroll` observes once on mount, so an element that first
+ * appears when the live numbers land would never receive `.in` and would
+ * stay permanently invisible.
+ */
+function CatalogCoverageSection() {
+  const { coverage, isLive } = useMaskCatalogCoverage();
+  const { manufacturers, interfaceTypes, totals, lastUpdatedAt } = coverage;
+  // Share-of-catalog bar widths, scaled to the biggest roster rather than
+  // to the total, so a ten-manufacturer list still reads as a shape.
+  const widest = Math.max(1, ...manufacturers.map((m) => m.models));
+  const n = (v: number) => v.toLocaleString("en-US");
+  const updated = lastUpdatedAt ? new Date(lastUpdatedAt) : null;
+  const updatedLabel =
+    updated && !Number.isNaN(updated.getTime())
+      ? updated.toLocaleDateString("en-US", {
+          month: "long",
+          day: "numeric",
+          year: "numeric",
+        })
+      : null;
+
+  return (
+    <section className="bx-section" id="catalog">
+      <div className="bx-shell">
+        <div className="bx-section-head center bx-reveal">
+          <span className="bx-eyebrow">
+            <Database size={13} /> Catalog coverage
+          </span>
+          <h2 className="bx-h2">
+            The masks you dispense are <em>already in it</em>
+          </h2>
+          <p className="bx-lede">
+            A fitting engine is only as good as the catalog underneath it, so
+            here is ours — counted, not described. Every manufacturer that
+            matters in sleep is loaded, from the two that own most of your shelf
+            down to the specialty houses you reach for when nothing standard
+            seals. Nothing to import, no spreadsheet to send us, no
+            &ldquo;we&rsquo;ll add that in onboarding.&rdquo;
+          </p>
+        </div>
+
+        <div className="bx-mfg-panel bx-reveal">
+          <div className="bx-mfg-totals">
+            <div className="bx-mfg-total gold">
+              <b>{n(totals.models)}</b>
+              <span>mask models</span>
+            </div>
+            <div className="bx-mfg-total">
+              <b>{n(totals.manufacturers)}</b>
+              <span>manufacturers</span>
+            </div>
+            {totals.sizeVariants != null && (
+              <div className="bx-mfg-total">
+                <b>{n(totals.sizeVariants)}</b>
+                <span>sized variants with millimetre bands</span>
+              </div>
+            )}
+            {totals.components != null && (
+              <div className="bx-mfg-total">
+                <b>{n(totals.components)}</b>
+                <span>replacement parts, HCPCS-coded</span>
+              </div>
+            )}
+          </div>
+
+          <ul className="bx-mfg-list">
+            {manufacturers.map((m) => (
+              <li className="bx-mfg-row" key={m.name}>
+                <span
+                  className="bx-mfg-bar"
+                  style={{ width: `${(m.models / widest) * 100}%` }}
+                  aria-hidden="true"
+                />
+                <span className="bx-mfg-name">{m.name}</span>
+                <span className="bx-mfg-count">
+                  <b>{n(m.models)}</b>
+                  <i>{m.models === 1 ? "model" : "models"}</i>
+                </span>
+              </li>
+            ))}
+          </ul>
+
+          {totals.currentModels > 0 && (
+            <p className="bx-mfg-caption">
+              <b>{n(totals.currentModels)}</b> currently marketed ·{" "}
+              <b>{n(totals.discontinuedModels)}</b> discontinued and kept on
+              purpose
+            </p>
+          )}
+
+          {interfaceTypes.length > 0 && (
+            <div className="bx-mfg-types">
+              {interfaceTypes.map((t) => (
+                <span className="bx-mfg-type" key={t.type}>
+                  {interfaceLabel(t.type)} <b>{n(t.models)}</b>
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <p className="bx-mfg-foot">
+          {isLive && (
+            <span className="bx-mfg-live">
+              <span className="dot" /> Live count
+            </span>
+          )}
+          <span>
+            {isLive
+              ? "Read from the platform catalog when this page loaded"
+              : "Counted from the platform catalog"}
+            {updatedLabel ? `, last updated ${updatedLabel}` : ""} — not a
+            marketing figure typed into a slide.
+          </span>
+        </p>
+
+        <div className="bx-caps bx-mfg-notes">
+          {COVERAGE_NOTES.map((c) => (
+            <article
+              className={`bx-cap bx-reveal${c.gold ? " gold" : ""}`}
+              key={c.title}
+            >
+              <div className="bx-cap-head">
+                <span className="bx-cap-ic">{c.icon}</span>
+                <div>
+                  <h3>{c.title}</h3>
+                  <p className="bx-cap-summary">{c.summary}</p>
+                </div>
+              </div>
+              <ul className="bx-cap-list">
+                {c.points.map((pt) => (
+                  <li key={pt}>{pt}</li>
+                ))}
+              </ul>
+            </article>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 /* ── Referral network ── */
 const REFERRAL: { icon: React.ReactNode; label: string; note: string }[] = [
   {
@@ -1072,6 +1281,7 @@ export function BreatheMaskFitting() {
       />
       <EntryPoints />
       <Engine />
+      <CatalogCoverageSection />
       <Privacy />
       <Safeguards />
       <Depth />
