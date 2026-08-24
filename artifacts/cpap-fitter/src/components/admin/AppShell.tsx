@@ -597,6 +597,15 @@ export const NAV_GROUPS: ReadonlyArray<NavGroup> = [
     label: "Orders & Leads",
     items: [
       {
+        label: "Catalog",
+        requiredFeature: "module.inventory",
+        icon: Boxes,
+        href: "/admin/catalog",
+        matchPrefix: "/admin/catalog",
+        hint: "The SKUs you dispense and how many are on the shelf — record receipts, counts, and adjustments",
+        requiredPermission: "inventory.read",
+      },
+      {
         label: "Orders",
         icon: ShoppingBag,
         hint: "Fulfillment — fitter requests and shipping labels",

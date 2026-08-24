@@ -152,6 +152,7 @@ import priorAuthRenewalRouter from "./admin/prior-auth-renewal.js";
 import manualClaimRouter from "./admin/manual-claim.js";
 import billingTimelyFilingRouter from "./admin/billing-timely-filing.js";
 import billingDashboardRouter from "./admin/billing-dashboard.js";
+import catalogRouter from "./admin/catalog.js";
 import productHcpcsMapRouter from "./admin/product-hcpcs-map.js";
 import payerModifierRulesRouter from "./admin/payer-modifier-rules.js";
 import payerCoverageDiagnosesRouter from "./admin/payer-coverage-diagnoses.js";
@@ -546,6 +547,11 @@ router.use(billingDashboardRouter);
 // /admin/product-hcpcs-map/* — shop SKU → HCPCS catalog. Drives the
 // "build from fulfillment" auto-population.
 router.use(productHcpcsMapRouter);
+// /admin/catalog/* — the Postgres product catalog + warehouse stock that
+// replaced the Stripe Products list when patient card payments were retired.
+// Reads gate on `inventory.read`, writes on `admin.tools.manage`; stock only
+// moves through the audited adjust RPC.
+router.use(catalogRouter);
 // /admin/payer-modifier-rules/* — payer + HCPCS auto-attach modifier
 // rules (KX, KH, KI, RR, NU…) evaluated by the claim builder.
 router.use(payerModifierRulesRouter);

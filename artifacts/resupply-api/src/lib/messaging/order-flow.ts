@@ -64,6 +64,7 @@ import {
   type SkuEntitlement,
 } from "../entitlement/resolve-sku-entitlement";
 import { isFeatureEnabled } from "../feature-flags";
+import { recordDispense } from "../catalog/dispense";
 import { logger } from "../logger";
 
 export interface NotEligibleEntitlement {
@@ -685,7 +686,24 @@ async function ensureFulfillments(
     })
     .select("id");
   if (insertErr) throw insertErr;
-  return (inserted ?? []).map((r: { id: string }) => r.id);
+  const ids = (inserted ?? []).map((r: { id: string }) => r.id);
+
+  // Commit the unit against warehouse stock. Queued is the only lifecycle
+  // transition this app owns (PacWare marks things shipped, out of band),
+  // so it is where on-hand moves. Deliberately fail-soft and un-awaited on
+  // the caller's critical path is NOT an option here — we need the ledger
+  // row ordered after the insert — but recordDispense never throws, so a
+  // catalog miss cannot fail a resupply the patient is due for.
+  for (const id of ids) {
+    await recordDispense({
+      orgId: supabase.orgId,
+      sku: shipSku,
+      quantity: 1,
+      fulfillmentId: id,
+    });
+  }
+
+  return ids;
 }
 
 /**

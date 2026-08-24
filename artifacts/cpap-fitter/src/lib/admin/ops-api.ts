@@ -114,18 +114,6 @@ export interface DispatcherResult {
   skippedExisting?: number;
 }
 
-export async function runAbandonedCartDispatcher(): Promise<DispatcherResult> {
-  return await postDispatcher(
-    "/resupply-api/admin/shop/abandoned-carts/send-due",
-  );
-}
-
-export async function runReviewRequestDispatcher(): Promise<DispatcherResult> {
-  return await postDispatcher(
-    "/resupply-api/admin/shop/review-requests/send-due",
-  );
-}
-
 /**
  * Phase G.11 — Rx-renewal concierge (Phase B.2 / SMS variant Phase G.3).
  * Channel-parameterized: ops console renders one button per channel.

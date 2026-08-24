@@ -486,6 +486,77 @@ export interface Database {
         >;
         Relationships: [];
       };
+      // Migration 0516: the Postgres product catalog. Replaces the Stripe
+      // Products list that used to be the SKU registry (and whose
+      // `metadata.stock_count` was the on-hand count) before patient card
+      // payments were retired. `stock_count: null` means UNTRACKED, not zero.
+      products: {
+        Row: {
+          org_id: string;
+          sku: string;
+          name: string;
+          description: string | null;
+          category: string | null;
+          manufacturer: string | null;
+          model_number: string | null;
+          unit_of_measure: string;
+          stock_count: number | null;
+          low_stock_threshold: number | null;
+          active: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          org_id?: string;
+          sku: string;
+          name: string;
+          description?: string | null;
+          category?: string | null;
+          manufacturer?: string | null;
+          model_number?: string | null;
+          unit_of_measure?: string;
+          stock_count?: number | null;
+          low_stock_threshold?: number | null;
+          active?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["resupply"]["Tables"]["products"]["Insert"]>;
+        Relationships: [];
+      };
+      // Migration 0516: append-only stock movement history. Written only by
+      // the `adjust_product_stock` RPC — never INSERTed directly, or the
+      // balance would drift from the products row it explains.
+      product_stock_ledger: {
+        Row: {
+          id: string;
+          org_id: string;
+          sku: string;
+          delta: number;
+          balance_after: number | null;
+          reason: "receipt" | "dispense" | "return" | "count" | "adjustment";
+          reference: string | null;
+          note: string | null;
+          actor_email: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          org_id?: string;
+          sku: string;
+          delta: number;
+          balance_after?: number | null;
+          reason: "receipt" | "dispense" | "return" | "count" | "adjustment";
+          reference?: string | null;
+          note?: string | null;
+          actor_email?: string | null;
+          created_at?: string;
+        };
+        Update: Partial<
+          Database["resupply"]["Tables"]["product_stock_ledger"]["Insert"]
+        >;
+        Relationships: [];
+      };
       product_costs: {
         Row: {
           org_id: string | null;
@@ -6990,6 +7061,23 @@ export interface Database {
       };
     };
     Functions: {
+      // Mig 0516 — atomic stock movement. Serializes concurrent callers
+      // per (org, sku) with a txn-scoped advisory lock, then updates the
+      // on-hand count and appends the ledger row in one unit. Returns the
+      // new balance, or NULL when the SKU is untracked. Raises for an
+      // unknown SKU, a zero delta, or a movement that would go negative.
+      adjust_product_stock: {
+        Args: {
+          p_org_id: string;
+          p_sku: string;
+          p_delta: number;
+          p_reason: string;
+          p_reference?: string | null;
+          p_note?: string | null;
+          p_actor_email?: string | null;
+        };
+        Returns: number | null;
+      };
       // Mig 0434 — atomic inventory reservation. Serializes concurrent
       // reservers per (org, sku) with a txn-scoped advisory lock, sums the
       // still-live active holds, and either inserts a new hold (returning

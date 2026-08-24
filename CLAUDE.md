@@ -244,18 +244,32 @@ These are non-negotiable invariants of the codebase. Treat them as
 correctness, not style:
 
 - **Patients are insurance-only — no cash-pay, no card payments.** The
-  storefront checkout, cart, product catalog, memberships, subscriptions,
+  storefront checkout, cart, shoppable catalog, memberships, subscriptions,
   patient payment links, autopay, payment plans, Stripe Connect, and the
   patient/Connect webhook were all removed. Patients receive equipment
   through the insurance pipeline (`fulfillments` → `claim-builder` →
   Office Ally), and CSR-created orders collect a **signature**, not a
   payment (`/order-sign`, `lib/csr-order/order.ts`). Do NOT reintroduce a
-  patient-facing charge, a card-on-file, or a shoppable catalog. Stripe's
-  ONLY remaining role is **platform SaaS billing** — tenants paying the
-  platform — via `STRIPE_PLATFORM_SECRET_KEY`,
+  patient-facing charge, a card-on-file, or a storefront that sells.
+  Stripe's ONLY remaining role is **platform SaaS billing** — tenants
+  paying the platform — via `STRIPE_PLATFORM_SECRET_KEY`,
   `lib/platform-billing/stripe.ts`, and the single webhook at
   `/resupply-api/stripe/platform-webhook`. The `shop_*` tables are
   retained for historical rows and analytics; they take no new writes.
+- **The product catalog is Postgres, and stock only moves through the
+  RPC.** `resupply.products` (migration 0516) is the SKU registry that
+  replaced the Stripe Products list; on-hand used to be
+  `product.metadata.stock_count` and is now `products.stock_count`, where
+  **NULL means untracked, not zero**. Never `UPDATE products.stock_count`
+  directly — go through `adjustStock()` (`lib/catalog/store.ts`), which
+  calls `resupply.adjust_product_stock`. That function takes a
+  per-`(org, sku)` advisory lock and writes `product_stock_ledger` in the
+  same transaction, so a plain read-modify-write would both lose a
+  concurrent decrement and leave the ledger disagreeing with the balance.
+  A dispense is recorded when a fulfillment is **queued** (the only
+  lifecycle transition this app owns — PacWare marks things shipped out of
+  band) and is deliberately fail-soft: an un-catalogued SKU is logged and
+  skipped, never allowed to fail a resupply the patient is due.
 - **No image logging anywhere in the backend.** Camera images and video
   frames never leave the browser; only numeric facial measurements are
   transmitted. Do not add log lines that include image bytes, base64,

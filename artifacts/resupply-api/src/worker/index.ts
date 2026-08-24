@@ -101,6 +101,7 @@ import { registerCappedRentalAdvanceJob } from "./jobs/capped-rental-advance.js"
 import { registerDwoExpirySweepJob } from "./jobs/dwo-expiry-sweep.js";
 import { registerWebhookDispatcherJob } from "./jobs/webhook-dispatcher.js";
 import { registerAutoWorkflowJob } from "./jobs/auto-workflow.js";
+import { registerLowStockAlertsJob } from "./jobs/low-stock-alerts.js";
 import { registerInvitePasswordExpiryNotifyJob } from "./jobs/invite-password-expiry-notify.js";
 import { registerPrescriptionRequestAutoDraftJob } from "./jobs/prescription-request-auto-draft.js";
 import { registerConversationOrphanAssigneeSweepJob } from "./jobs/conversation-orphan-assignee-sweep.js";
@@ -1140,6 +1141,22 @@ async function doStartWorker(): Promise<void> {
     "registerInvitePasswordExpiryNotifyJob",
     registrationFailures,
     () => registerInvitePasswordExpiryNotifyJob(boss),
+  );
+
+  // Every 6 hours — warehouse low-stock digest. Reads the Postgres product
+  // catalog (migration 0516), dedups per-SKU via
+  // resupply.low_stock_alert_state, and emails the tenant's super-admins one
+  // rollup per tick.
+  await safeRegister(
+    "shop-inventory.low-stock-alerts",
+    registrationFailures,
+    () =>
+      registerIfProvisioned(
+        boss,
+        "shop-inventory.low-stock-alerts",
+        ["low_stock_alert_state", "products"],
+        registerLowStockAlertsJob,
+      ),
   );
 
   // Daily 13:43 UTC — pre-build draft prescription_request_packets

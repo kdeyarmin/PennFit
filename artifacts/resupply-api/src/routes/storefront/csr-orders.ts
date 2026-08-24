@@ -303,6 +303,4 @@ router.post("/csr-orders/sign", mutateLimiter, async (req, res) => {
   res.json({ status: "signed", signedAt: nowIso });
 });
 
-// ── POST /csr-orders/checkout ─────────────────────────────────────
-
 export default router;

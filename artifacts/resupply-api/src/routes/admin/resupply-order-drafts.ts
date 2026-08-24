@@ -104,7 +104,7 @@ const approveBody = z
     noteToCustomer: z.string().trim().max(2000).nullish(),
     documentKeys: z.array(z.string().min(1).max(64)).max(20).default([]),
     expiresInDays: z.number().int().min(1).max(120).optional(),
-    /** Email/SMS the checkout link now (default true). */
+    /** Email/SMS the signing link now (default true). */
     deliver: z.boolean().optional().default(true),
   })
   .strict();
@@ -328,7 +328,7 @@ router.post(
     }
 
     // CLAIM the draft atomically (open → ordered) BEFORE creating anything,
-    // so two concurrent approves can't both produce a checkout link for the
+    // so two concurrent approves can't both produce a signing link for the
     // same draft: the loser's conditional update matches zero rows and 409s
     // here instead of creating a second order request + sending a second
     // link.

@@ -222,6 +222,11 @@ const AdminLtvCacPage = lazyWithRetry(() =>
     default: m.AdminLtvCacPage,
   })),
 );
+const AdminCatalogPage = lazyWithRetry(() =>
+  import("@/pages/admin/admin-catalog").then((m) => ({
+    default: m.AdminCatalogPage,
+  })),
+);
 const AdminInventoryTurnoverPage = lazyWithRetry(() =>
   import("@/pages/admin/admin-inventory-turnover").then((m) => ({
     default: m.AdminInventoryTurnoverPage,
@@ -1348,6 +1353,7 @@ function AdminConsole() {
                 brand in every tenant's admin URL bar. The legacy paths
                 below redirect so existing bookmarks keep working — the
                 same courtesy the /resupply/* → /admin/* move got. */}
+            <Route path="/admin/catalog" component={AdminCatalogPage} />
             <Route path="/admin/fitter/orders" component={FitterOrdersPage} />
             <Route
               path="/admin/fitter/orders/:id"
