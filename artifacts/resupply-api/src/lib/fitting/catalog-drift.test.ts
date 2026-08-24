@@ -22,15 +22,33 @@
  * code, "the two catalog modes must agree on it"); this test is what
  * makes the next one fail in CI instead of in a fitting.
  *
- * The five fields compared per mask are the ones that change what a
- * patient is offered:
+ * The fields compared per mask are the ones that change what a patient is
+ * offered. The core five:
  *
  *   manufacturer · model name · status · size run · magnetic status
  *
- * Geometry is deliberately NOT compared. The two catalogs derive bands
- * differently on purpose (see `catalog-store.static.test.ts` and
- * migration 0511) — pinning millimetres here would only re-assert what
- * those already cover.
+ * plus the eligibility fields the tiers exclude and size on —
+ * interface type, service line, therapy modes, vented, pressure range,
+ * supplemental oxygen. Those matter because `staticCatalogAsMasks`
+ * HARDCODES `vented: "vented"`, `serviceLine: "adult"` and
+ * `therapyModes: ["pap"]`: the moment the DB catalog moves a model off
+ * one of those defaults, the fallback would go on offering it on the old
+ * terms with nothing to notice. All of them agree today, so they cost
+ * nothing to pin.
+ *
+ * Two things are deliberately NOT compared:
+ *
+ *   * Geometry — the two catalogs derive bands differently on purpose
+ *     (see `catalog-store.static.test.ts` and migration 0511); pinning
+ *     millimetres here would only re-assert what those already cover.
+ *   * Structured contraindications — `staticCatalogAsMasks` emits
+ *     `contraindications: []` unconditionally while the DB catalog holds
+ *     real `mask_contraindications` rows, so this is a KNOWN divergence,
+ *     not a latent one. The legacy array carries its exclusions as
+ *     free-text `contraindications` that the fallback adapter folds into
+ *     the tolerance ratings instead. Closing it means changing the
+ *     adapter, not the guard; asserting parity here would just fail on
+ *     every mask.
  *
  * Direction of the check: EVERY static fallback entry must have a
  * matching reference model. The reverse does not hold and must not — the
@@ -76,8 +94,38 @@ const MIGRATIONS_DIR = path.join(
  * passing while the real drift went unnoticed. `EXPECTED_MIGRATIONS`
  * below is the floor that keeps the discovery itself honest.
  */
-const TOUCHES_CATALOG =
-  /(?:CREATE TABLE(?:\s+IF NOT EXISTS)?|ALTER TABLE|INSERT INTO|UPDATE|DELETE FROM)\s+"?resupply"?\."?mask_(?:models|size_variants)"?/i;
+const WRITES_CATALOG =
+  /(?:CREATE TABLE(?:\s+IF NOT EXISTS)?|ALTER TABLE|INSERT INTO|UPDATE|DELETE FROM|MERGE INTO|TRUNCATE(?:\s+TABLE)?|COPY)\s+(?:ONLY\s+)?"?resupply"?\."?mask_(?:models|size_variants)"?/i;
+
+/**
+ * Loose companion to `WRITES_CATALOG`: any mention of either table at all.
+ *
+ * The verb list above can only recognise the statement forms that exist
+ * today. A future correction written as some other valid form would be
+ * silently skipped, freezing the reference at the old catalog state while
+ * production applied the change — the guard would keep passing on stale
+ * data, which is the one failure mode this file cannot afford.
+ *
+ * So every migration that so much as NAMES a catalog table must be
+ * accounted for: either it is replayed, or it is listed in
+ * `REFERENCE_ONLY_MIGRATIONS` as a file that merely points at the tables.
+ * Anything else fails the coverage test below and forces a look at the
+ * discovery rule. Over-inclusion is safe here; under-inclusion is not.
+ */
+const MENTIONS_CATALOG = /mask_(?:models|size_variants)/i;
+
+/**
+ * Migrations that reference the catalog tables (foreign keys, joins) but
+ * never write to them, so replaying them would add prerequisites without
+ * changing a single catalog row. Verified by inspection: none contains an
+ * INSERT/UPDATE/DELETE/MERGE/TRUNCATE/COPY against either table.
+ */
+const REFERENCE_ONLY_MIGRATIONS = [
+  "0482_mask_formulary.sql",
+  "0483_fit_sessions.sql",
+  "0484_safety_screening.sql",
+  "0487_provider_referrals.sql",
+] as const;
 
 /**
  * Catalog migrations known at the time of writing. The discovery regex
@@ -165,26 +213,48 @@ interface ReferenceMask {
   /** Current cushion/pillow size codes, in the catalog's own order. */
   sizeRun: string[];
   hasMagneticComponents: boolean;
+  // ── Eligibility fields ────────────────────────────────────────────
+  // Not part of the original five, but the tiers exclude and size on
+  // them, so a divergence here changes what a patient is offered just as
+  // surely as a missing size does. `vented` is the sharpest: migration
+  // 0481 calls a mismatch "a rebreathing hazard, which is why the engine
+  // treats a mismatch as a hard exclusion rather than a score penalty".
+  // `staticCatalogAsMasks` HARDCODES vented/serviceLine/therapyModes, so
+  // nothing but this check would notice the DB moving away from them.
+  interfaceType: string;
+  serviceLine: string;
+  therapyModes: string[];
+  vented: string;
+  pressureMin: number | null;
+  pressureMax: number | null;
+  supportsSupplementalOxygen: boolean | null;
 }
 
 let reference: Map<string, ReferenceMask>;
 let discovered: string[];
+/** Every migration naming a catalog table, written to or not. */
+let mentioning: string[];
 
 beforeAll(async () => {
-  discovered = readdirSync(MIGRATIONS_DIR)
+  const allMigrations = readdirSync(MIGRATIONS_DIR)
     .filter((f) => f.endsWith(".sql"))
-    .sort()
-    .filter((f) =>
-      TOUCHES_CATALOG.test(readFileSync(path.join(MIGRATIONS_DIR, f), "utf8")),
-    );
+    .sort();
+  const sqlOf = new Map(
+    allMigrations.map((f) => [
+      f,
+      readFileSync(path.join(MIGRATIONS_DIR, f), "utf8"),
+    ]),
+  );
+
+  discovered = allMigrations.filter((f) => WRITES_CATALOG.test(sqlOf.get(f)!));
+  mentioning = allMigrations.filter((f) =>
+    MENTIONS_CATALOG.test(sqlOf.get(f)!),
+  );
 
   const db = new PGlite();
   await db.exec(SETUP_SQL);
   for (const file of discovered) {
-    const sql = readFileSync(
-      path.join(MIGRATIONS_DIR, file),
-      "utf8",
-    ).replaceAll("--> statement-breakpoint", "");
+    const sql = sqlOf.get(file)!.replaceAll("--> statement-breakpoint", "");
     try {
       await db.exec(sql);
     } catch (cause) {
@@ -210,12 +280,26 @@ beforeAll(async () => {
     status: string;
     has_magnetic_components: boolean;
     size_run: string[];
+    interface_type: string;
+    service_line: string;
+    therapy_modes: string[];
+    vented: string;
+    pressure_min: number | null;
+    pressure_max: number | null;
+    supports_supplemental_oxygen: boolean | null;
   }>(`
     SELECT m.slug,
            m.manufacturer,
            m.model_name,
            m.status,
            m.has_magnetic_components,
+           m.interface_type,
+           m.service_line,
+           m.therapy_modes,
+           m.vented,
+           m.pressure_min_cm_h2o::float8 AS pressure_min,
+           m.pressure_max_cm_h2o::float8 AS pressure_max,
+           m.supports_supplemental_oxygen,
            COALESCE(
              json_agg(v.size_code ORDER BY v.sort_order)
                FILTER (WHERE v.id IS NOT NULL
@@ -227,7 +311,10 @@ beforeAll(async () => {
     LEFT JOIN resupply.mask_size_variants v ON v.mask_model_id = m.id
     WHERE m.org_id IS NULL
     GROUP BY m.id, m.slug, m.manufacturer, m.model_name,
-             m.status, m.has_magnetic_components
+             m.status, m.has_magnetic_components, m.interface_type,
+             m.service_line, m.therapy_modes, m.vented,
+             m.pressure_min_cm_h2o, m.pressure_max_cm_h2o,
+             m.supports_supplemental_oxygen
   `);
 
   reference = new Map(
@@ -239,6 +326,13 @@ beforeAll(async () => {
         status: r.status,
         sizeRun: r.size_run,
         hasMagneticComponents: r.has_magnetic_components,
+        interfaceType: r.interface_type,
+        serviceLine: r.service_line,
+        therapyModes: r.therapy_modes,
+        vented: r.vented,
+        pressureMin: r.pressure_min,
+        pressureMax: r.pressure_max,
+        supportsSupplementalOxygen: r.supports_supplemental_oxygen,
       },
     ]),
   );
@@ -257,6 +351,27 @@ describe("mask catalog drift: static fallback ⇄ Mask Intelligence Catalog", ()
     expect(discovered).toEqual(
       expect.arrayContaining([...EXPECTED_MIGRATIONS]),
     );
+  });
+
+  it("accounts for every migration that names a catalog table", () => {
+    // Under-inclusion is the dangerous direction: a migration whose write
+    // form `WRITES_CATALOG` doesn't recognise (a MERGE, a TRUNCATE, an
+    // unqualified write) would be skipped, and the guard would keep
+    // passing against a reference frozen before that correction. Every
+    // mentioning file must therefore be either replayed or explicitly
+    // classified as reference-only.
+    const unaccounted = mentioning.filter(
+      (f) =>
+        !discovered.includes(f) &&
+        !(REFERENCE_ONLY_MIGRATIONS as readonly string[]).includes(f),
+    );
+    expect(
+      unaccounted,
+      `these migrations name a catalog table but are neither replayed nor ` +
+        `listed as reference-only — if one writes to the catalog, teach ` +
+        `WRITES_CATALOG its statement form; if it only points at the ` +
+        `tables, add it to REFERENCE_ONLY_MIGRATIONS`,
+    ).toEqual([]);
   });
 
   it("builds a non-empty reference catalog", () => {
@@ -324,6 +439,40 @@ describe("mask catalog drift: static fallback ⇄ Mask Intelligence Catalog", ()
           `${slug} size run drift — a patient sized during a DB outage would be ` +
             `offered a different set of cushions than the clinical fitter offers`,
         ).toEqual(ref.sizeRun);
+      });
+
+      it("agrees on the fields that gate clinical eligibility", () => {
+        const ref = reference.get(slug);
+        if (!ref) return;
+        // `staticCatalogAsMasks` HARDCODES vented / serviceLine /
+        // therapyModes. If the DB catalog ever moves a model off those
+        // defaults — a non-vented NIV mask, a pediatric-only model, a
+        // narrowed pressure range — the fallback keeps offering it on the
+        // old terms and nothing else would catch it. `vented` is the
+        // sharpest: migration 0481 calls a mismatch "a rebreathing
+        // hazard, which is why the engine treats a mismatch as a hard
+        // exclusion rather than a score penalty".
+        expect(
+          {
+            interfaceType: mask.interfaceType,
+            serviceLine: mask.serviceLine,
+            therapyModes: mask.therapyModes,
+            vented: mask.vented,
+            pressureMin: mask.pressureMin,
+            pressureMax: mask.pressureMax,
+            supportsSupplementalOxygen: mask.supportsSupplementalOxygen,
+          },
+          `${slug} eligibility drift — the two catalogs would exclude or ` +
+            `size this mask differently`,
+        ).toEqual({
+          interfaceType: ref.interfaceType,
+          serviceLine: ref.serviceLine,
+          therapyModes: ref.therapyModes,
+          vented: ref.vented,
+          pressureMin: ref.pressureMin,
+          pressureMax: ref.pressureMax,
+          supportsSupplementalOxygen: ref.supportsSupplementalOxygen,
+        });
       });
 
       it("agrees on magnetic status", () => {
