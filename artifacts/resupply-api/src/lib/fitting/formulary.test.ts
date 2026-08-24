@@ -618,6 +618,46 @@ describe("resolveCatalogVisibility", () => {
     ).toBe(0);
   });
 
+  it("does not hide a brand the mask catalog has never heard of", () => {
+    // The vacuous-truth trap: a brand with NO masks trivially satisfies
+    // "nothing of theirs survived". Without an explicit catalog-membership
+    // check, a rule naming a mask-less brand — a typo, a stale rule, or an
+    // accessories-only line — would pull that brand's stock off the shop.
+    const v = resolveCatalogVisibility(
+      formulary([
+        rule({
+          targetKind: "manufacturer",
+          targetManufacturer: "Accessories Only Co",
+          effect: "exclude",
+        }),
+      ]),
+      [MASK, OTHER],
+      ASOF,
+    );
+    expect(v.hiddenManufacturers.size).toBe(0);
+    expect(isManufacturerHidden(v, "Accessories Only Co")).toBe(false);
+    // And the masks that ARE in the catalog are untouched by it.
+    expect(v.hiddenSlugs.size).toBe(0);
+  });
+
+  it("hides nothing at all when the catalog is empty", () => {
+    // Same trap at the limit: an empty catalog makes EVERY exclude rule
+    // vacuously satisfied.
+    const v = resolveCatalogVisibility(
+      formulary([
+        rule({
+          targetKind: "manufacturer",
+          targetManufacturer: "Acme",
+          effect: "exclude",
+        }),
+      ]),
+      [],
+      ASOF,
+    );
+    expect(v.hiddenManufacturers.size).toBe(0);
+    expect(v.hiddenSlugs.size).toBe(0);
+  });
+
   it("matches a manufacturer case- and whitespace-insensitively", () => {
     const v = resolveCatalogVisibility(
       formulary([

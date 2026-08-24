@@ -406,11 +406,18 @@ export function resolveCatalogVisibility(
 
   const hiddenSlugs = new Set<string>();
   const visibleManufacturers = new Set<string>();
+  // Every brand the catalog knows about, visible or not. Tracked
+  // separately from `visibleManufacturers` because "all of this brand's
+  // masks are hidden" and "this brand has no masks" are the same emptiness
+  // when you only look at what survived — see the guard below.
+  const catalogManufacturers = new Set<string>();
   for (const mask of catalog) {
+    const key = mask.manufacturer.trim().toLowerCase();
+    catalogManufacturers.add(key);
     if (resolveFormulary(unscoped, mask, null, context).excluded) {
       hiddenSlugs.add(mask.slug);
     } else {
-      visibleManufacturers.add(mask.manufacturer.trim().toLowerCase());
+      visibleManufacturers.add(key);
     }
   }
 
@@ -421,10 +428,20 @@ export function resolveCatalogVisibility(
     const name = rule.targetManufacturer?.trim().toLowerCase();
     if (!name) continue;
     if (!ruleApplies(rule, context)) continue;
-    // Named by an exclude AND nothing of theirs survived. The second half
-    // is what stops a brand that only sells accessories — no mask in the
-    // catalog at all — from being hidden by a vacuous "all of them are
-    // hidden" over an empty set.
+    // A brand is hidden only when the catalog HAS masks by it and every
+    // one of them is gone. Both halves are load-bearing, and the first is
+    // the one that is easy to leave out: without it, a brand with no masks
+    // at all passes "nothing of theirs survived" vacuously, and a rule
+    // naming a mask-less brand — a typo, a stale rule, or an
+    // accessories-only line somebody excluded by hand — would silently
+    // pull that brand's stock off the shop.
+    //
+    // This helper only knows the MASK catalog, so `hiddenManufacturers` is
+    // a claim it can only honestly make about brands in it. The operator
+    // asking to hide a brand it has never heard of is answered where that
+    // can be said out loud: the manufacturer toggle 404s on an unknown
+    // name rather than saving a rule that would do nothing visible.
+    if (!catalogManufacturers.has(name)) continue;
     if (!visibleManufacturers.has(name)) hiddenManufacturers.add(name);
   }
 
