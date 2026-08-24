@@ -441,38 +441,86 @@ describe("mask catalog drift: static fallback ⇄ Mask Intelligence Catalog", ()
         ).toEqual(ref.sizeRun);
       });
 
-      it("agrees on the fields that gate clinical eligibility", () => {
+      // ── Eligibility ──────────────────────────────────────────────
+      // Asserted field by field rather than as one object comparison:
+      // a bundled `toEqual` reports "expected { interfaceType: …(6) } to
+      // deeply equal { …(6) }", which names the mask but not the field
+      // that moved. These are the checks most likely to fire years from
+      // now, on a catalog change nobody connected with this file, so the
+      // failure has to say exactly what drifted.
+
+      it("agrees on interface type", () => {
         const ref = reference.get(slug);
         if (!ref) return;
-        // `staticCatalogAsMasks` HARDCODES vented / serviceLine /
-        // therapyModes. If the DB catalog ever moves a model off those
-        // defaults — a non-vented NIV mask, a pediatric-only model, a
-        // narrowed pressure range — the fallback keeps offering it on the
-        // old terms and nothing else would catch it. `vented` is the
-        // sharpest: migration 0481 calls a mismatch "a rebreathing
-        // hazard, which is why the engine treats a mismatch as a hard
-        // exclusion rather than a score penalty".
+        // Chooses the tier the mask is scored in AND the axis its sizes
+        // are partitioned on (nose width for nasal/pillow, nose-to-chin
+        // otherwise) — see `staticCatalogAsMasks`.
         expect(
-          {
-            interfaceType: mask.interfaceType,
-            serviceLine: mask.serviceLine,
-            therapyModes: mask.therapyModes,
-            vented: mask.vented,
-            pressureMin: mask.pressureMin,
-            pressureMax: mask.pressureMax,
-            supportsSupplementalOxygen: mask.supportsSupplementalOxygen,
-          },
-          `${slug} eligibility drift — the two catalogs would exclude or ` +
-            `size this mask differently`,
-        ).toEqual({
-          interfaceType: ref.interfaceType,
-          serviceLine: ref.serviceLine,
-          therapyModes: ref.therapyModes,
-          vented: ref.vented,
-          pressureMin: ref.pressureMin,
-          pressureMax: ref.pressureMax,
-          supportsSupplementalOxygen: ref.supportsSupplementalOxygen,
-        });
+          mask.interfaceType,
+          `${slug} interface-type drift — the two catalogs would score ` +
+            `this mask in a different tier and size it on a different axis`,
+        ).toBe(ref.interfaceType);
+      });
+
+      it("agrees on service line", () => {
+        const ref = reference.get(slug);
+        if (!ref) return;
+        // `staticCatalogAsMasks` hardcodes "adult" and derives its bands
+        // from the ADULT plausibility window. The DB catalog carries
+        // pediatric models; one reaching the fallback would be sized
+        // against adult geometry.
+        expect(
+          mask.serviceLine,
+          `${slug} service-line drift — the fallback sizes every mask ` +
+            `against the adult plausibility window`,
+        ).toBe(ref.serviceLine);
+      });
+
+      it("agrees on vented state and therapy modes", () => {
+        const ref = reference.get(slug);
+        if (!ref) return;
+        // The hard-exclusion pair, and the sharpest check in this file.
+        // `staticCatalogAsMasks` hardcodes `vented: "vented"` and
+        // `therapyModes: ["pap"]`; the DB catalog carries non_vented and
+        // both, plus niv-only models. Migration 0481: a vented mismatch
+        // is "a rebreathing hazard, which is why the engine treats a
+        // mismatch as a hard exclusion rather than a score penalty".
+        expect(
+          mask.vented,
+          `${slug} vented drift — the fallback hardcodes "vented"; serving ` +
+            `a non-vented mask on a single-limb circuit is a CO2 ` +
+            `rebreathing hazard, which the DB path hard-excludes`,
+        ).toBe(ref.vented);
+        expect(
+          mask.therapyModes,
+          `${slug} therapy-mode drift — the fallback hardcodes ["pap"], so ` +
+            `an NIV-only mask would be offered to a PAP patient`,
+        ).toEqual(ref.therapyModes);
+      });
+
+      it("agrees on the pressure range and oxygen support", () => {
+        const ref = reference.get(slug);
+        if (!ref) return;
+        // A mask whose ceiling the DB has lowered is excluded there for a
+        // high-pressure prescription while the fallback still offers it.
+        expect(
+          mask.pressureMin,
+          `${slug} minimum-pressure drift — the two catalogs disagree on ` +
+            `which prescriptions this mask supports`,
+        ).toBe(ref.pressureMin);
+        expect(
+          mask.pressureMax,
+          `${slug} maximum-pressure drift — the two catalogs disagree on ` +
+            `which prescriptions this mask supports`,
+        ).toBe(ref.pressureMax);
+        // Null on both sides for every model today (the seed never
+        // populated it), so this currently only guards the direction that
+        // matters: the DB starting to record oxygen support while
+        // `staticCatalogAsMasks` goes on hardcoding null.
+        expect(
+          mask.supportsSupplementalOxygen,
+          `${slug} supplemental-oxygen drift — the fallback hardcodes null`,
+        ).toBe(ref.supportsSupplementalOxygen);
       });
 
       it("agrees on magnetic status", () => {
