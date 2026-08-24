@@ -151,6 +151,18 @@ export interface ChatToolContext {
    * CHAT_TOOLS placeholders.
    */
   tools?: OpenAiToolDescriptor[];
+  /**
+   * Catalog ids this tenant does not carry — an `exclude` rule in their
+   * formulary (migration 0516). Every catalog tool drops them, so the
+   * assistant can neither recommend, list, look up, nor compare a mask
+   * the provider stopped stocking.
+   *
+   * Undefined (the default, and every existing unit test) hides nothing.
+   * The system prompt's catalog section is filtered by the same set — see
+   * `buildChatSystemPrompt` — so the model is not left reciting a mask
+   * from memory that its tools then refuse to return.
+   */
+  hiddenMaskIds?: ReadonlySet<string>;
 }
 
 /**
@@ -486,19 +498,32 @@ export type ChatToolResult =
   | { ok: true; data: TrackOrderToolData }
   | { ok: false; error: string };
 
-/** Resolve a user-supplied mask reference (id or substring of name) to a catalog entry. */
-function resolveMask(reference: string): MaskEntry | null {
+/**
+ * Resolve a user-supplied mask reference (id or substring of name) to a
+ * catalog entry.
+ *
+ * `hidden` is searched AROUND, not filtered after: a hidden mask must not
+ * shadow a visible one whose name it happens to prefix, and a reference
+ * that only matches a hidden mask must come back null so the caller reports
+ * "could not find" rather than quietly comparing against a mask the
+ * provider does not carry.
+ */
+function resolveMask(
+  reference: string,
+  hidden?: ReadonlySet<string>,
+): MaskEntry | null {
   const trimmed = reference.trim();
   if (trimmed.length === 0) return null;
-  const exactById = maskCatalog.find((m) => m.id === trimmed);
+  const catalog = hidden?.size
+    ? maskCatalog.filter((m) => !hidden.has(m.id))
+    : maskCatalog;
+  const exactById = catalog.find((m) => m.id === trimmed);
   if (exactById) return exactById;
   const lower = trimmed.toLowerCase();
   // Prefer exact-name match before substring to avoid "F20" matching "F20 Pro".
-  const exactByName = maskCatalog.find((m) => m.name.toLowerCase() === lower);
+  const exactByName = catalog.find((m) => m.name.toLowerCase() === lower);
   if (exactByName) return exactByName;
-  const substring = maskCatalog.find((m) =>
-    m.name.toLowerCase().includes(lower),
-  );
+  const substring = catalog.find((m) => m.name.toLowerCase().includes(lower));
   return substring ?? null;
 }
 
@@ -686,7 +711,9 @@ export async function executeChatTool(
     }
     const limit = parsed.data.limit ?? 3;
     const answers = toQuestionnaireAnswers(parsed.data);
-    const result = recommend(NEUTRAL_MEASUREMENTS, answers);
+    const result = recommend(NEUTRAL_MEASUREMENTS, answers, {
+      hiddenMaskIds: ctx?.hiddenMaskIds,
+    });
     // The engine may pad topRecommendations / alternatives with
     // contraindicated masks (low confidence) when the viable set is
     // thin. The public chatbot must not surface those, nor magnetic-
@@ -727,7 +754,12 @@ export async function executeChatTool(
     const a = parsed.data;
     const limit = a.limit ?? 5;
     const manufacturerLower = a.manufacturer?.toLowerCase();
+    const hidden = ctx?.hiddenMaskIds;
     const filtered = maskCatalog.filter((m) => {
+      // Masks the provider does not carry never reach the model — the
+      // point of hiding a manufacturer is that asking for it by name
+      // returns nothing, not a shortlist the provider can't fill.
+      if (hidden?.has(m.id)) return false;
       if (maskHasMagneticHardware(m)) return false;
       if (a.type && m.type !== a.type) return false;
       if (a.price_tier && m.priceTier !== a.price_tier) return false;
@@ -770,8 +802,8 @@ export async function executeChatTool(
           .join("; ")}`,
       };
     }
-    const a = resolveMask(parsed.data.mask_a);
-    const b = resolveMask(parsed.data.mask_b);
+    const a = resolveMask(parsed.data.mask_a, ctx?.hiddenMaskIds);
+    const b = resolveMask(parsed.data.mask_b, ctx?.hiddenMaskIds);
     if (!a) {
       return {
         ok: false,

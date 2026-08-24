@@ -266,6 +266,9 @@ export async function buildFitReport(
       formularyVersion: numOrNull(data.formulary_version),
       formularyRulesMatched: (data.formulary_rules_matched ??
         null) as FitReport["provenance"]["formularyRulesMatched"],
+      formularyExcludedSlugs: Array.isArray(data.formulary_excluded_slugs)
+        ? (data.formulary_excluded_slugs as string[])
+        : null,
       degraded: Boolean(data.degraded),
       geometrySignOff,
     },

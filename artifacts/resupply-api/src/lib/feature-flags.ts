@@ -149,7 +149,7 @@ export const FEATURE_FLAG_KEYS = [
   // Seeded OFF — unsolicited patient contact is the tenant's call.
   "fitter.refit_campaign",
   // End the fitter with a REQUEST a person works, not an order the
-  // patient files themselves (migration 0516). The one fitter flag
+  // patient files themselves (migration 0518). The one fitter flag
   // seeded ON, and the one that fails toward ENABLED on a degraded
   // lookup: putting a human between a patient's guess at their member ID
   // and a claim is the safe direction, so an unresolvable flag must not

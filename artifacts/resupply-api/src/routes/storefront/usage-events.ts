@@ -34,7 +34,7 @@ const KNOWN_STEPS = [
   "results_viewed",
   "mask_chosen",
   "mask_cashpay_added",
-  // Adult-or-child, asked at the head of the questionnaire (0516). The
+  // Adult-or-child, asked at the head of the questionnaire (0518). The
   // value is a SERVICE LINE, not an age or a date of birth.
   "fitting_population_selected",
   // The fitter's ending under `fitter.lead_capture_only`: a request a

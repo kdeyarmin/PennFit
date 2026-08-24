@@ -8,6 +8,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   formularyMultiplier,
+  isManufacturerHidden,
+  resolveCatalogVisibility,
   resolveFormulary,
   ruleApplies,
   scopeSpecificity,
@@ -334,6 +336,7 @@ describe("preference", () => {
       const m = formularyMultiplier({
         allowed: true,
         deniedByRule: false,
+        excluded: false,
         denyReasonCode: null,
         denyReasonNote: null,
         preferenceRank: rank,
@@ -375,5 +378,352 @@ describe("provenance", () => {
     // The note is carried for staff surfaces; the redaction that keeps it
     // off patient-facing output lives in the report layer.
     expect(decision.denyReasonNote).toContain("house brand");
+  });
+});
+
+// ── Hard exclusion (migration 0516) ──────────────────────────────────
+//
+// `exclude` is the effect that HIDES rather than demotes, so the cases
+// worth pinning are the boundaries between the two: that a deny never
+// becomes a hide, that a hide beats a same-tier deny or allow, and that a
+// narrower allow still rescues one model of an otherwise-hidden brand.
+
+describe("exclude vs deny", () => {
+  it("hides on exclude and only demotes on deny", () => {
+    const hidden = resolve([
+      rule({
+        targetKind: "manufacturer",
+        targetManufacturer: "Acme",
+        effect: "exclude",
+      }),
+    ]);
+    expect(hidden.allowed).toBe(false);
+    expect(hidden.excluded).toBe(true);
+
+    const demoted = resolve([
+      rule({
+        targetKind: "manufacturer",
+        targetManufacturer: "Acme",
+        effect: "deny",
+      }),
+    ]);
+    expect(demoted.allowed).toBe(false);
+    // The safety net: a deny must NEVER read as a hide, or the engine
+    // starts dropping candidates it is supposed to keep for a clinician.
+    expect(demoted.excluded).toBe(false);
+  });
+
+  it("leaves a mask nothing targets untouched", () => {
+    const decision = resolve([
+      rule({
+        targetKind: "manufacturer",
+        targetManufacturer: "Globex",
+        effect: "exclude",
+      }),
+    ]);
+    expect(decision.allowed).toBe(true);
+    expect(decision.excluded).toBe(false);
+  });
+
+  it("never hides on a closed posture alone", () => {
+    // A closed formulary DENIES what it doesn't name. Hiding the entire
+    // catalog is not something a posture default may do silently.
+    const decision = resolve([], "closed");
+    expect(decision.allowed).toBe(false);
+    expect(decision.excluded).toBe(false);
+    expect(decision.denyReasonCode).toBe("not_in_closed_formulary");
+  });
+
+  it("beats an allow and a deny sitting in the same tier", () => {
+    const decision = resolve([
+      rule({
+        id: "a",
+        targetKind: "manufacturer",
+        targetManufacturer: "Acme",
+        effect: "allow",
+      }),
+      rule({
+        id: "d",
+        targetKind: "manufacturer",
+        targetManufacturer: "Acme",
+        effect: "deny",
+      }),
+      rule({
+        id: "x",
+        targetKind: "manufacturer",
+        targetManufacturer: "Acme",
+        effect: "exclude",
+      }),
+    ]);
+    expect(decision.excluded).toBe(true);
+    expect(decision.denyReasonCode).toBeNull();
+  });
+
+  it("loses to a MORE SPECIFIC allow, so one model of a dropped line survives", () => {
+    // "We dropped Acme except the one model we still stock." Target
+    // specificity (mask_model 3 > manufacturer 1) is what expresses it.
+    const decision = resolve([
+      rule({
+        id: "brand",
+        targetKind: "manufacturer",
+        targetManufacturer: "Acme",
+        effect: "exclude",
+      }),
+      rule({
+        id: "keep",
+        targetKind: "mask_model",
+        targetMaskModelId: "model-1",
+        effect: "allow",
+      }),
+    ]);
+    expect(decision.allowed).toBe(true);
+    expect(decision.excluded).toBe(false);
+  });
+
+  it("still applies when a BROADER allow sits below it", () => {
+    const decision = resolve([
+      rule({ id: "all", targetKind: "all", effect: "allow" }),
+      rule({
+        id: "brand",
+        targetKind: "manufacturer",
+        targetManufacturer: "Acme",
+        effect: "exclude",
+      }),
+    ]);
+    expect(decision.excluded).toBe(true);
+  });
+
+  it("does not fire on an unknown scope axis, exactly as a deny does not", () => {
+    // We never hide on an assumption: a payer-scoped exclusion cannot
+    // fire when the payer is unknown.
+    const decision = resolve([
+      rule({
+        payerProfileId: "payer-9",
+        targetKind: "manufacturer",
+        targetManufacturer: "Acme",
+        effect: "exclude",
+      }),
+    ]);
+    expect(decision.excluded).toBe(false);
+    expect(decision.allowed).toBe(true);
+  });
+
+  it("respects the effective-date window", () => {
+    const expired = resolve([
+      rule({
+        targetKind: "manufacturer",
+        targetManufacturer: "Acme",
+        effect: "exclude",
+        effectiveTo: "2020-01-01",
+      }),
+    ]);
+    expect(expired.excluded).toBe(false);
+  });
+});
+
+describe("resolveCatalogVisibility", () => {
+  const OTHER: CatalogMask = {
+    ...MASK,
+    id: "model-2",
+    slug: "globex-mask",
+    manufacturer: "Globex",
+    modelName: "Globex Mask",
+  };
+  const SECOND_ACME: CatalogMask = {
+    ...MASK,
+    id: "model-3",
+    slug: "acme-mask-two",
+    modelName: "Acme Mask Two",
+  };
+  const ASOF = CONTEXT.asOf;
+
+  it("hides every mask of an excluded manufacturer, and the brand with them", () => {
+    const v = resolveCatalogVisibility(
+      formulary([
+        rule({
+          targetKind: "manufacturer",
+          targetManufacturer: "Acme",
+          effect: "exclude",
+        }),
+      ]),
+      [MASK, SECOND_ACME, OTHER],
+      ASOF,
+    );
+    expect([...v.hiddenSlugs].sort()).toEqual(["acme-mask", "acme-mask-two"]);
+    expect(v.hiddenManufacturers.has("acme")).toBe(true);
+    expect(v.hiddenManufacturers.has("globex")).toBe(false);
+  });
+
+  it("does not report a brand hidden while one of its models survives", () => {
+    // The operator kept something of theirs, so the brand has not been
+    // dropped — and a brand-keyed surface (the shop) must not act as if
+    // it had.
+    const v = resolveCatalogVisibility(
+      formulary([
+        rule({
+          id: "brand",
+          targetKind: "manufacturer",
+          targetManufacturer: "Acme",
+          effect: "exclude",
+        }),
+        rule({
+          id: "keep",
+          targetKind: "mask_model",
+          targetMaskModelId: "model-1",
+          effect: "allow",
+        }),
+      ]),
+      [MASK, SECOND_ACME],
+      ASOF,
+    );
+    expect(v.hiddenSlugs.has("acme-mask")).toBe(false);
+    expect(v.hiddenSlugs.has("acme-mask-two")).toBe(true);
+    expect(v.hiddenManufacturers.size).toBe(0);
+  });
+
+  it("ignores a scoped rule, because this surface has no context to match", () => {
+    const v = resolveCatalogVisibility(
+      formulary([
+        rule({
+          locationId: "loc-1",
+          targetKind: "manufacturer",
+          targetManufacturer: "Acme",
+          effect: "exclude",
+        }),
+      ]),
+      [MASK, OTHER],
+      ASOF,
+    );
+    expect(v.hiddenSlugs.size).toBe(0);
+    expect(v.hiddenManufacturers.size).toBe(0);
+  });
+
+  it("hides nothing for a deny, a preference, or an empty formulary", () => {
+    for (const effect of ["deny", "deprioritize"] as const) {
+      const v = resolveCatalogVisibility(
+        formulary([
+          rule({
+            targetKind: "manufacturer",
+            targetManufacturer: "Acme",
+            effect,
+          }),
+        ]),
+        [MASK, OTHER],
+        ASOF,
+      );
+      expect(v.hiddenSlugs.size).toBe(0);
+    }
+    expect(
+      resolveCatalogVisibility(formulary([]), [MASK], ASOF).hiddenSlugs.size,
+    ).toBe(0);
+  });
+
+  it("does not hide a brand the mask catalog has never heard of", () => {
+    // The vacuous-truth trap: a brand with NO masks trivially satisfies
+    // "nothing of theirs survived". Without an explicit catalog-membership
+    // check, a rule naming a mask-less brand — a typo, a stale rule, or an
+    // accessories-only line — would pull that brand's stock off the shop.
+    const v = resolveCatalogVisibility(
+      formulary([
+        rule({
+          targetKind: "manufacturer",
+          targetManufacturer: "Accessories Only Co",
+          effect: "exclude",
+        }),
+      ]),
+      [MASK, OTHER],
+      ASOF,
+    );
+    expect(v.hiddenManufacturers.size).toBe(0);
+    expect(isManufacturerHidden(v, "Accessories Only Co")).toBe(false);
+    // And the masks that ARE in the catalog are untouched by it.
+    expect(v.hiddenSlugs.size).toBe(0);
+  });
+
+  it("hides nothing at all when the catalog is empty", () => {
+    // Same trap at the limit: an empty catalog makes EVERY exclude rule
+    // vacuously satisfied.
+    const v = resolveCatalogVisibility(
+      formulary([
+        rule({
+          targetKind: "manufacturer",
+          targetManufacturer: "Acme",
+          effect: "exclude",
+        }),
+      ]),
+      [],
+      ASOF,
+    );
+    expect(v.hiddenManufacturers.size).toBe(0);
+    expect(v.hiddenSlugs.size).toBe(0);
+  });
+
+  it("hides a brand whose models were excluded one at a time", () => {
+    // Same intent as naming the brand, said the long way round. The admin
+    // panel already reports this brand as hidden; the shop has to agree.
+    const v = resolveCatalogVisibility(
+      formulary([
+        rule({
+          id: "m1",
+          targetKind: "mask_model",
+          targetManufacturer: null,
+          targetMaskModelId: "model-1",
+          effect: "exclude",
+        }),
+        rule({
+          id: "m3",
+          targetKind: "mask_model",
+          targetManufacturer: null,
+          targetMaskModelId: "model-3",
+          effect: "exclude",
+        }),
+      ]),
+      [MASK, SECOND_ACME, OTHER],
+      ASOF,
+    );
+    expect(v.hiddenSlugs.has("acme-mask")).toBe(true);
+    expect(v.hiddenSlugs.has("acme-mask-two")).toBe(true);
+    expect(v.hiddenManufacturers.has("acme")).toBe(true);
+    expect(v.hiddenManufacturers.has("globex")).toBe(false);
+  });
+
+  it("does not drop a vendor the shop still sells just because a category rule emptied them", () => {
+    // "We don't do full face" is a statement about mask shapes, not about
+    // a vendor. Inferring "stop selling their tubing too" from it would
+    // pull sellable stock off the shelf nobody asked to remove.
+    const v = resolveCatalogVisibility(
+      formulary([
+        rule({
+          targetKind: "interface_type",
+          targetManufacturer: null,
+          targetInterfaceType: "full_face",
+          effect: "exclude",
+        }),
+      ]),
+      [MASK, SECOND_ACME],
+      ASOF,
+    );
+    // The masks themselves are still hidden from the fitter — only the
+    // brand-level shop inference is withheld.
+    expect(v.hiddenSlugs.size).toBe(2);
+    expect(v.hiddenManufacturers.size).toBe(0);
+  });
+
+  it("matches a manufacturer case- and whitespace-insensitively", () => {
+    const v = resolveCatalogVisibility(
+      formulary([
+        rule({
+          targetKind: "manufacturer",
+          targetManufacturer: "Acme",
+          effect: "exclude",
+        }),
+      ]),
+      [MASK],
+      ASOF,
+    );
+    expect(isManufacturerHidden(v, "  aCmE ")).toBe(true);
+    expect(isManufacturerHidden(v, "Globex")).toBe(false);
+    // A product with no manufacturer metadata is never hidden on a guess.
+    expect(isManufacturerHidden(v, null)).toBe(false);
   });
 });

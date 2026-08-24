@@ -369,6 +369,39 @@ describe("Migration SQL content — 0214_patient_payment_apply_ledger", () => {
 // 2. DB integration tests — verify actual schema state (skip if no DB)
 // ─────────────────────────────────────────────────────────────────────────────
 
+describe("Migration SQL content — 0516_formulary_exclude_effect", () => {
+  const sql = readMigration("0516_formulary_exclude_effect.sql");
+
+  it("widens the effect CHECK to include 'exclude' without dropping the others", () => {
+    const check =
+      /CHECK \("effect" IN \('allow', 'deny', 'exclude', 'prefer', 'deprioritize'\)\)/;
+    expect(sql).toMatch(check);
+  });
+
+  it("drops the old constraint first, so a re-run is idempotent", () => {
+    const dropPos = sql.indexOf(
+      'DROP CONSTRAINT IF EXISTS "formulary_rules_effect_chk"',
+    );
+    const addPos = sql.indexOf('ADD CONSTRAINT "formulary_rules_effect_chk"');
+    expect(dropPos).toBeGreaterThanOrEqual(0);
+    expect(addPos).toBeGreaterThan(dropPos);
+  });
+
+  it("rewrites no rows — every existing rule keeps its meaning", () => {
+    // The whole safety claim of this migration is that it only widens a
+    // constraint. An UPDATE or DELETE slipping in here would silently
+    // change live formulary behaviour on deploy.
+    expect(sql).not.toMatch(/\bUPDATE\s+"?resupply"?\./i);
+    expect(sql).not.toMatch(/\bDELETE\s+FROM\b/i);
+  });
+
+  it("indexes only the rows the manufacturer switch writes", () => {
+    expect(sql).toMatch(
+      /WHERE "effect" = 'exclude' AND "target_kind" = 'manufacturer'/,
+    );
+  });
+});
+
 const dbUrl = process.env.DATABASE_URL;
 
 describe.skipIf(!dbUrl)(
@@ -382,6 +415,87 @@ describe.skipIf(!dbUrl)(
 
     afterAll(async () => {
       await pool.end();
+    });
+
+    // ── 0516 formulary `exclude` effect ─────────────────────────────
+    //
+    // The constraint IS the feature's contract: `exclude` is what lets an
+    // operator hide a manufacturer, and everything else must still be
+    // rejected so a typo in a rule payload fails loudly rather than
+    // resolving to "no availability rule fired".
+    it("accepts effect='exclude' on formulary_rules and still rejects junk", async () => {
+      const orgId = randomUUID();
+      const formularyId = randomUUID();
+      const ruleId = randomUUID();
+      try {
+        const suffix = orgId.slice(0, 8);
+        await pool.query(
+          `INSERT INTO resupply.organizations (id, slug, name)
+             VALUES ($1, $2, $3)
+             ON CONFLICT (id) DO NOTHING`,
+          [orgId, `mig-0516-${suffix}`, `mig-0516-${suffix}`],
+        );
+        await pool.query(
+          `INSERT INTO resupply.formularies (id, org_id, name, status)
+             VALUES ($1, $2, $3, 'draft')`,
+          [formularyId, orgId, `mig-0516-${formularyId.slice(0, 8)}`],
+        );
+
+        await pool.query(
+          `INSERT INTO resupply.formulary_rules
+             (id, org_id, formulary_id, target_kind, target_manufacturer, effect)
+           VALUES ($1, $2, $3, 'manufacturer', 'ResMed', 'exclude')`,
+          [ruleId, orgId, formularyId],
+        );
+        const stored = await pool.query<{ effect: string }>(
+          `SELECT effect FROM resupply.formulary_rules WHERE id = $1`,
+          [ruleId],
+        );
+        expect(stored.rows[0]!.effect).toBe("exclude");
+
+        // The pre-existing effects are untouched by the widening.
+        for (const effect of ["allow", "deny", "prefer", "deprioritize"]) {
+          await pool.query(
+            `INSERT INTO resupply.formulary_rules
+               (org_id, formulary_id, target_kind, target_manufacturer, effect,
+                preference_rank)
+             VALUES ($1, $2, 'manufacturer', 'ResMed', $3, $4)`,
+            [orgId, formularyId, effect, effect === "prefer" ? 1 : null],
+          );
+        }
+
+        await expect(
+          pool.query(
+            `INSERT INTO resupply.formulary_rules
+               (org_id, formulary_id, target_kind, target_manufacturer, effect)
+             VALUES ($1, $2, 'manufacturer', 'ResMed', 'hide')`,
+            [orgId, formularyId],
+          ),
+        ).rejects.toThrow(/formulary_rules_effect_chk/);
+      } finally {
+        await pool
+          .query(`DELETE FROM resupply.formulary_rules WHERE org_id = $1`, [
+            orgId,
+          ])
+          .catch(() => {});
+        await pool
+          .query(`DELETE FROM resupply.formularies WHERE org_id = $1`, [orgId])
+          .catch(() => {});
+        await pool
+          .query(`DELETE FROM resupply.organizations WHERE id = $1`, [orgId])
+          .catch(() => {});
+      }
+    });
+
+    it("creates the partial index the manufacturer switch reads through", async () => {
+      const result = await pool.query<{ indexdef: string }>(
+        `SELECT indexdef FROM pg_indexes
+           WHERE schemaname = 'resupply'
+             AND indexname = 'formulary_rules_exclude_manufacturer_idx'`,
+      );
+      expect(result.rows.length).toBe(1);
+      expect(result.rows[0]!.indexdef).toMatch(/WHERE/);
+      expect(result.rows[0]!.indexdef).toContain("'exclude'");
     });
 
     // ── 0060 trigger target schema ──────────────────────────────────

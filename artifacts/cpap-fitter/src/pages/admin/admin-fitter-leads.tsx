@@ -694,7 +694,7 @@ export function AdminFitterLeadsPage() {
                       </div>
                       {/* Stated interest, not inferred: this prospect
                           finished a fitting and asked to be contacted
-                          (mig 0516). The full request — contact details,
+                          (mig 0518). The full request — contact details,
                           any insurance, the mask they saw — is in
                           Fitter > Fit Requests; this badge is why they
                           sort to the top of this queue. */}

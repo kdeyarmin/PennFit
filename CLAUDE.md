@@ -245,7 +245,7 @@ correctness, not style:
 
 - **A patient never files their own order, and never gets a mask for the
   wrong age.** Two invariants of the mask fitter, both added by
-  migration 0516:
+  migration 0518:
   - **The fitter ends in a REQUEST.** `fitter.lead_capture_only` is
     seeded **ON for every tenant**: `/results` offers _send my details_
     and _ask a representative to contact me_, both of which write a

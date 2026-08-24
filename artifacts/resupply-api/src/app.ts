@@ -26,6 +26,7 @@ import { providerPortalFeatureGate } from "./lib/provider-portal-feature-gate";
 import { RATE_LIMITS } from "./lib/rate-limits-config";
 import { getRequestId, requestContextMiddleware } from "./lib/request-context";
 import { requestHost } from "./lib/request-host";
+import { storefrontRecommendLimiter } from "./middlewares/storefront-rate-limit";
 import {
   isVerifiedCustomDomainOrigin,
   resolveOrgIdByHost,
@@ -554,25 +555,22 @@ const storefrontChatLimiter = expressRateLimit({
 });
 app.use("/api/chat", storefrontChatLimiter);
 
-// /api/recommend is the one hot public POST left uncapped: no token
-// cost or PHI, but it runs the full mask-scoring engine on the single
-// Node process per call, so an unthrottled flood is event-loop CPU
-// pressure. Generous per-IP budget — a real fitter session recomputes
-// only a handful of times.
-const storefrontRecommendLimiter = expressRateLimit({
-  windowMs: RATE_LIMITS.storefront_recommend.windowMs,
-  limit: RATE_LIMITS.storefront_recommend.limit,
-  standardHeaders: "draft-7",
-  legacyHeaders: false,
-  keyGenerator: (req: Request) => ipKeyGenerator(req.ip ?? "0.0.0.0"),
-  message: {
-    error:
-      "Too many recommendation requests from this network. Please wait a moment and try again.",
-  },
-});
-app.use("/api/recommend", storefrontRecommendLimiter);
-// /api/fit/* is the clinical assessment path: the same scoring engine plus
-// a catalog read and a session write, so it needs at least the same cap.
+// The mask-scoring limiter now lives in middlewares/storefront-rate-limit
+// and is SHARED by `/api/fit/*` here and `POST /api/recommend`, which
+// applies the same instance at its own route registration.
+//
+// Why `/api/recommend` moved: that route performs authorization (it
+// verifies the signed fitter-invite token), and CodeQL's
+// js/missing-rate-limiting query only recognises a limiter at the
+// handler's own registration — an `app.use(path, limiter)` in this file
+// is invisible to it, so the route read as unlimited despite being capped
+// here. Moving rather than duplicating keeps the ONE shared bucket: the
+// same instance mounted twice for one request would count it twice and
+// halve the real budget.
+//
+// `/api/fit/*` is the clinical assessment path — the same scoring engine
+// plus a catalog read and a session write — so it keeps the same cap, and
+// stays app-level because its router has several entry points.
 app.use("/api/fit", storefrontRecommendLimiter);
 
 // Reminder subscription + manage routes have different abuse shapes,

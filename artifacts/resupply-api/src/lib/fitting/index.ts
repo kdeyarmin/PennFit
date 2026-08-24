@@ -311,6 +311,7 @@ export function assess(input: FitEngineInput): FitAssessment {
       formularyVersion: input.formulary.version,
       catalogSnapshotVersion,
       formularyRulesMatched: tiers.formularyRulesMatched,
+      formularyExcludedSlugs: tiers.formularyExcludedSlugs,
       degraded: input.degraded,
     },
   };
@@ -321,7 +322,11 @@ export * from "./types.js";
 export {
   resolveFormulary,
   formularyMultiplier,
+  resolveCatalogVisibility,
+  isManufacturerHidden,
+  NO_HIDDEN_CATALOG,
   OPEN_FORMULARY,
+  type CatalogVisibility,
 } from "./formulary.js";
 export {
   resolveConfidence,

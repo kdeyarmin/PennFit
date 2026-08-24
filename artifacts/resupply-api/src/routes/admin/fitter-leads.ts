@@ -98,7 +98,7 @@ router.get(
       )
       // A prospect who ASKED to be contacted outranks even a hot lead:
       // engagement scoring infers interest, this one stated it, and there
-      // is a person waiting on a reply (mig 0516). Their full request
+      // is a person waiting on a reply (mig 0518). Their full request
       // lives in Fitter > Fit Requests; this is the funnel-side signal.
       .order("contact_requested_at", { ascending: false, nullsFirst: false })
       // Hot leads next (CSR outreach queue); otherwise

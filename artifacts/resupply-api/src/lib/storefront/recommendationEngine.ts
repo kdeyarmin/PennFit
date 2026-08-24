@@ -939,6 +939,20 @@ export interface RecommendOptions {
    * referral rather than a shrug.
    */
   population?: Population;
+  /**
+   * Catalog ids the tenant does not carry, from an `exclude` rule in their
+   * formulary (migration 0516). Removed BEFORE scoring, not after, so the
+   * top-3 diversification and the alternatives backfill draw from what is
+   * actually dispensable rather than leaving holes where a hidden mask was.
+   *
+   * `maskCatalog[].id` and `mask_models.slug` are deliberately the same id
+   * space ('resmed-airfit-f20'), which is what lets this legacy engine
+   * honour a formulary it cannot otherwise see.
+   *
+   * Default: none hidden, so a caller that does not resolve a tenant (and
+   * every existing test) behaves exactly as before.
+   */
+  hiddenMaskIds?: ReadonlySet<string>;
 }
 
 export function recommend(
@@ -949,12 +963,18 @@ export function recommend(
   const typeWeights = scoreAnswers(answers);
   const fitAdjustments = options.fitAdjustments ?? {};
   const population = options.population ?? "adult";
+  const hiddenMaskIds = options.hiddenMaskIds;
 
-  const eligibleMasks = maskCatalog.filter((mask) =>
-    servesPopulation(mask, population),
+  // Both exclusions are HARD and both happen before scoring, so the top-3
+  // diversification and the alternatives backfill draw only from masks the
+  // tenant can actually dispense to this patient. One pass, two reasons:
+  // wrong service line for the session, or hidden by the tenant's formulary.
+  const dispensable = maskCatalog.filter(
+    (mask) =>
+      servesPopulation(mask, population) && !hiddenMaskIds?.has(mask.id),
   );
 
-  const scoredMasks = eligibleMasks.map((mask) => {
+  const scoredMasks = dispensable.map((mask) => {
     const fitScore = scoreFitMatch(mask, measurements);
     const typeScore = typeWeights[mask.type];
     const activeContras = getActiveContraindications(mask, answers);

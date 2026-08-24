@@ -1305,7 +1305,7 @@ export interface Database {
           // Mig 0156 — CSR free-text notes + cold-skip marker.
           csr_notes: string | null;
           cold_skipped_at: string | null;
-          // Mig 0516 — the prospect asked the DME to contact them at the
+          // Mig 0518 — the prospect asked the DME to contact them at the
           // end of their fitting. Set by POST /shop/fitter-requests; the
           // full request lives in `fitter_fit_requests`.
           contact_requested_at: string | null;
@@ -1314,7 +1314,7 @@ export interface Database {
         Update: Partial<Database["resupply"]["Tables"]["fitter_leads"]["Row"]>;
         Relationships: [];
       };
-      // Mig 0516 — what the patient asks for at the end of a fitting,
+      // Mig 0518 — what the patient asks for at the end of a fitting,
       // now that they no longer file their own order. Fulfilment-side
       // and PHI-bearing; deliberately NOT the marketing `fitter_leads`
       // table, which exists to be mailed from.

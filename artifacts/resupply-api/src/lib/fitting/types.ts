@@ -264,7 +264,12 @@ export interface FormularyRule {
   targetInterfaceType: string | null;
   targetMaskModelId: string | null;
   targetSizeVariantId: string | null;
-  effect: "allow" | "deny" | "prefer" | "deprioritize";
+  /**
+   * `deny` demotes and tags; `exclude` hard-hides. See the header of
+   * `formulary.ts` for why the two are separate effects rather than one
+   * with a strength dial.
+   */
+  effect: "allow" | "deny" | "exclude" | "prefer" | "deprioritize";
   preferenceRank: number | null;
   reasonCode: string | null;
   /** Internal note. STAFF-ONLY — redacted from every patient-facing surface. */
@@ -286,6 +291,19 @@ export interface FormularyDecision {
   allowed: boolean;
   /** True when a rule denied it — as opposed to a `closed` default. */
   deniedByRule: boolean;
+  /**
+   * True when an `exclude` rule fired: the provider does not carry this at
+   * all, so it must not reach a patient on ANY surface.
+   *
+   * Strictly stronger than `!allowed`, and the two mean different things.
+   * `allowed: false` alone is the advisory `deny` — the ranking pipeline
+   * keeps the candidate, demoted and tagged, as the clinical safety net
+   * for the case where nothing else survives. `excluded: true` removes it
+   * from the pool outright. Every consumer that filters MUST branch on
+   * this field, never on `allowed`, or a deny silently becomes a hide and
+   * the safety net is gone.
+   */
+  excluded: boolean;
   denyReasonCode: string | null;
   denyReasonNote: string | null;
   preferenceRank: number | null;
@@ -411,6 +429,18 @@ export interface FitAssessment {
     formularyVersion: number;
     catalogSnapshotVersion: number;
     formularyRulesMatched: Record<string, string[]>;
+    /**
+     * Slugs the formulary HARD-EXCLUDED — masks the provider does not
+     * carry, removed from the pool before ranking.
+     *
+     * Clinician- and audit-facing only. It is stripped from the patient
+     * projection alongside `formularyRulesMatched`: a patient must not be
+     * handed a list of the masks their provider chose not to stock, which
+     * is the whole reason the operator hid them. The fit report and the
+     * stored session keep it so a reviewer can always reconstruct why a
+     * given mask never appeared.
+     */
+    formularyExcludedSlugs: string[];
     degraded: boolean;
   };
 }

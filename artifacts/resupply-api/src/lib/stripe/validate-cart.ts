@@ -49,6 +49,7 @@ export interface CartValidationError {
     | "product_inactive"
     | "not_in_catalog"
     | "price_not_storefront_approved"
+    | "manufacturer_not_carried"
     | "out_of_stock"
     | "exceeds_stock";
   message: string;
@@ -81,6 +82,20 @@ export async function validateCartItems(
   // here while creating the session on a connected account (or vice-versa)
   // would reject every line as `price_not_found`.
   requestOptions: Stripe.RequestOptions = {},
+  /**
+   * Manufacturers the tenant has hidden (formulary `exclude`, migration
+   * 0516), lowercased — from `loadCatalogVisibility(orgId)`.
+   *
+   * Filtering `GET /shop/products` is not enough on its own: a cart lives
+   * in the shopper's localStorage and a reorder replays an older purchase,
+   * so a line added before the brand was dropped still arrives here. Taking
+   * payment for something the provider will not ship is the one failure
+   * this whole feature exists to prevent, so the fence belongs at the till
+   * as well as on the shelf.
+   *
+   * Default empty = nothing hidden, so every existing caller is unchanged.
+   */
+  hiddenManufacturers: ReadonlySet<string> = new Set(),
 ): Promise<CartValidationResult> {
   const errors: CartValidationError[] = [];
 
@@ -123,6 +138,7 @@ export async function validateCartItems(
           quantity: item.mode === "one_time" ? totalQty : item.quantity,
         },
         requestOptions,
+        hiddenManufacturers,
       );
       if (itemError) errors.push(itemError);
     }),
@@ -135,6 +151,7 @@ async function validateSingleItem(
   stripe: Stripe,
   item: CartItem,
   requestOptions: Stripe.RequestOptions,
+  hiddenManufacturers: ReadonlySet<string>,
 ): Promise<CartValidationError | null> {
   // Fetch price with product AND product.default_price expanded so we
   // can run the full projectProduct catalog-membership check in one call.
@@ -198,6 +215,21 @@ async function validateSingleItem(
       priceId: item.priceId,
       reason: "not_in_catalog",
       message: `Price ${item.priceId} does not belong to the shop catalog.`,
+    };
+  }
+
+  // Same fence as the catalog check above, one step further: the product
+  // is in the shop catalog, but its brand is one the tenant has dropped.
+  // Keyed on the same `metadata.manufacturer` that `/shop/products`
+  // filters on, so the shelf and the till agree. A product with no
+  // manufacturer metadata is never blocked — bundles carry none, and
+  // refusing a sale on a guess is worse than the listing gap.
+  const manufacturer = meta.manufacturer?.trim().toLowerCase();
+  if (manufacturer && hiddenManufacturers.has(manufacturer)) {
+    return {
+      priceId: item.priceId,
+      reason: "manufacturer_not_carried",
+      message: `${meta.manufacturer} products are no longer carried.`,
     };
   }
 

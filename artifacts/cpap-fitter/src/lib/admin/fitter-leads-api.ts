@@ -70,7 +70,7 @@ export interface FitterLeadRow {
   csrNotes: string | null;
   coldSkippedAt: string | null;
   /** When this prospect asked to be contacted at the end of a fitting
-   *  (mig 0516). The full request is in Fitter > Fit Requests; this is
+   *  (mig 0518). The full request is in Fitter > Fit Requests; this is
    *  the funnel-side signal, and it sorts to the top of the queue. */
   contactRequestedAt: string | null;
 }
