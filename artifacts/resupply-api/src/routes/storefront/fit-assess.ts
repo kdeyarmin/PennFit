@@ -55,6 +55,7 @@ import {
   ADULT_PLAUSIBILITY_BOUNDS,
   assess,
   PEDIATRIC_PLAUSIBILITY_BOUNDS,
+  resolveCatalogVisibility,
 } from "../../lib/fitting/index.js";
 import { buildProfile } from "../../lib/fitting/profile.js";
 import { RULES_ENGINE_VERSION } from "../../lib/fitting/versions.js";
@@ -549,7 +550,9 @@ router.post("/fit/assess", assessLimiter, async (req, res) => {
  * formulary preference and inventory margin rank (publishing it lets
  * anyone reconstruct the DME's commercial ordering, undoing the
  * "commercial signals never reach the patient" invariant),
- * `formularyRulesMatched` is internal rule ids, and `clinicianReason` is
+ * `formularyRulesMatched` is internal rule ids, `formularyExcludedSlugs`
+ * is the list of masks the provider chose not to carry (publishing it to
+ * the patient would undo the hiding it records), and `clinicianReason` is
  * the staff-facing wording. None of them are consumed by the SPA.
  */
 function projectAssessment(assessment: FitAssessment): Omit<
@@ -559,7 +562,10 @@ function projectAssessment(assessment: FitAssessment): Omit<
   primary: Partial<FitCandidate> | null;
   alternatives: Partial<FitCandidate>[];
   excluded: Omit<ExclusionRecord, "clinicianReason">[];
-  provenance: Omit<FitAssessment["provenance"], "formularyRulesMatched">;
+  provenance: Omit<
+    FitAssessment["provenance"],
+    "formularyRulesMatched" | "formularyExcludedSlugs"
+  >;
 } {
   const candidate = ({
     rankScore: _rankScore,
@@ -567,8 +573,14 @@ function projectAssessment(assessment: FitAssessment): Omit<
     patientFactorScore: _patientFactorScore,
     ...pub
   }: FitCandidate) => pub;
-  const { formularyRulesMatched: _rules, ...provenance } =
-    assessment.provenance;
+  // Both of these are clinician/audit-only. `formularyExcludedSlugs` in
+  // particular is the list of masks the provider chose not to carry —
+  // handing it to the patient would undo the hiding it records.
+  const {
+    formularyRulesMatched: _rules,
+    formularyExcludedSlugs: _hidden,
+    ...provenance
+  } = assessment.provenance;
   return {
     ...assessment,
     primary: assessment.primary ? candidate(assessment.primary) : null,
@@ -629,6 +641,28 @@ router.get("/fit/catalog", async (req, res) => {
   }
 
   const context = await loadFittingContext(orgId);
+  // Masks the tenant does not carry never appear here. This endpoint's whole
+  // job is "what can this provider fit you with", and it feeds the fitter's
+  // browse/compare UI, so a hidden manufacturer showing up in the list would
+  // be exactly the searchable listing the operator turned off. Resolved
+  // against the axes the invite actually knows (see below) so this endpoint
+  // and /fit/assess never disagree about what the same patient can be
+  // shown.
+  const visibility = resolveCatalogVisibility(
+    context.formulary,
+    context.catalog,
+    new Date().toISOString().slice(0, 10),
+    // The invite carries the location and payer, so pass them: without
+    // this, a location-scoped exclusion applied during /fit/assess while
+    // /fit/catalog — reached with the SAME token — still listed the mask,
+    // and an org-wide exclusion with a location-specific allow hid one the
+    // assessment was free to recommend. Population and therapy mode are
+    // still genuinely unknown here, so rules scoped to those stay inert.
+    { locationId: invite.locationId, payerProfileId: invite.payerProfileId },
+  );
+  const visibleMasks = context.catalog.filter(
+    (m) => !visibility.hiddenSlugs.has(m.slug),
+  );
   // The body varies by the tenant behind the invite token and can include a
   // tenant's PRIVATE mask models and formulary metadata. Both custom domains
   // sit behind Cloudflare, so `public` here would let an edge cache serve
@@ -637,13 +671,13 @@ router.get("/fit/catalog", async (req, res) => {
   res.set("Cache-Control", "private, no-store");
   res.set("Vary", "x-fitter-invite-token");
   res.json({
-    total: context.catalog.length,
+    total: visibleMasks.length,
     degraded: context.degraded,
     formulary: {
       name: context.formulary.name,
       version: context.formulary.version,
     },
-    masks: context.catalog.map((m) => ({
+    masks: visibleMasks.map((m) => ({
       slug: m.slug,
       manufacturer: m.manufacturer,
       modelName: m.modelName,
@@ -911,6 +945,12 @@ async function persistSession(input: PersistInput): Promise<string | null> {
         formulary_name: input.assessment.provenance.formularyName,
         formulary_rules_matched:
           input.assessment.provenance.formularyRulesMatched,
+        // What the formulary HID (migration 0517). Distinct from the
+        // matched-rule map above: an excluded mask never reaches scoring,
+        // and a rule id alone doesn't say whether its effect demoted or
+        // hid. Staff-only — redacted from the patient copy of the report.
+        formulary_excluded_slugs:
+          input.assessment.provenance.formularyExcludedSlugs,
         catalog_snapshot_version:
           input.assessment.provenance.catalogSnapshotVersion,
         degraded: input.assessment.provenance.degraded,

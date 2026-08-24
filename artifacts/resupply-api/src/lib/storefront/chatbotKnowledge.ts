@@ -82,19 +82,112 @@ function formatMaskEntry(m: MaskEntry): string {
   return parts.join("\n");
 }
 
-function buildMaskCatalogSection(): string {
+/**
+ * Manufacturers with NOTHING left in the carried list.
+ *
+ * A brand that kept even one model is not "no longer carried" — the
+ * operator hid some of its models, not the line — so naming it in the
+ * dropped-lines instruction would make the assistant refuse masks it is
+ * still supposed to sell.
+ */
+function hiddenManufacturerNames(
+  carried: MaskEntry[],
+  hiddenMaskIds?: ReadonlySet<string>,
+): string[] {
+  if (!hiddenMaskIds?.size) return [];
+  const stillCarried = new Set(
+    carried.map((m) => m.manufacturer.trim().toLowerCase()),
+  );
+  const dropped = new Map<string, string>();
+  for (const m of maskCatalog) {
+    if (!hiddenMaskIds.has(m.id)) continue;
+    const key = m.manufacturer.trim().toLowerCase();
+    if (stillCarried.has(key)) continue;
+    dropped.set(key, m.manufacturer.trim());
+  }
+  return [...dropped.values()].sort((a, b) => a.localeCompare(b));
+}
+
+/**
+ * Masks hidden individually, named for the prohibition block.
+ *
+ * Excludes anything whose whole line is already named — repeating "AirFit
+ * F20" under a heading that just said all of ResMed is gone spends prompt
+ * budget to say nothing new.
+ */
+function hiddenModelNames(
+  hiddenMaskIds: ReadonlySet<string> | undefined,
+  droppedLines: string[],
+): string[] {
+  if (!hiddenMaskIds?.size) return [];
+  const dropped = new Set(droppedLines.map((n) => n.trim().toLowerCase()));
+  const names: string[] = [];
+  for (const m of maskCatalog) {
+    if (!hiddenMaskIds.has(m.id)) continue;
+    if (dropped.has(m.manufacturer.trim().toLowerCase())) continue;
+    names.push(`${m.manufacturer} ${m.name}`);
+  }
+  return names.sort((a, b) => a.localeCompare(b));
+}
+
+function buildMaskCatalogSection(hiddenMaskIds?: ReadonlySet<string>): string {
   const groups: Record<MaskType, MaskEntry[]> = {
     fullFace: [],
     nasal: [],
     nasalPillow: [],
     hybrid: [],
   };
-  for (const m of maskCatalog) groups[m.type].push(m);
+  // A mask the tenant hid must not be described to the model at all.
+  // Filtering the TOOLS alone would not be enough: the model can answer
+  // "do you carry the AirFit F20?" straight out of this section without
+  // ever calling a tool, and would then be recommending something the
+  // provider cannot dispense.
+  const carried = hiddenMaskIds?.size
+    ? maskCatalog.filter((m) => !hiddenMaskIds.has(m.id))
+    : maskCatalog;
+  for (const m of carried) groups[m.type].push(m);
 
   const sections: string[] = [];
   sections.push(
-    `# Mask catalog (${maskCatalog.length} models carried by Penn Home Medical Supply)`,
+    `# Mask catalog (${carried.length} models carried by Penn Home Medical Supply)`,
   );
+
+  // Dropping a hidden model's catalog entry is necessary but NOT
+  // sufficient. Several prose sections further down (dexterity, bed-partner
+  // noise, travel) name specific masks as illustrations of general CPAP
+  // guidance — "magnetic clips (e.g. ResMed AirFit F20)" is teaching a
+  // concept, not listing stock — and scrubbing brand names out of clinical
+  // explanations would make them worse, not safer. The model also carries
+  // its own knowledge of the mask market regardless of what we send it.
+  //
+  // So the constraint is stated instead of implied: name the lines that are
+  // gone and say what to do when a patient asks for one. That is also the
+  // honest answer for the patient — "we don't carry that, here's what we'd
+  // fit you with instead" beats silence.
+  const droppedLines = hiddenManufacturerNames(carried, hiddenMaskIds);
+  // Individually hidden models get the same treatment, and for the same
+  // reason. A whole-line prohibition misses the two commonest shapes: one
+  // `mask_model` exclusion, and a hidden brand with one model rescued by a
+  // narrower allow. In both, models are gone that the model can still name
+  // from its own knowledge of the market.
+  const droppedModels = hiddenModelNames(hiddenMaskIds, droppedLines);
+  if (droppedLines.length > 0 || droppedModels.length > 0) {
+    const lines = [`## What Penn Home Medical Supply no longer carries`];
+    if (droppedLines.length > 0) {
+      lines.push(`Entire lines: ${droppedLines.join(", ")}.`);
+    }
+    if (droppedModels.length > 0) {
+      lines.push(`Individual models: ${droppedModels.join(", ")}.`);
+    }
+    lines.push(
+      `NOT carried. Do not recommend, price, compare, or offer to order any`,
+      `of the above, even if a patient asks for one by name and even if it`,
+      `appears as an example elsewhere in this knowledge. Say plainly that we`,
+      `don't carry it, then offer the closest mask from the catalog above.`,
+      `Never imply it can be special-ordered.`,
+    );
+    sections.push(lines.join("\n"));
+  }
   sections.push(
     `Style overview: nasal pillows sit at the nostrils (smallest contact, great for side/stomach sleepers and glasses wearers); nasal masks cover just the nose (good middle ground for nasal breathers); full-face masks cover nose and mouth (best for mouth breathers, congestion, or higher prescribed pressure); hybrid masks combine an under-nose cushion with mouth coverage and a top-of-head hose for active sleepers who breathe through the mouth.`,
   );
@@ -1936,11 +2029,13 @@ with the support phone (814) 471-0627 or support@pennpaps.com
  * request so a second tenant's saved phone/email/brand appears instead
  * of the seed's. Result is deterministic per deploy.
  */
-export function buildChatSystemPromptBase(): string {
+export function buildChatSystemPromptBase(
+  hiddenMaskIds?: ReadonlySet<string>,
+): string {
   const prompt = [
     `You are PennBot — the warm, knowledgeable support voice of Penn Home Medical Supply, a Pennsylvania durable medical equipment provider focused on CPAP supplies and sleep therapy. You talk to prospective and current patients on the Penn Home Medical Supply website (pennpaps.com). Most are 40+ years old. Many are tired, anxious, or new to CPAP and overwhelmed by the medical/insurance vocabulary. Your job is to make them feel taken care of — accurate, brief, human.`,
     `Today's relevant facts about the storefront and catalog are below. Use them to answer questions about CPAP masks, supplies, insurance, the resupply program, the cash-pay shop, returns, and how Penn Home Medical Supply works. If a fact isn't in this knowledge or isn't well-known general CPAP guidance, say so and offer to connect them with a human — never invent.`,
-    buildMaskCatalogSection(),
+    buildMaskCatalogSection(hiddenMaskIds),
     REPLACEMENT_SCHEDULE_SECTION,
     INSURANCE_SECTION,
     COMPLIANCE_AND_INSURANCE_RULES_SECTION,
@@ -1995,8 +2090,14 @@ export function buildChatSystemPromptBase(): string {
  * existing callers (email auto-reply, bot playground, tests) are
  * unchanged.
  */
-export function buildChatSystemPrompt(info?: CompanyInfo): string {
-  return applyCompanyIdentityToText(buildChatSystemPromptBase(), info);
+export function buildChatSystemPrompt(
+  info?: CompanyInfo,
+  hiddenMaskIds?: ReadonlySet<string>,
+): string {
+  return applyCompanyIdentityToText(
+    buildChatSystemPromptBase(hiddenMaskIds),
+    info,
+  );
 }
 
 /**

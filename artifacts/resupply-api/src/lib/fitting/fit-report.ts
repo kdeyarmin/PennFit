@@ -129,6 +129,13 @@ export interface FitReport {
     formularyName: string | null;
     formularyVersion: number | null;
     formularyRulesMatched: Json | null;
+    /**
+     * Slugs the formulary hard-excluded — masks the provider does not
+     * carry (migrations 0516/0517). NULL on sessions written before the
+     * column existed, which reads as "not recorded" rather than "nothing
+     * was hidden".
+     */
+    formularyExcludedSlugs: string[] | null;
     degraded: boolean;
     /**
      * Clinical sign-off on the millimetre bands this fitting was measured
@@ -260,6 +267,7 @@ export function profileAsQA(
  */
 export const PATIENT_REDACTED_FIELDS = [
   "formularyRulesMatched",
+  "formularyExcludedSlugs",
   "outsideFormularyReason",
   "reasonNote",
   "marginRank",
@@ -294,6 +302,9 @@ export function redactForPatient(report: FitReport): FitReport {
     provenance: {
       ...report.provenance,
       formularyRulesMatched: null,
+      // A list of what their provider chose not to stock is exactly what
+      // hiding those masks was meant to keep off a patient's screen.
+      formularyExcludedSlugs: null,
     },
     review: {
       ...report.review,

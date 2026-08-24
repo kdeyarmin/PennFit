@@ -32,6 +32,8 @@ import {
   demoFitSession,
   demoFitSessions,
   demoFormulary,
+  demoManufacturerVisibility,
+  demoSetManufacturerVisibility,
   demoMaskCatalog,
   demoMaskModel,
   demoOverrideFitSession,
@@ -141,6 +143,32 @@ export const fittingReferralsHandlers: DemoHandler[] = [
   ),
   route("POST", "/resupply-api/admin/fitter/formulary/publish", () =>
     json(demoPublishFormulary()),
+  ),
+  route("GET", "/resupply-api/admin/fitter/formulary/manufacturers", () =>
+    json(demoManufacturerVisibility()),
+  ),
+  route(
+    "PUT",
+    "/resupply-api/admin/fitter/formulary/manufacturers/:name",
+    (req, p) => {
+      const result = demoSetManufacturerVisibility(
+        decodeURIComponent(p.name),
+        req.json() ?? {},
+      );
+      if (result === null) return notFound("unknown_manufacturer");
+      if (result === "starved") {
+        return json(
+          {
+            error: "formulary_would_exclude_all",
+            message:
+              "Hiding that manufacturer would leave no dispensable mask at all.",
+            starvedProfiles: ["Average adult face (adult, PAP)"],
+          },
+          409,
+        );
+      }
+      return json(result);
+    },
   ),
 
   // ── Fit sessions (/admin/fit-sessions) ───────────────────────────

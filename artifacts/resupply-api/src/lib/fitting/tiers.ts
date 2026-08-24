@@ -914,6 +914,12 @@ export interface RankedResult {
   excluded: ExclusionRecord[];
   safetyFlags: string[];
   formularyRulesMatched: Record<string, string[]>;
+  /**
+   * Slugs the formulary HARD-EXCLUDED — masks the provider does not carry,
+   * dropped before ranking. Kept for the clinician-facing provenance only;
+   * see the field of the same name on `FitAssessment["provenance"]`.
+   */
+  formularyExcludedSlugs: string[];
   /** True when the winner sits outside every size band we have. */
   outsideValidatedRange: boolean;
 }
@@ -939,6 +945,7 @@ export function runTiers(input: FitEngineInput): RankedResult {
   const therapy = applyTherapyCompatibility(safety.survivors, input.profile);
 
   const formularyRulesMatched: Record<string, string[]> = {};
+  const formularyExcludedSlugs: string[] = [];
   const candidates: FitCandidate[] = [];
 
   // Reverse index of the catalog's magnet-free pointers: twin slug -> the
@@ -977,6 +984,23 @@ export function runTiers(input: FitEngineInput): RankedResult {
       input.context,
     );
     formularyRulesMatched[mask.slug] = decision.matchedRuleIds;
+
+    // A HARD exclusion leaves the pool entirely: the provider does not
+    // carry this mask, so no patient-facing surface may show it — not
+    // demoted, not flagged, not last. That is the one place tier 5 acts as
+    // a filter rather than a weight, and it is deliberately NOT the same
+    // thing as `!decision.allowed`, which is the advisory `deny` and must
+    // keep flowing through as a demotion so the clinical safety net below
+    // still has something to surface.
+    //
+    // Excluded slugs are recorded for the clinician and the audit trail,
+    // never added to `excluded` — that array reaches the patient, and a
+    // list of what their provider chose not to stock is exactly what
+    // hiding a manufacturer is meant to prevent them seeing.
+    if (decision.excluded) {
+      formularyExcludedSlugs.push(mask.slug);
+      continue;
+    }
 
     // Patient-facing confidence: clinical terms only. Formulary,
     // inventory, margin, and empirical adjustments are all excluded by
@@ -1062,6 +1086,7 @@ export function runTiers(input: FitEngineInput): RankedResult {
     excluded: [...safety.excluded, ...therapy.excluded],
     safetyFlags: safety.flags,
     formularyRulesMatched,
+    formularyExcludedSlugs,
     outsideValidatedRange,
   };
 }

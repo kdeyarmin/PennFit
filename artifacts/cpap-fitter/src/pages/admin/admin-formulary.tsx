@@ -10,7 +10,7 @@
 
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ListFilter } from "lucide-react";
+import { EyeOff, ListFilter } from "lucide-react";
 
 import { Card } from "@/components/admin/Card";
 import { Button } from "@/components/admin/Button";
@@ -23,11 +23,14 @@ import {
   createFormularyRule,
   deleteFormularyRule,
   fetchFormulary,
+  fetchManufacturerVisibility,
   fetchMaskCatalog,
   publishFormulary,
+  setManufacturerVisibility,
   simulateFormulary,
   updateFormulary,
   type FormularyRule,
+  type ManufacturerVisibility,
 } from "@/lib/admin/fitting-api";
 
 const QUERY_KEY = ["admin", "formulary"] as const;
@@ -35,9 +38,24 @@ const QUERY_KEY = ["admin", "formulary"] as const;
 const EFFECT_LABELS: Record<FormularyRule["effect"], string> = {
   allow: "Allow",
   deny: "Do not dispense",
+  exclude: "Hide — we don't carry it",
   prefer: "Prefer",
   deprioritize: "Deprioritise",
 };
+
+// "Do not dispense" and "Hide" are one word apart and worlds apart in
+// consequence, so the form spells out the difference at the point of
+// choosing rather than leaving it to the operator's memory.
+const EFFECT_HELP: Record<FormularyRule["effect"], string> = {
+  allow: "Dispensable, even where a broader rule rules it out.",
+  deny: "Ranked last and flagged. Still shown to a clinician when nothing else fits.",
+  exclude:
+    "Removed from fittings, the catalog, the assistant, and the shop. Patients never see it.",
+  prefer: "Ranked ahead of equally-good alternatives.",
+  deprioritize: "Ranked behind equally-good alternatives.",
+};
+
+const VISIBILITY_QUERY_KEY = ["admin", "formulary", "manufacturers"] as const;
 
 const TARGET_KINDS = [
   { value: "manufacturer", label: "A manufacturer" },
@@ -79,6 +97,176 @@ function describeTarget(rule: FormularyRule): string {
     default:
       return "everything";
   }
+}
+
+/**
+ * Show/hide one manufacturer across every patient-facing surface.
+ *
+ * This is a VIEW over the formulary's rules, not a second store: hiding a
+ * brand writes one org-wide `exclude` rule and it shows up in the rule list
+ * below like any other. It exists because "we dropped ResMed, stop listing
+ * them" is the most common thing an operator wants from this page, and
+ * expressing it in the rule form means getting three separate fields right.
+ *
+ * The copy is deliberate about consequence. `deny` demotes and keeps the
+ * clinical safety net; hiding takes the mask off the shelf entirely. An
+ * operator reaching for one when they meant the other is the failure mode
+ * this panel has to design against.
+ */
+function ManufacturerVisibilityPanel() {
+  const queryClient = useQueryClient();
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [pending, setPending] = useState<string | null>(null);
+
+  const visibility = useQuery({
+    queryKey: VISIBILITY_QUERY_KEY,
+    queryFn: fetchManufacturerVisibility,
+  });
+
+  const toggle = useMutation({
+    mutationFn: ({ name, hidden }: { name: string; hidden: boolean }) =>
+      setManufacturerVisibility(name, hidden),
+    onMutate: ({ name }) => {
+      setPending(name);
+      setError(null);
+      setNotice(null);
+    },
+    onSuccess: (result) => {
+      // Un-hiding leaves any hand-written scoped rule in place. Saying so
+      // here is the difference between "I turned it back on and it's still
+      // gone" being answered on the page or in a support ticket.
+      if (!result.hidden && (result.stillHiddenModelCount ?? 0) > 0) {
+        setNotice(
+          `${result.manufacturer} is back on, but ${result.stillHiddenModelCount} of ` +
+            `its models are still hidden by another rule. Check the rule list below.`,
+        );
+      }
+      void queryClient.invalidateQueries({ queryKey: VISIBILITY_QUERY_KEY });
+      void queryClient.invalidateQueries({ queryKey: QUERY_KEY });
+    },
+    onError: (err: unknown) => {
+      const body = (err as { body?: { error?: string; message?: string } })
+        ?.body;
+      setError(
+        body?.error === "formulary_would_exclude_all"
+          ? (body.message ??
+              "Hiding this manufacturer would leave some patients with no mask at all.")
+          : "Couldn't change that manufacturer. Try again.",
+      );
+    },
+    onSettled: () => setPending(null),
+  });
+
+  const rows: ManufacturerVisibility[] = visibility.data?.manufacturers ?? [];
+  const hiddenCount = rows.filter((r) => r.hidden).length;
+
+  return (
+    <Card>
+      <div className="p-4 space-y-3">
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div>
+            <h2 className="font-medium flex items-center gap-2">
+              <EyeOff size={16} aria-hidden="true" />
+              Manufacturers
+            </h2>
+            <p className="text-sm text-muted-foreground max-w-2xl">
+              Turn a manufacturer off and their masks disappear from fittings,
+              the mask catalog, the storefront assistant, and the shop —
+              patients never see them. Use this when you have stopped carrying a
+              line. To keep dispensing a brand but rank it last, add a &ldquo;Do
+              not dispense&rdquo; rule below instead: that one still shows a
+              clinician the mask when nothing else fits.
+            </p>
+          </div>
+          {hiddenCount > 0 ? (
+            <Badge variant="warning">{hiddenCount} hidden</Badge>
+          ) : null}
+        </div>
+
+        {visibility.isError ? (
+          <ErrorPanel
+            title="Couldn't load manufacturers"
+            error={visibility.error}
+            onRetry={() => void visibility.refetch()}
+          />
+        ) : null}
+        {visibility.isLoading ? <Spinner /> : null}
+        {visibility.data?.degraded ? (
+          <p className="text-sm text-amber-700">
+            The catalog is being served from the built-in fallback right now, so
+            this list may be incomplete. Changes still save.
+          </p>
+        ) : null}
+        {error ? <p className="text-sm text-rose-700">{error}</p> : null}
+        {notice ? <p className="text-sm text-amber-700">{notice}</p> : null}
+
+        {rows.length > 0 ? (
+          <ul className="divide-y rounded-md border">
+            {rows.map((row) => (
+              <li
+                key={row.manufacturer}
+                className="flex flex-wrap items-center justify-between gap-3 px-3 py-2"
+              >
+                <div className="min-w-0">
+                  <p className="font-medium truncate">{row.manufacturer}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {row.modelCount} {row.modelCount === 1 ? "model" : "models"}
+                    {!row.hidden && row.hiddenModelCount > 0
+                      ? ` · ${row.hiddenModelCount} hidden by a rule below`
+                      : ""}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  {row.hidden ? (
+                    <Badge variant="danger">Hidden</Badge>
+                  ) : row.hiddenByToggle ? (
+                    // Switched off, but a narrower Allow rule kept part of
+                    // the line dispensable. "Shown" here would misread as
+                    // "the switch did nothing".
+                    <Badge variant="warning">Partly hidden</Badge>
+                  ) : (
+                    <Badge variant="success">Shown</Badge>
+                  )}
+                  <Button
+                    intent={row.hiddenByToggle ? "secondary" : "ghost"}
+                    size="sm"
+                    isLoading={pending === row.manufacturer}
+                    // The button follows the switch's POSITION, not the net
+                    // effect: it can only add or remove its own rule. A
+                    // brand hidden by some OTHER rule is not this switch's
+                    // to undo — offering "Show" there would either do
+                    // nothing (confusing) or silently delete somebody's
+                    // deliberate configuration (worse).
+                    disabled={
+                      toggle.isPending || (row.hidden && !row.hiddenByToggle)
+                    }
+                    title={
+                      row.hidden && !row.hiddenByToggle
+                        ? "Hidden by a rule, not by this switch — edit it in the rule list below."
+                        : undefined
+                    }
+                    onClick={() =>
+                      toggle.mutate({
+                        name: row.manufacturer,
+                        hidden: !row.hiddenByToggle,
+                      })
+                    }
+                  >
+                    {row.hiddenByToggle ? "Show" : "Hide"}
+                  </Button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        ) : !visibility.isLoading && !visibility.isError ? (
+          <p className="text-sm text-muted-foreground">
+            No masks in the catalog yet, so there is nothing to hide.
+          </p>
+        ) : null}
+      </div>
+    </Card>
+  );
 }
 
 export function AdminFormularyPage() {
@@ -234,7 +422,9 @@ export function AdminFormularyPage() {
           recommendation but never override it: a mask ruled out on safety or
           therapy compatibility stays out regardless, and if the clinical tiers
           leave only off-formulary options the best one is still shown, flagged,
-          for a clinician to decide.
+          for a clinician to decide. The one exception is hiding a manufacturer
+          you no longer carry — that removes their masks from every
+          patient-facing surface outright.
         </p>
       </header>
 
@@ -291,6 +481,8 @@ export function AdminFormularyPage() {
         </Card>
       ) : null}
 
+      <ManufacturerVisibilityPanel />
+
       <Card>
         <div className="p-4 space-y-3">
           <h2 className="font-medium">Add a rule</h2>
@@ -314,6 +506,9 @@ export function AdminFormularyPage() {
                   </option>
                 ))}
               </select>
+              <p className="text-xs text-muted-foreground mt-1">
+                {EFFECT_HELP[draft.effect]}
+              </p>
             </div>
 
             <div>
@@ -598,8 +793,11 @@ export function AdminFormularyPage() {
                   <div className="flex flex-wrap items-center gap-2">
                     <p className="font-medium text-sm">{p.label}</p>
                     <Badge>{p.allowedCount} dispensable</Badge>
-                    {p.deniedCount > 0 ? (
-                      <Badge>{p.deniedCount} denied</Badge>
+                    {p.deniedCount - p.hiddenCount > 0 ? (
+                      <Badge>{p.deniedCount - p.hiddenCount} demoted</Badge>
+                    ) : null}
+                    {p.hiddenCount > 0 ? (
+                      <Badge variant="danger">{p.hiddenCount} hidden</Badge>
                     ) : null}
                     {p.allowedCount === 0 ? (
                       <span className="text-xs font-medium px-2 py-0.5 rounded border bg-rose-50 text-rose-800 border-rose-200">
@@ -615,11 +813,23 @@ export function AdminFormularyPage() {
                   {p.denied.length > 0 ? (
                     <details className="mt-1">
                       <summary className="text-xs cursor-pointer">
-                        Show what was denied
+                        Show what was ruled out
                       </summary>
                       <ul className="text-xs mt-1 space-y-0.5">
                         {p.denied.map((d) => (
                           <li key={d.mask}>
+                            {/* Hidden and demoted read almost identically in
+                                a flat list, and they are not the same
+                                outcome: a demoted mask still reaches a
+                                clinician, a hidden one never does. */}
+                            <span
+                              className={
+                                d.hidden ? "font-medium text-rose-700" : ""
+                              }
+                            >
+                              {d.hidden ? "Hidden" : "Demoted"}
+                            </span>
+                            {" · "}
                             {d.mask}
                             {d.reasonCode ? ` — ${d.reasonCode}` : ""}
                           </li>

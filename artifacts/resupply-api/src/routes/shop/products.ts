@@ -22,6 +22,8 @@ import { getActiveReservedBySku } from "../../lib/inventory/reservations";
 import { isFeatureEnabled } from "../../lib/feature-flags";
 import { requestHost } from "../../lib/request-host";
 import { resolveOrgIdByHost } from "../../lib/tenant-branding";
+import { loadCatalogVisibility } from "../../lib/fitting/catalog-store";
+import { isManufacturerHidden } from "../../lib/fitting/formulary";
 import { getPreviewCatalog } from "../../lib/stripe/preview-catalog";
 import { stripeErrLogFields } from "../../lib/stripe/err-log-fields";
 import {
@@ -116,16 +118,21 @@ router.get("/shop/products", async (req, res) => {
   // both the connected-account catalog read and the purchasing gate below.
   let orgId: string | undefined;
 
+  // Resolve the tenant BEFORE the preview branch. It used to happen only
+  // in the Stripe-configured path, which left `orgId` undefined in preview
+  // mode — so the credential-free configuration (a supported one) served
+  // every product from a manufacturer the tenant had hidden. The tenant is
+  // a property of the request host, not of whether Stripe is wired up.
+  orgId =
+    req.orgId ?? (await resolveOrgIdByHost(requestHost(req))) ?? undefined;
+
   if (!config) {
     previewMode = true;
     products = getPreviewCatalog();
   } else {
-    // Resolve the tenant for this public storefront from the request host
-    // (no auth middleware populates req.orgId here), then route the catalog
-    // read to that tenant's connected Stripe account when set — the SAME
-    // account checkout creates the session on. NULL → {} → platform account.
-    orgId =
-      req.orgId ?? (await resolveOrgIdByHost(requestHost(req))) ?? undefined;
+    // Route the catalog read to that tenant's connected Stripe account when
+    // set — the SAME account checkout creates the session on. NULL → {} →
+    // platform account.
     const accountOptions = await stripeAccountRequestOptions(orgId);
     const accountKey = accountOptions.stripeAccount ?? "platform";
 
@@ -280,6 +287,27 @@ router.get("/shop/products", async (req, res) => {
         products = stale!;
       }
     }
+  }
+
+  // Drop products from manufacturers the tenant has hidden (formulary
+  // `exclude`, migration 0516). "Do not list ResMed" has to mean the shop
+  // too — the storefront's product grid and its search are the surface a
+  // shopper is most likely to hit first, and a brand the DME dropped on
+  // price showing up for sale there is the exact listing the operator
+  // turned off.
+  //
+  // Keyed on Stripe `metadata.manufacturer`, and only a brand with NOTHING
+  // visible left in the mask catalog is hidden here (see
+  // `resolveCatalogVisibility`) — an operator who kept one model of a line
+  // has not dropped the line. A product with no `manufacturer` metadata is
+  // never hidden: bundles in particular carry none, and hiding on a
+  // guess would pull unrelated stock off the shelf. Filtering produces new
+  // arrays, so the per-account catalog cache above is never mutated.
+  const visibility = await loadCatalogVisibility(orgId);
+  if (visibility.hiddenManufacturers.size > 0) {
+    products = products.filter(
+      (p) => !isManufacturerHidden(visibility, p.manufacturer),
+    );
   }
 
   // Group by category for the frontend's section bar. Bundles are
