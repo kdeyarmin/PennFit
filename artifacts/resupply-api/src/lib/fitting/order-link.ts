@@ -217,3 +217,97 @@ export async function markFitSessionDispensed(
     return { stamped: false };
   }
 }
+
+/**
+ * Stamp the dispense for a fitting that never went through the shop.
+ *
+ * WHY THIS EXISTS ALONGSIDE THE SHOP PATH
+ * ---------------------------------------
+ * `markFitSessionDispensed` above keys on `shop_order_id`, because it was
+ * written for the one path a fitting could reach a patient by: the
+ * patient bought the mask themselves at checkout. Migration 0518 removed
+ * that path — the fitter now ends in a request a CSR works, and the
+ * patient is dispensed through the DME's ordinary fulfillment, which
+ * produces no `shop_orders` row for the fitting to point at.
+ *
+ * So the loop this module exists to close was quietly opened again: the
+ * outcomes dashboard's dispense rate, its accepted-vs-overridden split,
+ * and the re-fit campaign's discontinued-mask branch all read columns
+ * that no longer had a writer. This is that writer, on the new path.
+ *
+ * "Dispensed" keeps its meaning from the shop path — the patient HAS the
+ * mask, not merely that someone agreed to send one. The caller is the
+ * CSR closing a fit request as fulfilled, which is that same assertion
+ * made by a person instead of a carrier webhook.
+ *
+ * `orderedMaskSlug` is the mask the PATIENT chose on the results page,
+ * which may be an alternative rather than the engine's top pick. That
+ * distinction is the whole value of the metric — see the note at the top
+ * of this file — so it is never back-filled from the recommendation.
+ *
+ * Guarded on `dispensed_at IS NULL`: reopening and re-closing a request
+ * must not move a dispense date that has already been recorded. Never
+ * throws — attribution must not cost a CSR their close.
+ */
+export async function markFitSessionDispensedById(
+  orgId: string,
+  input: { fitSessionId: string; orderedMaskSlug?: string | null },
+): Promise<{ stamped: boolean }> {
+  try {
+    const supabase = getOrgScopedClient(orgId);
+
+    // Same slug → uuid resolution as the shop path, and dropped the same
+    // way when it does not resolve: an unknown slug must not cost the
+    // dispense stamp, which is the more valuable of the two facts.
+    let orderedMaskModelId: string | null = null;
+    if (input.orderedMaskSlug) {
+      const { data } = (await supabase
+        .raw()
+        .schema("resupply")
+        .from("mask_models")
+        .select("id")
+        .or(`org_id.is.null,org_id.eq.${orgId}`)
+        .eq("slug", input.orderedMaskSlug)
+        .limit(1)
+        .maybeSingle()) as { data: { id?: string } | null };
+      orderedMaskModelId = data?.id ?? null;
+    }
+
+    const nowIso = new Date().toISOString();
+    const { data: updated, error } = (await supabase
+      .from("fit_sessions")
+      .update({
+        dispensed_at: nowIso,
+        ...(orderedMaskModelId
+          ? { ordered_mask_model_id: orderedMaskModelId }
+          : {}),
+        updated_at: nowIso,
+      })
+      .eq("id", input.fitSessionId)
+      .is("dispensed_at", null)
+      .select("id")
+      .limit(1)
+      .maybeSingle()) as {
+      data: { id?: string } | null;
+      error: { message: string } | null;
+    };
+    if (error) {
+      logger.warn(
+        { event: "fit_dispense_stamp_failed", orgId, err: error.message },
+        "could not stamp fit session dispense from a fit request",
+      );
+      return { stamped: false };
+    }
+    return { stamped: Boolean(updated) };
+  } catch (err) {
+    logger.warn(
+      {
+        event: "fit_dispense_stamp_failed",
+        orgId,
+        err: err instanceof Error ? err.message : String(err),
+      },
+      "could not stamp fit session dispense from a fit request",
+    );
+    return { stamped: false };
+  }
+}

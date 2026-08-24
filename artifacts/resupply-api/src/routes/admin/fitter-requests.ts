@@ -25,6 +25,7 @@ import { z } from "zod";
 
 import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
+import { markFitSessionDispensedById } from "../../lib/fitting/order-link";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
 
@@ -37,6 +38,17 @@ const router: IRouter = Router();
 
 const STATUSES = ["new", "contacted", "in_progress", "closed"] as const;
 type FitRequestStatus = (typeof STATUSES)[number];
+
+// How a closed request turned out (migration 0519). Only `fulfilled`
+// asserts the patient actually has a mask, and only `fulfilled` stamps
+// the linked fitting as dispensed — see the note on the stamp below.
+const CLOSED_OUTCOMES = [
+  "fulfilled",
+  "not_proceeding",
+  "unreachable",
+  "duplicate",
+] as const;
+type FitRequestClosedOutcome = (typeof CLOSED_OUTCOMES)[number];
 
 const listQuery = z.object({
   status: z
@@ -77,11 +89,24 @@ const patchBody = z
       .transform((v) =>
         v === undefined ? undefined : v === null || v === "" ? null : v,
       ),
+    // Same `undefined`-survives-the-transform discipline as csrNote: an
+    // omitted key must not be read as "clear the outcome".
+    closedOutcome: z
+      .enum([...CLOSED_OUTCOMES] as [
+        FitRequestClosedOutcome,
+        ...FitRequestClosedOutcome[],
+      ])
+      .nullish()
+      .transform((v) => (v === undefined ? undefined : (v ?? null))),
   })
   .strict()
-  .refine((b) => b.status !== undefined || b.csrNote !== undefined, {
-    message: "must include status or csrNote",
-  });
+  .refine(
+    (b) =>
+      b.status !== undefined ||
+      b.csrNote !== undefined ||
+      b.closedOutcome !== undefined,
+    { message: "must include status, csrNote or closedOutcome" },
+  );
 
 function toView(r: FitRequestRow) {
   return {
@@ -110,6 +135,7 @@ function toView(r: FitRequestRow) {
     contactedAt: r.contacted_at,
     contactedBy: r.contacted_by,
     closedAt: r.closed_at,
+    closedOutcome: r.closed_outcome,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
@@ -230,7 +256,25 @@ router.patch(
         update.contacted_at = nowIso;
         update.contacted_by = req.adminEmail ?? null;
       }
-      update.closed_at = parse.data.status === "closed" ? nowIso : null;
+      if (parse.data.status === "closed") {
+        update.closed_at = nowIso;
+        // A close may state its outcome in the same call. Absent one, the
+        // column stays NULL, which reads honestly as "closed, outcome not
+        // recorded" rather than guessing.
+        if (parse.data.closedOutcome !== undefined) {
+          update.closed_outcome = parse.data.closedOutcome;
+        }
+      } else {
+        update.closed_at = null;
+        // Re-opening clears the outcome. A request being worked again has
+        // no outcome yet, and leaving a stale 'fulfilled' behind would
+        // keep counting a dispense for a fitting back in the queue.
+        update.closed_outcome = null;
+      }
+    } else if (parse.data.closedOutcome !== undefined) {
+      // Outcome-only patch: a CSR recording (or correcting) how an
+      // already-closed request turned out, without touching its status.
+      update.closed_outcome = parse.data.closedOutcome;
     }
     if (parse.data.csrNote !== undefined) update.csr_note = parse.data.csrNote;
 
@@ -276,7 +320,7 @@ router.patch(
       .update(update)
       .eq("id", idParam)
       .select(
-        "id, status, csr_note, contacted_at, contacted_by, closed_at, updated_at",
+        "id, status, csr_note, contacted_at, contacted_by, closed_at, closed_outcome, fit_session_id, recommended_mask_id, updated_at",
       )
       .maybeSingle();
     if (error) throw error;
@@ -285,8 +329,42 @@ router.patch(
       return;
     }
 
+    // Close the fitting → dispense loop.
+    //
+    // Until migration 0518 the only way a fitting could be recorded as
+    // dispensed was the patient buying the mask themselves at checkout.
+    // That path is gone, and with it the sole writer of
+    // `fit_sessions.dispensed_at` / `ordered_mask_model_id` — which the
+    // outcomes dashboard's dispense rate, its accepted-vs-overridden
+    // split, and the re-fit campaign's discontinued-mask branch all read.
+    // A CSR marking a request `fulfilled` is the same assertion the
+    // carrier webhook used to make: this patient HAS their mask.
+    //
+    // Deliberately after the update and deliberately swallowed: the
+    // attribution is a reporting nicety and the close is the CSR's actual
+    // work. The stamp is guarded on `dispensed_at IS NULL` at the
+    // database, so re-closing a request never moves a date already set.
+    let dispenseStamped = false;
+    if (
+      row.status === "closed" &&
+      row.closed_outcome === "fulfilled" &&
+      row.fit_session_id
+    ) {
+      const stamp = await markFitSessionDispensedById(orgId, {
+        fitSessionId: row.fit_session_id,
+        orderedMaskSlug: row.recommended_mask_id,
+      }).catch(() => ({ stamped: false }));
+      dispenseStamped = stamp.stamped;
+    }
+
     req.log?.info?.(
-      { id: row.id, status: row.status, actor: req.adminEmail ?? null },
+      {
+        id: row.id,
+        status: row.status,
+        closedOutcome: row.closed_outcome,
+        dispenseStamped,
+        actor: req.adminEmail ?? null,
+      },
       "admin/fitter-requests: updated",
     );
 
@@ -297,6 +375,7 @@ router.patch(
       contactedAt: row.contacted_at,
       contactedBy: row.contacted_by,
       closedAt: row.closed_at,
+      closedOutcome: row.closed_outcome,
       updatedAt: row.updated_at,
     });
   },

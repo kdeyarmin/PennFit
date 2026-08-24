@@ -1347,6 +1347,20 @@ export interface Database {
           contacted_at: string | null;
           contacted_by: string | null;
           closed_at: string | null;
+          // Mig 0519 — how a closed request turned out. 'fulfilled' is
+          // what stamps the linked fitting as dispensed; NULL means it
+          // was closed without recording an outcome (every row that
+          // predates the column).
+          closed_outcome:
+            | "fulfilled"
+            | "not_proceeding"
+            | "unreachable"
+            | "duplicate"
+            | null;
+          // Mig 0519 — server-computed idempotency key, unique per org
+          // among requests that are not yet closed. Never read back; it
+          // exists to be compared.
+          dedupe_hash: string | null;
           submitter_ip: string | null;
           user_agent: string | null;
           created_at: string;

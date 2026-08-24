@@ -270,6 +270,32 @@ degraded`) in both the route and the SPA store: a lookup that never
     fitting claim it answered the v2 question set. The legacy
     `data/maskCatalog.ts` is adult-only and an entry with no
     `serviceLine` reads as `"adult"`: unmarked must never reach a child.
+  - **One ask is one queue row.** Migration 0519 adds `dedupe_hash` plus
+    a **partial unique index** on `(org_id, dedupe_hash)` scoped to
+    `status <> 'closed'`, so a double-click or a back-navigation
+    re-submit returns the request already open instead of queueing a
+    second one and emailing staff twice. The arbiter must stay the
+    DATABASE: two racing submissions both pass any read-then-write check
+    a route could make. The index is deliberately partial on both arms —
+    `status <> 'closed'` so a patient may genuinely ask again once staff
+    have finished, and `dedupe_hash IS NOT NULL` so rows predating the
+    column never collide.
+
+- **`fit_sessions.dispensed_at` / `ordered_mask_model_id` must always
+  have a writer.** Three surfaces read them — the dispense rate and the
+  accepted-vs-overridden split on `/admin/analytics/fitter-outcomes`, and
+  the re-fit campaign's discontinued-mask branch — and they read silently
+  as zero when nothing writes, which is how the gap survived once
+  already (see the header of `lib/fitting/order-link.ts`). Migration 0518
+  removed the fitter's cash-pay checkout, which had been the only writer;
+  0519 re-homes it onto **closing a fit request as `fulfilled`**
+  (`markFitSessionDispensedById`). "Dispensed" keeps its original meaning
+  — the patient HAS the mask, not that someone agreed to send one — so
+  only `fulfilled` stamps, and the mask recorded is the one the PATIENT
+  chose, never the engine's top pick back-filled (that would make the
+  acceptance rate 100% by construction and measure nothing). Before
+  removing any path that produces a dispense, check what still writes
+  these columns.
 
 - **No image logging anywhere in the backend.** Camera images and video
   frames never leave the browser; only numeric facial measurements are

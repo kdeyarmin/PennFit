@@ -204,6 +204,48 @@ their own guess at a member ID.
   matching prospect row in **Fitter Prospects** is stamped
   `contact_requested_at` so the funnel view shows who raised their hand.
 
+#### Closing a request — say how it turned out
+
+Every request closes with an **outcome** (migration 0519), chosen on the
+row beside the status:
+
+| Outcome                                | Use it when                                        |
+| -------------------------------------- | -------------------------------------------------- |
+| **Fulfilled — patient has their mask** | The equipment actually reached them.               |
+| **Not proceeding**                     | They decided against it, or aren't eligible.       |
+| **Couldn't reach them**                | Contact attempts were exhausted.                   |
+| **Duplicate**                          | The same person is already being worked elsewhere. |
+
+**Fulfilled is the one that leaves this queue.** It stamps the linked
+fitting as dispensed, which is what feeds the dispense rate and the
+accepted-vs-overridden split on **Analytics → Fitter outcomes**, and what
+lets the re-fit campaign know which mask a patient is actually on. The
+other three record the close and nothing more.
+
+So: only mark **Fulfilled** once the patient genuinely has the mask — not
+when the order is placed. A queue tidied up by closing everything as
+fulfilled reports a dispense rate that is simply untrue, and the re-fit
+campaign will then chase people about masks they never received.
+
+The outcome can also be set (or corrected) on an already-closed request
+without re-opening it. Re-opening a request clears its outcome, because a
+request being worked again has not turned out yet; the dispense date it
+already stamped is **not** rolled back — that fact stays true.
+
+#### Duplicate submissions
+
+A patient who double-taps _Send_, or goes back and submits again, does
+**not** create a second row and does **not** send you a second email. The
+database holds one open request per person per ask; a re-submit is folded
+into the request you already have, and anything new they typed the second
+time (an insurance card they'd since found, say) is added to it. Nothing
+they supplied the first time is ever blanked, and nothing you have
+written on the row — status, note, who made contact — is touched.
+
+Once you **close** a request, the same patient can file a fresh one. That
+is deliberate: a person coming back weeks later is a new ask, not a
+duplicate.
+
 ### B8. The adult-or-child question — not a flag
 
 The questionnaire now opens with **"Who is this fitting for?"** on both

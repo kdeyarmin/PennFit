@@ -402,6 +402,48 @@ describe("Migration SQL content — 0516_formulary_exclude_effect", () => {
   });
 });
 
+describe("Migration SQL content — 0519_fit_request_idempotency_and_outcome", () => {
+  const sql = readMigration("0519_fit_request_idempotency_and_outcome.sql");
+
+  it("scopes the dedupe index to OPEN requests, not to all of them", () => {
+    // A plain unique index would say "this patient may never ask twice",
+    // which is wrong — someone legitimately comes back months later.
+    // The rule is "not while the same ask is still in the queue".
+    expect(sql).toMatch(
+      /CREATE UNIQUE INDEX IF NOT EXISTS "fitter_fit_requests_open_dedupe_idx"/,
+    );
+    expect(sql).toMatch(
+      /WHERE "dedupe_hash" IS NOT NULL AND "status" <> 'closed'/,
+    );
+  });
+
+  it("excludes NULL hashes, so rows predating the column cannot collide", () => {
+    // Every request filed before this migration has dedupe_hash NULL.
+    // Without the IS NOT NULL arm they would all conflict with each other
+    // and the migration would fail to build the index on a live table.
+    expect(sql).toMatch(/"dedupe_hash" IS NOT NULL/);
+  });
+
+  it("adds closed_outcome as NULLABLE with a closed value set", () => {
+    // Nullable because every already-closed row closed without one, and
+    // NULL is the honest "we don't know" — back-filling 'fulfilled'
+    // would inflate the dispense rate on deploy.
+    expect(sql).toMatch(/ADD COLUMN IF NOT EXISTS "closed_outcome" text/);
+    expect(sql).not.toMatch(/"closed_outcome" text NOT NULL/);
+    expect(sql).toMatch(/'fulfilled'/);
+    expect(sql).toMatch(/'not_proceeding'/);
+    expect(sql).toMatch(/'unreachable'/);
+    expect(sql).toMatch(/'duplicate'/);
+  });
+
+  it("rewrites no rows", () => {
+    // Purely additive: two columns and two indexes. An UPDATE or DELETE
+    // here would change live queue state on deploy.
+    expect(sql).not.toMatch(/\bUPDATE\s+"?resupply"?\./i);
+    expect(sql).not.toMatch(/\bDELETE\s+FROM\b/i);
+  });
+});
+
 const dbUrl = process.env.DATABASE_URL;
 
 describe.skipIf(!dbUrl)(
@@ -416,6 +458,102 @@ describe.skipIf(!dbUrl)(
     afterAll(async () => {
       await pool.end();
     });
+
+    // ── 0519 fit-request idempotency + close outcome ────────────────
+    //
+    // The whole duplicate-submission guarantee is this index. The route
+    // relies on the DATABASE arbitrating, because two racing
+    // double-clicks both pass any read-then-write check the route could
+    // make — so if the index does not behave exactly as claimed, the
+    // application code above it is decoration.
+    it("rejects a second OPEN request with the same dedupe hash, and allows one once closed", async () => {
+      const orgId = randomUUID();
+      const suffix = orgId.slice(0, 8);
+      const hash = `mig-0519-${suffix}`;
+      await pool.query(
+        `INSERT INTO resupply.organizations (id, slug, name)
+           VALUES ($1, $2, $3)
+           ON CONFLICT (id) DO NOTHING`,
+        [orgId, `mig-0519-${suffix}`, `mig-0519-${suffix}`],
+      );
+
+      const insert = (dedupe: string | null) =>
+        pool.query(
+          `INSERT INTO resupply.fitter_fit_requests
+             (org_id, request_type, full_name, email, dedupe_hash)
+           VALUES ($1, 'callback', 'Dedupe Probe', $2, $3)
+           RETURNING id`,
+          [orgId, `${suffix}@example.com`, dedupe],
+        );
+
+      const first = await insert(hash);
+      // Same ask, still open → the index refuses it.
+      await expect(insert(hash)).rejects.toThrow(/duplicate key value/i);
+
+      // Staff finish with it; the loop is closed and the patient may ask
+      // again. This is the behaviour a time window would have got wrong.
+      await pool.query(
+        `UPDATE resupply.fitter_fit_requests SET status = 'closed' WHERE id = $1`,
+        [first.rows[0]!.id],
+      );
+      const second = await insert(hash);
+      expect(second.rows[0]!.id).toBeTruthy();
+
+      // And two CLOSED rows with the same hash coexist — history is kept.
+      await pool.query(
+        `UPDATE resupply.fitter_fit_requests SET status = 'closed' WHERE org_id = $1`,
+        [orgId],
+      );
+      const closed = await pool.query<{ n: string }>(
+        `SELECT count(*)::text AS n FROM resupply.fitter_fit_requests
+         WHERE org_id = $1 AND dedupe_hash = $2`,
+        [orgId, hash],
+      );
+      expect(Number(closed.rows[0]!.n)).toBe(2);
+
+      // Rows predating the column carry NULL and must never collide.
+      await insert(null);
+      await insert(null);
+      const nulls = await pool.query<{ n: string }>(
+        `SELECT count(*)::text AS n FROM resupply.fitter_fit_requests
+         WHERE org_id = $1 AND dedupe_hash IS NULL`,
+        [orgId],
+      );
+      expect(Number(nulls.rows[0]!.n)).toBe(2);
+    }, 20_000);
+
+    it("accepts the four close outcomes and rejects anything else", async () => {
+      const orgId = randomUUID();
+      const suffix = orgId.slice(0, 8);
+      await pool.query(
+        `INSERT INTO resupply.organizations (id, slug, name)
+           VALUES ($1, $2, $3)
+           ON CONFLICT (id) DO NOTHING`,
+        [orgId, `mig-0519b-${suffix}`, `mig-0519b-${suffix}`],
+      );
+      const withOutcome = (outcome: string | null) =>
+        pool.query(
+          `INSERT INTO resupply.fitter_fit_requests
+             (org_id, request_type, full_name, email, closed_outcome)
+           VALUES ($1, 'callback', 'Outcome Probe', $2, $3)`,
+          [orgId, `${suffix}@example.com`, outcome],
+        );
+
+      for (const ok of [
+        "fulfilled",
+        "not_proceeding",
+        "unreachable",
+        "duplicate",
+        null,
+      ]) {
+        await expect(withOutcome(ok)).resolves.toBeTruthy();
+      }
+      // A typo in an outcome must fail loudly rather than land a value
+      // the dispense stamp will never recognise.
+      await expect(withOutcome("fulfiled")).rejects.toThrow(
+        /check constraint/i,
+      );
+    }, 20_000);
 
     // ── 0516 formulary `exclude` effect ─────────────────────────────
     //

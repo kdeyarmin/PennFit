@@ -25,6 +25,8 @@ import {
   type FitRequestType,
   listFitRequests,
   updateFitRequest,
+  type FitRequestClosedOutcome,
+  type UpdateFitRequestInput,
 } from "@/lib/admin/fitter-requests-api";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { PageHeader } from "@/components/admin/PageHeader";
@@ -39,6 +41,23 @@ const STATUS_STYLE: Record<
   in_progress: { bg: "#dbeafe", fg: "#1e3a8a", label: "In progress" },
   closed: { bg: "#f1f5f9", fg: "#475569", label: "Closed" },
 };
+
+// The close outcomes, in the order a CSR is most likely to need them.
+// `fulfilled` leads because it is both the commonest and the only one
+// that records anything beyond this queue: it stamps the linked fitting
+// as dispensed, which is what the fitter outcomes dashboard counts.
+const CLOSED_OUTCOME_LABEL: Record<FitRequestClosedOutcome, string> = {
+  fulfilled: "Fulfilled — patient has their mask",
+  not_proceeding: "Not proceeding",
+  unreachable: "Couldn't reach them",
+  duplicate: "Duplicate",
+};
+const CLOSED_OUTCOME_ORDER: readonly FitRequestClosedOutcome[] = [
+  "fulfilled",
+  "not_proceeding",
+  "unreachable",
+  "duplicate",
+];
 
 const STATUS_ORDER: readonly FitRequestStatus[] = [
   "new",
@@ -84,10 +103,8 @@ export function AdminFitterRequestsPage() {
   const [pendingId, setPendingId] = useState<string | null>(null);
 
   const updateMut = useMutation({
-    mutationFn: (args: {
-      id: string;
-      patch: { status?: FitRequestStatus; csrNote?: string | null };
-    }) => updateFitRequest(args.id, args.patch),
+    mutationFn: (args: { id: string; patch: UpdateFitRequestInput }) =>
+      updateFitRequest(args.id, args.patch),
     onMutate: (args) => setPendingId(args.id),
     onSettled: () => {
       setPendingId(null);
@@ -289,10 +306,10 @@ function RequestRow({
 }: {
   row: FitRequestRow;
   pending: boolean;
-  onPatch: (patch: {
-    status?: FitRequestStatus;
-    csrNote?: string | null;
-  }) => void;
+  // The API client's own input type rather than a local restatement —
+  // a third field was added to the patch and this copy silently did not
+  // know about it.
+  onPatch: (patch: UpdateFitRequestInput) => void;
   nowMs: number;
 }) {
   const [noteDraft, setNoteDraft] = useState(row.csrNote ?? "");
@@ -419,6 +436,36 @@ function RequestRow({
               </option>
             ))}
           </select>
+          {/* Only a closed request has an outcome to record, and only
+              `fulfilled` reaches beyond this queue — it stamps the linked
+              fitting as dispensed, which is what /admin/analytics/
+              fitter-outcomes counts. Left unset it stays "not recorded"
+              rather than being guessed. */}
+          {row.status === "closed" && (
+            <select
+              value={row.closedOutcome ?? ""}
+              disabled={pending}
+              onChange={(e) =>
+                onPatch({
+                  closedOutcome:
+                    e.target.value === ""
+                      ? null
+                      : (e.target.value as FitRequestClosedOutcome),
+                })
+              }
+              className="text-xs border rounded px-1 py-0.5 mt-1"
+              style={{ borderColor: "hsl(var(--line-1))" }}
+              data-testid={`fit-request-outcome-${row.id}`}
+              aria-label="How it turned out"
+            >
+              <option value="">How did it turn out?</option>
+              {CLOSED_OUTCOME_ORDER.map((o) => (
+                <option key={o} value={o}>
+                  {CLOSED_OUTCOME_LABEL[o]}
+                </option>
+              ))}
+            </select>
+          )}
           {row.contactedBy && (
             <span className="text-[10px] text-slate-400 mt-1">
               by {row.contactedBy}
