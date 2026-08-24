@@ -429,6 +429,19 @@ export interface SupabaseMockHandle {
     table: string,
     op: SupabaseOp,
   ): CapturedFilterCall[][];
+  /**
+   * EVERY `(table, op)` pair invoked since the last `reset()`, as sorted
+   * `"table.op"` strings — the complete set, not a lookup.
+   *
+   * Lets a test assert the full surface of what the code under test
+   * touched. A denylist ("these tables were not read") silently misses any
+   * table nobody thought to name, and unstaged calls resolve to a success
+   * envelope, so a stray read neither throws nor shows up. Assert set
+   * equality against this instead.
+   */
+  touchedKeys(): string[];
+  /** Every RPC function name invoked since the last `reset()`, sorted. */
+  touchedRpcFns(): string[];
 }
 
 /**
@@ -471,6 +484,12 @@ export function installSupabaseMock(): SupabaseMockHandle {
     filterCallsByInvocation(table, op) {
       return filterCallsByInvocation.get(key(table, op)) ?? [];
     },
+    touchedKeys() {
+      return [...callCounts.keys()].sort();
+    },
+    touchedRpcFns() {
+      return [...rpcCallCounts.keys()].sort();
+    },
   };
 
   // Defensive default: every test file that calls `installSupabaseMock()`
@@ -512,4 +531,21 @@ export function getSupabaseFilterCallsByInvocation(
   op: SupabaseOp,
 ): CapturedFilterCall[][] {
   return filterCallsByInvocation.get(key(table, op)) ?? [];
+}
+
+/**
+ * Standalone alias for `installSupabaseMock().touchedKeys()`.
+ *
+ * The COMPLETE set of `(table, op)` pairs invoked, as sorted `"table.op"`
+ * strings. Prefer asserting equality against this over spot-checking a list
+ * of tables you hope are absent — the latter cannot fail for a table the
+ * test never thought to name.
+ */
+export function getSupabaseTouchedKeys(): string[] {
+  return [...callCounts.keys()].sort();
+}
+
+/** Standalone alias for `installSupabaseMock().touchedRpcFns()`. */
+export function getSupabaseTouchedRpcFns(): string[] {
+  return [...rpcCallCounts.keys()].sort();
 }

@@ -16,6 +16,8 @@ import {
   stageSupabaseResponse,
   getSupabaseFilterCalls,
   getSupabaseFilterCallsByInvocation,
+  getSupabaseTouchedKeys,
+  getSupabaseTouchedRpcFns,
   type CapturedFilterCall,
 } from "../../test-helpers/supabase-mock";
 
@@ -440,32 +442,37 @@ describe("tenancy — EVERY read is platform-scoped, not just the first", () => 
     expect(ids).toEqual(MODEL_ROWS.map((r) => r.id));
   });
 
-  it("issues no read at all against any other table", async () => {
+  it("reads exactly three tables — the complete set, not a sample", async () => {
     // A read the route is not supposed to make is the other way an exempted
     // file drifts: the guard would have caught a new unscoped table here.
+    //
+    // Asserted as SET EQUALITY over everything the route touched, not as a
+    // denylist of tables we happened to think of. A denylist cannot fail for
+    // a table nobody named — and since an unstaged call resolves to a
+    // success envelope, a stray read from, say, `prescriptions` would
+    // neither throw nor be looked at. This fails on any table not listed.
     stageModels(MODEL_ROWS);
     stageChildCounts(301, 244);
 
     await request(makeApp()).get("/platform/mask-catalog");
 
+    expect(getSupabaseTouchedKeys()).toEqual([
+      "mask_components.select",
+      "mask_models.select",
+      "mask_size_variants.select",
+    ]);
+    // Reads only — no insert/update/upsert/delete from a public endpoint —
+    // is implied by the `.select` suffix on every key above. An RPC would
+    // bypass the table log entirely, so pin that surface as empty too.
+    expect(getSupabaseTouchedRpcFns()).toEqual([]);
+
+    // ...and each of the three is platform-scoped on every invocation.
     for (const table of [
       "mask_models",
       "mask_size_variants",
       "mask_components",
     ]) {
       expectEveryReadScoped(table);
-    }
-    // Tables a tenancy filter could not save us from — assert they are never
-    // touched by this public, anonymous endpoint at all.
-    for (const table of [
-      "patients",
-      "orders",
-      "organizations",
-      "mask_formulary",
-    ]) {
-      expect(getSupabaseFilterCallsByInvocation(table, "select")).toHaveLength(
-        0,
-      );
     }
   });
 });
