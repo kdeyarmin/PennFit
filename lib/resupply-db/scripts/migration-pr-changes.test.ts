@@ -1004,3 +1004,108 @@ describe.skipIf(!dbUrl)(
     }, 20_000);
   },
 );
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 0522 — every mask size run must resolve exactly one default size.
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// `is_default` is what the catalog and admin UIs fall back to when nothing
+// else selects a size. Nothing enforced it, and 0522 broke it twice in one
+// migration: it seeded the Nova Nasal's headgear run defaulting to Large
+// rather than Standard, and retiring the Evora Full's M and L frames left
+// that run with NO default at all, because the seed's default WAS the M.
+//
+// Both are invisible from the outside — a wrong default still renders, it
+// just renders the wrong size — and neither is reachable by the SQL-text
+// parsing in catalog-bands.test.ts, because the answer depends on renames
+// and retirements applied across several migrations. It is a property of
+// the resulting DATA, so it is asserted here, after the replay.
+describe.skipIf(!dbUrl)(
+  "DB integration — mask catalog default sizes (0522)",
+  () => {
+    let pool: Pool;
+
+    beforeAll(() => {
+      pool = new Pool({ connectionString: dbUrl, max: 2 });
+    });
+
+    afterAll(async () => {
+      await pool?.end();
+    });
+
+    it("resolves exactly one default per current (model, component) run", async () => {
+      const { rows } = await pool.query<{
+        slug: string;
+        component: string;
+        defaults: string;
+        sizes: string;
+      }>(
+        `SELECT m.slug,
+                v.component,
+                count(*) FILTER (WHERE v.is_default)::text AS defaults,
+                count(*)::text                             AS sizes
+           FROM resupply.mask_size_variants v
+           JOIN resupply.mask_models m ON m.id = v.mask_model_id
+          WHERE v.status = 'current'
+          GROUP BY m.slug, v.component
+         HAVING count(*) FILTER (WHERE v.is_default) <> 1
+          ORDER BY m.slug, v.component`,
+      );
+      // Name the offenders — "expected 3 to be 0" is useless at 3am.
+      expect(
+        rows.map(
+          (r) => `${r.slug}/${r.component}: ${r.defaults} of ${r.sizes}`,
+        ),
+      ).toEqual([]);
+    }, 20_000);
+
+    it("defaults the two runs 0522 restructured to their standard size", async () => {
+      const { rows } = await pool.query<{ slug: string; size_code: string }>(
+        `SELECT m.slug, v.size_code
+           FROM resupply.mask_size_variants v
+           JOIN resupply.mask_models m ON m.id = v.mask_model_id
+          WHERE v.status = 'current'
+            AND v.is_default
+            AND m.org_id IS NULL
+            AND (
+              (m.slug = 'fisher-paykel-nova-nasal'  AND v.component = 'headgear')
+              OR (m.slug = 'fisher-paykel-evora-full' AND v.component = 'frame')
+            )
+          ORDER BY m.slug`,
+      );
+      expect(rows).toEqual([
+        // The one universal frame, renamed from the seeded S.
+        { slug: "fisher-paykel-evora-full", size_code: "ONE" },
+        // Standard, not the Large that F&P also ship.
+        { slug: "fisher-paykel-nova-nasal", size_code: "STD" },
+      ]);
+    }, 20_000);
+
+    // `mask_components` carries only a uuid primary key and two NON-unique
+    // indexes, so the `ON CONFLICT DO NOTHING` that 0486, 0494 and (until
+    // review) 0522 all end their component inserts with matches no arbiter
+    // and suppresses nothing. Re-running one of those files inserts a
+    // second copy of every row, and the admin catalog then lists each
+    // replacement part twice. migrate.mjs skips already-applied files by
+    // NAME, so its own idempotence test cannot see this — only the
+    // resulting data can.
+    it("lists each replacement component once per model", async () => {
+      const { rows } = await pool.query<{
+        slug: string;
+        component_type: string;
+        name: string;
+        copies: string;
+      }>(
+        `SELECT m.slug, c.component_type, c.name, count(*)::text AS copies
+           FROM resupply.mask_components c
+           JOIN resupply.mask_models m ON m.id = c.mask_model_id
+          GROUP BY m.slug, c.component_type, c.name
+         HAVING count(*) > 1
+          ORDER BY m.slug, c.component_type, c.name`,
+      );
+      expect(
+        rows.map((r) => `${r.slug}/${r.name}: ${r.copies} copies`),
+      ).toEqual([]);
+    }, 20_000);
+  },
+);
