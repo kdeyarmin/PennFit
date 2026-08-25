@@ -10,7 +10,7 @@ manufacturers' own published data, plus the corrections it missed.
 a manufacturer-hosted document or page, or two independent consistent
 sources, preferably with per-size SKUs. A claim that did not clear it is
 recorded below as an open item, **not** applied. Applied changes ship in
-[`0519`](../lib/resupply-db/migrations/0519_mask_catalog_manufacturer_audit_corrections.sql).
+[`0522`](../lib/resupply-db/migrations/0522_mask_catalog_manufacturer_audit_corrections.sql).
 
 The audit was **directionally useful and specifically unreliable**: it
 found real defects nobody had noticed, and it also asked for changes that

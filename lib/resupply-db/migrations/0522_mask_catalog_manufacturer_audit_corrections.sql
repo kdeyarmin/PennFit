@@ -1,4 +1,4 @@
--- 0519_mask_catalog_manufacturer_audit_corrections — the third wave of
+-- 0522_mask_catalog_manufacturer_audit_corrections — the third wave of
 -- catalog corrections, from an external audit re-verified against the
 -- manufacturers' own published data.
 --
