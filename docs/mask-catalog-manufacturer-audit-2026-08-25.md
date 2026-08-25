@@ -118,6 +118,28 @@ notes as the first thing the sign-off should settle.
 6. **F30i `interface_type`** — seeded `hybrid`, while 0515's own header
    argues it is a full-face mask. The new AirTouch F30i rows mirror the
    sibling for platform consistency; worth settling for the family.
+7. **AirFit N20's facial-hair penalty.** Correcting DreamWisp exposed a
+   shared seed artefact: both it and `resmed-airfit-n20` were scored
+   `facial_hair_tolerance='poor'` with a `facial_hair` contraindication
+   whose rationale reads "the seal runs across the cheeks and chin" — a
+   full-face rationale on a mask that seals on the nose. Of the 32
+   current nasal masks those were the only two; the rest are `fair` (24)
+   or `good` (6). 0522 corrects DreamWisp, whose seal geometry it was
+   already restating. **The N20 is deliberately left alone** — it is
+   outside this audit's scope and nothing here re-derives its geometry,
+   so changing a fitting-relevant tolerance on it would be widening the
+   diff on the author's own judgment rather than on evidence. It wants
+   the same one-line fix once someone owns that call.
+
+8. **`mask_components` has no uniqueness constraint** — only a uuid
+   primary key and two non-unique indexes. Every component insert in
+   0486, 0494 and (until review) 0522 ends `ON CONFLICT DO NOTHING`,
+   which therefore names no arbiter and suppresses nothing: re-running
+   any of those files duplicates its rows. 0522 now guards with
+   `NOT EXISTS` and the DB-backed suite asserts the invariant, but the
+   underlying table still cannot enforce it. Adding a unique index on
+   `(mask_model_id, component_type, name)` would — after any existing
+   duplicates are collapsed, which is why it is not done here.
 
 ## Sources
 
