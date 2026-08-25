@@ -85,7 +85,7 @@ export function AdminTeamPage() {
     <div className="space-y-6" data-testid="admin-team-page">
       <PageHeader
         title="Team"
-        description="Invite admins and customer-service reps. Invitees receive a sign-up link by email and must accept before they can log in. Revoking removes access immediately; pending and revoked invites can also be deleted entirely, as if they were never sent."
+        description="Invite admins and customer-service reps. Invitees receive a welcome email that explains the console, what their role covers, and how to get signed in — with the getting-started guide and the handbook for their job attached — plus the sign-up link they must accept before they can log in. Revoking removes access immediately; pending and revoked invites can also be deleted entirely, as if they were never sent."
       />
       <InviteCard />
       <TeamList />
@@ -632,6 +632,12 @@ function InviteCard() {
               </option>
             ))}
           </select>
+          <p className="text-[11px] text-slate-500 mt-1">
+            The role decides what they can see, and it also picks what their
+            welcome email explains: their duties, the areas of the console
+            they&apos;ll work in, and the handbook and manual for this job,
+            attached as PDFs.
+          </p>
         </div>
         <div>
           <label className="text-xs font-semibold text-slate-600 block mb-1">
@@ -676,7 +682,10 @@ function InviteCard() {
             <span className="font-semibold">Set their password for them</span>
             <span className="block text-slate-500">
               Skip the email link. The account will be ready to sign in
-              immediately — you tell them the password directly.
+              immediately — you tell them the password directly. No welcome
+              email is sent, so they won&apos;t receive the getting-started
+              guide or the handbook for their role; walk them through it
+              yourself, or invite them by email instead.
             </span>
           </span>
         </label>

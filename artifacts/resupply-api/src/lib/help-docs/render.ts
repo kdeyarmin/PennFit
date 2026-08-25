@@ -25,6 +25,7 @@ import {
   type HelpDocSection,
 } from "./content";
 import { loadCustomerServiceManual } from "./manual";
+import { staffRoleProfile } from "./roles";
 
 const PAGE_WIDTH = 504; // LETTER (612) minus 54pt margins each side
 const PDF_CONTENT_TYPE = "application/pdf";
@@ -34,6 +35,22 @@ const PDF_CONTENT_TYPE = "application/pdf";
 // first tenant to request a guide would poison the cache for every
 // other tenant.
 const renderedCache = new Map<string, Buffer>();
+
+/**
+ * An invite attachment plus the one-line explanation of what it is.
+ * The invite email lists these so a new hire opening three PDFs knows
+ * which is which; structurally an `EmailAttachment`, so it can be
+ * handed to the email sender unchanged (the sender maps
+ * content/filename/contentType and ignores the rest).
+ */
+export interface InviteHelpAttachment extends EmailAttachment {
+  description: string;
+}
+
+/** What the pre-rendered Customer Service Manual is, for the email's
+ *  attachment list. */
+const CUSTOMER_SERVICE_MANUAL_DESCRIPTION =
+  "The full operations manual for the service desk: the day-to-day procedures behind the console.";
 
 /** Audience descriptor for {@link buildInviteHelpAttachments}. */
 export type HelpDocAudience =
@@ -65,24 +82,38 @@ export async function buildInviteHelpAttachments(
   audience: HelpDocAudience,
   /** The inviting tenant's own company name — these PDFs carry it. */
   company: string,
-): Promise<EmailAttachment[]> {
+): Promise<InviteHelpAttachment[]> {
   const docs = docsFor(audience, company);
-  const attachments: EmailAttachment[] = [];
+  const attachments: InviteHelpAttachment[] = [];
   for (const doc of docs) {
     const content = await renderHelpDocPdf(doc, company);
     attachments.push({
       content,
       filename: doc.filename,
       contentType: PDF_CONTENT_TYPE,
+      description: doc.description,
     });
   }
-  // Staff invites additionally carry the full Customer Service
-  // Manual — the operations manual for the console the new hire is
-  // joining. Best-effort: when the PDF isn't on disk the invite
-  // ships with the rendered guides only.
+  // Staff invites in a customer-service job (the service desk itself,
+  // and the roles that supervise it) additionally carry the full
+  // Customer Service Manual. A biller or an RT does NOT: it used to go
+  // to every staff invite regardless of role, so their welcome email
+  // arrived with a customer-service manual and nothing about their own
+  // job. Their role handbook covers that, and the complete
+  // role-organised User Manual is on the console's Support page for
+  // everyone. Best-effort: when the PDF isn't on disk the invite ships
+  // with the rendered guides only.
   if (audience.kind === "staff") {
-    const manual = await loadCustomerServiceManual();
-    if (manual) attachments.push(manual);
+    const { customerServiceManual } = staffRoleProfile(audience.role);
+    if (customerServiceManual) {
+      const manual = await loadCustomerServiceManual();
+      if (manual) {
+        attachments.push({
+          ...manual,
+          description: CUSTOMER_SERVICE_MANUAL_DESCRIPTION,
+        });
+      }
+    }
   }
   return attachments;
 }
@@ -177,6 +208,19 @@ function drawSection(pdf: PDFKit.PDFDocument, section: HelpDocSection): void {
       .text(`•  ${b}`, { indent: 10, lineGap: 2, width: PAGE_WIDTH });
     pdf.moveDown(0.2);
   }
+  const steps = section.steps ?? [];
+  steps.forEach((step, i) => {
+    pdf
+      .font("Helvetica")
+      .fontSize(10)
+      .fillColor("#1f2937")
+      .text(`${i + 1}.  ${step}`, {
+        indent: 10,
+        lineGap: 2,
+        width: PAGE_WIDTH,
+      });
+    pdf.moveDown(0.2);
+  });
   pdf.fillColor("#000000");
 }
 

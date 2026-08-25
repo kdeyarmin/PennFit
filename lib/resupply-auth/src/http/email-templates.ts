@@ -92,6 +92,23 @@ function makeLink(
   return `${base}${safePrefix}${path}?token=${encodeURIComponent(token)}`;
 }
 
+/** "a" or "an" for a role label, so the invite doesn't greet its
+ *  reader with "As a Owner". Vowel-initial is the whole rule the role
+ *  catalog needs (Owner, Admin, Biller, Customer service rep,
+ *  Respiratory therapist). */
+function indefiniteArticle(word: string): string {
+  return /^[aeiou]/i.test(word.trim()) ? "an" : "a";
+}
+
+/** Lowercase the first character so a second-person sentence can be
+ *  spliced after a clause ("As a Biller, you own the revenue cycle…").
+ *  Leaves acronyms alone — only a lone leading capital is folded. */
+function lowerFirst(s: string): string {
+  if (!s) return s;
+  if (/^[A-Z][A-Z]/.test(s)) return s;
+  return s.charAt(0).toLowerCase() + s.slice(1);
+}
+
 // Strip CR/LF from any value used in an email subject line to prevent
 // header injection (e.g. "PennFit\r\nBcc: attacker@evil.com").
 function safeSubjectValue(s: string): string {
@@ -242,6 +259,16 @@ ${attachmentsText}If you weren't expecting this invitation, you can safely ignor
   };
 }
 
+/** One document attached to a staff invite, with the one line that
+ *  tells the recipient what it is. A bare filename leaves a new hire
+ *  guessing which of three PDFs to open first. */
+export interface TeamInviteAttachment {
+  filename: string;
+  /** What this document is, in one line. Optional — omitted renders
+   *  the filename alone. */
+  description?: string;
+}
+
 export interface TeamInviteEmailArgs {
   /** Raw set-password token embedded in the invite link. */
   rawToken: string;
@@ -254,20 +281,36 @@ export interface TeamInviteEmailArgs {
   /** Human-readable role label for the account-details block
    *  (e.g. "Customer service rep"). Null omits the Role line. */
   roleLabel?: string | null;
-  /** Filenames of the getting-started guides attached to this email,
-   *  listed in the body so the recipient knows to look for them.
+  /** One sentence describing what the role is responsible for. Renders
+   *  the "Your role" section; absent omits it. */
+  roleSummary?: string | null;
+  /** What the new member will actually do day to day. Rendered as
+   *  bullets under the role summary. */
+  roleHighlights?: ReadonlyArray<string>;
+  /** Name of the person who sent the invitation, so the recipient can
+   *  see who to ask. Null renders the neutral "You've been invited". */
+  invitedByName?: string | null;
+  /** Documents attached to this email, listed in the body so the
+   *  recipient knows to look for them and which is which.
    *  Empty/absent omits the attachments section. */
-  attachmentFilenames?: ReadonlyArray<string>;
+  attachments?: ReadonlyArray<TeamInviteAttachment>;
 }
 
 /**
  * Staff invite — a welcome email, NOT a password reset. New team
  * members have never had a password, so "we received a request to
- * reset your password" copy is wrong and confusing for them. This
- * template welcomes them, explains what the app is, spells out their
- * account details (username = sign-in email, role, sign-in page),
- * links the set-password step, and points at the attached
- * getting-started guides for their role.
+ * reset your password" copy is wrong and confusing for them.
+ *
+ * This is a new hire's first contact with the software, and it is
+ * expected to stand on its own: it welcomes them by name, says who
+ * invited them, explains what the product is, spells out their account
+ * details (username = sign-in email, role, sign-in page), describes
+ * what their ROLE is responsible for, walks the numbered steps from
+ * "set a password" through "turn on multi-factor authentication" to
+ * "here is where the documentation lives", names each attached
+ * document and what it is for, and tells them who to ask. Everything
+ * role-specific is passed in by the caller — this package stays
+ * brand-neutral and knows nothing about the product's role catalog.
  */
 export function renderTeamInviteEmail(
   ctx: AuthEmailContext,
@@ -288,15 +331,28 @@ export function renderTeamInviteEmail(
   const firstName = args.displayName?.trim().split(/\s+/)[0] || null;
   const greetingText = firstName ? `Hi ${firstName},` : "Hello,";
   const greetingHtml = firstName ? `Hi ${escapeHtml(firstName)},` : "Hello,";
-  const files = args.attachmentFilenames ?? [];
-  const guideNoun = files.length === 1 ? "guide" : "guides";
 
+  const P = `<p style="margin:0 0 16px;color:#334155;font-size:16px;line-height:1.6;">`;
+  const SUBHEAD = `<p style="margin:0 0 8px;color:#334155;font-size:16px;line-height:1.6;">`;
+  const UL = `<ul style="margin:0 0 16px;padding-left:20px;color:#334155;font-size:16px;line-height:1.7;">`;
+  const OL = `<ol style="margin:0 0 16px;padding-left:20px;color:#334155;font-size:16px;line-height:1.7;">`;
+
+  // ── Who invited them ──
+  const inviter = args.invitedByName?.trim() || null;
+  const invitedByHtml = inviter
+    ? `${escapeHtml(inviter)} has invited you to join the <strong>${safeName}</strong> team.`
+    : `You've been invited to join the <strong>${safeName}</strong> team.`;
+  const invitedByText = inviter
+    ? `${inviter} has invited you to join the ${ctx.productName} team.`
+    : `You've been invited to join the ${ctx.productName} team.`;
+
+  // ── Account details ──
   const detailsHtml = [
     `<li>Username (your sign-in email): <strong>${escapeHtml(args.email)}</strong></li>`,
     ...(args.roleLabel
       ? [`<li>Role: <strong>${escapeHtml(args.roleLabel)}</strong></li>`]
       : []),
-    `<li>Sign-in page: <a href="${safeSignIn}">${safeSignIn}</a></li>`,
+    `<li>Sign-in page: <a href="${safeSignIn}" style="color:#2f6fe6;">${safeSignIn}</a></li>`,
   ].join("\n");
   const detailsText = [
     `  * Username (your sign-in email): ${args.email}`,
@@ -304,51 +360,123 @@ export function renderTeamInviteEmail(
     `  * Sign-in page: ${signInUrl}`,
   ].join("\n");
 
+  // ── What their role covers ──
+  const highlights = args.roleHighlights ?? [];
+  const summary = args.roleSummary?.trim() || null;
+  const article = args.roleLabel ? indefiniteArticle(args.roleLabel) : "a";
+  const roleIntroHtml = args.roleLabel
+    ? `As ${article} <strong>${escapeHtml(args.roleLabel)}</strong>, ${summary ? lowerFirst(escapeHtml(summary)) : ""}`
+    : escapeHtml(summary ?? "");
+  const roleIntroText = args.roleLabel
+    ? `As ${article} ${args.roleLabel}, ${summary ? lowerFirst(summary) : ""}`
+    : (summary ?? "");
+  const roleHtml =
+    summary || highlights.length > 0
+      ? `${SUBHEAD}<strong>Your role</strong></p>
+${summary ? `${P}${roleIntroHtml}</p>\n` : ""}${
+          highlights.length > 0
+            ? `${UL}
+${highlights.map((h) => `<li>${escapeHtml(h)}</li>`).join("\n")}
+</ul>
+`
+            : ""
+        }`
+      : "";
+  const roleText =
+    summary || highlights.length > 0
+      ? `Your role
+${summary ? `${roleIntroText}\n` : ""}${
+          highlights.length > 0
+            ? `${highlights.map((h) => `  * ${h}`).join("\n")}\n`
+            : ""
+        }
+`
+      : "";
+
+  // ── Numbered getting-started steps ──
+  const steps = [
+    {
+      html: `Choose your password using the button below. This invitation link expires in ${expiry} — if it lapses first, an administrator can send you a fresh one.`,
+      text: `Choose your password: ${link}\n     This invitation link expires in ${expiry} — if it lapses first, an administrator can send you a fresh one.`,
+    },
+    {
+      html: `Sign in at <a href="${safeSignIn}" style="color:#2f6fe6;">${safeSignIn}</a> using your email address as your username. Worth bookmarking.`,
+      text: `Sign in at ${signInUrl} using your email address as your username. Worth bookmarking.`,
+    },
+    {
+      html: `Turn on multi-factor authentication in your account settings. Patient records are protected health information, and this is the single most effective safeguard on your account.`,
+      text: `Turn on multi-factor authentication in your account settings. Patient records are protected health information, and this is the single most effective safeguard on your account.`,
+    },
+    {
+      html: `Open <strong>Support</strong> in the console to download the full User Manual — it is organised by role, so you can go straight to your own chapters. The in-app assistant on every page answers "how do I…" and "where is…" in plain English.`,
+      text: `Open Support in the console to download the full User Manual — it is organised by role, so you can go straight to your own chapters. The in-app assistant on every page answers "how do I..." and "where is..." in plain English.`,
+    },
+  ];
+  const stepsHtml = `${SUBHEAD}<strong>Getting started</strong></p>
+${OL}
+${steps.map((s) => `<li style="margin-bottom:8px;">${s.html}</li>`).join("\n")}
+</ol>
+`;
+  const stepsText = `Getting started
+${steps.map((s, i) => `  ${i + 1}. ${s.text}`).join("\n")}
+`;
+
+  // ── Attachments ──
+  const files = args.attachments ?? [];
+  const docNoun = files.length === 1 ? "document" : "documents";
   const attachmentsHtml =
     files.length > 0
-      ? `<p>We've attached the getting-started ${guideNoun} for your role to this email:</p>
-<ul>
-${files.map((f) => `<li>${escapeHtml(f)}</li>`).join("\n")}
+      ? `${P}We've attached the ${docNoun} for your role to this email:</p>
+${UL}
+${files
+  .map(
+    (f) =>
+      `<li><strong>${escapeHtml(f.filename)}</strong>${f.description ? ` — ${escapeHtml(f.description)}` : ""}</li>`,
+  )
+  .join("\n")}
 </ul>
 `
       : "";
   const attachmentsText =
     files.length > 0
-      ? `We've attached the getting-started ${guideNoun} for your role to this email:
-${files.map((f) => `  * ${f}`).join("\n")}
+      ? `We've attached the ${docNoun} for your role to this email:
+${files
+  .map((f) => `  * ${f.filename}${f.description ? ` — ${f.description}` : ""}`)
+  .join("\n")}
 
 `
       : "";
+
+  const helpHtml = `${P}If anything is unclear — a workflow, a screen you expected to see, or access you think you need — ask ${inviter ? escapeHtml(inviter) : "the administrator who invited you"} or your supervisor. Nobody expects you to know it all on day one.</p>`;
+  const helpText = `If anything is unclear — a workflow, a screen you expected to see, or access you think you need — ask ${inviter ?? "the administrator who invited you"} or your supervisor. Nobody expects you to know it all on day one.`;
 
   return {
     subject: `Welcome to the ${safeSubjectValue(ctx.productName)} team — set up your account`,
     html: wrapAuthHtml(ctx, {
       heading: "Welcome to the team",
-      preheader: `You've been invited to join the ${ctx.productName} team — set up your account.`,
+      preheader: `${invitedByText} Set up your account to get started.`,
       button: { label: "Set your password", url: link },
-      bodyHtml: `<p style="margin:0 0 16px;color:#334155;font-size:16px;line-height:1.6;">${greetingHtml}</p>
-<p style="margin:0 0 16px;color:#334155;font-size:16px;line-height:1.6;">You've been invited to join the <strong>${safeName}</strong> team. ${safeName} is where our team manages CPAP resupply day to day — patient records, orders and shipments, supply reminders, and the schedules behind them.</p>
-<p style="margin:0 0 8px;color:#334155;font-size:16px;line-height:1.6;"><strong>Your account details:</strong></p>
-<ul style="margin:0 0 16px;padding-left:20px;color:#334155;font-size:16px;line-height:1.7;">
+      bodyHtml: `${P}${greetingHtml}</p>
+${P}${invitedByHtml} ${safeName} is where our team manages CPAP resupply day to day — patient records, insurance and claims, orders and shipments, supply reminders, and the schedules behind them. It runs in any modern browser, so there is nothing to install.</p>
+${SUBHEAD}<strong>Your account details</strong></p>
+${UL}
 ${detailsHtml}
 </ul>
-<p style="margin:0 0 16px;color:#334155;font-size:16px;line-height:1.6;">This invitation link expires in ${expiry}. If it expires before you set your password, an administrator can send you a fresh one.</p>
-${attachmentsHtml}<p style="margin:0 0 16px;color:#334155;font-size:16px;line-height:1.6;">If you weren't expecting this invitation, you can safely ignore this email.</p>
+${roleHtml}${stepsHtml}${attachmentsHtml}${helpHtml}
+${P}If you weren't expecting this invitation, you can safely ignore this email — no account is active until a password is set.</p>
 ${fallbackLinkHtml(safeLink)}`,
     }),
     text: `${greetingText}
 
-You've been invited to join the ${ctx.productName} team. ${ctx.productName} is where our team manages CPAP resupply day to day — patient records, orders and shipments, supply reminders, and the schedules behind them.
+${invitedByText} ${ctx.productName} is where our team manages CPAP resupply day to day — patient records, insurance and claims, orders and shipments, supply reminders, and the schedules behind them. It runs in any modern browser, so there is nothing to install.
 
-Your account details:
+Your account details
 ${detailsText}
 
-To get started, set your password and activate your account by visiting:
-${link}
+${roleText}${stepsText}
+${attachmentsText}${helpText}
 
-This invitation link expires in ${expiry}. If it expires before you set your password, an administrator can send you a fresh one.
-
-${attachmentsText}If you weren't expecting this invitation, you can safely ignore this email.${signatureText(ctx)}`,
+If you weren't expecting this invitation, you can safely ignore this email — no account is active until a password is set.${signatureText(ctx)}`,
   };
 }
 

@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
+import type { AdminRole } from "@workspace/resupply-db";
+
 import {
   CUSTOMER_SERVICE_MANUAL_FILENAME,
   patientHelpDocs,
@@ -7,6 +9,7 @@ import {
   buildInviteHelpAttachments,
   loadCustomerServiceManual,
   staffHelpDocs,
+  staffRoleProfile,
   __clearHelpDocCache,
   __clearManualCache,
 } from "./index";
@@ -19,28 +22,135 @@ beforeEach(() => {
   __clearManualCache();
 });
 
-describe("staffHelpDocs", () => {
-  it("gives admins the getting-started guide plus the administrator guide", () => {
-    const docs = staffHelpDocs("admin", CO);
-    expect(docs.map((d) => d.key)).toEqual([
-      "staff-getting-started",
-      "staff-administrator-guide",
-    ]);
+const ALL_ROLES: AdminRole[] = [
+  "admin",
+  "supervisor",
+  "compliance_officer",
+  "csr",
+  "fitter",
+  "fulfillment",
+  "agent",
+  "biller",
+  "rt",
+];
+
+describe("staffRoleProfile", () => {
+  it("maps every granular role to a job family with real copy", () => {
+    for (const role of ALL_ROLES) {
+      const p = staffRoleProfile(role);
+      expect(p.title.length).toBeGreaterThan(0);
+      expect(p.summary.length).toBeGreaterThan(0);
+      expect(p.highlights.length).toBeGreaterThan(0);
+      expect(p.areas.length).toBeGreaterThan(0);
+      expect(p.firstTasks.length).toBeGreaterThan(0);
+    }
   });
 
-  it("gives non-admin staff only the getting-started guide", () => {
-    for (const role of [
-      "csr",
-      "agent",
-      "fitter",
-      "fulfillment",
-      "supervisor",
-      "rt",
-      "compliance_officer",
-    ] as const) {
-      const docs = staffHelpDocs(role, CO);
-      expect(docs.map((d) => d.key)).toEqual(["staff-getting-started"]);
+  it("collapses the legacy role names onto the family they belong to", () => {
+    // agent / fitter / fulfillment are persisted on old rows but are not
+    // offered by the invite UI; they are customer-service jobs.
+    for (const role of ["agent", "fitter", "fulfillment"] as const) {
+      expect(staffRoleProfile(role).family).toBe("csr");
     }
+    // supervisor / compliance_officer both render as "Admin" in the
+    // console, and neither is the Owner (team + system settings are
+    // requireAdminOnly, i.e. role === "admin").
+    for (const role of ["supervisor", "compliance_officer"] as const) {
+      expect(staffRoleProfile(role).family).toBe("admin");
+    }
+    expect(staffRoleProfile("admin").family).toBe("owner");
+    expect(staffRoleProfile("admin").title).toBe("Owner");
+  });
+
+  it("uses the same job titles the console and the User Manual use", () => {
+    // The invite email used to say "Super admin" while the team page and
+    // the manual both said "Owner" — a new hire was told a title nothing
+    // else in the product uses.
+    expect(staffRoleProfile("admin").title).toBe("Owner");
+    expect(staffRoleProfile("supervisor").title).toBe("Admin");
+    expect(staffRoleProfile("csr").title).toBe("Customer service rep");
+    expect(staffRoleProfile("biller").title).toBe("Biller");
+    expect(staffRoleProfile("rt").title).toBe("Respiratory therapist");
+  });
+});
+
+describe("staffHelpDocs", () => {
+  it("gives every staff role the activation guide plus their own handbook", () => {
+    for (const role of ALL_ROLES) {
+      const profile = staffRoleProfile(role);
+      const docs = staffHelpDocs(role, CO);
+      expect(docs.map((d) => d.key)).toEqual([
+        "staff-getting-started",
+        `staff-handbook-${profile.family}`,
+      ]);
+      // The handbook is named for the job, so it is obvious in a mail
+      // client which attachment is "yours".
+      expect(docs[1]!.title).toContain(profile.title);
+    }
+  });
+
+  it("puts the role's own duties in the handbook, not a generic blurb", () => {
+    const biller = staffHelpDocs("biller", CO)[1]!;
+    const blob = JSON.stringify(biller);
+    expect(blob).toContain("revenue cycle");
+    expect(blob).toContain("A/R Aging");
+    // …and does NOT describe somebody else's job.
+    expect(blob).not.toContain("Therapy Fleet");
+
+    const rt = JSON.stringify(staffHelpDocs("rt", CO)[1]!);
+    expect(rt).toContain("Therapy Fleet");
+    expect(rt).not.toContain("A/R Aging");
+  });
+
+  it("keys each family's handbook separately so the byte cache can't cross roles", () => {
+    // The rendered-bytes cache is keyed on doc.key + version + tenant.
+    // Two roles sharing a key would serve one role's handbook to the
+    // other; two roles in the SAME family legitimately share one.
+    const keys = ALL_ROLES.map((r) => staffHelpDocs(r, CO)[1]!.key);
+    const families = ALL_ROLES.map((r) => staffRoleProfile(r).family);
+    for (let i = 0; i < ALL_ROLES.length; i += 1) {
+      for (let j = 0; j < ALL_ROLES.length; j += 1) {
+        expect(keys[i] === keys[j]).toBe(families[i] === families[j]);
+      }
+    }
+  });
+
+  it("keeps the owner's team-management and roles guidance", () => {
+    // This prose used to live in a separate admin-only guide; it must
+    // not have been lost when the guide became a role handbook.
+    const owner = JSON.stringify(staffHelpDocs("admin", CO)[1]!);
+    expect(owner).toContain("Managing your team");
+    expect(owner).toContain("Revoke a member");
+    expect(owner).toContain("least access their job needs");
+    // An Admin is not the Owner and cannot manage the team.
+    expect(JSON.stringify(staffHelpDocs("supervisor", CO)[1]!)).not.toContain(
+      "Managing your team",
+    );
+  });
+
+  it("orders the first-week checklist rather than bulleting it", () => {
+    // The order is the instruction — "turn on MFA" before "download the
+    // manual" — so these render numbered, not as an unordered blob.
+    for (const role of ALL_ROLES) {
+      const handbook = staffHelpDocs(role, CO)[1]!;
+      const firstWeek = handbook.sections.find(
+        (sec) => sec.heading === "Your first week",
+      );
+      expect(firstWeek?.steps?.length).toBeGreaterThan(0);
+      expect(firstWeek?.bullets).toBeUndefined();
+    }
+    const activation = staffHelpDocs("csr", CO)[0]!.sections.find(
+      (sec) => sec.heading === "Activating your account",
+    );
+    expect(activation?.steps?.length).toBeGreaterThan(0);
+  });
+
+  it("gives the role-neutral guide no role-specific copy", () => {
+    // It is cached per tenant, NOT per role — role copy here would be
+    // rendered once and mailed to every other role.
+    const a = JSON.stringify(staffHelpDocs("biller", CO)[0]!);
+    const b = JSON.stringify(staffHelpDocs("rt", CO)[0]!);
+    expect(a).toBe(b);
   });
 });
 
@@ -59,7 +169,7 @@ describe("buildInviteHelpAttachments", () => {
     expect(a.content.length).toBeGreaterThan(500);
   });
 
-  it("renders both admin staff docs plus the customer service manual", async () => {
+  it("renders the owner's guide, handbook, and the customer service manual", async () => {
     const attachments = await buildInviteHelpAttachments(
       {
         kind: "staff",
@@ -69,7 +179,7 @@ describe("buildInviteHelpAttachments", () => {
     );
     expect(attachments.map((a) => a.filename)).toEqual([
       `${CO}-Team-Getting-Started.pdf`,
-      `${CO}-Administrator-Guide.pdf`,
+      `${CO}-Owner-Handbook.pdf`,
       CUSTOMER_SERVICE_MANUAL_FILENAME,
     ]);
     for (const a of attachments) {
@@ -78,7 +188,7 @@ describe("buildInviteHelpAttachments", () => {
     }
   });
 
-  it("gives a non-admin staff role the guide plus the manual", async () => {
+  it("gives a CSR the guide, the CSR handbook, and the service-desk manual", async () => {
     const attachments = await buildInviteHelpAttachments(
       {
         kind: "staff",
@@ -88,8 +198,40 @@ describe("buildInviteHelpAttachments", () => {
     );
     expect(attachments.map((a) => a.filename)).toEqual([
       `${CO}-Team-Getting-Started.pdf`,
+      `${CO}-Customer-Service-Rep-Handbook.pdf`,
       CUSTOMER_SERVICE_MANUAL_FILENAME,
     ]);
+  });
+
+  // The point of the change: the Customer Service Manual used to go to
+  // EVERY staff invite, so a biller's welcome email arrived with a
+  // customer-service manual and nothing about the revenue cycle.
+  it("sends a biller and an RT their own handbook, not the service-desk manual", async () => {
+    for (const [role, handbook] of [
+      ["biller", `${CO}-Biller-Handbook.pdf`],
+      ["rt", `${CO}-Respiratory-Therapist-Handbook.pdf`],
+    ] as const) {
+      const attachments = await buildInviteHelpAttachments(
+        { kind: "staff", role },
+        CO,
+      );
+      expect(attachments.map((a) => a.filename)).toEqual([
+        `${CO}-Team-Getting-Started.pdf`,
+        handbook,
+      ]);
+    }
+  });
+
+  it("explains each attachment, so a filename isn't the only clue", async () => {
+    const attachments = await buildInviteHelpAttachments(
+      { kind: "staff", role: "biller" },
+      CO,
+    );
+    for (const a of attachments) {
+      expect(a.description.length).toBeGreaterThan(0);
+    }
+    expect(attachments[0]!.description).toMatch(/^Read this first/);
+    expect(attachments[1]!.description).toContain("what the role owns");
   });
 
   it("does not attach the manual to patient or provider invites", async () => {

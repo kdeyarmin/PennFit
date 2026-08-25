@@ -55,7 +55,11 @@ import {
 
 import { getAuthDeps } from "../../lib/auth-deps";
 import { getCompanyInfo } from "../../lib/company-info";
-import { buildInviteHelpAttachments } from "../../lib/help-docs";
+import {
+  buildInviteHelpAttachments,
+  staffRoleProfile,
+  type InviteHelpAttachment,
+} from "../../lib/help-docs";
 import { assertAssignableLocation } from "../../lib/locations/assignable";
 import { logger } from "../../lib/logger";
 import { requireAdminOnly } from "../../middlewares/requireAdmin";
@@ -68,7 +72,10 @@ type AdminUserRow = Database["resupply"]["Tables"]["admin_users"]["Row"];
  * an empty list so the invite still goes out — an invite must never
  * fail because a help doc didn't render.
  */
-async function staffInviteAttachments(role: AdminRole, company: string) {
+async function staffInviteAttachments(
+  role: AdminRole,
+  company: string,
+): Promise<InviteHelpAttachment[]> {
   try {
     return await buildInviteHelpAttachments({ kind: "staff", role }, company);
   } catch (err) {
@@ -146,22 +153,39 @@ function coarseAuthRoleFor(role: AdminRole): "admin" | "agent" {
   return role === "admin" ? "admin" : "agent";
 }
 
-/** Human-readable role labels for the welcome email's account-details
- *  block. Same vocabulary the team page renders (admin-team.tsx
- *  ROLE_LABEL), so the email matches what the new member will see in
- *  the console; `rt` (not offered by that UI) labels as its rbac
- *  effective role, clinician. */
-const ROLE_EMAIL_LABEL: Record<AdminRole, string> = {
-  admin: "Super admin",
-  supervisor: "Admin",
-  compliance_officer: "Admin",
-  csr: "Customer service rep",
-  fitter: "Customer service rep",
-  fulfillment: "Customer service rep",
-  agent: "Customer service rep",
-  rt: "Respiratory therapist",
-  biller: "Biller",
-};
+/**
+ * Who is sending this invitation, for the email's "<name> has invited
+ * you…" line and its "ask <name> if anything is unclear" close. A new
+ * hire's first email from software they've never seen should name a
+ * human. Best-effort: any failure (or an inviter with no row) returns
+ * null and the email falls back to neutral phrasing — an invite must
+ * never fail because we couldn't resolve a display name.
+ *
+ * `req.adminUserId` is the resupply_auth.users id, which is what
+ * `admin_users.auth_user_id` (and `invited_by`) carry.
+ */
+async function inviterName(
+  supabase: OrgScopedClient,
+  authUserId: string | null,
+): Promise<string | null> {
+  if (!authUserId) return null;
+  try {
+    const { data, error } = await supabase
+      .from("admin_users")
+      .select("display_name, email_lower")
+      .eq("auth_user_id", authUserId)
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
+    return data?.display_name?.trim() || data?.email_lower || null;
+  } catch (err) {
+    logger.warn(
+      { err, event: "staff_invite_inviter_lookup_failed" },
+      "could not resolve the inviting admin's name; sending the invite without it",
+    );
+    return null;
+  }
+}
 
 const inviteBody = z
   .object({
@@ -388,6 +412,12 @@ router.post(
     // different tenant (CLAUDE.md brand-architecture rule).
     const company = await getCompanyInfo(orgId);
 
+    // The invitee's job, as the console, the invite email, the attached
+    // handbook, and the User Manual all describe it — one catalog, so a
+    // new hire is never told a job title nothing else in the product
+    // uses (see lib/help-docs/roles.ts).
+    const profile = staffRoleProfile(role);
+
     // Mint or refresh the auth row + send the invite email. The
     // coarse `auth.users.role` only cares about admin-vs-agent;
     // the granular role lands on admin_users.role below.
@@ -396,7 +426,12 @@ router.post(
     const invite = await inviteTeamMember(supabase.raw(), deps, {
       emailLower: email,
       role: coarseAuthRoleFor(role),
-      roleLabel: ROLE_EMAIL_LABEL[role],
+      roleLabel: profile.title,
+      roleSummary: profile.summary,
+      roleHighlights: profile.highlights,
+      invitedByName: useInitialPassword
+        ? null
+        : await inviterName(supabase, inviterId),
       displayName: displayName ?? prior?.display_name ?? null,
       productName: company.name,
       signatureName: company.legalName,
@@ -404,8 +439,9 @@ router.post(
       initialPassword: useInitialPassword
         ? (initialPassword as string)
         : undefined,
-      // Attach the new member's role-specific getting-started guides.
-      // Skipped automatically on the initialPassword path (no email).
+      // Attach the new member's activation guide and the handbook for
+      // their own job. Skipped automatically on the initialPassword
+      // path (no email).
       attachments: useInitialPassword
         ? undefined
         : await staffInviteAttachments(role, company.name),
@@ -525,11 +561,17 @@ router.post(
     // Brand the resent invite to the INVITING tenant (see the invite
     // handler's getCompanyInfo note) — never the hardcoded Penn brand.
     const company = await getCompanyInfo(orgId);
+    // A resend is the same welcome email, not a stripped-down "here's
+    // your link" — the first one may never have arrived.
+    const resendProfile = staffRoleProfile(row.role as AdminRole);
     // inviteTeamMember operates entirely on resupply_auth — pass raw.
     const invite = await inviteTeamMember(supabase.raw(), deps, {
       emailLower: row.email_lower,
       role: coarseAuthRoleFor(row.role as AdminRole),
-      roleLabel: ROLE_EMAIL_LABEL[row.role as AdminRole],
+      roleLabel: resendProfile.title,
+      roleSummary: resendProfile.summary,
+      roleHighlights: resendProfile.highlights,
+      invitedByName: await inviterName(supabase, req.adminUserId ?? null),
       displayName: row.display_name,
       productName: company.name,
       signatureName: company.legalName,

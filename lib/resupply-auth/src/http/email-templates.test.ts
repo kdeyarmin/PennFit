@@ -218,7 +218,19 @@ describe("renderTeamInviteEmail", () => {
     email: "jane@example.com",
     displayName: "Jane Smith",
     roleLabel: "Customer service rep",
-    attachmentFilenames: ["Guide-One.pdf", "Guide-Two.pdf"],
+    roleSummary:
+      "You are the patient's first point of contact — messages, orders, scheduling, and day-to-day service.",
+    roleHighlights: [
+      "Work the inbox: patient texts, emails, and calls.",
+      "Fulfil and ship orders, print labels, and handle returns.",
+    ],
+    attachments: [
+      {
+        filename: "Guide-One.pdf",
+        description: "Start here — activating your account.",
+      },
+      { filename: "Guide-Two.pdf", description: "Your job in detail." },
+    ],
   };
 
   it("is a welcome email, not a password reset", () => {
@@ -245,6 +257,23 @@ describe("renderTeamInviteEmail", () => {
     expect(r.text).toContain("Hello,");
   });
 
+  it("names the admin who sent the invitation, and who to ask", () => {
+    const r = renderTeamInviteEmail(ctx, {
+      ...args,
+      invitedByName: "Dana Ruiz",
+    });
+    expect(r.html).toContain("Dana Ruiz has invited you to join");
+    expect(r.text).toContain("Dana Ruiz has invited you to join");
+    // …and the closing "who to ask" line names the same person.
+    expect(r.text).toContain("ask Dana Ruiz or your supervisor");
+  });
+
+  it("falls back to neutral phrasing when the inviter is unknown", () => {
+    const r = renderTeamInviteEmail(ctx, { ...args, invitedByName: null });
+    expect(r.text).toContain("You've been invited to join");
+    expect(r.text).toContain("ask the administrator who invited you");
+  });
+
   it("includes the username, role label, and sign-in page", () => {
     const r = renderTeamInviteEmail(ctx, args);
     expect(r.html).toContain("jane@example.com");
@@ -259,6 +288,57 @@ describe("renderTeamInviteEmail", () => {
     const r = renderTeamInviteEmail(ctx, { ...args, roleLabel: null });
     expect(r.html).not.toContain("Role:");
     expect(r.text).not.toContain("Role:");
+  });
+
+  // The point of the section: a new hire should learn what their JOB is
+  // from the email itself, not only from an attachment they may not open.
+  it("explains what the role is responsible for, day to day", () => {
+    const r = renderTeamInviteEmail(ctx, args);
+    expect(r.text).toContain("Your role");
+    expect(r.text).toContain(
+      "As a Customer service rep, you are the patient's first point of contact",
+    );
+    expect(r.text).toContain(
+      "Work the inbox: patient texts, emails, and calls.",
+    );
+    expect(r.html).toContain("Fulfil and ship orders");
+  });
+
+  it("agrees the article with the role label", () => {
+    // "As a Owner" is the kind of thing a new hire notices on the first
+    // email the software ever sends them.
+    const owner = renderTeamInviteEmail(ctx, {
+      ...args,
+      roleLabel: "Owner",
+      roleSummary: "You have full access to the workspace.",
+    });
+    expect(owner.text).toContain("As an Owner, you have full access");
+    expect(owner.text).not.toContain("As a Owner");
+    expect(owner.html).toContain("As an <strong>Owner</strong>");
+  });
+
+  it("omits the role section when the caller supplies no role copy", () => {
+    const r = renderTeamInviteEmail(ctx, {
+      ...args,
+      roleSummary: null,
+      roleHighlights: [],
+    });
+    expect(r.text).not.toContain("Your role");
+    expect(r.html).not.toContain("Your role");
+  });
+
+  it("walks the numbered getting-started steps, MFA included", () => {
+    const r = renderTeamInviteEmail(ctx, args);
+    expect(r.text).toContain("Getting started");
+    expect(r.text).toContain("1. Choose your password");
+    expect(r.text).toContain(
+      "2. Sign in at https://shop.example.com/admin/sign-in",
+    );
+    expect(r.text).toContain("3. Turn on multi-factor authentication");
+    expect(r.text).toContain("4. Open Support in the console");
+    expect(r.text).toContain("protected health information");
+    expect(r.html).toContain("multi-factor authentication");
+    expect(r.html).toContain("User Manual");
   });
 
   it("links the set-password step with the expiry derived from the TTL", () => {
@@ -276,43 +356,50 @@ describe("renderTeamInviteEmail", () => {
     expect(bootstrap.text).toContain("expires in 1 hour");
   });
 
-  it("lists the attached getting-started guides by filename", () => {
+  it("lists each attached document with what it is for", () => {
     const r = renderTeamInviteEmail(ctx, args);
-    expect(r.html).toContain("getting-started guides");
+    expect(r.html).toContain("documents for your role");
     expect(r.html).toContain("Guide-One.pdf");
-    expect(r.html).toContain("Guide-Two.pdf");
-    expect(r.text).toContain("Guide-One.pdf");
-    expect(r.text).toContain("Guide-Two.pdf");
+    expect(r.html).toContain("Start here — activating your account.");
+    expect(r.text).toContain("Guide-Two.pdf — Your job in detail.");
   });
 
-  it("uses the singular noun for a single attached guide", () => {
+  it("uses the singular noun for a single attached document", () => {
     const r = renderTeamInviteEmail(ctx, {
       ...args,
-      attachmentFilenames: ["Guide-One.pdf"],
+      attachments: [{ filename: "Guide-One.pdf" }],
     });
-    expect(r.text).toContain("getting-started guide for your role");
-    expect(r.text).not.toContain("guides");
+    expect(r.text).toContain("the document for your role");
+    expect(r.text).not.toContain("documents for your role");
+    // No description supplied → the filename stands alone, no dangling dash.
+    expect(r.text).toContain("  * Guide-One.pdf\n");
   });
 
   it("omits the attachments section when there are none", () => {
     const r = renderTeamInviteEmail(ctx, {
       ...args,
-      attachmentFilenames: [],
+      attachments: [],
     });
     expect(r.html).not.toContain("attached");
     expect(r.text).not.toContain("attached");
   });
 
-  it("escapes HTML in the display name, role label, and filenames", () => {
+  it("escapes HTML in the display name, role label, filenames, and role copy", () => {
     const r = renderTeamInviteEmail(ctx, {
       ...args,
       displayName: "<b>Eve</b>",
       roleLabel: "<script>",
-      attachmentFilenames: ["<img>.pdf"],
+      invitedByName: "<u>Mal</u>",
+      roleSummary: "<em>owns</em> the queue",
+      roleHighlights: ["<i>bullet</i>"],
+      attachments: [{ filename: "<img>.pdf", description: "<svg>" }],
     });
     expect(r.html).not.toContain("<b>Eve</b>");
     expect(r.html).not.toContain("<script>");
     expect(r.html).not.toContain("<img>");
+    expect(r.html).not.toContain("<u>Mal</u>");
+    expect(r.html).not.toContain("<i>bullet</i>");
+    expect(r.html).not.toContain("<svg>");
     expect(r.html).toContain("&lt;script&gt;");
   });
 });
