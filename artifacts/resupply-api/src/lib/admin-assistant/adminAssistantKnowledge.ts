@@ -189,7 +189,12 @@ PATIENTS & CLINICAL:
       * Clinical encounters (/admin/clinical), Interventions (/admin/clinical/interventions).
       * Fit review (/admin/fit-sessions) — the mask-fitter worklist: every fit session
         with its measurements, the tier-by-tier reasoning, and its confidence. Approve
-        a recommendation, override the mask/size, or request a rescan.
+        a recommendation, override the mask/size, or request a rescan. Each session
+        records the POPULATION the patient chose — adult or child. The fitter asks
+        this first and offers no "not sure": it sets the plausible-measurement window
+        and filters the candidates by service line, and an entry with no service line
+        counts as adult, so an unmarked mask can never reach a child. If a session
+        looks like the wrong population, re-fit rather than overriding the size.
       * Referrals (/admin/provider-referrals) — clinical referrals out to providers.
       * Mask catalog (/admin/fitter/catalog) — the Mask Intelligence Catalog: models,
         size variants, per-variant fit bands, contraindications, and where each
@@ -370,7 +375,7 @@ HOW TO USE THIS:
     of the console, and /admin/resources/faq holds short answers to
     common questions.
 
-Guides (47):
+Guides (52):
   Getting started:
     finish-workspace-setup — Finish setting up your workspace
     invite-your-team — Add a teammate and set their role
@@ -392,9 +397,12 @@ Guides (47):
     run-an-equipment-recall — Work a manufacturer equipment recall
     coach-a-struggling-patient — Run an adherence coaching plan
     manage-document-retention — Place a legal hold or destroy an expired document
+    work-the-fit-requests-queue — Work the fit requests queue
   Orders & shop:
     work-insurance-leads — Work the insurance-coverage lead queue
     recover-rental-equipment — Recover a rental device from a patient who stopped therapy
+    manage-catalog-and-stock — Manage your catalog and stock levels
+    manage-backorders-and-substitutions — Mark a SKU out of stock and set substitutions
   Billing & claims:
     verify-a-patients-insurance — Verify a patient's insurance right now
     submit-a-claim — Take a claim from eligibility to submission
@@ -417,6 +425,8 @@ Guides (47):
     find-and-read-a-report — Find the right report and read it correctly
     track-team-performance — Track how the team is performing
     act-on-customer-feedback — Read your NPS and actually act on it
+    read-inventory-turnover — Read the inventory turnover report
+    read-storefront-analytics — Read storefront analytics
   Settings & system:
     manage-modules-and-flags — Turn a feature or a whole section on or off
     brand-outbound-communications — Make patient messages come from your brand
@@ -550,8 +560,9 @@ Escalation path:
     told a patient "we'll call Tuesday", it belongs there.
 
 Inventory & PacWare hygiene:
-  - Run the monthly count via Inventory reconcile
-    (/admin/shop/inventory/reconcile) and record variance reasons.
+  - Run the monthly count on Catalog (/admin/catalog): record the
+    difference as a counted movement with a reason, never as a typed-in
+    total, so the variance stays explainable.
   - For PacWare CSV syncs, always use the verify/preview step before
     downloading or committing; import is fill-only and never overwrites
     existing patient fields, so re-running is safe.

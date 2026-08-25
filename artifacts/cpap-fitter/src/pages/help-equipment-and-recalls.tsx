@@ -126,9 +126,9 @@ export function HelpEquipmentAndRecalls() {
           blurb: "Recall notices arrive via account & order texts.",
         },
         {
-          href: "/help/shop-and-checkout",
-          label: "Shop supplies & check out",
-          blurb: "Compatibility hints follow your registered gear.",
+          href: "/help/resupply-reminders",
+          label: "Set up resupply reminders",
+          blurb: "Replacements for your registered gear, when they are due.",
         },
       ]}
     />

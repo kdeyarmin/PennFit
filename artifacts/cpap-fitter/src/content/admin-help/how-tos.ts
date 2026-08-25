@@ -22,7 +22,7 @@ export const HOW_TO_GUIDES: readonly HowToGuide[] = [
     title: "Finish setting up your workspace",
     category: "getting-started",
     summary:
-      "Work the setup checklist at /admin/setup top to bottom — it shows live status for branding, your domain, phone and fax numbers, your email sender, payments, team, and catalog, and links straight to the page that finishes each row.",
+      "Work the setup checklist at /admin/setup top to bottom — it shows live status for branding, your domain, phone and fax numbers, your email sender, your billing identity, team, and catalog, and links straight to the page that finishes each row.",
     audience: "Owner or admin",
     timeEstimate: "30–60 minutes, spread over a few days",
     primaryPath: "/admin/setup",
@@ -62,11 +62,11 @@ export const HOW_TO_GUIDES: readonly HowToGuide[] = [
         },
       },
       {
-        title: 'Connect payments — and know which "billing" is which',
-        body: "Two different things are both called billing. Your storefront's card processing is connected from Config → Organization /admin/billing/config/organization, and that is the one that has to be done before your shop can take a payment. Plan & billing /admin/billing/package is your own subscription to this platform — its allowances and invoices — and connecting it does nothing for storefront checkout.",
+        title: 'Set your billing identity — and know which "billing" is which',
+        body: "Two different things are both called billing, and they are unrelated. Config → Organization /admin/billing/config/organization is your DME identity as payers see it: legal name, tax ID, organizational NPI, addresses, and accreditation. The claim builder, eligibility checks, and the HCFA PDF all read it, so a claim cannot go out correctly until it is filled in. Plan & billing /admin/billing/package is your own subscription to this platform — its allowances and invoices — and has nothing to do with patient claims.",
         callout: {
           tone: "warning",
-          text: "Setting up Plan & billing does NOT enable storefront payments. If you stop after that, your shop still cannot take a card while the checklist looks finished.",
+          text: "Patients are never charged a card — everything is billed to their insurance — so there is no storefront payment to connect. If Config → Organization is blank, claims go out under whatever fallback the platform has and will be rejected.",
         },
       },
       {
@@ -283,7 +283,7 @@ export const HOW_TO_GUIDES: readonly HowToGuide[] = [
     steps: [
       {
         title: "Find them",
-        body: "The global lookup in the top header matches a phone number, an email address, or an id (a record id or a Stripe checkout session) — not a name. When you have a name, search from Patients /admin/patients instead, which also filters by status and, with multi-branch enabled, by location.",
+        body: "The global lookup in the top header matches a phone number, an email address, or a record id — not a name. When you have a name, search from Patients /admin/patients instead, which also filters by status and, with multi-branch enabled, by location.",
         callout: {
           tone: "tip",
           text: "Typing a name into the header lookup returns nothing. That is the lookup working as designed, not a missing patient — take the name to /admin/patients.",
@@ -485,7 +485,7 @@ export const HOW_TO_GUIDES: readonly HowToGuide[] = [
       },
       {
         title: "Turn it into an order",
-        body: "An approved recommendation flows to Fitter requests /admin/fitter/orders, where it becomes a real order. Track how these turn out in Fitter outcomes /admin/analytics/fitter-outcomes — ordered, kept, or exchanged.",
+        body: "A patient who finishes a fitting lands in Fit Requests /admin/fitter-requests, where a person places the order — the patient never files their own. Orders that came out of a fitting are listed under Fitter requests /admin/fitter/orders. Track how these turn out in Fitter outcomes /admin/analytics/fitter-outcomes — ordered, kept, or exchanged.",
       },
     ],
     related: ["send-a-fitting-invite", "manage-the-mask-formulary"],
@@ -2553,6 +2553,256 @@ export const HOW_TO_GUIDES: readonly HowToGuide[] = [
       "rule",
       "denial",
       "rental month",
+    ],
+  },
+  // ---------------------------------------------------------------
+  // Fit requests, catalog & stock
+  // ---------------------------------------------------------------
+  {
+    slug: "work-the-fit-requests-queue",
+    title: "Work the fit requests queue",
+    category: "patients",
+    summary:
+      "Fit Requests /admin/fitter-requests is where a finished mask fitting lands. The patient never files their own order — you verify the benefit, place the order, and close the row with what actually happened.",
+    audience: "CSR or intake coordinator",
+    timeEstimate: "About 10 minutes per request",
+    primaryPath: "/admin/fitter-requests",
+    featured: true,
+    prerequisites: [
+      "The mask fitter is enabled for your tenant.",
+      "You can see patient details (the queue shows PHI in the clear).",
+    ],
+    steps: [
+      {
+        title: "Open the queue oldest first",
+        body: "Fit Requests /admin/fitter-requests lists finished fittings waiting on a person, oldest at the top. The patient was told someone would be in touch within one business day, so the age of a row is the SLA, not a sort preference.",
+        callout: {
+          tone: "note",
+          text: "This is a queue, not a report. Every row is a person waiting to hear back.",
+        },
+      },
+      {
+        title: "Read what the patient asked for",
+        body: "A row is one of two shapes. Send my details means they filled in what they know — insurance is optional there on purpose, because you are going to verify it anyway. Ask a representative to contact me is contact details only. Neither one is an order, and neither has been reviewed by anyone yet.",
+      },
+      {
+        title: "Verify the benefit before you promise anything",
+        body: "Run the patient through Verify insurance /admin/billing/verify the way you would any other intake. Whatever the patient typed is a starting point, not a verified benefit — quoting from an unverified member ID is how balances end up written off later.",
+      },
+      {
+        title: "Move the row as you work it",
+        body: "Set the status so the rest of the team can see where it stands: New, Contacted, In progress, then Closed. Use the note field for anything the next person would need — a callback time, a voicemail left, a plan that needs a prior auth.",
+      },
+      {
+        title: "Close it with the real outcome",
+        body: "Closing asks HOW it turned out, and the answer matters beyond this queue. Fulfilled means the patient actually has the mask; that is the only outcome that marks the fitting as dispensed, which is what Fitter outcomes /admin/analytics/fitter-outcomes counts and what the re-fit campaign reads. Not proceeding, Couldn't reach them, and Duplicate simply close the row.",
+        callout: {
+          tone: "warning",
+          text: "Do not close a row as Fulfilled to tidy the queue. It inflates your dispense rate and tells the outcomes dashboard a mask was delivered that never was.",
+        },
+      },
+    ],
+    troubleshooting: [
+      {
+        symptom: "The same patient appears twice.",
+        fix: "An identical re-submit while the first request is still open does not create a second row, so two rows mean two genuinely different asks — or one that was already closed. Close the later one as Duplicate.",
+      },
+      {
+        symptom: "A patient says they submitted but no row appeared.",
+        fix: "Check whether a row for them was already closed. Once a request is closed, a fresh identical ask does create a new row, so a missing row usually means it is sitting under a filter rather than lost.",
+      },
+      {
+        symptom: "The dispense rate on Fitter outcomes looks like zero.",
+        fix: "Closing rows as Fulfilled is what writes it. If the team has been closing everything as Not proceeding, or leaving rows open, nothing stamps the fitting as dispensed.",
+      },
+    ],
+    related: [
+      "review-a-fit-session",
+      "verify-a-patients-insurance",
+      "send-a-fitting-invite",
+    ],
+    keywords: [
+      "fit request",
+      "fitter",
+      "queue",
+      "callback",
+      "lead capture",
+      "dispensed",
+      "outcome",
+      "sla",
+    ],
+  },
+  {
+    slug: "manage-catalog-and-stock",
+    title: "Manage your catalog and stock levels",
+    category: "orders",
+    summary:
+      "Catalog /admin/catalog is the list of SKUs you dispense and how many are on the shelf. Stock moves as a recorded movement with a reason — never as a typed-in total — so every balance has a history behind it.",
+    audience: "Inventory or operations lead",
+    timeEstimate: "About 15 minutes",
+    primaryPath: "/admin/catalog",
+    prerequisites: [
+      "The Inventory module is on for your tenant.",
+      "You hold the inventory.read permission (and inventory.write to record movements).",
+    ],
+    steps: [
+      {
+        title: "Find the SKU",
+        body: "Catalog /admin/catalog lists every SKU you dispense with its on-hand count. A SKU with no count is untracked rather than empty — that distinction matters, because an untracked SKU is never treated as out of stock.",
+        callout: {
+          tone: "note",
+          text: "Blank is not zero. If you want a SKU to trigger low-stock warnings, give it a real count.",
+        },
+      },
+      {
+        title: "Record a movement, not a new total",
+        body: "Stock changes are entered as a movement with a reason — received, returned, counted, or adjusted. The balance is the result of those movements, so the page always tells you not just what you have but how you got there.",
+      },
+      {
+        title: "Reconcile after a physical count",
+        body: "After counting the shelf, record the difference as a counted movement with the counted reason rather than overwriting the number. The movement history is what lets you explain a variance later, so record the reason while you still remember it.",
+      },
+      {
+        title: "Watch the low-stock badges",
+        body: "SKUs below their threshold are badged on this page and go out as a digest email every 6 hours, so a shortage surfaces before it blocks a resupply rather than after.",
+      },
+      {
+        title: "Clear a backorder by receiving stock",
+        body: "Backorders /admin/shop/backorders is where a SKU is marked out of stock. Recording a receipt on the Catalog page clears the backorder automatically — you do not have to clear it by hand.",
+      },
+    ],
+    troubleshooting: [
+      {
+        symptom: "A count looks wrong right after a resupply run.",
+        fix: "A dispense is recorded when a fulfillment is queued, so the shelf count drops at queue time rather than at ship time. Compare against the movement history before adjusting.",
+      },
+      {
+        symptom: "A SKU the fitter recommends is not in the catalog.",
+        fix: "An un-catalogued SKU is skipped rather than blocking the resupply, and the skip is logged. Add the SKU so the next dispense is counted.",
+      },
+    ],
+    related: ["manage-backorders-and-substitutions", "sync-with-pacware"],
+    keywords: [
+      "catalog",
+      "sku",
+      "stock",
+      "inventory",
+      "on hand",
+      "count",
+      "receipt",
+      "ledger",
+      "low stock",
+    ],
+  },
+  {
+    slug: "manage-backorders-and-substitutions",
+    title: "Mark a SKU out of stock and set substitutions",
+    category: "orders",
+    summary:
+      "Backorders /admin/shop/backorders marks a SKU unavailable and sets what the resupply engine should send instead. The insurance fulfillment path reads this, so an uncleared backorder keeps substituting away from that SKU.",
+    audience: "Inventory or operations lead",
+    timeEstimate: "About 10 minutes",
+    primaryPath: "/admin/shop/backorders",
+    prerequisites: [
+      "The Inventory module is on for your tenant.",
+      "You hold the returns.manage permission.",
+    ],
+    steps: [
+      {
+        title: "Mark the SKU out of stock",
+        body: "Backorders /admin/shop/backorders is where you flag a SKU as unavailable. This is not a retail shelf notice — the insurance fulfillment path reads it directly, so flagging a SKU changes what patients actually receive.",
+      },
+      {
+        title: "Set what goes out instead",
+        body: "Give the SKU a substitution rule so a patient who is due gets a comparable item rather than nothing. A resupply the patient is due should not stall because one SKU is short.",
+        callout: {
+          tone: "warning",
+          text: "A substitution still has to be clinically appropriate and billable. Check the HCPCS code and the prescription before you route a substitution at scale.",
+        },
+      },
+      {
+        title: "Clear it when stock arrives",
+        body: "Recording a receipt for the SKU on Catalog /admin/catalog clears the backorder automatically. If you clear it by hand without receiving stock, the engine will start sending a SKU you do not have.",
+      },
+    ],
+    troubleshooting: [
+      {
+        symptom: "Patients are still getting the substitute after restock.",
+        fix: "The backorder is still set. Record the receipt on /admin/catalog, or clear the flag here.",
+      },
+    ],
+    related: ["manage-catalog-and-stock", "set-up-resupply-reminders"],
+    keywords: [
+      "backorder",
+      "out of stock",
+      "substitution",
+      "resupply",
+      "shortage",
+      "sku",
+    ],
+  },
+  {
+    slug: "read-inventory-turnover",
+    title: "Read the inventory turnover report",
+    category: "analytics",
+    summary:
+      "Inventory turnover /admin/analytics/inventory-turnover shows how fast stock moves (COGS ÷ inventory value) and which SKUs ran out while patients wanted them.",
+    audience: "Owner or operations lead",
+    timeEstimate: "About 10 minutes",
+    primaryPath: "/admin/analytics/inventory-turnover",
+    prerequisites: [
+      "You hold the cost.read permission.",
+      "Your catalog has real stock counts — untracked SKUs cannot be measured.",
+    ],
+    steps: [
+      {
+        title: "Read turnover as a pace, not a score",
+        body: "Turnover is cost of goods sold divided by inventory value over the period. A high number means stock moves quickly; a low number means cash is sitting on the shelf. Neither is automatically good — a low number on a slow-moving but clinically necessary SKU is the cost of being able to serve the patient who needs it.",
+      },
+      {
+        title: "Look at stockout demand next to it",
+        body: "The stockout column is the one that costs you patients: it counts demand that arrived while the SKU was unavailable. A SKU with healthy turnover and repeated stockouts is under-ordered, not well managed.",
+      },
+      {
+        title: "Act on it in the catalog",
+        body: "Adjust reorder levels on Catalog /admin/catalog, and check whether a repeatedly stocked-out SKU has a standing substitution on Backorders /admin/shop/backorders that is quietly masking the shortage.",
+      },
+    ],
+    related: ["manage-catalog-and-stock", "find-and-read-a-report"],
+    keywords: ["turnover", "inventory", "cogs", "stockout", "reorder", "cost"],
+  },
+  {
+    slug: "read-storefront-analytics",
+    title: "Read storefront analytics",
+    category: "analytics",
+    summary:
+      "Storefront Analytics /admin/fitter/analytics shows how people move through your public site and mask fitter — where they arrive, where they drop, and how many finish a fitting.",
+    audience: "Owner or marketing lead",
+    timeEstimate: "About 10 minutes",
+    primaryPath: "/admin/fitter/analytics",
+    prerequisites: ["Your storefront is live on your own domain."],
+    steps: [
+      {
+        title: "Start with the funnel, not the traffic",
+        body: "Traffic tells you how many arrived; the funnel tells you where they stopped. The drop between starting a fitting and finishing one is usually the most actionable number on the page.",
+      },
+      {
+        title: "Compare against the fit requests you actually received",
+        body: "A finished fitting should turn into a row on Fit Requests /admin/fitter-requests. A gap between finished fittings and requests received means patients are completing the fitter and then not asking — usually a wording or trust problem on the results page rather than a technical one.",
+      },
+      {
+        title: "Check where the traffic came from",
+        body: "Use it alongside Fitter Prospects /admin/fitter-leads and Insurance Leads /admin/shop/insurance-leads to see which sources produce people who actually enter the pipeline, not just visitors.",
+      },
+    ],
+    related: ["work-the-fit-requests-queue", "work-insurance-leads"],
+    keywords: [
+      "storefront",
+      "analytics",
+      "traffic",
+      "funnel",
+      "conversion",
+      "fitter",
     ],
   },
 ] as const;

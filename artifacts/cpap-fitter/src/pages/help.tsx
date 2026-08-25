@@ -12,6 +12,7 @@ import {
   Sparkles,
   ArrowRight,
   ScanFace,
+  ClipboardCheck,
   Truck,
   UserCircle,
   BellRing,
@@ -70,6 +71,16 @@ const categories: HelpCategory[] = [
           "Run the 3-minute on-device face scan and read your ranked recommendations.",
         keywords: "fitter scan camera measure measurements recommendation",
         tone: "gold",
+      },
+      {
+        href: "/help/request-your-mask",
+        Icon: ClipboardCheck,
+        title: "Ask for your recommended mask",
+        blurb:
+          "Send your details or ask for a callback — then we verify your benefits and place the order.",
+        keywords:
+          "order request callback contact insurance member id representative",
+        tone: "navy",
       },
     ],
   },

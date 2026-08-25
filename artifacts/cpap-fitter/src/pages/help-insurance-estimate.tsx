@@ -85,7 +85,7 @@ const steps: HelpStep[] = [
         </Link>{" "}
         or{" "}
         <Link
-          href="/help/place-an-order"
+          href="/help/request-your-mask"
           className="text-primary hover:underline"
         >
           place an order
@@ -149,9 +149,9 @@ export function HelpInsuranceEstimate() {
       ]}
       related={[
         {
-          href: "/help/place-an-order",
-          label: "Order your recommended mask",
-          blurb: "Use insurance when you order.",
+          href: "/help/request-your-mask",
+          label: "Ask for your recommended mask",
+          blurb: "We verify your benefits before anything ships.",
         },
         {
           href: "/help/find-your-mask",

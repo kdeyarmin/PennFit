@@ -150,9 +150,9 @@ export function HelpOrderByPhone() {
           blurb: "Reminder texts include this number too.",
         },
         {
-          href: "/help/manage-subscriptions",
-          label: "Manage auto-ship subscriptions",
-          blurb: "Prefer fully automatic? Auto-ship needs no call at all.",
+          href: "/help/resupply-reminders",
+          label: "Ask for your recommended mask",
+          blurb: "Prefer the web? Do the same thing online.",
         },
       ]}
     />

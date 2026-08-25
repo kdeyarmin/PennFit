@@ -149,7 +149,7 @@ export function HelpCreateAnAccount() {
             <>
               No. You can{" "}
               <Link
-                href="/help/place-an-order"
+                href="/help/request-your-mask"
                 className="text-primary hover:underline"
               >
                 order as a guest
