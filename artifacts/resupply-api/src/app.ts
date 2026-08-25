@@ -25,11 +25,11 @@ import { logger } from "./lib/logger";
 import { providerPortalFeatureGate } from "./lib/provider-portal-feature-gate";
 import { RATE_LIMITS } from "./lib/rate-limits-config";
 import { getRequestId, requestContextMiddleware } from "./lib/request-context";
+import { storefrontAuthBrandResolver } from "./lib/auth-email-brand";
 import { requestHost } from "./lib/request-host";
 import { storefrontRecommendLimiter } from "./middlewares/storefront-rate-limit";
 import {
   isVerifiedCustomDomainOrigin,
-  resolveBrandingByOrgId,
   resolveOrgIdByHost,
   warmVerifiedCustomDomains,
 } from "./lib/tenant-branding";
@@ -428,15 +428,7 @@ app.use(
     // spam locks a patient out of their account.
     productName: PLATFORM_NAME,
     signatureName: PLATFORM_NAME,
-    resolveBrand: async (req) => {
-      const orgId = await resolveOrgIdByHost(requestHost(req));
-      if (!orgId) return null;
-      const brand = await resolveBrandingByOrgId(orgId);
-      return {
-        productName: brand.storefrontName,
-        signatureName: brand.legalName,
-      };
-    },
+    resolveBrand: storefrontAuthBrandResolver,
   }),
 );
 logger.info(
