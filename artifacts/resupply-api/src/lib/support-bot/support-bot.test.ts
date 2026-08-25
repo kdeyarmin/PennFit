@@ -157,4 +157,68 @@ describe("answerSupportTicket", () => {
     const out = await answerSupportTicket(BASE, { OPENAI_API_KEY: "sk-test" });
     expect(out).toEqual({ kind: "handoff" });
   });
+
+  it("speaks as the platform, never as this deployment's seed tenant", async () => {
+    // The ticket comes from a TENANT and the reply goes back unreviewed, so
+    // the desk must answer as CareMetric Breathe. The in-source placeholders
+    // (PennFit / PennPilot, and any tenant name in the shared admin-console
+    // knowledge base) must be resolved to the platform's own names before
+    // either the prompt or the reply leaves the process.
+    let sentSystemPrompt = "";
+    const fetchStub = vi.fn(async (_url: unknown, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? "{}")) as {
+        messages?: Array<{ role: string; content: string }>;
+      };
+      sentSystemPrompt =
+        body.messages?.find((m) => m.role === "system")?.content ?? "";
+      return new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  handoff: false,
+                  // A stray placeholder the model echoed out of its prompt.
+                  reply: "PennPilot can walk you through PennFit's Team page.",
+                  confidence: 0.95,
+                }),
+              },
+            },
+          ],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    });
+    __setSupportBotFetchForTests(fetchStub as unknown as typeof fetch);
+
+    const out = await answerSupportTicket(BASE, { OPENAI_API_KEY: "sk-test" });
+
+    expect(sentSystemPrompt).not.toMatch(/PennFit|PennPilot|PennBot/);
+    expect(sentSystemPrompt).not.toMatch(/Penn Home Medical Supply|pennpaps/i);
+    expect(sentSystemPrompt).toContain("CareMetric Breathe");
+    expect(out).toEqual({
+      kind: "answer",
+      reply:
+        "CareMetric Copilot can walk you through CareMetric Breathe's Team page.",
+      confidence: 0.95,
+    });
+  });
+
+  it("quotes a tenant's own domain, email and phone back verbatim", () => {
+    // The reply-side normalizer must NOT run applyCompanyIdentityToText.
+    // Its needles are tenant CONTACT DATA, and a support answer legitimately
+    // repeats those when the ticket is about them. Against the platform
+    // identity the domain/email rewrites would turn correct tenant-specific
+    // guidance into wrong guidance, and the phone needles map to the empty
+    // string — silently deleting the number the operator asked about.
+    const reply =
+      "Point pennpaps.com at the CNAME, keep info@pennpaps.com as the From " +
+      "address, and callers still reach you on (814) 471-0627.";
+    const out = parseModelOutput(
+      "openai",
+      JSON.stringify({ handoff: false, reply, confidence: 0.95 }),
+      0.7,
+    );
+    expect(out).toEqual({ kind: "answer", reply, confidence: 0.95 });
+  });
 });

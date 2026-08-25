@@ -130,8 +130,17 @@ import { BREATHE_SALES_KNOWLEDGE } from "./breathe-sales-knowledge";
  * the owner the context to follow up — not just a contact card. Only the
  * breathe_prospect render changes — the patient and shop_customer renders are
  * byte-for-byte unchanged from v18.
+ *
+ * v23 corrects the platform's name in the PacWare interoperability line of the
+ * sales knowledge base: it said "PennFit-style resupply", naming the
+ * repository codename on a call with a prospective customer. The product is
+ * CareMetric Breathe. This prompt is the one AI surface with no downstream
+ * brand normalization (see breathe-sales-knowledge.brand.test.ts), so the
+ * literal here is what the agent says. Only the breathe_prospect render
+ * changes — the patient and shop_customer renders are byte-for-byte unchanged
+ * from v18.
  */
-export const PROMPT_VERSION = "2026-06-22.v22" as const;
+export const PROMPT_VERSION = "2026-06-22.v23" as const;
 
 /**
  * Caller-facing greeting phrase. Exposed so callers can A/B without

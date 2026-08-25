@@ -180,7 +180,14 @@ export function TrackOrder() {
                 <Input
                   id="track-reference"
                   data-testid="track-reference"
-                  placeholder="PENN-ABC123"
+                  // Shape only, no brand prefix. References minted under
+                  // the seed tenant carry a "PENN-" prefix that the server
+                  // still accepts (and a bare tail resolves to the same
+                  // order), but this bundle serves every tenant's
+                  // storefront — an example naming one of them would be
+                  // wrong on all the others. The header above already tells
+                  // the patient where to find their own reference.
+                  placeholder="ABC123"
                   value={reference}
                   onChange={(e) => setReference(e.target.value)}
                   maxLength={20}

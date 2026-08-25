@@ -177,6 +177,13 @@ const PROMPT_VERSION_HASHES: Readonly<Record<string, string>> = {
   // BREATHE_SALES_PROMPT_HASH below.
   "2026-06-22.v22":
     "8d7fb4c7ff77bb8e7b7aa65a2b2db91973b2de48b3096a2c2b243170b225cff0",
+  // v23 renames "PennFit-style resupply" to CareMetric Breathe in the sales
+  // knowledge base's PacWare line — the repo codename was being spoken to
+  // prospects. The PATIENT render is byte-for-byte unchanged from v18, so this
+  // hash matches v18's. The sales variant moves in BREATHE_SALES_PROMPT_HASH
+  // below.
+  "2026-06-22.v23":
+    "8d7fb4c7ff77bb8e7b7aa65a2b2db91973b2de48b3096a2c2b243170b225cff0",
 };
 
 function renderCanonicalPrompt(): string {
@@ -226,10 +233,13 @@ const SHOP_PROMPT_HASH =
  * letter by letter before send_info_email / start_breathe_signup (narrowing the
  * char-by-char prohibition to web links), changing it again. v22 makes the
  * capture_sales_lead message a real call summary (situation, patient count,
- * pain points, what they want, next step), changing it again.
+ * pain points, what they want, next step), changing it again. v23 renames
+ * "PennFit-style resupply" to CareMetric Breathe in the PacWare
+ * interoperability line — the repo codename was being spoken to prospects —
+ * changing it again.
  */
 const BREATHE_SALES_PROMPT_HASH =
-  "39203d33cddf86a5ba5fca48316c88cc6bbaf05535f0b84821ff69800e673415";
+  "f8bb27f8eaf48f080d57f033ea39d04964cb57bde99d332fb20ed7dc6a27e015";
 
 describe("PROMPT_VERSION drift detector", () => {
   it("has a recorded hash for the currently-shipped PROMPT_VERSION", () => {
