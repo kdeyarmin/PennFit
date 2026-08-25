@@ -122,9 +122,9 @@ export function HelpDocumentsAndForms() {
       ]}
       related={[
         {
-          href: "/help/place-an-order",
-          label: "Order your recommended mask",
-          blurb: "Where prescriptions fit into ordering.",
+          href: "/help/request-your-mask",
+          label: "Ask for your recommended mask",
+          blurb: "Where your prescription fits into the request.",
         },
         {
           href: "/help/caregiver-access",

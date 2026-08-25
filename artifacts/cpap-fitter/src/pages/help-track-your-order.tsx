@@ -163,9 +163,9 @@ export function HelpTrackYourOrder() {
       ]}
       related={[
         {
-          href: "/help/place-an-order",
-          label: "Order your recommended mask",
-          blurb: "Where your reference number comes from.",
+          href: "/help/request-your-mask",
+          label: "Ask for your recommended mask",
+          blurb: "Where your order comes from in the first place.",
         },
         {
           href: "/help/create-an-account",

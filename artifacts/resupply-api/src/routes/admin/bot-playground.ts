@@ -68,19 +68,16 @@ const accountConfigSchema = z
   .object({
     displayName: z.string().trim().max(120).nullable().optional(),
     memberSince: z.string().trim().max(16).nullable().optional(),
-    totalPaidOrders: z.number().int().min(0).max(9999).optional(),
+    totalShipments: z.number().int().min(0).max(9999).optional(),
     activeSubscriptionCount: z.number().int().min(0).max(999).optional(),
     latestOrder: z
       .object({
         orderId: z.string().max(64),
-        sessionId: z.string().max(120),
-        amountTotalCents: z.number().int().min(0),
-        paidAt: z.string().max(32),
+        itemSku: z.string().max(64),
+        quantity: z.number().int().min(0).max(9999),
+        queuedAt: z.string().max(32),
         shippedAt: z.string().max(32).nullable(),
         deliveredAt: z.string().max(32).nullable(),
-        trackingCarrier: z.string().max(32).nullable(),
-        trackingNumber: z.string().max(64).nullable(),
-        shipCityState: z.string().max(120).nullable(),
       })
       .nullable()
       .optional(),

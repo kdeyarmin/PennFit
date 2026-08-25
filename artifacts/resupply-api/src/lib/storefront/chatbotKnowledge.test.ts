@@ -101,7 +101,7 @@ describe("buildCustomerChatSystemPrompt (signed-in PennBot)", () => {
   const prompt = buildCustomerChatSystemPrompt({
     displayName: null,
     memberSince: null,
-    totalPaidOrders: 0,
+    totalShipments: 0,
     latestOrder: null,
     activeSubscriptionCount: 0,
     device: null,
@@ -148,7 +148,7 @@ describe("per-tenant brand/contact threading", () => {
       {
         displayName: null,
         memberSince: null,
-        totalPaidOrders: 0,
+        totalShipments: 0,
         latestOrder: null,
         activeSubscriptionCount: 0,
         device: null,

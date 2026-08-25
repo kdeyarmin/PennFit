@@ -30,9 +30,7 @@ import { z } from "zod";
 
 import type {
   CpapDeviceInfo,
-  Json,
   ResupplySupabaseClient,
-  SavedShippingAddress,
 } from "@workspace/resupply-db";
 import { logAudit } from "@workspace/resupply-audit";
 
@@ -76,24 +74,6 @@ const orderDetailsArgsSchema = z
 
 const noArgsSchema = z.object({}).strict();
 
-// Mirrors the addressBodySchema in routes/shop/my-orders.ts (the canonical
-// POST /shop/me/orders/:id/shipping-address validator). Kept in lockstep
-// with that route's pre-ship guard; both must stay aligned. `country` is
-// pinned server-side (US-only), so the model doesn't supply it.
-const updateAddressArgsSchema = z
-  .object({
-    orderId: z.string().min(1).max(64),
-    line1: z.string().trim().min(1).max(200),
-    line2: z
-      .union([z.string().trim().max(200), z.null()])
-      .optional()
-      .transform((v) => (v === undefined || v === "" ? null : v)),
-    city: z.string().trim().min(1).max(100),
-    state: z.string().trim().min(2).max(2),
-    postalCode: z.string().trim().min(3).max(20),
-  })
-  .strict();
-
 /**
  * `escalate_to_human` summary cap — comfortably under the in-app body
  * limit so the prepended PennBot marker still fits, and small enough
@@ -125,7 +105,7 @@ export const CUSTOMER_CHAT_TOOLS: OpenAiToolDescriptor[] = [
     function: {
       name: "get_my_recent_orders",
       description:
-        "Look up the signed-in customer's most recent paid orders. Returns each order's id, total, status, ship-to city/state, tracking carrier+number+URL, and item count. Use for 'where is my order', 'did my last shipment go out', 'what's my tracking number'.",
+        "Look up the signed-in patient's most recent insurance shipments. Returns each one's id, item SKU, quantity, status, and the dates it was queued / shipped / delivered. Use for 'what have you sent me', 'did my cushion go out', 'when was my last resupply'. IMPORTANT: status 'with_warehouse' means it is queued with our warehouse — NOT that it has not shipped; the warehouse marks shipping out of band, so a shipped box can still read this way. There is no tracking number here: if the patient wants tracking or a delivery date, say you cannot see it and offer escalate_to_human. If patientLinked is false, we could not match this account to a patient chart — say you cannot see their shipments from here and offer escalate_to_human. NEVER say they have no orders.",
       parameters: {
         type: "object",
         additionalProperties: false,
@@ -146,7 +126,7 @@ export const CUSTOMER_CHAT_TOOLS: OpenAiToolDescriptor[] = [
     function: {
       name: "get_order_details",
       description:
-        "Look up the full line items for one of the signed-in customer's orders. Pass the orderId returned by get_my_recent_orders. Returns line items (productId, quantity, unit price) and ship-to city/state. If the orderId does not belong to this customer, returns not_found.",
+        "Look up one of the signed-in patient's insurance shipments in detail. Pass the orderId returned by get_my_recent_orders. Returns the item SKU, quantity, status and dates, plus substitutedFromSku when a backorder meant a comparable item was sent instead. If the id does not belong to this patient, returns found: false. Same caveats as get_my_recent_orders: no tracking number, and 'with_warehouse' does not mean 'not shipped'.",
       parameters: {
         type: "object",
         additionalProperties: false,
@@ -166,7 +146,7 @@ export const CUSTOMER_CHAT_TOOLS: OpenAiToolDescriptor[] = [
     function: {
       name: "get_my_subscriptions",
       description:
-        "List the signed-in customer's resupply / Subscribe-and-Save subscriptions. Returns each subscription's status, items (name + quantity), next billing date, cadence label, and whether it's set to cancel at period end. Use for 'show me my subscriptions', 'when does my next ship go out', 'is my resupply paused'.",
+        "List any standing auto-ship lines on the signed-in customer's account. These come from the retained cash-pay-era tables, so a line may be historical rather than current — describe what it returns without promising it is what will arrive next, and never invite the patient to start, renew or pay for one. For what is actually due next, use get_my_recent_orders or escalate_to_human.",
       parameters: {
         type: "object",
         additionalProperties: false,
@@ -190,44 +170,9 @@ export const CUSTOMER_CHAT_TOOLS: OpenAiToolDescriptor[] = [
   {
     type: "function",
     function: {
-      name: "update_order_shipping_address",
-      description:
-        "Change the ship-to address on one of the signed-in customer's own orders — allowed ONLY before the order ships. Pass the orderId from get_my_recent_orders plus the full new US address. The server re-checks ownership and that the order is paid and not yet shipped, so a shipped or foreign order is refused. Use this ONLY after the customer has confirmed the exact new address out loud (read it back, get a clear yes) — it changes real shipping data. If the result indicates the order already shipped, is a pickup order, or otherwise can't be changed, do NOT retry; offer escalate_to_human instead. After it succeeds, confirm the new city/state plainly and note it applies as long as the order hasn't shipped.",
-      parameters: {
-        type: "object",
-        additionalProperties: false,
-        required: ["orderId", "line1", "city", "state", "postalCode"],
-        properties: {
-          orderId: {
-            type: "string",
-            description:
-              "The internal order id returned by get_my_recent_orders. UUID.",
-          },
-          line1: {
-            type: "string",
-            description: "Street address line 1 (house number + street).",
-          },
-          line2: {
-            type: "string",
-            description:
-              "Optional street address line 2 (apt/suite/unit). Omit if none.",
-          },
-          city: { type: "string", description: "City." },
-          state: {
-            type: "string",
-            description: "Two-letter US state code, e.g. PA.",
-          },
-          postalCode: { type: "string", description: "US ZIP code." },
-        },
-      },
-    },
-  },
-  {
-    type: "function",
-    function: {
       name: "escalate_to_human",
       description:
-        "Forward the customer's request to Penn Home Medical Supply's human customer-service team by posting it to their in-app message thread (the same thread at /account → Messages, which a CSR monitors and replies to). Use this ONLY after the customer has confirmed they want a person — for things you cannot resolve yourself: refund requests, changing or canceling an order/subscription on their behalf, address changes on an order that already shipped, insurance/prescription/prior-auth issues, reporting a wrong or damaged item, complaints, or anything the read-only tools and self-serve pages don't cover. Do NOT use it for questions you already answered or that a self-serve page handles. Compose `summary` as a clear, first-person message FROM the customer's perspective that includes any relevant order id, subscription, dates, or specifics gathered in the conversation, so the CSR has full context without asking again. After it succeeds, tell the customer their message was sent and the team will reply in /account → Messages (or to call (814) 471-0627 if it's urgent).",
+        "Forward the customer's request to Penn Home Medical Supply's human customer-service team by posting it to their in-app message thread (the same thread at /account → Messages, which a CSR monitors and replies to). Use this ONLY after the customer has confirmed they want a person — for things you cannot resolve yourself: refund requests, changing or canceling an order/subscription on their behalf, ANY shipping-address change (a patient address change has to be reviewed by a person before the next shipment goes out — you cannot make it yourself), insurance/prescription/prior-auth issues, reporting a wrong or damaged item, complaints, or anything the read-only tools and self-serve pages don't cover. Do NOT use it for questions you already answered or that a self-serve page handles. Compose `summary` as a clear, first-person message FROM the customer's perspective that includes any relevant order id, subscription, dates, or specifics gathered in the conversation, so the CSR has full context without asking again. After it succeeds, tell the customer their message was sent and the team will reply in /account → Messages (or to call (814) 471-0627 if it's urgent).",
       parameters: {
         type: "object",
         additionalProperties: false,
@@ -259,46 +204,29 @@ export const CUSTOMER_CHAT_TOOLS: OpenAiToolDescriptor[] = [
   },
 ];
 
+/**
+ * One insurance shipment, as the patient may be told about it.
+ *
+ * No money fields: supplies are billed to the plan, and a
+ * patient-responsibility balance lives on /account/billing rather than
+ * on the shipment. No tracking number or carrier either — the
+ * fulfillments table has no such columns, because tracking is handled
+ * by the warehouse system out of band.
+ */
 interface RecentOrderEntry {
   orderId: string;
-  sessionId: string;
-  status: string;
-  amountTotalCents: number | null;
-  currency: string | null;
-  paidAt: string | null;
-  shippedAt: string | null;
-  deliveredAt: string | null;
-  trackingCarrier: string | null;
-  trackingNumber: string | null;
-  trackingUrl: string | null;
-  shipCity: string | null;
-  shipState: string | null;
-  itemCount: number;
-}
-
-interface OrderDetailsLineItem {
-  productId: string;
+  itemSku: string;
   quantity: number;
-  unitAmountCents: number | null;
-  currency: string | null;
-}
-
-interface OrderDetailsEntry {
-  orderId: string;
-  sessionId: string;
+  /** queued rows read as "with_warehouse" — see describeFulfillmentStatus. */
   status: string;
-  amountTotalCents: number | null;
-  currency: string | null;
-  paidAt: string | null;
+  queuedAt: string | null;
   shippedAt: string | null;
   deliveredAt: string | null;
-  trackingCarrier: string | null;
-  trackingNumber: string | null;
-  trackingUrl: string | null;
-  shipCity: string | null;
-  shipState: string | null;
-  items: OrderDetailsLineItem[];
+  /** Set when a backorder made us send a comparable item instead. */
+  substitutedFromSku: string | null;
 }
+
+type OrderDetailsEntry = RecentOrderEntry;
 
 interface SubscriptionItemEntry {
   name: string | null;
@@ -330,23 +258,24 @@ interface DeviceEntry {
  * a short human-readable error the model can surface to the user.
  */
 export type CustomerChatToolResult =
-  | { ok: true; data: { orders: RecentOrderEntry[] } }
-  | { ok: true; data: OrderDetailsEntry }
+  // `patientLinked: false` is deliberately its own signal rather than an
+  // empty list. "We could not bind your account to a patient chart" and
+  // "you have no shipments" are different facts, and only one of them is
+  // safe to say out loud to a patient waiting on supplies.
+  | { ok: true; data: { patientLinked: boolean; orders: RecentOrderEntry[] } }
+  | {
+      ok: true;
+      data: { patientLinked: boolean; found: false };
+    }
+  | {
+      ok: true;
+      data: { patientLinked: true; found: true } & OrderDetailsEntry;
+    }
   | { ok: true; data: { subscriptions: SubscriptionEntry[] } }
   | { ok: true; data: DeviceEntry }
   | { ok: true; data: { found: false; kind: "device" | "order" } }
-  | { ok: true; data: AddressUpdateResult }
   | { ok: true; data: EscalationResult }
   | { ok: false; error: string };
-
-interface AddressUpdateResult {
-  /** Discriminator so the model knows the write landed. */
-  addressUpdated: true;
-  orderId: string;
-  /** Echoed back so the model can confirm the change to the customer. */
-  city: string;
-  state: string;
-}
 
 interface EscalationResult {
   /** Discriminator so the model knows this was the escalation tool. */
@@ -355,30 +284,6 @@ interface EscalationResult {
   threadId: string;
   /** True when this message opened a brand-new support thread. */
   threadCreated: boolean;
-}
-
-/**
- * Carrier → tracking-URL template. Mirrors the (smaller) table in
- * routes/shop/my-orders.ts so the chat tool exposes the same link
- * shape the customer already sees on their orders page. Lower-cased
- * keys; unknown carriers return null.
- */
-const TRACKING_URL_TEMPLATES: Record<string, string> = {
-  ups: "https://www.ups.com/track?tracknum={n}",
-  usps: "https://tools.usps.com/go/TrackConfirmAction?qtc_tLabels1={n}",
-  fedex: "https://www.fedex.com/fedextrack/?trknbr={n}",
-  dhl: "https://www.dhl.com/us-en/home/tracking/tracking-express.html?submit=1&tracking-id={n}",
-  ontrac: "https://www.ontrac.com/trackingres.asp?tracking_number={n}",
-};
-
-function computeTrackingUrl(
-  carrier: string | null,
-  number: string | null,
-): string | null {
-  if (!carrier || !number) return null;
-  const tpl = TRACKING_URL_TEMPLATES[carrier.toLowerCase().trim()];
-  if (!tpl) return null;
-  return tpl.replace("{n}", encodeURIComponent(number));
 }
 
 const RECENT_ORDERS_DEFAULT_LIMIT = 5;
@@ -421,6 +326,78 @@ interface SubscriptionItemPayload {
   intervalLabel?: string | null;
 }
 
+/**
+ * Resolve the signed-in shop customer to the patient whose shipments
+ * they are asking about.
+ *
+ * There is no `shop_customers.patient_id` FK, so the link is the
+ * customer's email — the same resolution `/api/me/billing-statements`
+ * uses (routes/storefront/me-billing.ts), deliberately kept identical
+ * so the chatbot can never see a shipment the billing page would
+ * refuse to show.
+ *
+ * Fetches TWO rows to detect ambiguity. If a household shares an email,
+ * or an admin catch-all address landed on several charts, binding to
+ * "the first one" would read another patient's shipments to this
+ * caller. Anything other than exactly one match returns null and the
+ * tool answers "I can't see that from here" rather than guessing.
+ */
+async function resolvePatientId(
+  ctx: CustomerChatToolContext,
+): Promise<string | null> {
+  const { data: customer, error: customerErr } = await ctx.supabase
+    .schema("resupply")
+    .from("shop_customers")
+    .select("customer_id, email_lower")
+    .eq("customer_id", ctx.customerId)
+    .limit(1)
+    .maybeSingle();
+  if (customerErr) throw customerErr;
+  if (!customer?.email_lower) return null;
+
+  // .ilike with escaped meta-characters is case-insensitive equality;
+  // legacy patient rows can carry a mixed-case email.
+  const escapedEmail = customer.email_lower.replace(
+    /[\\%_]/g,
+    (c: string) => `\\${c}`,
+  );
+  const { data: patients, error: patientErr } = await ctx.supabase
+    .schema("resupply")
+    .from("patients")
+    .select("id")
+    .ilike("email", escapedEmail)
+    .limit(2);
+  if (patientErr) throw patientErr;
+  if (!patients || patients.length !== 1) return null;
+  return patients[0]!.id;
+}
+
+/**
+ * Status as the PATIENT should hear it.
+ *
+ * This app owns exactly one lifecycle transition — `queued`, written
+ * when a resupply is committed against stock. PacWare marks things
+ * shipped and delivered out of band via CSV, so `shipped_at` and
+ * `delivered_at` are frequently NULL on a row that has genuinely left
+ * the building. Reporting the raw column would tell a patient their
+ * supplies have not shipped when they may already be in the post.
+ *
+ * So a queued row is described as "with our warehouse" rather than
+ * "not shipped", and the tool tells the model that plainly.
+ */
+function describeFulfillmentStatus(row: {
+  status: string;
+  shipped_at: string | null;
+  delivered_at: string | null;
+}): string {
+  if (row.delivered_at) return "delivered";
+  if (row.shipped_at) return "shipped";
+  if (row.status === "cancelled" || row.status === "canceled") {
+    return "cancelled";
+  }
+  return "with_warehouse";
+}
+
 async function executeGetRecentOrders(
   ctx: CustomerChatToolContext,
   rawArgs: unknown,
@@ -436,62 +413,38 @@ async function executeGetRecentOrders(
   }
   const limit = parsed.data.limit ?? RECENT_ORDERS_DEFAULT_LIMIT;
 
-  const { data: orderRows, error } = await ctx.supabase
+  const patientId = await resolvePatientId(ctx);
+  if (!patientId) {
+    // NOT "you have no orders". We could not bind this caller to a
+    // single patient chart, which is a different fact and one the
+    // model must not paper over.
+    return { ok: true, data: { patientLinked: false, orders: [] } };
+  }
+
+  const { data: rows, error } = await ctx.supabase
     .schema("resupply")
-    .from("shop_orders")
+    .from("fulfillments")
     .select(
-      "id, stripe_session_id, status, amount_total_cents, currency, paid_at, shipped_at, delivered_at, shipping_address_json, tracking_carrier, tracking_number",
+      "id, item_sku, quantity, status, shipped_at, delivered_at, created_at, substituted_from_sku",
     )
-    .eq("customer_id", ctx.customerId)
-    .eq("status", "paid")
-    .order("paid_at", { ascending: false })
+    .eq("patient_id", patientId)
+    .order("created_at", { ascending: false })
     .order("id", { ascending: false })
     .limit(limit);
   if (error) throw error;
 
-  const rows = orderRows ?? [];
-  if (rows.length === 0) {
-    return { ok: true, data: { orders: [] } };
-  }
+  const orders: RecentOrderEntry[] = (rows ?? []).map((r) => ({
+    orderId: r.id,
+    itemSku: r.item_sku,
+    quantity: Number(r.quantity ?? 1),
+    status: describeFulfillmentStatus(r),
+    queuedAt: r.created_at,
+    shippedAt: r.shipped_at,
+    deliveredAt: r.delivered_at,
+    substitutedFromSku: r.substituted_from_sku ?? null,
+  }));
 
-  const orderIds = rows.map((o) => o.id);
-  const { data: itemRows, error: itemErr } = await ctx.supabase
-    .schema("resupply")
-    .from("shop_order_items")
-    .select("order_id, quantity")
-    .in("order_id", orderIds);
-  if (itemErr) throw itemErr;
-
-  const itemCountByOrder = new Map<string, number>();
-  for (const row of itemRows ?? []) {
-    itemCountByOrder.set(
-      row.order_id,
-      (itemCountByOrder.get(row.order_id) ?? 0) + row.quantity,
-    );
-  }
-
-  const orders: RecentOrderEntry[] = rows.map((o) => {
-    const shipAddr = (o.shipping_address_json ??
-      null) as SavedShippingAddress | null;
-    return {
-      orderId: o.id,
-      sessionId: o.stripe_session_id,
-      status: o.status,
-      amountTotalCents: o.amount_total_cents,
-      currency: o.currency,
-      paidAt: o.paid_at,
-      shippedAt: o.shipped_at,
-      deliveredAt: o.delivered_at,
-      trackingCarrier: o.tracking_carrier,
-      trackingNumber: o.tracking_number,
-      trackingUrl: computeTrackingUrl(o.tracking_carrier, o.tracking_number),
-      shipCity: shipAddr?.city ?? null,
-      shipState: shipAddr?.state ?? null,
-      itemCount: itemCountByOrder.get(o.id) ?? 0,
-    };
-  });
-
-  return { ok: true, data: { orders } };
+  return { ok: true, data: { patientLinked: true, orders } };
 }
 
 async function executeGetOrderDetails(
@@ -508,57 +461,40 @@ async function executeGetOrderDetails(
     };
   }
 
-  const { data: order, error } = await ctx.supabase
+  const patientId = await resolvePatientId(ctx);
+  if (!patientId) {
+    return { ok: true, data: { patientLinked: false, found: false } };
+  }
+
+  // patient_id in the WHERE clause is the ownership check: a forged id
+  // from another chart simply does not match.
+  const { data: row, error } = await ctx.supabase
     .schema("resupply")
-    .from("shop_orders")
+    .from("fulfillments")
     .select(
-      "id, stripe_session_id, status, amount_total_cents, currency, paid_at, shipped_at, delivered_at, shipping_address_json, tracking_carrier, tracking_number",
+      "id, item_sku, quantity, status, shipped_at, delivered_at, created_at, substituted_from_sku",
     )
     .eq("id", parsed.data.orderId)
-    .eq("customer_id", ctx.customerId)
+    .eq("patient_id", patientId)
     .maybeSingle();
   if (error) throw error;
 
-  if (!order) {
-    return { ok: true, data: { found: false, kind: "order" } };
+  if (!row) {
+    return { ok: true, data: { patientLinked: true, found: false } };
   }
 
-  const { data: itemRows, error: itemErr } = await ctx.supabase
-    .schema("resupply")
-    .from("shop_order_items")
-    .select("product_id, quantity, unit_amount_cents, currency")
-    .eq("order_id", order.id);
-  if (itemErr) throw itemErr;
-
-  const shipAddr = (order.shipping_address_json ??
-    null) as SavedShippingAddress | null;
-
   const details: OrderDetailsEntry = {
-    orderId: order.id,
-    sessionId: order.stripe_session_id,
-    status: order.status,
-    amountTotalCents: order.amount_total_cents,
-    currency: order.currency,
-    paidAt: order.paid_at,
-    shippedAt: order.shipped_at,
-    deliveredAt: order.delivered_at,
-    trackingCarrier: order.tracking_carrier,
-    trackingNumber: order.tracking_number,
-    trackingUrl: computeTrackingUrl(
-      order.tracking_carrier,
-      order.tracking_number,
-    ),
-    shipCity: shipAddr?.city ?? null,
-    shipState: shipAddr?.state ?? null,
-    items: (itemRows ?? []).map((r) => ({
-      productId: r.product_id,
-      quantity: r.quantity,
-      unitAmountCents: r.unit_amount_cents,
-      currency: r.currency,
-    })),
+    orderId: row.id,
+    itemSku: row.item_sku,
+    quantity: Number(row.quantity ?? 1),
+    status: describeFulfillmentStatus(row),
+    queuedAt: row.created_at,
+    shippedAt: row.shipped_at,
+    deliveredAt: row.delivered_at,
+    substitutedFromSku: row.substituted_from_sku ?? null,
   };
 
-  return { ok: true, data: details };
+  return { ok: true, data: { patientLinked: true, found: true, ...details } };
 }
 
 async function executeGetSubscriptions(
@@ -642,115 +578,6 @@ async function executeGetDevice(
   };
 }
 
-/**
- * Change the ship-to address on one of the caller's orders. The only
- * WRITE tool besides escalate_to_human. Mirrors the guard in
- * POST /shop/me/orders/:id/shipping-address (routes/shop/my-orders.ts):
- * a pre-check disambiguates not-found / not-paid / already-shipped /
- * pickup, then a guarded UPDATE re-asserts paid + not-shipped so a race
- * with the warehouse entering tracking can't slip an address change onto
- * a parcel that just left. Ownership is enforced by the customer_id
- * filter on both the read and the write — a forged orderId from another
- * patient returns not_found and never updates a row.
- */
-async function executeUpdateShippingAddress(
-  ctx: CustomerChatToolContext,
-  rawArgs: unknown,
-): Promise<CustomerChatToolResult> {
-  const parsed = updateAddressArgsSchema.safeParse(rawArgs ?? {});
-  if (!parsed.success) {
-    return {
-      ok: false,
-      error: `update_order_shipping_address: invalid arguments — ${parsed.error.issues
-        .map((i) => `${i.path.join(".") || "<root>"}: ${i.message}`)
-        .join("; ")}`,
-    };
-  }
-
-  const address: SavedShippingAddress = {
-    line1: parsed.data.line1,
-    line2: parsed.data.line2 ?? null,
-    city: parsed.data.city,
-    // Normalise to uppercase so it matches the storefront's address
-    // display + admin filters (same as the route).
-    state: parsed.data.state.toUpperCase(),
-    postalCode: parsed.data.postalCode,
-    country: "US",
-  };
-
-  // Pre-check: load the row (scoped to this caller) to give the model a
-  // specific, friendly reason rather than collapsing everything to a bare
-  // failure.
-  const { data: existing, error } = await ctx.supabase
-    .schema("resupply")
-    .from("shop_orders")
-    .select("id, status, shipped_at, fulfillment_method")
-    .eq("id", parsed.data.orderId)
-    .eq("customer_id", ctx.customerId)
-    .maybeSingle();
-  if (error) throw error;
-  if (!existing) {
-    return { ok: true, data: { found: false, kind: "order" } };
-  }
-  if (existing.fulfillment_method === "pickup") {
-    return {
-      ok: false,
-      error:
-        "This is a pickup order, so there's no shipping address to change.",
-    };
-  }
-  if (existing.status !== "paid") {
-    return {
-      ok: false,
-      error:
-        "This order isn't in a state where its shipping address can be changed.",
-    };
-  }
-  if (existing.shipped_at !== null) {
-    return {
-      ok: false,
-      error:
-        "This order has already shipped, so its address can't be changed here.",
-    };
-  }
-
-  // Guarded write: re-assert paid + not-shipped in the WHERE clause so a
-  // race with the admin tracking endpoint can't slip through.
-  const { data: row, error: updateErr } = await ctx.supabase
-    .schema("resupply")
-    .from("shop_orders")
-    .update({
-      shipping_address_json: address as unknown as Json,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", parsed.data.orderId)
-    .eq("customer_id", ctx.customerId)
-    .eq("status", "paid")
-    .is("shipped_at", null)
-    .select("id")
-    .maybeSingle();
-  if (updateErr) throw updateErr;
-  if (!row) {
-    // Lost the race — the order shipped between our pre-check and update.
-    return {
-      ok: false,
-      error:
-        "This order just shipped, so its address can no longer be changed.",
-    };
-  }
-
-  return {
-    ok: true,
-    data: {
-      addressUpdated: true,
-      orderId: row.id,
-      city: address.city,
-      state: address.state,
-    },
-  };
-}
-
-/** Map an escalation category to a short human label for the CSR message. */
 const ESCALATION_CATEGORY_LABELS: Record<string, string> = {
   order_issue: "Order issue",
   subscription: "Subscription",
@@ -877,8 +704,6 @@ export async function executeCustomerChatTool(
       return executeGetSubscriptions(ctx, rawArgs);
     case "get_my_device":
       return executeGetDevice(ctx, rawArgs);
-    case "update_order_shipping_address":
-      return executeUpdateShippingAddress(ctx, rawArgs);
     case "escalate_to_human":
       return executeEscalateToHuman(ctx, rawArgs);
     default:

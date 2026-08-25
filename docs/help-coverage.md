@@ -27,26 +27,31 @@ card in `pages/help.tsx`. The coverage test fails until all three exist.
 | Feature                                    | Help article                      | Status                                 |
 | ------------------------------------------ | --------------------------------- | -------------------------------------- |
 | Virtual mask fitter                        | `/help/find-your-mask`            | Covered (guided scan + safety check)   |
-| Ordering a recommended mask                | `/help/place-an-order`            | Covered                                |
-| Shop & checkout                            | `/help/shop-and-checkout`         | Covered                                |
+| Requesting a recommended mask              | `/help/request-your-mask`         | Covered (send details or ask to call)  |
 | Order tracking                             | `/help/track-your-order`          | Covered                                |
 | Account creation & sign-in                 | `/help/create-an-account`         | Covered                                |
 | Password reset                             | `/help/reset-password`            | Covered                                |
 | Resupply reminders (signup + manage links) | `/help/resupply-reminders`        | Covered                                |
 | Insurance estimates                        | `/help/insurance-estimate`        | Covered                                |
-| Returns, exchanges & comfort guarantee     | `/help/returns-and-refunds`       | Covered                                |
-| Wishlist & reorder                         | `/help/save-to-wishlist`          | Covered                                |
-| Auto-ship subscriptions                    | `/help/manage-subscriptions`      | Covered                                |
-| Payment methods & billing (Stripe portal)  | `/help/payment-methods`           | Covered                                |
 | Communication preferences, STOP, quiet hrs | `/help/communication-preferences` | Covered                                |
 | Document upload & required e-sign forms    | `/help/documents-and-forms`       | Covered                                |
 | Caregiver / designated contact             | `/help/caregiver-access`          | Covered                                |
 | Equipment registry & recall alerts         | `/help/equipment-and-recalls`     | Covered                                |
 | Phone ordering (AI voice assistant)        | `/help/order-by-phone`            | Covered                                |
+| Billing history & statements               | —                                 | Gap (add if patients ask; page is      |
+| read-only and self-describing)             |
 | In-account messages thread                 | —                                 | Gap (low: UI is self-describing)       |
 | Referral program                           | —                                 | Gap (add when program is promoted)     |
 | Data export & privacy rights               | —                                 | Gap (privacy page covers contact path) |
 | NPS / post-delivery survey                 | —                                 | Gap (low: one-tap survey)              |
+
+**Retired with cash-pay (migration 0518).** The shop, cart, checkout,
+card-on-file, wishlist and Subscribe & Save articles are gone, because
+the features are. Patients are supplied against their insurance plan and
+are never charged, so there is no purchase flow to document. Their
+cross-links were repointed at `/help/request-your-mask` and
+`/help/resupply-reminders`; do not reintroduce an article that tells a
+patient to buy something.
 
 Clinical/educational topics (cleaning, troubleshooting, travel, therapy
 data) live under `/learn` and the chatbot knowledge base by design — the
@@ -82,7 +87,7 @@ uniqueness, that `related` and `seeAlso` cross-links resolve, that every
 category has at least one how-to, and that the routes are registered in
 the order wouter's `<Switch>` needs.
 
-Coverage today: **55 how-tos, 19 guide chapters, 59 FAQ entries.** A
+Coverage today: **52 how-tos, 17 guide chapters, 57 FAQ entries.** A
 how-to is written per _task_, not per page — many console pages are
 covered as a step inside the guide for the workflow they belong to
 (shipping labels inside "fulfill and ship", filing deadlines inside
@@ -104,13 +109,13 @@ rather than by every admin chat request failing in production.
 Regenerating the index after adding a guide is mechanical — the test
 names exactly which slugs are missing or stale.
 
-No staff-help gaps are currently tracked. Two former ones are now
-covered at the level the app actually supports: reorder points are
-documented as the per-SKU low-stock threshold (`set-inventory-reorder-points`),
-and capped-rental modifiers as _how to see which rule fired_
-(`check-capped-rental-modifiers`) — deliberately not as a claimed
-modifier sequence, since that is payer policy that changes and is not
-the app's to assert.
+No staff-help gaps are currently tracked. Stock and catalog work is
+covered by `manage-catalog-and-stock` (movements with a reason, and why a
+blank count means untracked rather than zero) and
+`manage-backorders-and-substitutions`; capped-rental modifiers are
+covered as _how to see which rule fired_ (`check-capped-rental-modifiers`)
+— deliberately not as a claimed modifier sequence, since that is payer
+policy that changes and is not the app's to assert.
 
 ## Other staff-facing guidance
 

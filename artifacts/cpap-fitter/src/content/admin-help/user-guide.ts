@@ -34,7 +34,7 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
         items: [
           "Acquire — a mask-fitting link you can send to anyone, a storefront, and inbound referral intake.",
           "Fit — a guided phone-camera scan that produces measurements, a ranked mask recommendation, and a safety screen, reviewed by your staff before anything ships.",
-          "Order — storefront checkout, counter sales, fitter-generated requests, and recurring resupply subscriptions.",
+          "Order — an insurance order raised from a fit request, from the resupply engine, or by a CSR on the patient's behalf. Never a card sale.",
           "Fulfill — pick, substitute deliberately, buy and print labels, and track delivery.",
           "Bill — eligibility, prior authorization, claim submission, remittance posting, denials, and patient balances.",
           "Retain — therapy-usage monitoring, adherence coaching, resupply reminders, and satisfaction measurement.",
@@ -372,7 +372,15 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
       },
       {
         kind: "para",
-        text: "Fit review is where a human closes the loop. Each session shows the measurements, the tier-by-tier reasoning behind the ranking, and a confidence read. You approve, override the mask or size when you know something the scan cannot see, or request a rescan when confidence is low. Approved recommendations become fitter requests, and Fitter outcomes reports how they actually turned out — ordered, kept, or exchanged.",
+        text: 'The questionnaire opens by asking who the mask is for — an adult or a child — and offers no "not sure". That answer is a service line, never an age or a date of birth, and it sets three things at once: which measurements count as plausible, which masks are eligible at all, and what the session records. A catalog entry with no service line is treated as adult, which is what stops an unmarked mask from ever reaching a child.',
+      },
+      {
+        kind: "para",
+        text: "A fitting ends in a REQUEST, not an order. The patient either sends their details or asks to be contacted, and the row lands on Fit Requests for a person to work — a claim must not start from a patient's own guess at their member ID. Insurance is optional on that form on purpose, because someone verifies it anyway. Closing the row asks how it turned out, and only Fulfilled — the patient actually has the mask — marks the fitting as dispensed.",
+      },
+      {
+        kind: "para",
+        text: "Fit review is where a human closes the loop. Each session shows the measurements, the population the patient chose, the tier-by-tier reasoning behind the ranking, and a confidence read. You approve, override the mask or size when you know something the scan cannot see, or request a rescan when confidence is low. Fitter outcomes then reports how the recommendation actually turned out — dispensed, and whether the mask the patient got was the one the engine picked or an override.",
       },
       {
         kind: "para",
@@ -510,13 +518,36 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
         text: "Shipping labels buys, prints, and tracks — use it rather than a carrier's own site so the tracking number attaches to the order and reaches the patient.",
       },
       {
+        kind: "para",
+        text: "Catalog is the SKU registry behind all of it: what you dispense and how many are on the shelf. Stock only ever moves as a recorded movement with a reason — received, returned, counted, adjusted — so a balance always has a history you can read back. A blank count means untracked, which is not the same as zero. A dispense is recorded when a fulfillment is queued, and a SKU that is not in the catalog is skipped and logged rather than being allowed to fail a resupply the patient is due.",
+      },
+      {
+        kind: "para",
+        text: "Backorders is the other half of that: marking a SKU unavailable and saying what should go out instead. It is read by the insurance fulfillment path, not by a storefront, so an uncleared backorder quietly keeps substituting away from that SKU. Recording a receipt on Catalog clears it for you.",
+      },
+      {
         kind: "pages",
         title: "Order pages",
         rows: [
           {
+            path: "/admin/fitter-requests",
+            label: "Fit Requests",
+            what: "Finished fittings waiting for someone to place the order.",
+          },
+          {
             path: "/admin/fitter/orders",
             label: "Fitter requests",
             what: "Orders originating from an approved fitting.",
+          },
+          {
+            path: "/admin/catalog",
+            label: "Catalog",
+            what: "The SKUs you dispense and what is on the shelf.",
+          },
+          {
+            path: "/admin/shop/backorders",
+            label: "Backorders",
+            what: "Mark a SKU out of stock and set substitution rules.",
           },
           {
             path: "/admin/shipping",

@@ -820,8 +820,8 @@ ROLES = [
                  "Turnover per SKU (cost of goods sold against inventory "
                  "value), plus demand lost to stockouts."),
                 ("Acquisition Funnel",
-                 "Visitor drop-off from mask-fitter start through checkout, "
-                 "showing exactly where prospects leave."),
+                 "Visitor drop-off from mask-fitter start through the request "
+                 "that ends it, showing exactly where prospects leave."),
                 ("Outreach Attribution",
                  "Which outreach channels actually convert: the percentage of "
                  "contacted patients who went on to order, by channel."),
@@ -931,8 +931,8 @@ ROLES = [
                  "A standing worklist of coverages due for re-check: never "
                  "verified, terminating soon, or stale."),
                 ("Insurance Leads",
-                 "Benefit-verification requests submitted by storefront "
-                 "shoppers, queued for triage and follow-up."),
+                 "Benefit-verification requests submitted from the "
+                 "storefront, queued for triage and follow-up."),
                 ("Good Faith Estimates",
                  "Generate and send estimates showing the patient's expected "
                  "responsibility before service."),
@@ -1085,15 +1085,19 @@ ROLES = [
                 ("Backorders &amp; Substitution",
                  "Mark items out of stock and define automatic substitute "
                  "rules so orders keep moving."),
-                ("Inventory &amp; Reconciliation",
-                 "Product catalog with stock and cost, plus a monthly count "
-                 "workflow with variance reporting."),
-                ("Reviews &amp; Product Q&amp;A",
-                 "Moderate customer product reviews and answer shopper "
-                 "questions."),
-                ("Cart Recovery &amp; Restock Alerts",
-                 "Recover abandoned carts with automatic emails and notify "
-                 "subscribers when items come back in stock."),
+                ("Catalog &amp; Stock",
+                 "The SKUs you dispense with on-hand counts and cost. Stock "
+                 "moves only as a recorded movement with a reason, so every "
+                 "balance keeps a history; a blank count means untracked "
+                 "rather than zero."),
+                ("Backorders &amp; Substitutions",
+                 "Mark a SKU out of stock and set what the insurance "
+                 "fulfillment path should send instead; receiving stock "
+                 "clears it automatically."),
+                ("Fit Requests",
+                 "Finished fittings waiting for someone to verify the "
+                 "benefit and place the order — the patient never files "
+                 "their own."),
                 ("Fitter Prospects &amp; Invites",
                  "Invite patients to the AI mask fitter, see their scored "
                  "results, and convert supply-campaign leads."),
@@ -1203,9 +1207,12 @@ FOUNDATIONS_INTRO = (
 
 FOUNDATIONS = [
     ("Patient Storefront &amp; Portal",
-     "A full e-commerce storefront with Stripe checkout, subscriptions, "
-     "order tracking, returns, document access, insurance details, and "
-     "caregiver access — backed by a self-service patient account portal."),
+     "A patient-facing site and self-service account portal: what they are "
+     "due for, order tracking, statements and billing history, document "
+     "access and e-signature, insurance details, and caregiver access. It is "
+     "an insurance storefront, not a retail one — patients are supplied "
+     "against their plan and are never charged a card, so there is no cart "
+     "and no checkout."),
     ("AI Mask Fitter",
      "Camera-based facial measurement in the patient's browser scores every "
      "available mask for fit. Images never leave the device — only numeric "
@@ -1261,7 +1268,7 @@ MATRIX = [
     ("Patient Experience", [
         ("AI camera-based mask fitting, in-browser and privacy-first",
          ["full", "none", "none", "none"]),
-        ("Patient e-commerce storefront, subscriptions, and cash-pay",
+        ("Patient portal: what's due, tracking, statements, e-sign",
          ["full", "half", "half", "half"]),
         ("Automated resupply outreach with one-tap confirm (SMS/email)",
          ["full", "full", "half", "half"]),

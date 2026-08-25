@@ -1,464 +1,464 @@
 [
   {
     "key": "sms.reminders",
-    "label": "SMS \u2014 reminders",
+    "label": "SMS — reminders",
     "category": "Messaging",
     "default": "on",
     "description": "Outbound SMS resupply reminders (90/30-day reorder nudges). Disabling stops the reminder dispatcher from sending new SMS."
   },
   {
     "key": "email.reminders",
-    "label": "Email \u2014 reminders",
+    "label": "Email — reminders",
     "category": "Messaging",
     "default": "on",
     "description": "Outbound email resupply reminders. Disabling stops the reminder dispatcher from sending new email."
   },
   {
     "key": "bulk_campaigns.send",
-    "label": "Bulk campaigns \u2014 send",
+    "label": "Bulk campaigns — send",
     "category": "Messaging",
     "default": "on",
     "description": "Sending of bulk-messaging campaigns to opted-in patients. Disabling stops the bulk-campaign worker from sending new messages."
   },
   {
     "key": "outreach_playbooks.dispatcher",
-    "label": "Outreach playbooks \u2014 dispatcher",
+    "label": "Outreach playbooks — dispatcher",
     "category": "Messaging",
     "default": "on",
-    "description": "Outreach playbooks \u2014 scheduled SMS/email touches and call tasks for patient outreach runs started by staff. Turning this OFF pauses all pending playbook touches without cancelling the runs."
+    "description": "Outreach playbooks — scheduled SMS/email touches and call tasks for patient outreach runs started by staff. Turning this OFF pauses all pending playbook touches without cancelling the runs."
   },
   {
     "key": "smart_triggers.dispatcher",
-    "label": "Smart triggers \u2014 dispatcher",
+    "label": "Smart triggers — dispatcher",
     "category": "Messaging",
     "default": "on",
     "description": "Smart-trigger reorder dispatcher (therapy-night patterns). Disabling stops the dispatcher from queueing new reminders."
   },
   {
     "key": "patient_onboarding.dispatcher",
-    "label": "Patient onboarding \u2014 dispatcher",
+    "label": "Patient onboarding — dispatcher",
     "category": "Messaging",
     "default": "on",
     "description": "First-90-day adherence-coaching nudges. Disabling stops the onboarding dispatcher from sending day-1/7/30/90 messages."
   },
   {
     "key": "fitter_supply_campaign.dispatcher",
-    "label": "Fitter supply campaign \u2014 dispatcher",
+    "label": "Fitter supply campaign — dispatcher",
     "category": "Messaging",
     "default": "on",
     "description": "Multi-touch nurture campaign for patients who completed the at-home fitter but have not placed an order. Disabling stops the dispatcher from sending new touchpoints; in-flight conversions still attribute normally."
   },
   {
     "key": "reminder_escalation.dispatcher",
-    "label": "Reminder escalation \u2014 dispatcher",
+    "label": "Reminder escalation — dispatcher",
     "category": "Messaging",
     "default": "off",
     "description": "Daily multi-channel escalation for unanswered resupply reminders: follow up on the next channel (SMS then email) ~3 days after the first touch, then raise a CSR call alert once both channels are exhausted. Disabled keeps reminders to the single first-touch channel."
   },
   {
     "key": "alerts.auto_dispatch",
-    "label": "Alerts \u2014 auto dispatch",
+    "label": "Alerts — auto dispatch",
     "category": "Messaging",
     "default": "off",
     "description": "Allow server-side events to automatically send alert-library messages to patients (currently: the payment_failed alert on a Stripe invoice.payment_failed event). Disabled keeps the alert library admin-send only. Review patient-consent and wording before enabling."
   },
   {
     "key": "therapy_fleet.auto_outreach",
-    "label": "Therapy fleet \u2014 auto outreach",
+    "label": "Therapy fleet — auto outreach",
     "category": "Messaging",
     "default": "off",
     "description": "Therapy-fleet adherence auto-outreach: gentle SMS nudges to consented at-risk patients from the nightly fleet-alerts scan and the setup-deadline job. Also requires sms.reminders ON and Twilio configured; per-patient consent / DND / frequency caps still apply. SEEDED DISABLED."
   },
   {
     "key": "clinical_outreach.dispatcher",
-    "label": "Clinical outreach \u2014 dispatcher",
+    "label": "Clinical outreach — dispatcher",
     "category": "Messaging",
     "default": "on",
     "description": "Proactive clinical outreach: templated, consent/DND/frequency-cap-gated nudges to patients with an open non-adherence intervention. Scheduling is controlled by CLINICAL_OUTREACH_CRON; turning this OFF pauses the sends without changing the schedule. The admin \"Run now\" trigger is unaffected."
   },
   {
     "key": "fitter_first_day_nudge.dispatcher",
-    "label": "Fitter first day nudge \u2014 dispatcher",
+    "label": "Fitter first day nudge — dispatcher",
     "category": "Messaging",
     "default": "on",
     "description": "Fitter lead first-day nudge: a one-time email/SMS to new fitter leads on day one. Registration is gated by RESUPPLY_FITTER_FIRST_DAY_NUDGE_ENABLED; turning this OFF pauses the sweep without changing that env gate."
   },
   {
     "key": "fitter_reengage.dispatcher",
-    "label": "Fitter reengage \u2014 dispatcher",
+    "label": "Fitter reengage — dispatcher",
     "category": "Messaging",
     "default": "on",
     "description": "Fitter lead re-engagement: follow-up outreach to fitter leads who have gone quiet. Registration is gated by RESUPPLY_FITTER_REENGAGE_ENABLED; turning this OFF pauses the sweep without changing that env gate."
   },
   {
     "key": "patient_packets.autosend_on_delivery",
-    "label": "Patient packets \u2014 autosend on delivery",
+    "label": "Patient packets — autosend on delivery",
     "category": "Messaging",
     "default": "off",
     "description": "Automatically email a new-patient document packet for e-signature the first time an order is delivered to a customer linked to a patient record. One-time per patient; the admin \"Send packet\" action is always available regardless of this toggle. OFF by default."
   },
   {
     "key": "patient_packets.autoremind",
-    "label": "Patient packets \u2014 autoremind",
+    "label": "Patient packets — autoremind",
     "category": "Messaging",
     "default": "off",
     "description": "Automatically re-send the signing link to patients who have not finished their document packet, on a fixed cadence with a maximum number of nudges. The sweep runs daily (override with PATIENT_PACKET_REMINDER_CRON); turning this OFF pauses the sends without changing the schedule. OFF by default."
   },
   {
     "key": "email.auto_reply",
-    "label": "Email \u2014 auto reply",
+    "label": "Email — auto reply",
     "category": "Voice & AI",
     "default": "off",
     "description": "Chatbot email auto-replies. When ON, inbound patient emails are answered automatically by the storefront chat assistant (Claude Sonnet / GPT fallback); it hands off order/account/clinical or low-confidence messages to a human. When OFF, every inbound email is routed to the admin inbox for a manual reply."
   },
   {
     "key": "voice.agent",
-    "label": "Voice \u2014 agent",
+    "label": "Voice — agent",
     "category": "Voice & AI",
     "default": "on",
     "description": "Inbound voice agent (OpenAI Realtime). Disabling returns a 503 / hangup TwiML to any inbound call."
   },
   {
     "key": "telehealth.video",
-    "label": "Telehealth \u2014 video",
+    "label": "Telehealth — video",
     "category": "Voice & AI",
     "default": "on",
-    "description": "Telehealth video visits \u2014 staff-initiated browser video calls with patients for setups, troubleshooting, and follow-ups. Disabling blocks new visit creation and dead-ends outstanding join links."
+    "description": "Telehealth video visits — staff-initiated browser video calls with patients for setups, troubleshooting, and follow-ups. Disabling blocks new visit creation and dead-ends outstanding join links."
   },
   {
     "key": "storefront.chatbot",
-    "label": "Storefront \u2014 chatbot",
+    "label": "Storefront — chatbot",
     "category": "Voice & AI",
     "default": "on",
     "description": "Storefront chat assistant (Claude Sonnet / GPT fallback). Disabling makes the chat widget return a friendly \"currently offline\" message."
   },
   {
     "key": "admin.assistant",
-    "label": "Admin \u2014 assistant",
+    "label": "Admin — assistant",
     "category": "Voice & AI",
     "default": "on",
-    "description": "CareMetric Copilot \u2014 the in-app admin tech-support and program-manager assistant (renamable per tenant; \u201cPennPilot\u201d for the Penn tenant). When ON, signed-in staff can ask how the app works and where to find features, and the assistant can email feature suggestions to the super-admins (after confirming). Claude Sonnet / GPT fallback; degrades to an offline reply when no AI provider key is set."
+    "description": "CareMetric Copilot — the in-app admin tech-support and program-manager assistant (renamable per tenant; “PennPilot” for the Penn tenant). When ON, signed-in staff can ask how the app works and where to find features, and the assistant can email feature suggestions to the super-admins (after confirming). Claude Sonnet / GPT fallback; degrades to an offline reply when no AI provider key is set."
   },
   {
     "key": "reminder_escalation.voice",
-    "label": "Reminder escalation \u2014 voice",
+    "label": "Reminder escalation — voice",
     "category": "Voice & AI",
     "default": "off",
-    "description": "Automated phone-call tier for the resupply-reminder escalation ladder. When ON (and the voice path is configured), an episode still unanswered after the SMS and email reminders gets an automated AI resupply check-in call before the ladder raises a CSR \"call them\" alert. Placed inside the patient's local 9am\u20138pm window. When OFF, the ladder is SMS \u2192 email \u2192 CSR alert."
+    "description": "Automated phone-call tier for the resupply-reminder escalation ladder. When ON (and the voice path is configured), an episode still unanswered after the SMS and email reminders gets an automated AI resupply check-in call before the ladder raises a CSR \"call them\" alert. Placed inside the patient's local 9am–8pm window. When OFF, the ladder is SMS → email → CSR alert."
   },
   {
     "key": "voice.breathe_sales",
-    "label": "Voice \u2014 breathe sales",
+    "label": "Voice — breathe sales",
     "category": "Voice & AI",
     "default": "off",
-    "description": "CareMetric Breathe B2B platform sales voice agent. When ON (and a sales phone number is configured), inbound calls to the dedicated platform line reach an AI sales rep that pitches the platform to prospective DME businesses, emails them information, captures leads for follow-up, and can start a tenant sign-up on the call. Seeded OFF \u2014 it answers regulated calls and costs real voice spend, so enable it once the sales number is wired up."
+    "description": "CareMetric Breathe B2B platform sales voice agent. When ON (and a sales phone number is configured), inbound calls to the dedicated platform line reach an AI sales rep that pitches the platform to prospective DME businesses, emails them information, captures leads for follow-up, and can start a tenant sign-up on the call. Seeded OFF — it answers regulated calls and costs real voice spend, so enable it once the sales number is wired up."
   },
   {
     "key": "support.tickets",
-    "label": "Support \u2014 tickets",
+    "label": "Support — tickets",
     "category": "Voice & AI",
     "default": "on",
-    "description": "Support tickets \u2014 tenants file support requests to the platform operator; an AI bot answers from the admin-console knowledge base on intake (Claude / GPT fallback) and escalates anything it cannot confidently answer to a human. Degrades to a hand-off when no AI provider key is set."
+    "description": "Support tickets — tenants file support requests to the platform operator; an AI bot answers from the admin-console knowledge base on intake (Claude / GPT fallback) and escalates anything it cannot confidently answer to a human. Degrades to a hand-off when no AI provider key is set."
   },
   {
     "key": "storefront.checkout",
-    "label": "Storefront \u2014 checkout",
+    "label": "Storefront — checkout (retired)",
     "category": "Storefront",
     "default": "on",
-    "description": "Allow new Stripe Checkout sessions from the patient storefront. Disabling returns a 503 from the create-session endpoint; existing carts and orders are unaffected."
+    "description": "Retired. Patients are billed to insurance and are never charged a card, so there is no storefront checkout for this toggle to gate. The row still exists in Control Center; changing it has no effect."
   },
   {
     "key": "storefront.pickup",
-    "label": "Storefront \u2014 pickup",
+    "label": "Storefront — pickup (retired)",
     "category": "Storefront",
     "default": "off",
-    "description": "Offer in-store pickup as an alternative to shipping at checkout. Off by default. When on, customers can choose to collect a one-time order at any active business location (resupply.locations); the order then uses the ready-for-pickup / picked-up lifecycle instead of carrier tracking. Disabling hides the option for new checkouts; in-flight pickup orders are unaffected."
+    "description": "Retired. It offered in-store pickup at a checkout that no longer exists. Arrange a pickup with the patient directly instead; changing this toggle has no effect."
   },
   {
     "key": "storefront.reviews_collection",
-    "label": "Storefront \u2014 reviews collection",
+    "label": "Storefront — reviews collection",
     "category": "Storefront",
     "default": "on",
     "description": "Post-delivery review-request emails. Disabling stops new review-request emails; previously-sent ones still accept submissions."
   },
   {
     "key": "storefront.nps",
-    "label": "Storefront \u2014 NPS",
+    "label": "Storefront — NPS",
     "category": "Storefront",
     "default": "on",
     "description": "Post-delivery NPS survey emails. Disabling stops new NPS sends; previously-sent surveys still record responses."
   },
   {
     "key": "cart_abandonment.dispatcher",
-    "label": "Cart abandonment \u2014 dispatcher",
+    "label": "Cart abandonment — dispatcher (retired)",
     "category": "Storefront",
     "default": "on",
-    "description": "Cart-abandonment nudge emails. Disabling stops the dispatcher from sending new nudges to patients with abandoned carts."
+    "description": "Retired. There is no cart to abandon — the storefront does not sell. Changing this toggle has no effect; use Bulk Campaigns for outreach to patients who dropped out of a fitting."
   },
   {
     "key": "storefront.auto_reminder_enrollment",
-    "label": "Storefront \u2014 auto reminder enrollment",
+    "label": "Storefront — auto reminder enrollment",
     "category": "Storefront",
     "default": "off",
     "description": "On a paid storefront order, auto-enroll the buyer in replacement reminders for the consumables they purchased (mask/cushion/tubing/filter/etc.) at the standard cadence. Email-only, with a manage/unsubscribe token; never re-enrolls a prior unsubscribe. Disabled keeps reminder enrollment to the explicit /reminders opt-in. Review consent before enabling."
   },
   {
     "key": "ai_billing.suggestions",
-    "label": "AI billing \u2014 suggestions",
+    "label": "AI billing — suggestions",
     "category": "Billing",
     "default": "on",
     "description": "AI-assisted billing claim suggestions in the billing AI queue. Disabling returns suggestions as \"AI offline\"; manual workflow is unaffected."
   },
   {
     "key": "billing.auto_submit_claims",
-    "label": "Billing \u2014 auto submit claims",
+    "label": "Billing — auto submit claims",
     "category": "Billing",
     "default": "off",
-    "description": "Unattended auto-submission of submission-ready claims to Office Ally by the billing.auto-submit-batch worker. When ON (and CLAIMS_AUTOSUBMIT_CRON is set) the cron batches draft claims that pass preflight with no blocking errors AND have active eligibility on file, then transmits them per payer. When OFF, the cron is a no-op; the operator-driven staged-approval submit (Billing \u2192 Auto-submit) still works regardless. SEEDED DISABLED."
+    "description": "Unattended auto-submission of submission-ready claims to Office Ally by the billing.auto-submit-batch worker. When ON (and CLAIMS_AUTOSUBMIT_CRON is set) the cron batches draft claims that pass preflight with no blocking errors AND have active eligibility on file, then transmits them per payer. When OFF, the cron is a no-op; the operator-driven staged-approval submit (Billing → Auto-submit) still works regardless. SEEDED DISABLED."
   },
   {
     "key": "billing.auto_submit_prior_auths",
-    "label": "Billing \u2014 auto submit prior auths",
+    "label": "Billing — auto submit prior auths",
     "category": "Billing",
     "default": "off",
     "description": "Unattended automatic Da Vinci PAS submission of draft prior authorizations by the billing.prior-auth-auto-submit worker. When ON (and PRIOR_AUTH_AUTOSUBMIT_CRON is set) the cron front-loads draft PAs that carry a coverage through the same submit core as the manual button; PAs missing a diagnosis, payer PAS endpoint, credentials, or address are skipped and retried. When OFF, the cron is a no-op; the operator-driven manual submit still works regardless. SEEDED DISABLED."
   },
   {
     "key": "billing.eligibility_precheck",
-    "label": "Billing \u2014 eligibility precheck",
+    "label": "Billing — eligibility precheck",
     "category": "Billing",
     "default": "off",
     "description": "Before batch-submitting 837P claims to Office Ally, consult each claim's most recent parsed 270/271. A claim whose coverage is explicitly inactive or requires prior auth is held back and the batch returns eligibility_blocked with the offending claim ids. Fail-open: no/stale eligibility result allows the claim through. Pairs with resupply.eligibility_enforcement (the order-confirm coverage guard)."
   },
   {
     "key": "billing.eligibility_precheck_refresh",
-    "label": "Billing \u2014 eligibility precheck refresh",
+    "label": "Billing — eligibility precheck refresh",
     "category": "Billing",
     "default": "off",
-    "description": "When billing.eligibility_precheck is on AND real-time eligibility is configured, the claim-submit precheck additionally runs a fresh real-time 270 for any coverage in the batch with no recent parsed 271 (deduped per coverage, capped per batch). Off \u2192 the precheck only consults cached results. Auto-firing 270s has a per-transaction cost, so this is opt-in separately."
+    "description": "When billing.eligibility_precheck is on AND real-time eligibility is configured, the claim-submit precheck additionally runs a fresh real-time 270 for any coverage in the batch with no recent parsed 271 (deduped per coverage, capped per batch). Off → the precheck only consults cached results. Auto-firing 270s has a per-transaction cost, so this is opt-in separately."
   },
   {
     "key": "insurance.discovery",
-    "label": "Insurance \u2014 discovery",
+    "label": "Insurance — discovery",
     "category": "Billing",
     "default": "off",
-    "description": "Insurance discovery add-on. When ON (and the Office Ally discovery endpoint is configured), staff can search the payer network from a patient's demographics to find active coverage when their insurance is unknown or a coverage on file came back inactive. Seeded OFF \u2014 it is a paid add-on that triggers real clearinghouse spend, so enable it for tenants that have purchased it."
+    "description": "Insurance discovery add-on. When ON (and the Office Ally discovery endpoint is configured), staff can search the payer network from a patient's demographics to find active coverage when their insurance is unknown or a coverage on file came back inactive. Seeded OFF — it is a paid add-on that triggers real clearinghouse spend, so enable it for tenants that have purchased it."
   },
   {
     "key": "billing.line_ordering_provider",
-    "label": "Billing \u2014 line ordering provider",
+    "label": "Billing — line ordering provider",
     "category": "Billing",
     "default": "off",
-    "description": "Emit the line-level ordering-provider loop (837P 2420E NM1*DK) on each claim line, sourced from the claim's referring (prescribing) provider. DMEPOS-strict placement so Medicare's PECOS edit binds at the line; additive to the claim-level 2310D referring loop. SEEDED OFF \u2014 turning it on changes the live 837P, so validate against a live 277CA in the Office Ally test (T) cycle first."
+    "description": "Emit the line-level ordering-provider loop (837P 2420E NM1*DK) on each claim line, sourced from the claim's referring (prescribing) provider. DMEPOS-strict placement so Medicare's PECOS edit binds at the line; additive to the claim-level 2310D referring loop. SEEDED OFF — turning it on changes the live 837P, so validate against a live 277CA in the Office Ally test (T) cycle first."
   },
   {
     "key": "billing.payment_plan_autocharge",
-    "label": "Billing \u2014 payment plan autocharge",
+    "label": "Billing — payment plan autocharge",
     "category": "Billing",
     "default": "off",
     "description": "Auto-charge due patient payment-plan installments against the patient's authorized card. Off by default."
   },
   {
     "key": "billing.patient_autopay",
-    "label": "Billing \u2014 patient autopay",
+    "label": "Billing — patient autopay",
     "category": "Billing",
     "default": "off",
     "description": "Auto-charge a patient's outstanding balance against the card they saved and authorized in the patient portal. Off by default; each patient also controls their own autopay toggle."
   },
   {
     "key": "billing.auto_secondary_claims",
-    "label": "Billing \u2014 auto secondary claims",
+    "label": "Billing — auto secondary claims",
     "category": "Billing",
     "default": "off",
-    "description": "Auto-draft a secondary / coordination-of-benefits claim when a primary payer pays a claim that carries a secondary coverage and leaves a patient-responsibility balance. The secondary lands in draft for a biller to review and submit \u2014 never auto-submitted. Off by default; when off, use the manual COB worklist at /admin/billing/secondary-eligible."
+    "description": "Auto-draft a secondary / coordination-of-benefits claim when a primary payer pays a claim that carries a secondary coverage and leaves a patient-responsibility balance. The secondary lands in draft for a biller to review and submit — never auto-submitted. Off by default; when off, use the manual COB worklist at /admin/billing/secondary-eligible."
   },
   {
     "key": "eligibility.auto_reverify",
-    "label": "Eligibility \u2014 auto reverify",
+    "label": "Eligibility — auto reverify",
     "category": "Billing",
     "default": "on",
     "description": "Scheduled eligibility re-verification: fires fresh 270s for the most-urgent active coverages (throttled + capped per run). Scheduling is controlled by ELIGIBILITY_REVERIFY_CRON; turning this OFF pauses the unattended 270s without changing the schedule. The admin \"Run batch now\" trigger is unaffected."
   },
   {
     "key": "billing.bill_hold",
-    "label": "Billing \u2014 bill hold",
+    "label": "Billing — bill hold",
     "category": "Billing",
     "default": "on",
     "description": "Bill hold. When ON, a claim cannot be submitted to the clearinghouse while it has any outstanding REQUIRED signed-paperwork requirement; the hold lifts automatically when the last one comes back (manual mark, portal e-sign, upload, or an inbound fax auto-matched to it). A claim with no tracked requirements is never held. When OFF, the gate is skipped entirely."
   },
   {
     "key": "billing.bill_hold_auto_remind",
-    "label": "Billing \u2014 bill hold auto remind",
+    "label": "Billing — bill hold auto remind",
     "category": "Billing",
     "default": "off",
-    "description": "Bill-hold auto-reminders. When ON (and the opt-in BILL_HOLD_SWEEP_CRON is scheduled), the sweep job sends a reminder for paperwork that has been outstanding past the reminder threshold. When OFF, the sweep still recomputes holds and seeds requirements but sends nothing \u2014 reminders are sent only from the per-requirement \"remind\" action."
+    "description": "Bill-hold auto-reminders. When ON (and the opt-in BILL_HOLD_SWEEP_CRON is scheduled), the sweep job sends a reminder for paperwork that has been outstanding past the reminder threshold. When OFF, the sweep still recomputes holds and seeds requirements but sends nothing — reminders are sent only from the per-requirement \"remind\" action."
   },
   {
     "key": "resupply.entitlement_enforcement",
-    "label": "Resupply \u2014 entitlement enforcement",
+    "label": "Resupply — entitlement enforcement",
     "category": "Resupply",
     "default": "off",
     "description": "Block a resupply confirmation when the item is not yet payable under the Medicare/payer replacement schedule (too soon since last dispense, or over the per-period quantity cap). When ON, a blocked reorder is routed to a CSR via a resupply_too_soon alert instead of shipping. When OFF, confirmations ship as before. Fails open on any eligibility-lookup error."
   },
   {
     "key": "resupply.eligibility_enforcement",
-    "label": "Resupply \u2014 eligibility enforcement",
+    "label": "Resupply — eligibility enforcement",
     "category": "Resupply",
     "default": "off",
     "description": "Consult the cached 270/271 eligibility result at order-confirm time. When ON and the patient confirms a resupply, an explicitly inactive plan or a prior-auth-required flag raises a resupply_coverage_blocked CSR alert and routes the order to the work queue instead of auto-shipping. Fail-open: no/stale result allows the order. When OFF, the coverage check is skipped (cadence/quantity entitlement is gated separately by resupply.entitlement_enforcement)."
   },
   {
     "key": "resupply.usage_compliance_check",
-    "label": "Resupply \u2014 usage compliance check",
+    "label": "Resupply — usage compliance check",
     "category": "Resupply",
     "default": "off",
-    "description": "Continued-use check at resupply order-confirm time. When ON and the patient confirms a resupply, recent therapy data (patient_therapy_nights, last 30 days) showing the device is effectively unused raises a resupply_usage_review CSR alert and routes the order to the work queue instead of auto-shipping \u2014 protecting against continued-use claim denials. Fail-open: no data, sparse data, or any lookup error allows the order. When OFF, the check is skipped."
+    "description": "Continued-use check at resupply order-confirm time. When ON and the patient confirms a resupply, recent therapy data (patient_therapy_nights, last 30 days) showing the device is effectively unused raises a resupply_usage_review CSR alert and routes the order to the work queue instead of auto-shipping — protecting against continued-use claim denials. Fail-open: no data, sparse data, or any lookup error allows the order. When OFF, the check is skipped."
   },
   {
     "key": "resupply.refill_affirmation_capture",
-    "label": "Resupply \u2014 refill affirmation capture",
+    "label": "Resupply — refill affirmation capture",
     "category": "Resupply",
     "default": "on",
-    "description": "Record the beneficiary's Medicare/payer refill attestation (still using the device + current supply running low) as an audit-grade refill_confirmations row each time a resupply order is confirmed (SMS YES, email-link click, voice, or admin). Captured AFTER a successful confirm; a write failure never blocks the order. ON by default \u2014 this is a compliance documentation baseline, not a change to the ship decision. When OFF, no attestation row is written."
+    "description": "Record the beneficiary's Medicare/payer refill attestation (still using the device + current supply running low) as an audit-grade refill_confirmations row each time a resupply order is confirmed (SMS YES, email-link click, voice, or admin). Captured AFTER a successful confirm; a write failure never blocks the order. ON by default — this is a compliance documentation baseline, not a change to the ship decision. When OFF, no attestation row is written."
   },
   {
     "key": "resupply.refill_window_enforcement",
-    "label": "Resupply \u2014 refill window enforcement",
+    "label": "Resupply — refill window enforcement",
     "category": "Resupply",
     "default": "off",
     "description": "Enforce the CMS DMEPOS refill SHIP window at order-confirm time: block a resupply that would ship earlier than 10 days before the current supply's expected depletion (last dispense + the HCPCS supply duration), routing it to a CSR via a resupply_refill_too_early alert instead of shipping. When OFF, the confirm-time interval/quantity entitlement guard is the only timing gate. Fail-open: a first fill, an unmapped SKU, or any lookup error allows the confirmation through."
   },
   {
     "key": "resupply.auto_order_drafts",
-    "label": "Resupply \u2014 auto order drafts",
+    "label": "Resupply — auto order drafts",
     "category": "Resupply",
     "default": "off",
-    "description": "Auto-stage resupply order drafts from device-eligible supplies (daily worker). Drafts are proposals a CSR reviews and approves into an order \u2014 nothing is created or charged automatically. Seeded OFF; CSRs can still stage drafts manually from the resupply opportunities page. Enable per tenant in the Control Center."
+    "description": "Auto-stage resupply order drafts from device-eligible supplies (daily worker). Drafts are proposals a CSR reviews and approves into an order — nothing is created or charged automatically. Seeded OFF; CSRs can still stage drafts manually from the resupply opportunities page. Enable per tenant in the Control Center."
   },
   {
     "key": "asset_recovery.auto_populate",
-    "label": "Asset recovery \u2014 auto populate",
+    "label": "Asset recovery — auto populate",
     "category": "Resupply",
     "default": "off",
     "description": "Nightly auto-population of asset-recovery cases from discontinuation signals (undismissed usage-dropping smart triggers). When off, cases are opened only manually from /admin/asset-recovery."
   },
   {
     "key": "orders.require_signed_paperwork",
-    "label": "Orders \u2014 require signed paperwork",
+    "label": "Orders — require signed paperwork",
     "category": "Orders",
     "default": "off",
-    "description": "Require required intake paperwork (HIPAA NPP, Assignment of Benefits, Supplier Standards) to be signed before a patient-linked order can be marked shipped. Off by default \u2014 turning it on blocks shipment until paperwork is on file. A per-payer requirement (payer_profiles.requires_signed_paperwork) can also impose this for specific payers while this stays off."
+    "description": "Require required intake paperwork (HIPAA NPP, Assignment of Benefits, Supplier Standards) to be signed before a patient-linked order can be marked shipped. Off by default — turning it on blocks shipment until paperwork is on file. A per-payer requirement (payer_profiles.requires_signed_paperwork) can also impose this for specific payers while this stays off."
   },
   {
     "key": "patient_packets.autofile_signed_pdf",
-    "label": "Patient packets \u2014 autofile signed pdf",
+    "label": "Patient packets — autofile signed pdf",
     "category": "Documents",
     "default": "on",
-    "description": "Automatically file the signed e-sign packet PDF (documents + signature certificate) onto the patient's chart when the patient completes signing. Internal record-keeping only \u2014 no messages are sent. ON by default."
+    "description": "Automatically file the signed e-sign packet PDF (documents + signature certificate) onto the patient's chart when the patient completes signing. Internal record-keeping only — no messages are sent. ON by default."
   },
   {
     "key": "provider.portal_enabled",
-    "label": "Provider \u2014 portal enabled",
+    "label": "Provider — portal enabled",
     "category": "Provider Portal",
     "default": "off",
     "description": "Secure provider e-signature portal: physicians/NPs sign in (MFA-protected) to e-sign outstanding orders/prescriptions/claims; employees track + release signed items and print the signature audit log."
   },
   {
     "key": "domains.tls_automation",
-    "label": "Domains \u2014 TLS automation",
+    "label": "Domains — TLS automation",
     "category": "Integrations",
     "default": "off",
-    "description": "NOT YET ACTIVE in this build \u2014 the TLS automation has not shipped, so this toggle currently has no effect. When it lands: automatically provision + renew TLS for tenant custom domains via Cloudflare for SaaS (Custom Hostnames) when a domain is verified. Requires CLOUDFLARE_API_TOKEN + CLOUDFLARE_ZONE_ID. Off = manual operator edge binding."
+    "description": "NOT YET ACTIVE in this build — the TLS automation has not shipped, so this toggle currently has no effect. When it lands: automatically provision + renew TLS for tenant custom domains via Cloudflare for SaaS (Custom Hostnames) when a domain is verified. Requires CLOUDFLARE_API_TOKEN + CLOUDFLARE_ZONE_ID. Off = manual operator edge binding."
   },
   {
     "key": "failed_email_digest.dispatcher",
-    "label": "Failed email digest \u2014 dispatcher",
+    "label": "Failed email digest — dispatcher",
     "category": "Operations",
     "default": "on",
-    "description": "Daily failed-order email digest: a single summary email to the ops alerts address listing orders whose confirmation email failed in the last 24h (order reference + timestamp only \u2014 no patient PHI). Scheduling is gated by RESUPPLY_FAILED_EMAIL_DIGEST_ENABLED; turning this OFF pauses the digest without changing that env gate."
+    "description": "Daily failed-order email digest: a single summary email to the ops alerts address listing orders whose confirmation email failed in the last 24h (order reference + timestamp only — no patient PHI). Scheduling is gated by RESUPPLY_FAILED_EMAIL_DIGEST_ENABLED; turning this OFF pauses the digest without changing that env gate."
   },
   {
     "key": "multi_location.enabled",
-    "label": "Multi location \u2014 enabled",
+    "label": "Multi location — enabled",
     "category": "Operations",
     "default": "off",
     "description": "Multi-branch company. When ON, the admin console shows the Locations page plus per-patient and per-staff branch assignment, a branch filter on the patients list, and per-branch counts. When OFF (the default), the company is treated as a single branch and none of the branch UI appears. Billing identity is shared at the org level in both modes."
   },
   {
     "key": "fax.auto_file_signed",
-    "label": "Fax \u2014 auto file signed",
+    "label": "Fax — auto file signed",
     "category": "Operations",
     "default": "off",
     "description": "Inbound-fax barcode auto-filing. When ON, every received fax is scanned (via the existing Claude vision path) for the platform's signature-tracking code (PFS-XXXXXXXX). On an exact unique match to an outstanding signature, the fax is filed into the patient's chart, the signature is marked returned & signed (advancing the source prescription packet), and any claim paperwork requirement it was sent to clear is satisfied (releasing the bill hold). When OFF, faxes are triaged by hand exactly as before. Degrades to hand-triage whenever no AI key is configured or the scan finds no code."
   },
   {
     "key": "fax.referral_review",
-    "label": "Fax \u2014 referral review",
+    "label": "Fax — referral review",
     "category": "Operations",
     "default": "off",
-    "description": "AI referral reviewer for inbound faxes. When ON, every received fax that is not barcode auto-filed is queued for one AI extraction pass (Claude document path) that pulls the referral's patient demographics, insurance, ordered items, sleep-study results, and referring physician into a review the staff can edit and explicitly accept \u2014 accepting creates the patient record, the insurance coverage, and files the split per-section PDFs to the chart. Nothing is entered into the system without that explicit accept. When OFF, faxes triage exactly as before; the manual \"Upload referral PDF\" reviewer remains available either way. Degrades to hand-triage when no AI key is configured."
+    "description": "AI referral reviewer for inbound faxes. When ON, every received fax that is not barcode auto-filed is queued for one AI extraction pass (Claude document path) that pulls the referral's patient demographics, insurance, ordered items, sleep-study results, and referring physician into a review the staff can edit and explicitly accept — accepting creates the patient record, the insurance coverage, and files the split per-section PDFs to the chart. Nothing is entered into the system without that explicit accept. When OFF, faxes triage exactly as before; the manual \"Upload referral PDF\" reviewer remains available either way. Degrades to hand-triage when no AI key is configured."
   },
   {
     "key": "frontdesk.counter_orders",
-    "label": "Frontdesk \u2014 counter orders",
+    "label": "Frontdesk — counter orders (retired)",
     "category": "Operations",
     "default": "on",
-    "description": "Front Desk walk-in ordering. When ON, CSRs can capture a walk-in customer and ring up a counter order (cash or bill-to-insurance) from the Front Desk page. When OFF, the counter-order endpoint returns 503 and the Front Desk order panel is disabled; existing orders are unaffected."
+    "description": "Retired with the Front Desk page. A walk-in is handled like any other patient: verify the benefit and raise the order against their plan. Changing this toggle has no effect."
   },
   {
     "key": "referrals.adherence_report",
-    "label": "Referrals \u2014 adherence report",
+    "label": "Referrals — adherence report",
     "category": "Referrals",
     "default": "off",
-    "description": "Automatically send a patient's 90-day CPAP adherence attestation (Medicare LCD L33718) to their REFERRING PROVIDER, by fax (preferred) or email, once the patient reaches the 90-day therapy mark. This is a PHI disclosure to the treating/referring provider \u2014 a permitted treatment/care-coordination disclosure that you opt into deliberately. Seeded OFF: turn it on only once you have decided the disclosure is appropriate and your providers' fax/email is set up to receive it. Each patient's 90-day report is sent at most once. When OFF, nothing is sent."
+    "description": "Automatically send a patient's 90-day CPAP adherence attestation (Medicare LCD L33718) to their REFERRING PROVIDER, by fax (preferred) or email, once the patient reaches the 90-day therapy mark. This is a PHI disclosure to the treating/referring provider — a permitted treatment/care-coordination disclosure that you opt into deliberately. Seeded OFF: turn it on only once you have decided the disclosure is appropriate and your providers' fax/email is set up to receive it. Each patient's 90-day report is sent at most once. When OFF, nothing is sent."
   },
   {
     "key": "billing.adr_queue",
-    "label": "Billing \u2014 ADR / audit-response queue",
+    "label": "Billing — ADR / audit-response queue",
     "category": "Billing",
     "default": "off",
     "description": "Medicare ADR / audit-response queue + audit-packet builder. When ON, staff can log payer/contractor Additional Documentation Requests against their response deadline, assemble the requested chart documents + generated summaries into one audit-packet PDF, and record the outcome. A nightly SLA sweep surfaces at-risk/overdue deadlines. When OFF, the queue and builder are hidden and the sweep no-ops."
   },
   {
     "key": "collections.dunning",
-    "label": "Collections \u2014 dunning ladder",
+    "label": "Collections — dunning ladder",
     "category": "Billing",
     "default": "off",
-    "description": "Patient A/R dunning ladder. When ON, unpaid patient-responsibility balances escalate on a cadence (statement \u2192 reminder \u2192 second notice \u2192 final notice \u2192 agency), pausing automatically the moment the balance is paid or the patient goes onto a payment plan / autopay. Consent + quiet-hours are always enforced. When OFF, the open-scan and tick jobs no-op."
+    "description": "Patient A/R dunning ladder. When ON, unpaid patient-responsibility balances escalate on a cadence (statement → reminder → second notice → final notice → agency), pausing automatically the moment the balance is paid or the patient goes onto a payment plan / autopay. Consent + quiet-hours are always enforced. When OFF, the open-scan and tick jobs no-op."
   },
   {
     "key": "collections.agency_export",
-    "label": "Collections \u2014 agency export",
+    "label": "Collections — agency export",
     "category": "Billing",
     "default": "off",
-    "description": "Collections-agency hand-off export. When ON, balances that reach the agency step can be exported (formula-injection-guarded CSV) for a collections agency. Nothing is ever sent to an agency automatically \u2014 the export is a reviewed, deliberate action. When OFF, the agency step simply parks the balance for review."
+    "description": "Collections-agency hand-off export. When ON, balances that reach the agency step can be exported (formula-injection-guarded CSV) for a collections agency. Nothing is ever sent to an agency automatically — the export is a reviewed, deliberate action. When OFF, the agency step simply parks the balance for review."
   },
   {
     "key": "slack.notifications",
-    "label": "Slack \u2014 team notifications",
+    "label": "Slack — team notifications",
     "category": "Integrations",
     "default": "on",
     "description": "Post real-time CS alerts (a patient reply needing a human, a voice post-call hand-off, an SLA breach) into the operator's Slack channel. Inert until a Slack bot token + alerts channel are configured in System Configuration. Messages are non-PHI (reference + status + a deep link into the admin console)."
   },
   {
     "key": "slack.interactivity",
-    "label": "Slack \u2014 interactivity",
+    "label": "Slack — interactivity",
     "category": "Integrations",
     "default": "on",
     "description": "Accept inbound Slack button clicks (Escalate) and the slash command. Every request is verified against the Slack signing secret; inert until that secret is configured in System Configuration."
   },
   {
     "key": "slack.digests",
-    "label": "Slack \u2014 operator digests",
+    "label": "Slack — operator digests",
     "category": "Integrations",
     "default": "on",
     "description": "Also post the operator digests (owner weekly KPIs, metric alerts, stuck-job monitor, low-stock inventory) into Slack. Routes to the optional digests channel, else the alerts channel. Inert until Slack credentials are configured. Non-PHI (counts / KPI headlines / SKU + queue names). The email path is unchanged."
   },
   {
     "key": "fitter.multiframe_capture",
-    "label": "Fitter \u2014 multiframe capture",
+    "label": "Fitter — multiframe capture",
     "category": "Clinical",
     "default": "off",
-    "description": "Guided multi-angle scan capture: a live coach walks the patient through three angles (front, then a slight turn each way) with real-time quality checks (lighting, distance, head position, obstruction, movement), and the measurements are cross-checked across frames for agreement \u2014 producing a measurement confidence score instead of a single unverified snapshot. Falls back to single-frame capture automatically on devices that cannot run the live face tracker. OFF keeps the one-photo capture."
+    "description": "Guided multi-angle scan capture: a live coach walks the patient through three angles (front, then a slight turn each way) with real-time quality checks (lighting, distance, head position, obstruction, movement), and the measurements are cross-checked across frames for agreement — producing a measurement confidence score instead of a single unverified snapshot. Falls back to single-frame capture automatically on devices that cannot run the live face tracker. OFF keeps the one-photo capture."
   }
 ]

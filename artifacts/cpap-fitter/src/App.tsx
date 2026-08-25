@@ -163,6 +163,11 @@ const HelpFindYourMask = lazyWithRetry(() =>
     default: m.HelpFindYourMask,
   })),
 );
+const HelpRequestYourMask = lazyWithRetry(() =>
+  import("@/pages/help-request-your-mask").then((m) => ({
+    default: m.HelpRequestYourMask,
+  })),
+);
 const HelpTrackYourOrder = lazyWithRetry(() =>
   import("@/pages/help-track-your-order").then((m) => ({
     default: m.HelpTrackYourOrder,
@@ -1085,6 +1090,10 @@ function PatientRouter() {
             {/* Help Center — specific /help/* guides registered before the
               /help hub so wouter's <Switch> matches them first. */}
             <Route path="/help/find-your-mask" component={HelpFindYourMask} />
+            <Route
+              path="/help/request-your-mask"
+              component={HelpRequestYourMask}
+            />
             <Route
               path="/help/track-your-order"
               component={HelpTrackYourOrder}

@@ -110,9 +110,9 @@ export function HelpResupplyReminders() {
       ]}
       steps={steps}
       next={{
-        href: "/help/shop-and-checkout",
-        label: "Shop supplies",
-        blurb: "Need something before your next reminder? Order it now.",
+        href: "/help/request-your-mask",
+        label: "Ask for your recommended mask",
+        blurb: "Need a new mask rather than a replacement part? Start here.",
       }}
       faqs={[
         {
@@ -148,9 +148,9 @@ export function HelpResupplyReminders() {
           blurb: "Manage reminders from your dashboard.",
         },
         {
-          href: "/help/shop-and-checkout",
-          label: "Shop supplies",
-          blurb: "Reorder anything between reminders.",
+          href: "/help/request-your-mask",
+          label: "Ask for your recommended mask",
+          blurb: "Need something before your next reminder? Ask us.",
         },
       ]}
     />

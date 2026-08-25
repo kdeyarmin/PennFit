@@ -221,9 +221,9 @@ export function HelpFindYourMask() {
       ]}
       steps={steps}
       next={{
-        href: "/help/place-an-order",
-        label: "Order your recommended mask",
-        blurb: "Turn your best-fit recommendation into a finished order.",
+        href: "/help/request-your-mask",
+        label: "Ask for your recommended mask",
+        blurb: "Turn your best-fit recommendation into a real mask.",
       }}
       faqs={[
         {
@@ -273,9 +273,9 @@ export function HelpFindYourMask() {
       ]}
       related={[
         {
-          href: "/help/place-an-order",
-          label: "Order your recommended mask",
-          blurb: "Turn a recommendation into a finished order.",
+          href: "/help/request-your-mask",
+          label: "Ask for your recommended mask",
+          blurb: "What happens after you pick a recommendation.",
         },
         {
           href: "/help/insurance-estimate",

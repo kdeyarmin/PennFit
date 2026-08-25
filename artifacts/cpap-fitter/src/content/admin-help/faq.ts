@@ -738,4 +738,93 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
       "device",
     ],
   },
+  // ---------------------------------------------------------------
+  // Fitter requests, catalog & stock
+  // ---------------------------------------------------------------
+  {
+    id: "why-cant-patients-order",
+    question: "Why can't patients place their own order any more?",
+    category: "orders",
+    answer: [
+      "Because a claim should not start from a patient's own guess at their member ID. The fitter now ends in a request: the patient sends their details or asks to be contacted, and the row lands on Fit Requests /admin/fitter-requests for someone to verify and place.",
+      "This is a setting, not a code change — it is on for every tenant by default. It also fails safe: if the lookup that reads it cannot reach your account, self-service ordering stays off rather than switching on.",
+    ],
+    seeAlso: "work-the-fit-requests-queue",
+    keywords: [
+      "self service",
+      "order",
+      "fitter",
+      "lead capture",
+      "request",
+      "member id",
+    ],
+  },
+  {
+    id: "duplicate-fit-request",
+    question: "A patient submitted twice. Will we work the same request twice?",
+    category: "orders",
+    answer: [
+      "No. An identical re-submit while the first request is still open returns the request already in the queue rather than creating a second row, so a double-click or a back-navigation cannot queue a phantom or email the team twice.",
+      "Once a request is closed, an identical ask does create a new row — a patient genuinely coming back weeks later for a new mask is a new request, not a duplicate.",
+    ],
+    seeAlso: "work-the-fit-requests-queue",
+    keywords: ["duplicate", "twice", "double click", "resubmit", "queue"],
+  },
+  {
+    id: "dispense-rate-zero",
+    question: "Why does our fitter dispense rate read zero?",
+    category: "analytics",
+    answer: [
+      "Because nothing is stamping the fittings as dispensed. Closing a fit request as Fulfilled is what writes it, and Fulfilled specifically means the patient has the mask — not that someone agreed to send one.",
+      "If the team closes rows as Not proceeding, or leaves them open, Fitter outcomes /admin/analytics/fitter-outcomes has nothing to count. Rows closed before the outcome question existed record nothing rather than guessing, so historical rows stay blank on purpose.",
+    ],
+    seeAlso: "work-the-fit-requests-queue",
+    keywords: [
+      "dispense rate",
+      "zero",
+      "fitter outcomes",
+      "fulfilled",
+      "closed",
+    ],
+  },
+  {
+    id: "adult-or-child-question",
+    question: "Why does the fitter ask whether the mask is for a child?",
+    category: "patients",
+    answer: [
+      'Because a child is not a smaller adult. The answer sets which measurements count as plausible and which masks are eligible at all, and there is deliberately no "not sure" option — an unanswered gate would have to guess, and the safe guess is the wrong one for a child.',
+      "A catalog entry with no service line counts as adult, so an unmarked mask can never be offered to a child. If a session was answered wrongly, re-run the fitting rather than overriding the size — the whole shortlist was built for the wrong face.",
+    ],
+    seeAlso: "review-a-fit-session",
+    keywords: [
+      "child",
+      "adult",
+      "pediatric",
+      "population",
+      "service line",
+      "questionnaire",
+    ],
+  },
+  {
+    id: "stock-count-blank",
+    question: "A SKU shows no stock count. Does that mean we're out?",
+    category: "orders",
+    answer: [
+      "No — blank means untracked, which is not the same as zero. An untracked SKU is never treated as out of stock and never triggers a low-stock warning.",
+      "If you want a SKU to be watched, give it a real count on Catalog /admin/catalog. Record it as a counted movement rather than typing a total, so the balance keeps its history.",
+    ],
+    seeAlso: "manage-catalog-and-stock",
+    keywords: ["stock", "blank", "null", "zero", "untracked", "count", "sku"],
+  },
+  {
+    id: "still-substituting-after-restock",
+    question: "We restocked, but patients are still getting the substitute.",
+    category: "orders",
+    answer: [
+      "The backorder is still set. Backorders /admin/shop/backorders is read by the insurance fulfillment path, so until the flag clears the engine keeps routing around that SKU.",
+      "Recording the receipt on Catalog /admin/catalog clears it automatically. Clearing the flag by hand without receiving the stock has the opposite problem — the engine starts sending a SKU you do not have.",
+    ],
+    seeAlso: "manage-backorders-and-substitutions",
+    keywords: ["backorder", "substitution", "restock", "still", "out of stock"],
+  },
 ] as const;

@@ -707,7 +707,6 @@ SUMMARY = {
     "csr": [
         ("Daily workspace", [
             ("Home", "Today's worklist and live counters across every queue."),
-            ("Front Desk", "Capture a walk-in and ring up a counter order (cash or bill-to-insurance)."),
             ("Conversations", "Unified SMS/MMS/email inbox — triage, reply, assign, and escalate."),
             ("Email Inbox", "Inbound patient email split into needs-response vs. answered, with AI draft replies."),
             ("Cases", "Multi-channel tickets that link conversations, orders, faxes, and documents."),
@@ -728,12 +727,13 @@ SUMMARY = {
             ("Awaiting Signatures / Inbound Faxes", "Track documents out for signature; triage inbound faxes."),
             ("Referral Reviewer / Sources", "AI-extracted intake from faxed referrals; referring-physician scorecards."),
         ]),
-        ("Orders, shop & leads", [
-            ("Orders", "Storefront orders — fulfill, refund, track, and look up."),
+        ("Orders, catalog & leads", [
+            ("Fit Requests", "Finished fittings waiting for someone to verify the benefit and place the order."),
+            ("Orders", "Insurance orders — fulfill, track, and look up."),
             ("Shipping Labels", "Print shipping labels with the patient address merged; tracking auto-fills."),
-            ("Subscriptions / Returns / Backorders", "Recurring resupply, return/RMA decisions (with optional restock-to-inventory), and out-of-stock handling."),
-            ("Customers / Reviews / Q&A", "Shop accounts and cash-pay membership tiers, product reviews (auto-requested after purchase) to moderate, and customer questions to answer."),
-            ("Abandoned Carts / Back-in-Stock / Insurance Leads", "Recover carts, notify waitlists, and work benefit-verification requests."),
+            ("Catalog", "The SKUs you dispense and what is on the shelf; stock moves as a reasoned movement, never a typed total."),
+            ("Backorders", "Mark a SKU out of stock and set the substitution the fulfillment path should use instead."),
+            ("Insurance Leads", "Work new benefit-verification requests from the storefront."),
             ("Fitter Invites & Prospects", "Invite patients to the AI mask fitter and track the conversion funnel."),
         ]),
     ],
@@ -870,9 +870,8 @@ DETAIL = {
             ("Providers see their patients", "In the same portal a provider can view their patients' active orders and prescriptions and read their therapy data and reports (read-only) — so they can confirm adherence and close the loop without a phone call to your office."),
             ("Lifecycle & security", "Each document moves pending → signed → ready-to-print / returned-signed / attached-to-chart / released, so staff always know where it stands. Multi-factor authentication is mandatory for every provider, and the portal is off by default — an Owner enables it per tenant in the Control Center."),
         ]),
-        ("Your daily workspace", "Where a CSR lives all day — the inbox, the front desk, and the work queues.", [
+        ("Your daily workspace", "Where a CSR lives all day — the inbox and the work queues.", [
             ("Home", "The shared worklist and live counters. As a CSR you'll watch conversations awaiting reply, overdue follow-ups, and returns to action."),
-            ("Front Desk", "Capture a walk-in customer and ring up a counter order in real time — cash or bill-to-insurance — without going through the public storefront checkout."),
             ("Conversations", "The unified inbox for inbound SMS, MMS, and email across every patient. Triage threads, claim one for yourself, reply (optionally with a canned reply), tag, snooze, and escalate to a case. Smart routing and required-skills keep threads with the right people."),
             ("Email Inbox", "Inbound patient email split into “needs response” and “already answered.” When the AI email auto-reply feature is on, high-confidence answers can be drafted or sent automatically; anything account-, order-, or clinically-specific falls through to a human."),
             ("Cases", "Multi-channel tickets that bind together the conversations, orders, faxes, and documents belonging to one issue, so a complex problem stays tracked end to end."),
@@ -893,12 +892,13 @@ DETAIL = {
             ("Awaiting Signatures & Inbound Faxes", "Track documents out for provider signature and scan returned faxes to file them; triage the inbound-fax queue (sleep studies, Rx renewals, chart notes)."),
             ("Referral Reviewer & Sources", "Review AI-extracted intake from faxed/uploaded referral packets and accept them into a new patient record; the Sources scorecard ranks referring physicians by volume and revenue."),
         ]),
-        ("Orders, shop & leads", "Fulfillment and the storefront acquisition funnel.", [
-            ("Orders", "Work storefront orders — fulfill, refund, look up, and track — from a single queue."),
+        ("Orders, catalog & leads", "Fulfillment, stock, and the acquisition funnel.", [
+            ("Fit Requests", "The queue a finished mask fitting lands in. The patient never files their own insurance order — they send their details or ask to be called, and a CSR verifies the benefit and places the order. Closing a row records what actually happened; only <b>Fulfilled</b> — the patient has the mask — marks the fitting as dispensed for the outcomes dashboard."),
+            ("Orders", "Work insurance orders — fulfill, look up, and track — from a single queue."),
             ("Shipping Labels", "Print shipping labels with the patient's address merged in; tracking numbers auto-fill back onto the order."),
-            ("Subscriptions, Returns & Backorders", "Manage recurring resupply/Subscribe-and-Save subscriptions, decide returns/RMAs and refunds (comfort-guarantee aware), and handle out-of-stock SKUs and substitutions. When a returned item is genuinely resaleable, marking it received can optionally <b>restock</b> it — adding its quantities back to tracked inventory. It's off by default (most DME consumables aren't resaleable), so you opt in per return."),
-            ("Customers, Reviews & Product Q&A", "Registered shop accounts (including each customer's cash-pay <b>membership tier</b>) with in-app messaging, product reviews to moderate and reply to, and customer questions to answer or reject. The post-purchase <b>review request</b> can be sent on demand (“Send due”) or, once enabled, goes out automatically on an hourly sweep about two weeks after delivery — one request per order, consent-aware."),
-            ("Abandoned Carts, Back-in-Stock & Insurance Leads", "Recover abandoned carts with outreach, notify customers when items restock, and work new benefit-verification requests from the storefront."),
+            ("Catalog", "The SKU registry: what you dispense and how many are on the shelf. Stock only moves as a recorded movement with a reason — received, returned, counted, adjusted — so every balance has a history behind it, and a blank count means <b>untracked</b> rather than zero. A dispense is recorded when a fulfillment is queued; an un-catalogued SKU is logged and skipped rather than failing a resupply the patient is due. Low-stock SKUs are badged here and emailed as a digest every six hours."),
+            ("Backorders", "Mark a SKU out of stock and set the substitution rules that apply while it is. This is read by the insurance fulfillment path, not a retail shelf notice, so an uncleared backorder keeps routing patients away from that SKU. Recording a receipt on Catalog clears it automatically."),
+            ("Insurance Leads", "Work new benefit-verification requests that came in from the storefront."),
             ("Fitter Invites & Prospects", "Invite a patient to the AI mask fitter and review the returned mask & size recommendation; the Prospects view tracks the fitter conversion funnel."),
         ]),
     ],
@@ -1176,14 +1176,14 @@ JOB_AIDES = {
           "Tag or snooze the thread, or promote it to a <b>Case</b> if it spans multiple channels.",
           "If it needs a specialist, assign it or escalate."],
          "Order-, account-, and clinical-specific questions should go to the right person — use Cases so the full history travels with the issue."),
-        ("Ring up a walk-in (counter order)",
-         "Capture an in-person customer at the front desk.",
-         ["Open <b>Workspace → Front Desk</b>.",
-          "Look up the customer or create a new record.",
-          "Add the products to the order.",
-          "Choose cash or bill-to-insurance and complete the sale.",
-          "Print a receipt and, if shipping, a label."],
-         None),
+        ("Work a fit request",
+         "Turn a finished mask fitting into an order.",
+         ["Open <b>Orders, Catalog &amp; Leads → Fit Requests</b> — oldest first; the patient was told one business day.",
+          "Read what they asked for: they either sent their details or asked to be called.",
+          "Verify the benefit properly — whatever the patient typed is a starting point, not a verified plan.",
+          "Place the order and move the row through Contacted → In progress.",
+          "Close it with the real outcome. Only <b>Fulfilled</b> means the patient has the mask."],
+         "Never close a row as Fulfilled to tidy the queue — it inflates your dispense rate and tells the outcomes dashboard a mask arrived that never did."),
         ("Look up a patient and read the 360° timeline",
          "Everything about a patient in one place.",
          ["Open <b>Patients &amp; Clinical → Patients</b> and search by name or phone.",
@@ -1246,20 +1246,20 @@ JOB_AIDES = {
           "For anything order-, account-, or clinically-specific, write the reply yourself or escalate to a case.",
           "Sent threads move to “already answered.”"],
          "AI auto-reply only sends on its own above a confidence bar; everything else falls to a human by design."),
-        ("Recover an abandoned cart",
-         "Win back a shopper who didn't finish checkout.",
-         ["Open <b>Orders &amp; Shop → Storefront &amp; Leads → Abandoned Carts</b>.",
-          "Review the cart and the customer's contact info.",
-          "Send a recovery message (or let the automated cart-abandonment outreach handle it).",
-          "Follow up if they re-engage."],
+        ("Work an insurance lead",
+         "Follow up someone who asked what their plan covers.",
+         ["Open <b>Orders, Catalog &amp; Leads → Insurance Leads</b>.",
+          "Review what they asked for and their contact details.",
+          "Run the benefit check, then call or message them with what you found.",
+          "Convert them into a patient record when they want to proceed."],
          None),
-        ("Moderate a product review or answer a question",
-         "Keep the storefront's social proof clean and helpful.",
-         ["Open <b>Orders &amp; Shop → Storefront &amp; Leads → Reviews</b> (or Product Q&amp;A).",
-          "Read the pending review/question.",
-          "Approve, reply, or reject per your policy.",
-          "Approved content publishes to the storefront."],
-         None),
+        ("Keep stock straight after a count",
+         "Make the shelf and the system agree.",
+         ["Open <b>Orders, Catalog &amp; Leads → Catalog</b>.",
+          "Find the SKU and record the difference as a <b>counted</b> movement — never type over the total.",
+          "Give the movement a reason while you still remember it; that is what explains the variance later.",
+          "Recording a receipt also clears any backorder on that SKU automatically."],
+         "A blank count means untracked, not zero — an untracked SKU never warns you that it has run out."),
     ],
     "rt": [
         ("Review the therapy board and spot at-risk patients",
@@ -1502,7 +1502,7 @@ PLATFORM_FOUNDATIONS_INTRO = (
     "whole, and every role benefits from them."
 )
 PLATFORM_FOUNDATIONS = [
-    ("Patient storefront & portal", "A full e-commerce storefront with Stripe checkout, subscriptions, order tracking, returns, document access, insurance details, caregiver access, and self-serve cash-pay memberships — backed by a self-service patient account portal."),
+    ("Patient storefront & portal", "A patient-facing site and self-service account portal: what they are due for, order tracking, statements and billing history, document access and e-signature, insurance details, caregiver access, and an in-app message thread with your team. It is an <b>insurance</b> storefront, not a retail one — patients are supplied against their plan and are never charged a card, so there is no cart and no checkout."),
     ("AI mask fitter", "Camera-based facial measurement in the patient's browser scores every available mask for fit. Images never leave the device — only numeric measurements are transmitted. The fitter is <b>invitation-only</b>: staff send a signed invite link by SMS or email from <b>Orders &amp; Shop → Fitter Invites</b>, and the completed fitting attaches back to the patient's chart."),
     ("Resupply reminder engine", "Automated SMS and email reminders with signed one-tap confirm/decline links, quiet-hours awareness, and unsubscribe handling."),
     ("AI voice agent", "A natural-voice phone agent that takes reorders, runs reminder and check-in calls, hands off to staff on request, and writes a structured summary of every call."),
@@ -1621,7 +1621,7 @@ MATRIX_FOOTNOTE = (
 COMPARE_MATRIX = [
     ("Patient experience", [
         ("AI camera-based mask fitting, in-browser, privacy-first", ["full", "none", "none", "none"]),
-        ("Patient e-commerce storefront, subscriptions, cash-pay", ["full", "half", "half", "half"]),
+        ("Patient portal: what's due, tracking, statements, e-sign", ["full", "half", "half", "half"]),
         ("Automated resupply outreach, one-tap confirm (SMS/email)", ["full", "full", "half", "half"]),
         ("Conversational AI voice agent for reorders/check-ins", ["full", "half", "none", "none"]),
         ("Patient AI chatbot and sleep coach", ["full", "none", "none", "none"]),
@@ -1698,7 +1698,7 @@ ASSISTANTS_INTRO = (
 )
 ASSISTANT_CUSTOMER = [
     ("Answers patients 24/7", "A chat assistant on the storefront answers questions about CPAP therapy, masks, resupply, insurance, and your company — instantly, day or night, with no hold queue and no callback. It is the front line for the routine questions that used to ring the phone."),
-    ("Knows the patient's account", "For a signed-in patient it is account-aware: it can pull recent orders, order status and tracking, active subscriptions, and device details, and help with returns, refunds, and account changes. So “where's my order?” and “when's my next refill?” answer themselves."),
+    ("Knows the patient's account", "For a signed-in patient it is account-aware: it can pull recent shipments, order status and tracking, what they are due for next, and device details, and help with returns and account changes. So “where's my order?” and “when's my next refill?” answer themselves."),
     ("Knows when to hand off", "Anything it can't resolve — order-specific, clinical, or an action that needs a person — it escalates to a CSR by opening a message thread, with the context attached. It never accepts sensitive data (SSN, card, member ID), it is not a clinician, and it gives no medical advice."),
     ("A sleep coach, too", "In sleep-coach mode it offers supportive, plain-language coaching and troubleshooting for patients adjusting to therapy — the kind of reassurance that keeps new patients adherent."),
     ("The same brain by email", "The optional email auto-reply uses the same knowledge base to answer inbound patient emails automatically — but only when it is highly confident. Anything below the confidence bar (or order/clinical-specific) falls through to a human, exactly like a hand-off in chat."),
@@ -1770,8 +1770,8 @@ MONITOR_AREAS = [
 ]
 REPORTS_CATALOG = [
     ("Revenue summary", "Per-day revenue, refunds, and net rollup."),
-    ("Orders", "Storefront checkout sessions in the date range."),
-    ("Patient payments", "Patient-responsibility cash collected (card + mail-in checks), kept separate from insurance to avoid double-counting."),
+    ("Orders", "Orders created in the date range."),
+    ("Patient payments", "Patient-responsibility amounts collected against a balance (deductible, coinsurance, non-covered items), kept separate from insurance receipts to avoid double-counting. Patients are not charged at a storefront checkout — this is what the billing team collects."),
     ("Insurance claims", "Billing-side claims and payer receipts."),
     ("Refunds journal", "A chronological refund ledger."),
     ("Returns", "Comfort-guarantee returns and RMAs."),
@@ -1865,7 +1865,7 @@ PAYERS_NOTE = (
 FAQ = [
     ("Getting started & signing up", [
         ("How does a new practice sign up?", "Go to the public CareMetric Breathe site (/breathe) and choose Create your account. Enter your company name, work email, a 12-character password, and a plan; that provisions your workspace and your first Owner login. Verify the emailed link, then sign in at /admin/sign-in and finish setup."),
-        ("Do my staff each sign up too?", "No — only the practice's first Owner self-signs-up. Everyone else is invited from the Team page and sets their own password from the invite link. Public self-signup is for shoppers (storefront accounts) and new tenants, not staff."),
+        ("Do my staff each sign up too?", "No — only the practice's first Owner self-signs-up. Everyone else is invited from the Team page and sets their own password from the invite link. Public self-signup is for patients creating their own account and for new tenants, not staff."),
         ("Why didn't I get an error when I mistyped my email?", "For security the sign-up and sign-in pages never reveal whether an address is on file — they always say “check your email.” If nothing arrives, re-check the address and try again. (Inline checks still catch an obviously malformed email or a password that's too short before you submit.)"),
         ("Can I start texting patients before I have my own phone number?", "Yes — until you provision your own number, texts and calls go out on a shared platform number and a patient's reply routes back to you automatically. Provision your own dedicated number under Phone & SMS when you want messages to come from your own line."),
         ("I don't have a logo yet — what shows on my storefront?", "Generate a one-click starter monogram from your storefront name under Storefront Branding; it's created in your browser so nothing shows blank while you source real artwork. A brand-new, unconfigured tenant otherwise shows neutral CareMetric branding, never another tenant's brand."),
@@ -1878,7 +1878,7 @@ FAQ = [
         ("Can we run telehealth visits?", "Yes — Video Visits generate a secure join link sent by SMS or email for setups and mask troubleshooting."),
         ("How do we message many patients at once?", "Bulk Campaigns — build an audience with filters, sanity-check the recipient count, and send a batch SMS or email. The Alert Library handles curated one-off alerts."),
         ("How does a patient use the AI mask fitter?", "The fitter is invitation-only. Staff send the patient a signed link by text or email from Orders & Shop → Fitter Invites; the patient opens it, runs the camera-based fitting in their browser, and the completed result attaches back to their chart (or waits in a holding area for staff to attach). The public storefront's “get fitted” button routes to an invitation-required explainer rather than the fitter."),
-        ("Can patients buy a membership themselves?", "Yes — when membership pricing is configured, patients can join a cash-pay tier (Monthly Unlimited or Quarterly Unlimited) right from their account page; it's a Stripe subscription, and their membership tier is set automatically once the subscription is active. Staff can still set or adjust a tier from the customer record. If no membership pricing is set up, the option simply doesn't appear."),
+        ("Can patients buy anything from us directly?", "No. The platform is insurance-only: patients are supplied against their plan and are never charged a card, so there is no cart, no checkout, and no membership to buy. Whatever their plan leaves them owing appears on their billing page, and your billing team collects it. Cash-pay memberships and card-on-file were retired."),
         ("Do post-purchase review requests go out automatically?", "They can. The review request can always be sent on demand from the Reviews worklist (“Send due”), and once the automatic sweep is enabled it goes out on its own about two weeks after delivery — one request per order, only to customers who haven't opted out."),
         ("Can a returned item go back into inventory?", "Optionally. When you mark a return received you can choose to restock it, which adds the quantities back to tracked stock. It's off by default because most DME consumables (opened masks and supplies) aren't resaleable — so you opt in only for genuinely resaleable items."),
     ]),
@@ -1910,7 +1910,7 @@ FAQ = [
         ("Can patients set it and forget it?", "Yes — they subscribe once and auto-ship keeps supplies arriving on the cadence their insurance allows."),
     ]),
     ("In-person / counter orders", [
-        ("How do I ring up a walk-in?", "Front Desk — look up or create the customer, add products, choose cash or bill-to-insurance, and complete the sale without going through the public storefront checkout."),
+        ("Someone walks in wanting a mask — what now?", "Create or open their patient record, verify the benefit from Billing → Verify insurance, and raise the order against their plan. There is no counter sale: everything is billed to insurance, so a walk-in follows the same path as any other patient, just faster."),
         ("Can I print a receipt and a shipping label?", "Yes — print a receipt and, if you're shipping it, a label with the patient's address merged in and tracking auto-filled back onto the order."),
         ("Who is allowed to take counter orders?", "Anyone with the orders.create permission — front-line CSRs and up."),
     ]),
@@ -2336,7 +2336,7 @@ def make_story(toc_entries):
     story.append(feature_table([
         ("Administrator", "Owner/admin of the practice — setup, team, controls, integrations, and full oversight of every area. The <b>Owner</b> is the top tier (team management + system secrets); <b>Admin</b> is broad management below that."),
         ("Biller", "Revenue-cycle staff — the entire Billing area (eligibility, claims, A/R, ERA, clearinghouse) plus patient billing context."),
-        ("Customer Service Rep", "Front-line patient service — the inbox, front desk, scheduling, patients, orders, shop, and outreach."),
+        ("Customer Service Rep", "Front-line patient service — the inbox, scheduling, patients, fit requests, orders, and outreach."),
         ("Respiratory Therapist", "Clinical staff — therapy monitoring, clinical documentation, interventions, and provider-ready reports."),
     ]))
     story.append(Spacer(1, 6))
@@ -2376,15 +2376,15 @@ def make_story(toc_entries):
     story += h1("The Storefront & End-to-End Fulfillment")
     story.append(Paragraph(STOREFRONT_INTRO, S_LEAD))
     story += shot("storefront-how-it-works",
-                  "The storefront walks a patient from mask fitting to checkout "
-                  "— one front door for fit, shop, and resupply.")
+                  "The storefront walks a patient from mask fitting to a "
+                  "request your team works — one front door for fit and resupply.")
     for name, para in STOREFRONT_JOURNEY:
         story.append(Paragraph(
             "<b><font color=\"%s\">%s.</font></b> %s"
             % (hexc(NAVY_DEEP), name, para), S_BODY))
-    story += shot("csr-shop-orders",
-                  "The order queue — paid orders ready to fulfill, ship, and "
-                  "track, all in the same system that bills them.")
+    story += shot("csr-fitter-orders",
+                  "The order queue — approved orders ready to fulfill, ship, "
+                  "and track, all in the same system that bills them.")
     story.append(PageBreak())
 
     # ---- Paperless paperwork: referrals, eFax, e-signature ----
@@ -2640,8 +2640,8 @@ def make_story(toc_entries):
         "biller": ("biller-prior-auths",
                    "The Prior Auths worklist — at-risk SLAs and auths "
                    "expiring soon."),
-        "csr": ("csr-front-desk",
-                "Front Desk — ring up a walk-in counter order."),
+        "csr": ("csr-fit-requests",
+                "Fit Requests — finished fittings waiting for an order."),
         "rt": ("rt-clinical",
                "Clinical Encounters — document the care you provided."),
     }
