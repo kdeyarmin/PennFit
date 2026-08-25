@@ -79,7 +79,7 @@ export interface InviteArgs {
    * account-details block (e.g. "Customer service rep"). Callers with
    * a granular role catalog should pass the same label their UI
    * renders; when omitted, a default is derived from the coarse
-   * `role` ("Super admin" / "Customer service rep").
+   * `role` ("Owner" / "Customer service rep").
    */
   roleLabel?: string;
   /**
@@ -109,13 +109,35 @@ export interface InviteArgs {
    */
   initialPassword?: string;
   /**
+   * One sentence describing what the role is responsible for, e.g.
+   * "Own the revenue cycle — eligibility, claims, A/R, and getting
+   * every dollar collected." Rendered as the email's "Your role"
+   * section. Omitted → the section is skipped.
+   */
+  roleSummary?: string;
+  /**
+   * What the new member will actually do day to day, as bullets under
+   * the role summary. The caller owns this copy — this package knows
+   * nothing about the product's role catalog.
+   */
+  roleHighlights?: ReadonlyArray<string>;
+  /**
+   * Display name of the person who sent the invitation ("Dana Ruiz has
+   * invited you…"), so a new hire can see who to ask. Omitted/null →
+   * the neutral "You've been invited…".
+   */
+  invitedByName?: string | null;
+  /**
    * Optional files attached to the invite email — used to ship the
    * new team member their role-specific getting-started help
    * documents. Ignored on the `initialPassword` path (no email is
    * sent). Forwarded verbatim to `deps.email`; a host whose wired
    * sender drops attachments simply sends the email without them.
+   *
+   * A `description` (one line saying what the document is) is listed
+   * beside the filename in the email body and ignored by the sender.
    */
-  attachments?: ReadonlyArray<EmailAttachment>;
+  attachments?: ReadonlyArray<EmailAttachment & { description?: string }>;
 }
 
 /**
@@ -324,8 +346,14 @@ export async function inviteTeamMember(
       displayName: args.displayName,
       roleLabel:
         args.roleLabel ??
-        (args.role === "admin" ? "Super admin" : "Customer service rep"),
-      attachmentFilenames: args.attachments?.map((a) => a.filename),
+        (args.role === "admin" ? "Owner" : "Customer service rep"),
+      roleSummary: args.roleSummary,
+      roleHighlights: args.roleHighlights,
+      invitedByName: args.invitedByName,
+      attachments: args.attachments?.map((a) => ({
+        filename: a.filename,
+        description: a.description,
+      })),
     },
   );
 

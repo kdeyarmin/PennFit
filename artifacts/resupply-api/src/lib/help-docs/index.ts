@@ -12,7 +12,13 @@ export {
   buildInviteHelpAttachments,
   __clearHelpDocCache,
   type HelpDocAudience,
+  type InviteHelpAttachment,
 } from "./render";
+export {
+  staffRoleProfile,
+  type StaffRoleFamily,
+  type StaffRoleProfile,
+} from "./roles";
 export {
   CUSTOMER_SERVICE_MANUAL_FILENAME,
   loadCustomerServiceManual,
