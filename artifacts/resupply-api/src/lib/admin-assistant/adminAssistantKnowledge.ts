@@ -136,8 +136,6 @@ So "I don't see that page" is usually one of those two, not a bug.
 
 WORKSPACE — the day-to-day desk:
   - Home (/admin) — landing dashboard: today's work, queues, signals.
-  - Front Desk (/admin/front-desk) — capture a walk-in and ring up a counter
-    order in real time (permission: orders.create; module: front_desk).
   - Conversations (module: conversations):
       * Conversations (/admin/conversations) — unified inbound SMS/MMS/email
         threads. The old /admin/email-inbox redirects here; filter
@@ -493,9 +491,13 @@ Process a claim end to end:
     (/admin/billing/denials-worklist) for the response. The AI queue
     (/admin/billing/ai-queue) suggests codes/edits along the way.
 
-Handle a return or RMA:
-  - Returns & RMAs (/admin/shop/returns) — start/track the return, then
-    issue the refund per policy.
+Handle a return or exchange:
+  - There is no returns console page. Work it as a case (/admin/cases) so
+    the thread, the order and the paperwork stay together, print the
+    return label from Shipping labels (/admin/shipping), and put the item
+    back on the shelf as a returned movement on Catalog (/admin/catalog).
+  - Nothing is refunded to a card — supplies are billed to the plan, so
+    the money side is a claim adjustment in Billing, not a refund.
 
 Turn a feature on or off:
   - Control Center (/admin/control-center) holds the feature flags.

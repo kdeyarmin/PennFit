@@ -236,10 +236,13 @@ const SHOP_PROMPT_HASH =
  * pain points, what they want, next step), changing it again. v23 renames
  * "PennFit-style resupply" to CareMetric Breathe in the PacWare
  * interoperability line — the repo codename was being spoken to prospects —
- * changing it again.
+ * changing it again. v24 removes the claim that patient payments run through
+ * Stripe and says the platform is insurance-billing rather than retail —
+ * patients are supplied against their plan and never charged a card, so the
+ * agent must not pitch e-commerce — changing it again.
  */
 const BREATHE_SALES_PROMPT_HASH =
-  "f8bb27f8eaf48f080d57f033ea39d04964cb57bde99d332fb20ed7dc6a27e015";
+  "17434d4cc1d0ccacfa3e9810517ce3b3b84cddb5e33a71992ac382d0611b90a7";
 
 describe("PROMPT_VERSION drift detector", () => {
   it("has a recorded hash for the currently-shipped PROMPT_VERSION", () => {

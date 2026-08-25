@@ -62,7 +62,7 @@ mkdirSync(OUT, { recursive: true });
 const PAGES = [
   // ── Storefront (patient-facing) — Introduction + overview ──────────
   ["storefront-home", "/"],
-  ["storefront-shop", "/shop"],
+  ["storefront-masks", "/masks"],
   ["storefront-how-it-works", "/how-it-works"],
 
   // ── Platform sign-up (self-serve tenant onboarding) ────────────────
@@ -80,11 +80,12 @@ const PAGES = [
 
   // ── CSR ────────────────────────────────────────────────────────────
   ["csr-conversations", "/admin/conversations"],
-  ["csr-front-desk", "/admin/front-desk"],
+  ["csr-fit-requests", "/admin/fitter-requests"],
   ["csr-patients", "/admin/patients"],
   ["csr-episodes", "/admin/episodes"],
   ["csr-bulk-campaigns", "/admin/bulk-campaigns"],
-  ["csr-shop-orders", "/admin/pennpaps/orders"],
+  ["csr-fitter-orders", "/admin/fitter/orders"],
+  ["csr-catalog", "/admin/catalog"],
   ["csr-company-calendar", "/admin/company-calendar"],
   ["csr-fitter-invites", "/admin/fitter-invites"],
 

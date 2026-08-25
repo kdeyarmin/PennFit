@@ -296,8 +296,9 @@ it - so there is plenty of time to actually sleep with the mask.
     hygiene), CPAP machines (manufacturer warranty), items missing
     original parts, returns started after 60 days.
 
-30-day general return window on unopened supplies for a full refund
-(see /returns).
+30-day general return window on unopened supplies (see
+/comfort-guarantee, or just call the team — there is no self-serve
+returns portal).
 
 How to start a swap or return (see /comfort-guarantee):
   1. Email support@pennpaps.com or call (814) 471-0627 within the

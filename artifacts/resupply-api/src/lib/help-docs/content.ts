@@ -64,8 +64,24 @@ const PATIENT_PORTAL_GUIDE = (company: string): HelpDoc => ({
         "See when your CPAP mask, cushions, tubing, and filters are due for replacement.",
         "Confirm or reschedule a resupply shipment with a single tap.",
         "Review your past and pending orders and their delivery status.",
+        "See what your insurance was billed — statements, any open balance, and your billing history.",
         "Upload your insurance card or a prescription so we can keep your file complete.",
         "Update your shipping address, phone number, and how you'd like us to reach you.",
+        "Message our team directly and keep the whole thread in one place.",
+      ],
+    },
+    {
+      heading: "How your supplies are paid for",
+      paragraphs: [
+        `Everything ${company} sends you is billed to your insurance plan — there is no store, no card to keep on file, and nothing to check out. We confirm what your plan covers before anything ships, so you know where you stand first.`,
+        "If your plan leaves you owing something, it appears in your billing history in the portal, and you can always ask us to walk you through it.",
+      ],
+    },
+    {
+      heading: "Need a new mask?",
+      paragraphs: [
+        "If your mask no longer fits or you'd like to try a different style, you can run our virtual fitter from your phone — it measures your face on the device itself, so no photos are ever sent to us, and it suggests the masks most likely to suit you.",
+        "At the end you either send us your details or ask us to call. A member of our team then checks your coverage, sorts out the prescription if one is needed, and places the order for you — usually within one business day.",
       ],
     },
     {

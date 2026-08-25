@@ -34,7 +34,7 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
         items: [
           "Acquire — a mask-fitting link you can send to anyone, a storefront, and inbound referral intake.",
           "Fit — a guided phone-camera scan that produces measurements, a ranked mask recommendation, and a safety screen, reviewed by your staff before anything ships.",
-          "Order — storefront checkout, counter sales, fitter-generated requests, and recurring resupply subscriptions.",
+          "Order — an insurance order raised from a fit request, from the resupply engine, or by a CSR on the patient's behalf. Never a card sale.",
           "Fulfill — pick, substitute deliberately, buy and print labels, and track delivery.",
           "Bill — eligibility, prior authorization, claim submission, remittance posting, denials, and patient balances.",
           "Retain — therapy-usage monitoring, adherence coaching, resupply reminders, and satisfaction measurement.",
