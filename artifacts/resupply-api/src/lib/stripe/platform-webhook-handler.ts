@@ -8,6 +8,12 @@
 // insurance only, so there is no patient-facing Checkout, Connect account,
 // or customer webhook anymore.
 //
+// Works in BOTH billing modes: `dedicated` (STRIPE_PLATFORM_SECRET_KEY set,
+// its own signing secret) and `shared` (the legacy STRIPE_SECRET_KEY account
+// still carrying platform billing). Shared mode is a supported configuration
+// and this is the only handler left that reconciles it, so it must not be
+// turned away — see the guard below.
+//
 // Raw-body contract: registered in app.ts BEFORE express.json() because
 // Stripe's signature is computed over the exact bytes Stripe sent.
 
@@ -123,20 +129,33 @@ export const stripePlatformBillingWebhookHandler: RequestHandler = async (
   res: Response,
 ) => {
   const config = readPlatformBillingStripeConfigOrNull();
-  if (!config || config.mode !== "dedicated" || !config.webhookSigningSecret) {
+  // SHARED MODE IS SUPPORTED, and refusing it here would silently break
+  // billing. `readPlatformBillingStripeConfigOrNull` deliberately falls back
+  // to STRIPE_SECRET_KEY when the dedicated key is unset, platform Checkout
+  // runs on that account, and preflight explicitly permits the arrangement.
+  // Until the cash-pay removal there was a second handler on the patient
+  // webhook that dispatched these same events; it is gone, so this endpoint
+  // is now the ONLY thing that reconciles a tenant's subscription. Gating it
+  // on `mode === "dedicated"` left shared-mode deployments creating checkout
+  // sessions that never reconcile — invoices paid, nothing marked paid.
+  //
+  // What we still require is a signing secret: without one there is no way
+  // to verify the delivery, and an unverified billing event must never be
+  // acted on.
+  if (!config || !config.webhookSigningSecret) {
     req.log?.warn(
       { hasConfig: !!config, mode: config?.mode ?? null },
-      "platform-billing stripe webhook hit while not in dedicated mode / not configured",
+      "platform-billing stripe webhook hit while unconfigured (no key or no signing secret)",
     );
-    // 503 in prod so a misconfigured dedicated webhook surfaces loudly via
-    // Stripe's retry alerts; 200 elsewhere so a stray delivery doesn't burn
-    // the retry budget on preview/dev.
+    // 503 in prod so the misconfiguration surfaces loudly via Stripe's retry
+    // alerts; 200 elsewhere so a stray delivery doesn't burn the retry budget
+    // on preview/dev.
     if (process.env.NODE_ENV === "production") {
       res.status(503).json({ error: "platform_billing_webhook_unconfigured" });
     } else {
       res
         .status(200)
-        .json({ ok: true, ignored: "platform_billing_not_dedicated" });
+        .json({ ok: true, ignored: "platform_billing_unconfigured" });
     }
     return;
   }

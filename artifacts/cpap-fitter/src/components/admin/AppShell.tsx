@@ -606,6 +606,15 @@ export const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         requiredPermission: "inventory.read",
       },
       {
+        label: "Backorders",
+        requiredFeature: "module.inventory",
+        icon: AlertOctagon,
+        href: "/admin/shop/backorders",
+        matchPrefix: "/admin/shop/backorders",
+        hint: "Mark a SKU out of stock and manage resupply substitution rules — read by the insurance fulfillment path",
+        requiredPermission: "returns.manage",
+      },
+      {
         label: "Orders",
         icon: ShoppingBag,
         hint: "Fulfillment — fitter requests and shipping labels",

@@ -381,13 +381,27 @@ export function OrderSign() {
                 </tr>
               ))}
               <tr>
-                <td className="pt-3 font-semibold text-slate-900">Total due</td>
+                <td className="pt-3 font-semibold text-slate-900">
+                  Billed to insurance
+                </td>
                 <td className="pt-3 text-right text-lg font-bold text-slate-900 whitespace-nowrap">
                   {total}
                 </td>
               </tr>
             </tbody>
           </table>
+          {/*
+            Say plainly that this figure is not a bill. It is what we submit
+            to the payer; what the patient ultimately owes is whatever the
+            plan leaves after adjudication, which has not happened yet.
+            Without this line the total reads as an amount due, and signing
+            reads as agreeing to pay it.
+          */}
+          <p className="mt-3 text-xs text-slate-500">
+            This is the amount we bill your insurance — not a charge to you.
+            Your share, if any, is set by your plan once the claim is processed,
+            and you&apos;ll receive a statement then.
+          </p>
         </CardContent>
       </Card>
 
@@ -443,7 +457,7 @@ export function OrderSign() {
                 {documents.length > 0
                   ? "adopt this as your legal electronic signature on the documents above and "
                   : ""}
-                authorize this order for the total shown.
+                authorize this order.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-5">

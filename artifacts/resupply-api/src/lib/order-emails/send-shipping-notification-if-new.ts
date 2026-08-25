@@ -220,7 +220,12 @@ export async function sendShippingNotificationIfNew(args: {
         const counts = await sendPushToCustomer(orgId, claimedRow.customer_id, {
           title: `Your ${pushBrand.storefrontName} order shipped`,
           body: `${claimedRow.tracking_carrier} · ${claimedRow.tracking_number}`,
-          url: "/account/orders",
+          // The retail Orders tab went with the cash-pay storefront, so
+          // /account/orders no longer resolves to anything (its hash
+          // redirect falls through to Overview). Point at the account
+          // itself; the carrier and tracking number are already in the
+          // body above, which is the actionable part of this push.
+          url: "/account",
           tag: `shop_order_shipped:${claimedRow.id}`,
         });
         if (counts.delivered + counts.expired + counts.transient > 0) {

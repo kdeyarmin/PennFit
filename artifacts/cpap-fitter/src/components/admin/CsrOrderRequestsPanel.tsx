@@ -38,23 +38,17 @@ function formatUsd(cents: number): string {
   return `$${(cents / 100).toFixed(2)}`;
 }
 
-type DerivedStatus =
-  | "sent"
-  | "viewed"
-  | "signed"
-  | "paid"
-  | "refunded"
-  | "canceled"
-  | "expired";
+type DerivedStatus = "sent" | "viewed" | "signed" | "canceled" | "expired";
 
 function deriveStatus(r: CsrOrderRequestSummary): DerivedStatus {
   if (r.status === "canceled") return "canceled";
-  if (r.payment.status === "paid") return "paid";
-  if (r.payment.status === "refunded") return "refunded";
+  // Signed is terminal: nothing is charged, and the order bills to the
+  // patient's insurance from here. A signed order is never "expired" — the
+  // link's expiry only governs whether it can still BE signed.
+  if (r.signedAt) return "signed";
   if (r.expiresAt && new Date(r.expiresAt).getTime() < Date.now()) {
     return "expired";
   }
-  if (r.signedAt) return "signed";
   if (r.status === "viewed") return "viewed";
   return "sent";
 }
@@ -62,9 +56,7 @@ function deriveStatus(r: CsrOrderRequestSummary): DerivedStatus {
 const STATUS_LABEL: Record<DerivedStatus, string> = {
   sent: "Sent",
   viewed: "Viewed",
-  signed: "Signed — awaiting payment",
-  paid: "Paid",
-  refunded: "Refunded",
+  signed: "Signed",
   canceled: "Canceled",
   expired: "Expired",
 };
@@ -75,9 +67,7 @@ const STATUS_TONE: Record<
 > = {
   sent: "outline",
   viewed: "secondary",
-  signed: "secondary",
-  paid: "default",
-  refunded: "destructive",
+  signed: "default",
   canceled: "destructive",
   expired: "destructive",
 };
@@ -204,7 +194,7 @@ export function CsrOrderRequestsPanel() {
                   <tr>
                     <th className="text-left py-3 px-4">Reference</th>
                     <th className="text-left py-3 px-4">Customer</th>
-                    <th className="text-left py-3 px-4">Total</th>
+                    <th className="text-left py-3 px-4">Billed to insurance</th>
                     <th className="text-left py-3 px-4">Paperwork</th>
                     <th className="text-left py-3 px-4">Status</th>
                     <th className="text-left py-3 px-4">Sent</th>

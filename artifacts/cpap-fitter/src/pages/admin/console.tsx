@@ -222,6 +222,11 @@ const AdminLtvCacPage = lazyWithRetry(() =>
     default: m.AdminLtvCacPage,
   })),
 );
+const AdminBackordersPage = lazyWithRetry(() =>
+  import("@/pages/admin/admin-backorders").then((m) => ({
+    default: m.AdminBackordersPage,
+  })),
+);
 const AdminCatalogPage = lazyWithRetry(() =>
   import("@/pages/admin/admin-catalog").then((m) => ({
     default: m.AdminCatalogPage,
@@ -1363,6 +1368,10 @@ function AdminConsole() {
                 below redirect so existing bookmarks keep working — the
                 same courtesy the /resupply/* → /admin/* move got. */}
             <Route path="/admin/catalog" component={AdminCatalogPage} />
+            <Route
+              path="/admin/shop/backorders"
+              component={AdminBackordersPage}
+            />
             <Route path="/admin/fitter/orders" component={FitterOrdersPage} />
             <Route
               path="/admin/fitter/orders/:id"

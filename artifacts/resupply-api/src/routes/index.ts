@@ -153,6 +153,7 @@ import priorAuthRenewalRouter from "./admin/prior-auth-renewal.js";
 import manualClaimRouter from "./admin/manual-claim.js";
 import billingTimelyFilingRouter from "./admin/billing-timely-filing.js";
 import billingDashboardRouter from "./admin/billing-dashboard.js";
+import shopBackordersRouter from "./admin/shop-backorders.js";
 import catalogRouter from "./admin/catalog.js";
 import productHcpcsMapRouter from "./admin/product-hcpcs-map.js";
 import payerModifierRulesRouter from "./admin/payer-modifier-rules.js";
@@ -559,6 +560,11 @@ router.use(productHcpcsMapRouter);
 // Reads gate on `inventory.read`, writes on `admin.tools.manage`; stock only
 // moves through the audited adjust RPC.
 router.use(catalogRouter);
+// /admin/shop/backorders/* — mark a SKU out of stock and manage the
+// substitution rules. NOT retail: `resolveFulfillmentSku` reads this state
+// on the INSURANCE fulfillment path, so without this surface a stale
+// backorder would keep substituting away from a SKU with no way to clear it.
+router.use(shopBackordersRouter);
 // /admin/payer-modifier-rules/* — payer + HCPCS auto-attach modifier
 // rules (KX, KH, KI, RR, NU…) evaluated by the claim builder.
 router.use(payerModifierRulesRouter);

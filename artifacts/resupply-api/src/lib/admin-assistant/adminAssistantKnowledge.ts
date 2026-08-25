@@ -212,6 +212,11 @@ ORDERS & LEADS:
         with a reason (received / returned / counted / adjusted), never typed
         in as a new total, so every count has a ledgered history. Low-stock
         SKUs are badged here and emailed as a digest every 6 hours.
+      * Backorders (/admin/shop/backorders) — mark a SKU out of stock and
+        manage the resupply substitution rules (returns.manage). NOT retail:
+        the insurance fulfillment path reads this state, so an uncleared
+        backorder keeps substituting away from that SKU. Recording a receipt
+        on the Catalog page clears it automatically.
   - Orders:
       * Fitter requests (/admin/fitter/orders) — orders that came out of a fitting.
       * Shipping labels (/admin/shipping) — buy/print labels, track parcels (returns.manage).

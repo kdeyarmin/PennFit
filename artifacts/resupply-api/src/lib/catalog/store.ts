@@ -11,12 +11,9 @@
 // atomic, serialized unit. A plain UPDATE from here would lose a
 // concurrent decrement and leave the ledger disagreeing with the balance.
 
-import {
-  getOrgScopedClient,
-  type Database,
-  type OrgScopedClient,
-} from "@workspace/resupply-db";
+import { getOrgScopedClient, type Database } from "@workspace/resupply-db";
 
+import { autoClearBackorderForSku } from "../backorder/auto-clear-on-restock";
 import { DEFAULT_LOW_STOCK_THRESHOLD } from "./categories";
 
 export type ProductRow = Database["resupply"]["Tables"]["products"]["Row"];
@@ -102,18 +99,31 @@ export async function listProducts(
 
   const limit = Math.min(Math.max(opts.limit ?? 50, 1), 200);
   const offset = Math.max(opts.offset ?? 0, 0);
-  q = q.range(offset, offset + limit - 1);
 
+  // Low-stock is a derived comparison against a DEFAULTED threshold, so it
+  // cannot be expressed as a PostgREST filter without duplicating that
+  // default in SQL. It therefore has to be applied to the whole matching
+  // set, BEFORE paging: filtering a single page would silently drop every
+  // low SKU that sorted past it (reporting "no matches" on a catalog that
+  // has plenty) and would leave `total` counting unfiltered rows. Only
+  // tracked SKUs can be low, so the unpaged read is narrow.
+  if (opts.lowStockOnly) {
+    const { data, error } = await q.not("stock_count", "is", null);
+    if (error) throw error;
+    const low = ((data ?? []) as ProductRow[])
+      .map(projectProduct)
+      .filter((p) => p.lowStock)
+      .sort((a, b) => (a.stockCount ?? 0) - (b.stockCount ?? 0));
+    return {
+      products: low.slice(offset, offset + limit),
+      total: low.length,
+    };
+  }
+
+  q = q.range(offset, offset + limit - 1);
   const { data, error, count } = await q;
   if (error) throw error;
-
-  let products = ((data ?? []) as ProductRow[]).map(projectProduct);
-  // Low-stock is a derived comparison against a defaulted threshold, so it
-  // can't be expressed as a PostgREST filter without duplicating the
-  // default in SQL. Filter after projection; the page bound above keeps
-  // the set small.
-  if (opts.lowStockOnly) products = products.filter((p) => p.lowStock);
-
+  const products = ((data ?? []) as ProductRow[]).map(projectProduct);
   return { products, total: count ?? products.length };
 }
 
@@ -186,10 +196,22 @@ export async function upsertProduct(
     return projectProduct(data as ProductRow);
   }
 
+  // Opening balance is applied through the RPC, not written inline.
+  //
+  // Inserting `stock_count = N` here and appending the ledger row in a
+  // second PostgREST request is not atomic: if the ledger write fails the
+  // SKU is left counted with no movement explaining it, and a retry takes
+  // the "already exists" branch above and never repairs the gap — a
+  // permanently unexplained number, which is exactly what the ledger is
+  // for. So the row is created EMPTY (0 when tracked, NULL when not), and
+  // the opening count is a normal audited movement. If that second step
+  // fails the SKU simply reads 0-with-no-history, which is true, and the
+  // operator repairs it by recording the count like any other movement.
   const opening = input.openingStock ?? null;
+  const tracked = opening !== null;
   const { data, error } = await db
     .from("products")
-    .insert({ sku: input.sku, ...fields, stock_count: opening })
+    .insert({ sku: input.sku, ...fields, stock_count: tracked ? 0 : null })
     .select("*")
     .limit(1)
     .maybeSingle();
@@ -197,17 +219,18 @@ export async function upsertProduct(
   if (!data)
     throw new Error(`products insert returned no row for ${input.sku}`);
 
-  // Record the opening balance so the ledger explains the number from the
-  // very first movement rather than starting mid-story.
-  if (opening !== null && opening > 0) {
-    await writeLedgerRow(db, {
-      sku: input.sku,
-      delta: opening,
-      balanceAfter: opening,
-      reason: "count",
-      note: "Opening balance",
+  if (tracked && opening > 0) {
+    const balance = await adjustStock(
+      orgId,
+      {
+        sku: input.sku,
+        delta: opening,
+        reason: "count",
+        note: "Opening balance",
+      },
       actorEmail,
-    });
+    );
+    return projectProduct({ ...(data as ProductRow), stock_count: balance });
   }
 
   return projectProduct(data as ProductRow);
@@ -259,29 +282,21 @@ export async function adjustStock(
     if (/negative/i.test(msg)) throw new InsufficientStockError(msg);
     throw error;
   }
-  return (data as number | null) ?? null;
-}
 
-async function writeLedgerRow(
-  db: OrgScopedClient,
-  row: {
-    sku: string;
-    delta: number;
-    balanceAfter: number | null;
-    reason: StockReason;
-    note?: string | null;
-    actorEmail: string | null;
-  },
-): Promise<void> {
-  const { error } = await db.from("product_stock_ledger").insert({
-    sku: row.sku,
-    delta: row.delta,
-    balance_after: row.balanceAfter,
-    reason: row.reason,
-    note: row.note ?? null,
-    actor_email: row.actorEmail,
-  });
-  if (error) throw error;
+  const balance = (data as number | null) ?? null;
+
+  // Restock closes the loop on a backorder. `resolveFulfillmentSku` treats
+  // an uncleared `shop_backorders` row as authoritative on the INSURANCE
+  // fulfillment path, so a SKU that is physically back but still flagged
+  // keeps getting substituted away. This is the same transition the old
+  // Stripe-metadata inventory editor hooked; it belongs on the RPC now that
+  // the RPC is the only way stock moves. Fail-soft by contract — it never
+  // throws, and a clear failure must not undo a recorded movement.
+  if (input.delta > 0 && balance !== null && balance > 0) {
+    await autoClearBackorderForSku({ orgId, sku: input.sku });
+  }
+
+  return balance;
 }
 
 export interface LedgerEntry {

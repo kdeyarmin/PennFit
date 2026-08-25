@@ -14,6 +14,7 @@ import fitterCompleteRouter from "./fitter-complete";
 import fitterInviteRouter from "./fitter-invite";
 import quizLeadRouter from "./quiz-lead";
 import insuranceEstimateRouter from "./insurance-estimate";
+import npsResponseRouter from "./nps-response";
 import maskFitResponseRouter from "./mask-fit-response";
 import educationVideosRouter from "./education-videos";
 import meRouter from "./me";
@@ -147,6 +148,10 @@ router.use(quizLeadRouter);
 // source='insurance_quote' and emails a written estimate.
 router.use(insuranceEstimateRouter);
 // /shop/orders/mask-fit — public mask-fit micro-survey capture (RT #22a).
+// /shop/orders/nps — post-delivery NPS capture. The delivery-followup job
+// still emails signed rating links for historical orders, so this endpoint
+// has to stay reachable or those links 404.
+router.use(npsResponseRouter);
 router.use(maskFitResponseRouter);
 // /shop/education-videos — public education-video library (RT #25).
 router.use(educationVideosRouter);

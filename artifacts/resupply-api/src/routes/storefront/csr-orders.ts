@@ -27,6 +27,7 @@ import {
   type OrgScopedClient,
 } from "@workspace/resupply-db";
 
+import { dispenseSignedCsrOrder } from "../../lib/csr-order/dispense-on-sign";
 import {
   parseOrderDocuments,
   parseOrderItems,
@@ -299,6 +300,14 @@ router.post("/csr-orders/sign", mutateLimiter, async (req, res) => {
       "csr_order.signed audit write failed",
     );
   });
+
+  // The signature is the commit point, so it is where the order enters the
+  // insurance pipeline (fulfillments → claim-builder → Office Ally). Awaited
+  // rather than fired-and-forgotten so a fulfillment exists before the
+  // patient is told they're done, but non-throwing by contract: the
+  // signature is already persisted, and a downstream hiccup must not turn a
+  // completed signing into an error page.
+  await dispenseSignedCsrOrder(supabase, order.id);
 
   res.json({ status: "signed", signedAt: nowIso });
 });

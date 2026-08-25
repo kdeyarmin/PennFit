@@ -61,7 +61,9 @@ const REF_KIND_META: Record<
   },
   order: {
     placeholder: "Order id",
-    find: { label: "Shop orders", href: "/admin/shop/orders" },
+    // The retail order book retired with cash-pay; there is no list to
+    // jump to for an order id any more.
+    find: null,
   },
   followup: { placeholder: "Follow-up id", find: null },
   fax: {

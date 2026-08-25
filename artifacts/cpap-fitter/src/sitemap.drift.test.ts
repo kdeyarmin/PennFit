@@ -68,6 +68,7 @@ const EXCLUDED_EXACT = new Set([
   "/results",
   "/fit-request",
   "/order",
+  "/nps",
   "/order-success",
   // Tokenized / signed-link landings — useless (or an error) without the
   // signed query token.

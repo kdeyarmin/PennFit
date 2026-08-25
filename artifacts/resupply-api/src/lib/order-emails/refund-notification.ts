@@ -156,7 +156,9 @@ export async function sendRefundNotificationIfNew(args: {
         const counts = await sendPushToCustomer(orgId, claimedRow.customer_id, {
           title: `Refund issued — ${brand.storefrontName}`,
           body: "A refund has been issued to your original payment method.",
-          url: "/account/orders",
+          // The retail Orders tab went with the cash-pay storefront, so
+          // /account/orders no longer resolves. Point at the account itself.
+          url: "/account",
           tag: `shop_order_refund:${claimedRow.id}`,
         });
         if (counts.delivered + counts.expired + counts.transient > 0) {

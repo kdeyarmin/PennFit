@@ -613,7 +613,7 @@ async function recordRefillConfirmation(
   }
 }
 
-async function ensureFulfillments(
+export async function ensureFulfillments(
   supabase: OrgScopedClient,
   args: { patientId: string; episodeId: string; itemSku: string },
 ): Promise<string[]> {

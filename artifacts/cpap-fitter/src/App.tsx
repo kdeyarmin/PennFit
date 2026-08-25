@@ -51,6 +51,9 @@ const InsuranceEstimate = lazyWithRetry(() =>
     default: m.InsuranceEstimate,
   })),
 );
+const NpsLanding = lazyWithRetry(() =>
+  import("@/pages/nps").then((m) => ({ default: m.NpsLanding })),
+);
 const TrackOrder = lazyWithRetry(() =>
   import("@/pages/track-order").then((m) => ({ default: m.TrackOrder })),
 );
@@ -1212,6 +1215,7 @@ function PatientRouter() {
             <Route path="/insurance" component={Insurance} />
             <Route path="/insurance/estimate" component={InsuranceEstimate} />
             <Route path="/track-order" component={TrackOrder} />
+            <Route path="/nps" component={NpsLanding} />
             <Route path="/mask-fit" component={MaskFitLanding} />
             {/* Push-notification deep links. The backend sends pushes
                 with url=/account/orders (shipping updates) and
@@ -1221,15 +1225,19 @@ function PatientRouter() {
             <Route path="/account/insights">
               {() => <AccountHashRedirect hash="insights" />}
             </Route>
+            {/* Legacy deep link: the retail Orders tab retired with
+                cash-pay, but pushes sent before this deploy still carry
+                the URL. Land them on the account rather than a hash that
+                resolves to nothing. */}
             <Route path="/account/orders">
-              {() => <AccountHashRedirect hash="orders" />}
+              {() => <Redirect to="/account" />}
             </Route>
             <Route path="/account" component={GuardedAccount} />
             <Route path="/account/billing" component={GuardedAccountBilling} />
             <Route path="/reminders" component={Reminders} />
             <Route path="/reminders/manage" component={RemindersManage} />
             <Route path="/patient-packet-sign" component={PatientPacketSign} />
-            {/* Public token-gated "review, sign & pay" page for
+            {/* Public token-gated "review & sign" page for
                 CSR-created orders (link arrives by SMS/email; token
                 rides the query string like /patient-packet-sign). */}
             <Route path="/order-sign" component={OrderSign} />
