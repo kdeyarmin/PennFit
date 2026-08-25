@@ -25,6 +25,7 @@ const supabaseMock = installSupabaseMock();
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 import { IN_APP_MESSAGE_BODY_MAX } from "../messaging/in-app-conversation";
 import {
+  CUSTOMER_CHAT_TOOLS,
   executeCustomerChatTool,
   serializeCustomerToolResult,
   type CustomerChatToolContext,
@@ -202,162 +203,140 @@ describe("unknown tool", () => {
   });
 });
 
-describe("update_order_shipping_address", () => {
-  const ORDER_ID = "11111111-2222-3333-8444-555555555555";
-  const validArgs = {
-    orderId: ORDER_ID,
-    line1: "456 New Address Ln",
-    line2: "Suite 9",
-    city: "Philadelphia",
-    state: "pa",
-    postalCode: "19104",
-  };
-
-  it("updates the address on a paid, unshipped order and echoes city/state", async () => {
-    stageSupabaseResponse("shop_orders", "select", {
-      data: {
-        id: ORDER_ID,
-        status: "paid",
-        shipped_at: null,
-        fulfillment_method: "ship",
-      },
-    });
-    stageSupabaseResponse("shop_orders", "update", { data: { id: ORDER_ID } });
-
+describe("update_order_shipping_address is gone", () => {
+  it("is not a dispatchable tool any more", async () => {
+    // A patient address change raises a CSR compliance alert and holds
+    // the next shipment — a deliberate review step. The old tool wrote
+    // shop_orders.shipping_address_json, which no fulfillment reads, so
+    // a patient was told their address was fixed when nothing moved.
+    // Asserting the absence keeps a re-add deliberate.
     const result = await executeCustomerChatTool(
       "update_order_shipping_address",
-      validArgs,
-      makeCtx(),
-    );
-    expect(result).toEqual({
-      ok: true,
-      data: {
-        addressUpdated: true,
-        orderId: ORDER_ID,
-        city: "Philadelphia",
-        // State is normalised to uppercase.
-        state: "PA",
-      },
-    });
-    // The persisted address carries the pinned country + uppercased state.
-    const writes = getSupabaseWritePayloads("shop_orders", "update") as Array<{
-      shipping_address_json?: Record<string, unknown>;
-    }>;
-    expect(writes[0]?.shipping_address_json).toMatchObject({
-      line1: "456 New Address Ln",
-      line2: "Suite 9",
-      city: "Philadelphia",
-      state: "PA",
-      postalCode: "19104",
-      country: "US",
-    });
-  });
-
-  it("returns not_found (and never writes) for an order that isn't the caller's", async () => {
-    // IDOR guard: the customer_id filter means a foreign id selects nothing.
-    stageSupabaseResponse("shop_orders", "select", { data: null });
-
-    const result = await executeCustomerChatTool(
-      "update_order_shipping_address",
-      validArgs,
-      makeCtx(),
-    );
-    expect(result).toEqual({
-      ok: true,
-      data: { found: false, kind: "order" },
-    });
-    expect(getSupabaseCallCount("shop_orders", "update")).toBe(0);
-  });
-
-  it("refuses (no write) when the order already shipped", async () => {
-    stageSupabaseResponse("shop_orders", "select", {
-      data: {
-        id: ORDER_ID,
-        status: "paid",
-        shipped_at: "2026-04-01T00:00:00Z",
-        fulfillment_method: "ship",
-      },
-    });
-
-    const result = await executeCustomerChatTool(
-      "update_order_shipping_address",
-      validArgs,
+      { orderId: "x", line1: "1 Main", city: "Philadelphia", state: "PA" },
       makeCtx(),
     );
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error).toMatch(/already shipped/i);
-    expect(getSupabaseCallCount("shop_orders", "update")).toBe(0);
+    if (!result.ok) expect(result.error).toMatch(/unknown tool/i);
   });
 
-  it("refuses (no write) for a pickup order", async () => {
-    stageSupabaseResponse("shop_orders", "select", {
-      data: {
-        id: ORDER_ID,
-        status: "paid",
-        shipped_at: null,
-        fulfillment_method: "pickup",
-      },
+  it("is not advertised to the model", () => {
+    const names = CUSTOMER_CHAT_TOOLS.map((t) => t.function.name);
+    expect(names).not.toContain("update_order_shipping_address");
+    // …and the hand-off that replaces it is still there.
+    expect(names).toContain("escalate_to_human");
+  });
+});
+
+describe("shipment tools read the live insurance path", () => {
+  const PATIENT_ID = "99999999-8888-7777-6666-555555555555";
+
+  /** Bind the caller to exactly one patient chart. */
+  function stagePatientLink(): void {
+    stageSupabaseResponse("shop_customers", "select", {
+      data: { customer_id: "cust_123", email_lower: "pat@example.com" },
+    });
+    stageSupabaseResponse("patients", "select", {
+      data: [{ id: PATIENT_ID }],
+    });
+  }
+
+  it("get_my_recent_orders reads fulfillments, never shop_orders", async () => {
+    stagePatientLink();
+    stageSupabaseResponse("fulfillments", "select", {
+      data: [
+        {
+          id: "ful_1",
+          item_sku: "A7032",
+          quantity: "2",
+          status: "queued",
+          shipped_at: null,
+          delivered_at: null,
+          created_at: "2026-08-01T00:00:00Z",
+          substituted_from_sku: null,
+        },
+      ],
     });
 
     const result = await executeCustomerChatTool(
-      "update_order_shipping_address",
-      validArgs,
+      "get_my_recent_orders",
+      {},
       makeCtx(),
     );
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error).toMatch(/pickup/i);
-    expect(getSupabaseCallCount("shop_orders", "update")).toBe(0);
-  });
-
-  it("refuses (no write) when the order isn't paid", async () => {
-    stageSupabaseResponse("shop_orders", "select", {
-      data: {
-        id: ORDER_ID,
-        status: "pending",
-        shipped_at: null,
-        fulfillment_method: "ship",
-      },
-    });
-
-    const result = await executeCustomerChatTool(
-      "update_order_shipping_address",
-      validArgs,
-      makeCtx(),
-    );
-    expect(result.ok).toBe(false);
-    expect(getSupabaseCallCount("shop_orders", "update")).toBe(0);
-  });
-
-  it("reports a shipped-in-race when the guarded update matches no row", async () => {
-    stageSupabaseResponse("shop_orders", "select", {
-      data: {
-        id: ORDER_ID,
-        status: "paid",
-        shipped_at: null,
-        fulfillment_method: "ship",
-      },
-    });
-    // UPDATE ... WHERE shipped_at IS NULL matched 0 rows (shipped mid-flight).
-    stageSupabaseResponse("shop_orders", "update", { data: null });
-
-    const result = await executeCustomerChatTool(
-      "update_order_shipping_address",
-      validArgs,
-      makeCtx(),
-    );
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error).toMatch(/just shipped/i);
-  });
-
-  it("rejects invalid arguments without touching the database", async () => {
-    const result = await executeCustomerChatTool(
-      "update_order_shipping_address",
-      { orderId: ORDER_ID, line1: "1 Main" }, // missing city/state/postalCode
-      makeCtx(),
-    );
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error).toMatch(/invalid arguments/i);
+    expect(result.ok).toBe(true);
+    expect(getSupabaseCallCount("fulfillments", "select")).toBe(1);
     expect(getSupabaseCallCount("shop_orders", "select")).toBe(0);
-    expect(getSupabaseCallCount("shop_orders", "update")).toBe(0);
+  });
+
+  it("reports a queued row as with_warehouse, not as 'not shipped'", async () => {
+    stagePatientLink();
+    stageSupabaseResponse("fulfillments", "select", {
+      data: [
+        {
+          id: "ful_1",
+          item_sku: "A7032",
+          quantity: "1",
+          status: "queued",
+          shipped_at: null,
+          delivered_at: null,
+          created_at: "2026-08-01T00:00:00Z",
+          substituted_from_sku: null,
+        },
+      ],
+    });
+
+    const result = await executeCustomerChatTool(
+      "get_my_recent_orders",
+      {},
+      makeCtx(),
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const data = result.data as { orders: Array<{ status: string }> };
+    // The warehouse stamps shipped_at out of band, so a NULL there must
+    // never be reported to a patient as "it hasn't shipped".
+    expect(data.orders[0]!.status).toBe("with_warehouse");
+  });
+
+  it("says patientLinked: false rather than 'no orders' on an ambiguous email", async () => {
+    stageSupabaseResponse("shop_customers", "select", {
+      data: { customer_id: "cust_123", email_lower: "shared@example.com" },
+    });
+    // Two charts carry the address (household share) — binding to either
+    // would read another patient's shipments to this caller.
+    stageSupabaseResponse("patients", "select", {
+      data: [{ id: PATIENT_ID }, { id: "other-patient" }],
+    });
+
+    const result = await executeCustomerChatTool(
+      "get_my_recent_orders",
+      {},
+      makeCtx(),
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const data = result.data as {
+      patientLinked: boolean;
+      orders: unknown[];
+    };
+    expect(data.patientLinked).toBe(false);
+    expect(data.orders).toEqual([]);
+    // Never went looking for shipments it could not safely attribute.
+    expect(getSupabaseCallCount("fulfillments", "select")).toBe(0);
+  });
+
+  it("get_order_details scopes the lookup to the caller's own chart", async () => {
+    stagePatientLink();
+    stageSupabaseResponse("fulfillments", "select", { data: null });
+
+    const result = await executeCustomerChatTool(
+      "get_order_details",
+      { orderId: "someone-elses-fulfillment" },
+      makeCtx(),
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // patient_id in the WHERE clause is the ownership check: a forged id
+    // simply does not match.
+    expect((result.data as { found: boolean }).found).toBe(false);
   });
 });

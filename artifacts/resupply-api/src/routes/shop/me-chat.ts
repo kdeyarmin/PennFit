@@ -50,7 +50,6 @@ import { z } from "zod";
 import {
   getOrgScopedClient,
   type CpapDeviceInfo,
-  type SavedShippingAddress,
 } from "@workspace/resupply-db";
 
 import {
@@ -261,6 +260,39 @@ function startSseHeaders(res: Response): void {
 }
 
 /**
+ * Bind the signed-in shop customer to a patient chart by email.
+ *
+ * Identical rule to routes/storefront/me-billing.ts on purpose: fetch
+ * two, and refuse unless exactly one matches. A shared household email
+ * would otherwise surface another person's shipments in this chat.
+ */
+async function resolvePatientIdForCustomer(
+  supabase: ReturnType<typeof getOrgScopedClient>,
+  customerId: string,
+): Promise<string | null> {
+  const { data: customer, error: customerErr } = await supabase
+    .from("shop_customers")
+    .select("customer_id, email_lower")
+    .eq("customer_id", customerId)
+    .limit(1)
+    .maybeSingle();
+  if (customerErr) throw customerErr;
+  if (!customer?.email_lower) return null;
+  const escapedEmail = customer.email_lower.replace(
+    /[\\%_]/g,
+    (c: string) => `\\${c}`,
+  );
+  const { data: patients, error: patientErr } = await supabase
+    .from("patients")
+    .select("id")
+    .ilike("email", escapedEmail)
+    .limit(2);
+  if (patientErr) throw patientErr;
+  if (!patients || patients.length !== 1) return null;
+  return patients[0]!.id;
+}
+
+/**
  * Pull a small, deterministic, non-PHI-heavy slice of the caller's
  * account state to inject into the system prompt. A single failure
  * here must not break the chat: any error degrades to "no context"
@@ -274,7 +306,7 @@ async function loadAccountContext(
   const empty: CustomerChatAccountContext = {
     displayName,
     memberSince: null,
-    totalPaidOrders: 0,
+    totalShipments: 0,
     latestOrder: null,
     activeSubscriptionCount: 0,
     device: null,
@@ -282,9 +314,14 @@ async function loadAccountContext(
 
   try {
     const supabase = getOrgScopedClient(orgId);
+    // Shipments live on the patient chart, not the shop customer, and
+    // there is no FK between the two — so bind by email first, using
+    // the same exactly-one-match rule as /api/me/billing-statements.
+    // A null here means "we could not identify the patient", which the
+    // context reports as no shipments rather than inventing any.
+    const patientId = await resolvePatientIdForCustomer(supabase, customerId);
     // Run the four reads in parallel — the original SQL path
-    // ran them sequentially but they're independent and indexed on
-    // customer_id.
+    // ran them sequentially but they're independent and indexed.
     const [customerRes, orderCountRes, latestOrderRes, subsRes] =
       await Promise.all([
         supabase
@@ -293,22 +330,28 @@ async function loadAccountContext(
           .eq("customer_id", customerId)
           .limit(1)
           .maybeSingle(),
-        supabase
-          .from("shop_orders")
-          .select("*", { count: "exact", head: true })
-          .eq("customer_id", customerId)
-          .eq("status", "paid"),
-        supabase
-          .from("shop_orders")
-          .select(
-            "id, stripe_session_id, amount_total_cents, paid_at, shipped_at, delivered_at, tracking_carrier, tracking_number, shipping_address_json",
-          )
-          .eq("customer_id", customerId)
-          .eq("status", "paid")
-          .order("paid_at", { ascending: false })
-          .order("id", { ascending: false })
-          .limit(1)
-          .maybeSingle(),
+        // Shipment counts + the latest shipment come from the live
+        // fulfillment path, keyed by patient. `patientId` is null when
+        // the caller's email did not resolve to exactly one chart, and
+        // both queries then return nothing rather than guessing.
+        patientId
+          ? supabase
+              .from("fulfillments")
+              .select("*", { count: "exact", head: true })
+              .eq("patient_id", patientId)
+          : Promise.resolve({ data: null, error: null, count: 0 }),
+        patientId
+          ? supabase
+              .from("fulfillments")
+              .select(
+                "id, item_sku, quantity, status, created_at, shipped_at, delivered_at",
+              )
+              .eq("patient_id", patientId)
+              .order("created_at", { ascending: false })
+              .order("id", { ascending: false })
+              .limit(1)
+              .maybeSingle()
+          : Promise.resolve({ data: null, error: null }),
         // "Non-canceled" — anything still billable or recoverable. We
         // deliberately INCLUDE paused / past_due / unpaid so the bot
         // can warn the user about a card failure on its own. Terminal
@@ -340,31 +383,25 @@ async function loadAccountContext(
         }
       : null;
 
-    const totalPaidOrders = orderCountRes.count ?? 0;
+    const totalShipments = orderCountRes.count ?? 0;
 
     const latestOrder = latestOrderRes.data;
-    const latestOrderShipAddr = (latestOrder?.shipping_address_json ??
-      null) as SavedShippingAddress | null;
     const latestOrderCtx = latestOrder
       ? {
           orderId: latestOrder.id,
-          sessionId: latestOrder.stripe_session_id,
-          amountTotalCents: latestOrder.amount_total_cents ?? 0,
+          itemSku: latestOrder.item_sku,
+          quantity: Number(latestOrder.quantity ?? 1),
           // PostgREST returns timestamptz as ISO string; slice to
           // YYYY-MM-DD for the system-prompt context.
-          paidAt: latestOrder.paid_at ? latestOrder.paid_at.slice(0, 10) : "",
+          queuedAt: latestOrder.created_at
+            ? latestOrder.created_at.slice(0, 10)
+            : "",
           shippedAt: latestOrder.shipped_at
             ? latestOrder.shipped_at.slice(0, 10)
             : null,
           deliveredAt: latestOrder.delivered_at
             ? latestOrder.delivered_at.slice(0, 10)
             : null,
-          trackingCarrier: latestOrder.tracking_carrier,
-          trackingNumber: latestOrder.tracking_number,
-          shipCityState:
-            latestOrderShipAddr?.city && latestOrderShipAddr?.state
-              ? `${latestOrderShipAddr.city}, ${latestOrderShipAddr.state}`
-              : null,
         }
       : null;
 
@@ -376,7 +413,7 @@ async function loadAccountContext(
     return {
       displayName,
       memberSince,
-      totalPaidOrders,
+      totalShipments,
       latestOrder: latestOrderCtx,
       activeSubscriptionCount,
       device,

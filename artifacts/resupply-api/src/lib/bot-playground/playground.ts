@@ -133,17 +133,14 @@ const MAX_PLAYGROUND_TOOL_ROUNDS = 3;
 export const DEFAULT_ACCOUNT_CONTEXT: CustomerChatAccountContext = {
   displayName: "Alex Sample (test)",
   memberSince: "2025-02",
-  totalPaidOrders: 3,
+  totalShipments: 3,
   latestOrder: {
-    orderId: "sim-order-1001",
-    sessionId: "cs_test_sim1001",
-    amountTotalCents: 4295,
-    paidAt: "2026-05-20",
+    orderId: "sim-fulfillment-1001",
+    itemSku: "A7032",
+    quantity: 2,
+    queuedAt: "2026-05-20",
     shippedAt: "2026-05-21",
     deliveredAt: null,
-    trackingCarrier: "UPS",
-    trackingNumber: "1Z999AA10123456784",
-    shipCityState: "Altoona, PA",
   },
   activeSubscriptionCount: 1,
   device: {
