@@ -15,7 +15,7 @@ import { CSRF_COOKIE, CSRF_HEADER, SESSION_COOKIE } from "../cookies";
 import { readAuthEnv } from "../env";
 import { makeMemoryRepo, seedUserWithPassword } from "../test-helpers";
 
-import { makeAuthRouter } from "./index";
+import { makeAuthRouter, type AuthBrandResolver } from "./index";
 import type { AuditWriter, AuthDeps } from "./types";
 
 interface Harness {
@@ -27,7 +27,10 @@ interface Harness {
 
 function buildHarness(
   overrides: Partial<AuthDeps> = {},
-  routerOverrides: { uiPathPrefix?: string } = {},
+  routerOverrides: {
+    uiPathPrefix?: string;
+    resolveBrand?: AuthBrandResolver;
+  } = {},
 ): Harness {
   const repo = makeMemoryRepo();
   const actions: string[] = [];
@@ -66,6 +69,7 @@ function buildHarness(
     makeAuthRouter(deps, {
       productName: "TestProduct",
       uiPathPrefix: routerOverrides.uiPathPrefix,
+      resolveBrand: routerOverrides.resolveBrand,
     }),
   );
   return { app, repo, audit, emails };
@@ -136,6 +140,38 @@ describe("POST /auth/sign-up", () => {
     expect(h.emails).toHaveLength(1);
     expect(h.emails[0]!.to).toBe("newbie@example.com");
     expect(h.audit.actions).toContain("auth.sign_up");
+  });
+
+  it("brands the verification email to the tenant whose site the user signed up on", async () => {
+    // "Welcome to <the platform>" was the wrong greeting for someone who had
+    // just handed their details to a specific DME's storefront.
+    const h = buildHarness(
+      {},
+      {
+        resolveBrand: () => ({
+          productName: "Penn Home Medical Supply",
+          signatureName: "Penn Home Medical Supply",
+        }),
+      },
+    );
+    const csrf = await seedCsrf(h.app);
+    const res = await supertest(h.app)
+      .post("/auth/sign-up")
+      .set("Cookie", `${CSRF_COOKIE}=${csrf}`)
+      .set(CSRF_HEADER, csrf)
+      .send({
+        email: "newbie@example.com",
+        password: "correct horse battery staple",
+      });
+    expect(res.status).toBe(200);
+    expect(h.emails).toHaveLength(1);
+    const sent = h.emails[0]!;
+    expect(sent.subject).toBe("Verify your email — Penn Home Medical Supply");
+    expect(sent.text).toContain("Welcome to Penn Home Medical Supply.");
+    expect(sent.html).toContain("Penn Home Medical Supply");
+    expect(sent.subject).not.toContain("TestProduct");
+    expect(sent.html).not.toContain("TestProduct");
+    expect(sent.text).not.toContain("TestProduct");
   });
 
   it("returns 400 when password is too short", async () => {
@@ -275,6 +311,63 @@ describe("POST /auth/verify-email", () => {
 describe("POST /auth/forgot-password", () => {
   it("returns 200 + sends an email when the account exists", async () => {
     const h = buildHarness();
+    await seedUserWithPassword(h.repo, {
+      id: "u_alice",
+      emailLower: "alice@example.com",
+      password: "current password",
+    });
+    const res = await supertest(h.app)
+      .post("/auth/forgot-password")
+      .send({ email: "alice@example.com" });
+    expect(res.status).toBe(200);
+    expect(h.emails).toHaveLength(1);
+    expect(h.emails[0]!.subject).toMatch(/Reset your TestProduct password/);
+  });
+
+  it("brands the reset email to the tenant whose site the user is on", async () => {
+    // The patient storefront mount serves every tenant from one bundle, so
+    // the reset email has to name the site the patient actually used — not
+    // the platform, which they have never heard of.
+    const h = buildHarness(
+      {},
+      {
+        resolveBrand: () => ({
+          productName: "Penn Home Medical Supply",
+          signatureName: "Penn Home Medical Supply",
+        }),
+      },
+    );
+    await seedUserWithPassword(h.repo, {
+      id: "u_alice",
+      emailLower: "alice@example.com",
+      password: "current password",
+    });
+    const res = await supertest(h.app)
+      .post("/auth/forgot-password")
+      .send({ email: "alice@example.com" });
+    expect(res.status).toBe(200);
+    expect(h.emails).toHaveLength(1);
+    const sent = h.emails[0]!;
+    expect(sent.subject).toBe("Reset your Penn Home Medical Supply password");
+    expect(sent.html).toContain("Penn Home Medical Supply");
+    expect(sent.text).toContain("Penn Home Medical Supply");
+    expect(sent.subject).not.toContain("TestProduct");
+    expect(sent.html).not.toContain("TestProduct");
+    expect(sent.text).not.toContain("TestProduct");
+  });
+
+  it("still sends the reset email when brand resolution fails", async () => {
+    // Fail-soft is load-bearing here: a reset link that never arrives locks
+    // the patient out of their account, so a branding hiccup must degrade to
+    // the mount's static name rather than block the send.
+    const h = buildHarness(
+      {},
+      {
+        resolveBrand: () => {
+          throw new Error("tenant lookup failed");
+        },
+      },
+    );
     await seedUserWithPassword(h.repo, {
       id: "u_alice",
       emailLower: "alice@example.com",

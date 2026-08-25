@@ -25,6 +25,7 @@ import { logger } from "./lib/logger";
 import { providerPortalFeatureGate } from "./lib/provider-portal-feature-gate";
 import { RATE_LIMITS } from "./lib/rate-limits-config";
 import { getRequestId, requestContextMiddleware } from "./lib/request-context";
+import { storefrontAuthBrandResolver } from "./lib/auth-email-brand";
 import { requestHost } from "./lib/request-host";
 import { storefrontRecommendLimiter } from "./middlewares/storefront-rate-limit";
 import {
@@ -413,8 +414,21 @@ const storefrontAuthDeps: AuthDeps = { ...authDeps, allowSignUp: true };
 app.use(
   "/api/auth",
   makeAuthRouter(storefrontAuthDeps, {
+    // PATIENT-facing mail, so it carries the TENANT's brand — unlike the
+    // staff/platform mounts above and below. One bundle serves every
+    // tenant's storefront, so the static names here are only the floor:
+    // `resolveBrand` answers from the host the patient actually signed up
+    // on, and an unresolved host (the platform site, an unbound domain)
+    // keeps the platform identity.
+    //
+    // Only the NAME is tenant-scoped. The From address still comes from the
+    // shared `createSendgridClient()` in auth-deps — moving auth mail onto a
+    // tenant's own sender is gated on that tenant's sending domain being
+    // authenticated in SendGrid (CLAUDE.md), and a reset link that lands in
+    // spam locks a patient out of their account.
     productName: PLATFORM_NAME,
     signatureName: PLATFORM_NAME,
+    resolveBrand: storefrontAuthBrandResolver,
   }),
 );
 logger.info(

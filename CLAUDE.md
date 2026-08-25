@@ -408,8 +408,25 @@ degraded`) in both the route and the SPA store: a lookup that never
   patient/user-facing callsite that knows its `orgId` — these still go
   through `createSendgridClient()` (which accepts `fromEmail`/`fromName`).
   Internal/ops/auth mail (password resets, operator digests, alerts) stays
-  on the platform default by design. A NULL `from_email` leaves the platform
-  default (`noreply@cmbreathe.com`) in place. Deliverability still requires
+  on the platform default FROM ADDRESS by design. A NULL `from_email` leaves
+  the platform default (`noreply@cmbreathe.com`) in place.
+  **The auth email's NAME is a separate question from its From address, and
+  the two are deliberately split.** The patient storefront mount
+  (`/api/auth` in `app.ts`) resolves the brand PER REQUEST from the Host —
+  `resolveOrgIdByHost` → `resolveBrandingByOrgId` — via the auth router's
+  `resolveBrand` hook (`lib/resupply-auth/src/http/brand.ts`), so someone
+  verifying an address or resetting a password on a tenant's storefront is
+  named by that tenant, not by the platform they've never heard of. The
+  From address on that mail is still the shared `createSendgridClient()`
+  default, because moving it to a tenant's own sender is what the SPF/DKIM
+  gate below governs, and a reset link in a spam folder locks a patient out
+  of their account. The staff-console and provider-portal mounts stay fully
+  platform-branded (the console chrome already says CareMetric Breathe, and
+  that mail fires before a tenant is resolved). The hook is **fail-soft by
+  contract** — any throw or blank name degrades to the mount's static
+  `productName` — because an unsent verification or reset email blocks the
+  user outright. `app.auth-email-brand.test.ts` guards which mount gets
+  which. Deliverability still requires
   the tenant's sending **domain** to be authenticated in SendGrid (SPF/DKIM)
   — storing an unauthenticated `from_email` sends but lands in spam, so
   enabling a tenant sender is gated on domain auth out of band. The same

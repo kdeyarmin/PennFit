@@ -16,6 +16,7 @@ import { normalizeEmail } from "../email";
 import { checkLoginRateLimit } from "../rate-limit";
 import { issueToken } from "../token";
 
+import { resolveAuthEmailBrand, type AuthBrandResolver } from "./brand";
 import {
   renderPasswordResetEmail,
   type AuthEmailContext,
@@ -36,6 +37,8 @@ interface MakeForgotPasswordHandlerOptions {
   productName: string;
   signatureName?: string;
   uiPathPrefix?: string;
+  /** Per-request brand (host → tenant). See ./brand. */
+  resolveBrand?: AuthBrandResolver;
 }
 
 /**
@@ -156,9 +159,11 @@ export function makeForgotPasswordHandler(
       expiresAt: new Date(t.getTime() + resetTokenTtlMs),
     });
 
+    // Brand the reset email to the site the user is actually on. Fail-soft:
+    // a reset link that never arrives locks someone out of their account, so
+    // this can only ever downgrade to the mount's static name.
     const ctx: AuthEmailContext = {
-      productName: options.productName,
-      signatureName: options.signatureName,
+      ...(await resolveAuthEmailBrand(options, req)),
       publicBaseUrl: deps.publicBaseUrl,
       uiPathPrefix: options.uiPathPrefix,
     };

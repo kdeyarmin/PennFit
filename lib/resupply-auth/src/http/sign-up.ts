@@ -21,6 +21,7 @@ import { hashPassword } from "../password";
 import { validatePassword } from "../password-policy";
 import { issueToken } from "../token";
 
+import { resolveAuthEmailBrand, type AuthBrandResolver } from "./brand";
 import { renderVerifyEmail, type AuthEmailContext } from "./email-templates";
 import { authError } from "./responses";
 import type { AuthDeps } from "./types";
@@ -35,6 +36,8 @@ interface MakeSignUpHandlerOptions {
   productName: string;
   signatureName?: string;
   uiPathPrefix?: string;
+  /** Per-request brand (host → tenant). See ./brand. */
+  resolveBrand?: AuthBrandResolver;
 }
 
 export function makeSignUpHandler(
@@ -79,9 +82,11 @@ export function makeSignUpHandler(
     }
 
     const t = now();
+    // Brand the verification email to the site the user just signed up on.
+    // Fail-soft: an unsent verification email blocks the sign-up outright, so
+    // this can only ever downgrade to the mount's static name.
     const ctx: AuthEmailContext = {
-      productName: options.productName,
-      signatureName: options.signatureName,
+      ...(await resolveAuthEmailBrand(options, req)),
       publicBaseUrl: deps.publicBaseUrl,
       uiPathPrefix: options.uiPathPrefix,
     };

@@ -16,6 +16,7 @@
 
 import { Router, type IRouter } from "express";
 
+import type { AuthBrandResolver } from "./brand";
 import { makeChangePasswordHandler } from "./change-password";
 import { makeCsrfSeedHandler } from "./csrf-seed";
 import { makeForgotPasswordHandler } from "./forgot-password";
@@ -34,6 +35,9 @@ export interface AuthRouterOptions {
   /**
    * Software/product name used in email subjects + body copy,
    * e.g. "Penn Home Medical Supply". Required because the lib is brand-neutral.
+   *
+   * On a mount that serves many tenants from one bundle this is the FLOOR,
+   * not the answer — see `resolveBrand`.
    */
   productName: string;
   /**
@@ -52,6 +56,20 @@ export interface AuthRouterOptions {
    * defaults to no prefix.
    */
   uiPathPrefix?: string;
+  /**
+   * Resolve the brand PER REQUEST — for a mount whose one bundle serves
+   * many tenants, so the email carries the brand of the site the user is
+   * actually on rather than the mount's static default.
+   *
+   * Typically host-derived (Host → tenant → that tenant's storefront name).
+   * Fail-soft by contract: any throw, or a blank/absent product name, falls
+   * back to `productName`/`signatureName` above — a verification or reset
+   * email must never fail to send because a branding lookup hiccupped.
+   *
+   * Omit on a mount that is genuinely the platform's own (the staff console,
+   * platform sign-up), where the static platform name IS the right answer.
+   */
+  resolveBrand?: AuthBrandResolver;
 }
 
 export function makeAuthRouter(
@@ -153,6 +171,11 @@ export type {
   MfaProbeSecret,
 } from "./types";
 export { makeRequireSession, makeRequireRole } from "./middleware";
+export {
+  resolveAuthEmailBrand,
+  type AuthBrandResolver,
+  type AuthEmailBrand,
+} from "./brand";
 export {
   renderPasswordResetEmail,
   renderPatientPortalInviteEmail,
