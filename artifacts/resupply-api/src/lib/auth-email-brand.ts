@@ -1,26 +1,20 @@
-// Per-request brand for the OUTWARD-FACING auth emails.
+// Per-request brand for the PATIENT-facing auth emails.
 //
-// The auth router is mounted three times and the correct brand differs per
-// mount, because the audiences do:
+// The verify-your-email and password-reset messages sent from the `/api/auth`
+// mount go to someone standing on a specific tenant's storefront, but one
+// bundle serves them all — so the brand has to come from the request's Host,
+// not from a constant chosen at mount time. Without this, a patient who
+// signed up on a tenant's own domain was welcomed to "CareMetric Breathe", a
+// product they have never heard of.
 //
-//   * `/api/auth` — a PATIENT on a tenant's storefront. One bundle serves
-//     every tenant, so a static name welcomed them to "CareMetric Breathe", a
-//     product they have never heard of.
-//   * `/api/provider/auth` — a PROVIDER a tenant's staff invited to e-sign
-//     that tenant's patients' documents. Their invite already names the
-//     tenant (`<storefront> Provider Portal`, routes/admin/provider-esign.ts),
-//     so a password reset naming the PLATFORM instead was the same account
-//     addressed by two different brands. On a security-sensitive email that
-//     is not just untidy: an unrecognised sender is what recipients are
-//     trained to treat as phishing.
-//   * `/resupply-api/auth` — STAFF in the console. Stays platform-branded and
-//     uses neither resolver: the console chrome already says CareMetric
-//     Breathe, and that mail fires before a tenant is resolved.
+// Lives here rather than inline in `app.ts` so it is nameable and testable:
+// the auth router only sees an opaque function, and the interesting behavior
+// (which host resolves to which brand, and what an unclaimed host does)
+// deserves assertions of its own.
 //
-// Lives here rather than inline in `app.ts` so the resolvers are nameable and
-// testable: the auth router only sees an opaque function, and the interesting
-// behavior (which host resolves to which brand, and what an unclaimed host
-// does) deserves assertions of its own. See CLAUDE.md's brand architecture.
+// Only the patient mount uses this. The staff console and the provider portal
+// stay on the platform identity — that mail is the software's own, and it
+// fires before a tenant is resolved. See CLAUDE.md's brand architecture.
 
 import type { AuthBrandResolver } from "@workspace/resupply-auth";
 
@@ -28,7 +22,7 @@ import { requestHost } from "./request-host";
 import { resolveBrandingByHost } from "./tenant-branding";
 
 /**
- * The tenant branding for the host this request arrived on.
+ * The storefront brand for the host this request arrived on.
  *
  * Uses `resolveBrandingByHost` — NOT `resolveOrgIdByHost` +
  * `resolveBrandingByOrgId`. The two resolvers in `tenant-branding.ts` answer
@@ -47,43 +41,13 @@ import { resolveBrandingByHost } from "./tenant-branding";
  * every host during a lookup blip. That is the cross-tenant leak this whole
  * area exists to prevent, so the branding resolver is the only correct input.
  *
- * Never throws: an unresolved host yields the platform brand, which is
- * exactly what each mount's static default already is.
+ * Never throws and never returns null: an unresolved host yields the platform
+ * brand, which is exactly what the mount's static default already is.
  */
-async function brandForRequest(
-  req: Parameters<AuthBrandResolver>[0],
-): Promise<{ storefrontName: string; legalName: string }> {
-  const brand = await resolveBrandingByHost(requestHost(req));
-  return { storefrontName: brand.storefrontName, legalName: brand.legalName };
-}
-
-/** Patient storefront (`/api/auth`) — the tenant's own brand, unadorned. */
 export const storefrontAuthBrandResolver: AuthBrandResolver = async (req) => {
-  const { storefrontName, legalName } = await brandForRequest(req);
-  return { productName: storefrontName, signatureName: legalName };
-};
-
-/**
- * Provider e-signature portal (`/api/provider/auth`).
- *
- * Keeps the `"<brand> Provider Portal"` shape the static mount option had,
- * because the suffix is doing work: a provider may hold accounts with several
- * DMEs, and "reset your <tenant> password" alone would not say WHICH surface.
- *
- * The wording mirrors the INVITE at `routes/admin/provider-esign.ts` exactly
- * — same `<storefrontName> Provider Portal` product name, same
- * `legalName || storefrontName` signature — so the two emails a provider
- * receives about one account agree. Provider links are built from
- * `resolveTenantBaseUrl(orgId) ?? publicBaseUrl`, so a tenant with a verified
- * domain lands them on its host and this resolves; a tenant without one has
- * no host to be identified by and correctly keeps the platform name.
- */
-export const providerPortalAuthBrandResolver: AuthBrandResolver = async (
-  req,
-) => {
-  const { storefrontName, legalName } = await brandForRequest(req);
+  const brand = await resolveBrandingByHost(requestHost(req));
   return {
-    productName: `${storefrontName} Provider Portal`,
-    signatureName: legalName || storefrontName,
+    productName: brand.storefrontName,
+    signatureName: brand.legalName,
   };
 };

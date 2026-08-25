@@ -33,10 +33,7 @@ vi.mock("./tenant-branding", () => ({
   resolveBrandingByOrgId: resolveBrandingByOrgIdMock,
 }));
 
-import {
-  providerPortalAuthBrandResolver,
-  storefrontAuthBrandResolver,
-} from "./auth-email-brand";
+import { storefrontAuthBrandResolver } from "./auth-email-brand";
 
 function reqForHost(host: string): Request {
   return { headers: { host }, hostname: host } as unknown as Request;
@@ -116,62 +113,5 @@ describe("storefrontAuthBrandResolver", () => {
     await storefrontAuthBrandResolver(reqForHost("cmbreathe.com"));
     expect(resolveOrgIdByHostMock).not.toHaveBeenCalled();
     expect(resolveBrandingByOrgIdMock).not.toHaveBeenCalled();
-  });
-});
-
-describe("providerPortalAuthBrandResolver", () => {
-  it("matches the wording of the invite the provider already received", async () => {
-    // routes/admin/provider-esign.ts sends the invite as
-    // `${storefrontName} Provider Portal` signed with
-    // `legalName || storefrontName`. A password reset for that same account
-    // has to agree — a security-sensitive email under an unfamiliar brand is
-    // what people are trained to treat as phishing.
-    resolveBrandingByHostMock.mockResolvedValue({
-      storefrontName: "Penn Home Medical Supply",
-      legalName: "Penn Home Medical Supply",
-      tagline: "t",
-      logoUrl: null,
-    });
-
-    await expect(
-      providerPortalAuthBrandResolver(reqForHost("pennpaps.com")),
-    ).resolves.toEqual({
-      productName: "Penn Home Medical Supply Provider Portal",
-      signatureName: "Penn Home Medical Supply",
-    });
-  });
-
-  it("keeps the Provider Portal suffix, which says WHICH surface", async () => {
-    // A provider may hold accounts with several DMEs, so "reset your Acme
-    // Sleep password" alone would be ambiguous. The suffix is load-bearing,
-    // not decoration — this is why the patient resolver can't just be reused.
-    resolveBrandingByHostMock.mockResolvedValue({
-      storefrontName: "Acme Sleep",
-      legalName: "Acme Home Medical LLC",
-      tagline: "t",
-      logoUrl: null,
-    });
-
-    await expect(
-      providerPortalAuthBrandResolver(reqForHost("acme.example")),
-    ).resolves.toEqual({
-      productName: "Acme Sleep Provider Portal",
-      signatureName: "Acme Home Medical LLC",
-    });
-  });
-
-  it("falls back to the platform portal name on a host that owns no tenant", async () => {
-    // A tenant with no verified domain has no host to be identified by, so
-    // the provider keeps the platform name — today's behavior, and never
-    // another tenant's brand.
-    resolveBrandingByHostMock.mockResolvedValue({ ...PLATFORM_BRANDING });
-
-    await expect(
-      providerPortalAuthBrandResolver(reqForHost("cmbreathe.com")),
-    ).resolves.toEqual({
-      productName: "CareMetric Breathe Provider Portal",
-      signatureName: "CareMetric Breathe",
-    });
-    expect(resolveOrgIdByHostMock).not.toHaveBeenCalled();
   });
 });

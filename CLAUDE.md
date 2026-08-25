@@ -422,20 +422,19 @@ degraded`) in both the route and the SPA store: a lookup that never
   From address on that mail is still the shared `createSendgridClient()`
   default, because moving it to a tenant's own sender is what the SPF/DKIM
   gate below governs, and a reset link in a spam folder locks a patient out
-  of their account. The **provider-portal** mount resolves the same way but
-  through `providerPortalAuthBrandResolver`, which keeps the
-  `"<brand> Provider Portal"` shape: a provider's INVITE already names the
-  tenant (`routes/admin/provider-esign.ts`), so a reset under the platform's
-  name was one account addressed by two brands — and an unrecognised sender
-  on a security email is what recipients are trained to treat as phishing.
-  The suffix is load-bearing (a provider may hold accounts with several
-  DMEs), which is why that mount does not simply reuse the storefront
-  resolver. The **staff-console** mount stays fully platform-branded and
-  passes no resolver: the console chrome already says CareMetric Breathe,
-  and that mail fires before a tenant is resolved. Both hooks are
-  **fail-soft by contract** — any throw or blank name degrades to the
-  mount's static `productName` — because an unsent verification or reset
-  email blocks the user outright. Both resolvers must read
+  of their account. The **staff-console** and **provider-portal** mounts
+  stay fully platform-branded and pass no resolver: the console chrome
+  already says CareMetric Breathe and that mail fires before a tenant is
+  resolved, and the provider portal has **no self-service reset flow at
+  all** — `provider-sign-in.tsx` deliberately links to none and routes
+  recovery through a coordinator, so `/api/provider/auth/forgot-password`
+  is reachable only by an unauthenticated direct POST. Branding it by host
+  would therefore serve no real provider while letting any caller make the
+  platform emit a security email falsely stamped with an arbitrary tenant's
+  name; leave it on the platform identity unless that flow is ever exposed.
+  The hook is **fail-soft by contract** — any throw or blank name degrades
+  to the mount's static `productName` — because an unsent verification or
+  reset email blocks the user outright. Resolvers must read
   `resolveBrandingByHost`, NEVER `resolveOrgIdByHost`: the data resolver
   answers an unmatched host, an unbound domain, and any lookup error with
   the SEED org, so it would put the seed tenant's brand on platform-host

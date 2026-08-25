@@ -25,10 +25,7 @@ import { logger } from "./lib/logger";
 import { providerPortalFeatureGate } from "./lib/provider-portal-feature-gate";
 import { RATE_LIMITS } from "./lib/rate-limits-config";
 import { getRequestId, requestContextMiddleware } from "./lib/request-context";
-import {
-  providerPortalAuthBrandResolver,
-  storefrontAuthBrandResolver,
-} from "./lib/auth-email-brand";
+import { storefrontAuthBrandResolver } from "./lib/auth-email-brand";
 import { requestHost } from "./lib/request-host";
 import { storefrontRecommendLimiter } from "./middlewares/storefront-rate-limit";
 import {
@@ -460,17 +457,8 @@ const providerAuthDeps: AuthDeps = { ...authDeps, allowSignUp: false };
 app.use(
   "/api/provider/auth",
   makeAuthRouter(providerAuthDeps, {
-    // A provider is invited BY a tenant to e-sign that tenant's patients'
-    // documents, and their invite already names it ("<storefront> Provider
-    // Portal", routes/admin/provider-esign.ts). Resolve the same brand here so
-    // a password reset for that account doesn't arrive under a name they have
-    // never seen — on a security-sensitive email, an unrecognised sender is
-    // what recipients are trained to treat as phishing. The static names below
-    // remain the fail-soft floor for a tenant with no verified domain to be
-    // identified by.
     productName: `${PLATFORM_NAME} Provider Portal`,
     signatureName: PLATFORM_NAME,
-    resolveBrand: providerPortalAuthBrandResolver,
   }),
 );
 logger.info(
