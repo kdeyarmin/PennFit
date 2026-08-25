@@ -252,6 +252,10 @@ UPDATE "resupply"."mask_size_variants" v
 SET "size_code" = 'ONE',
     "size_label" = 'One size',
     "sort_order" = 0,
+    -- The seed's default frame was M, retired below. A run whose only
+    -- current row is not the default leaves the catalog with no default
+    -- frame at all, so the surviving universal frame takes it.
+    "is_default" = true,
     "updated_at" = now()
 FROM "resupply"."mask_models" m
 WHERE v."mask_model_id" = m."id"
@@ -567,10 +571,10 @@ FROM (VALUES
   -- fisher-paykel-nova-nasal (headgears carry no facial geometry)
   ('fisher-paykel-nova-nasal', 'headgear', 'STD', 'Standard', 0,
    NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
-   false, 'A7035', NULL),
+   true, 'A7035', NULL),
   ('fisher-paykel-nova-nasal', 'headgear', 'L', 'Large', 10,
    NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
-   true, 'A7035', NULL),
+   false, 'A7035', NULL),
   -- fisher-paykel-solo-pillows (headgears carry no facial geometry)
   ('fisher-paykel-solo-pillows', 'headgear', 'ONE', 'One size', 0,
    NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
