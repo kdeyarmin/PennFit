@@ -1,9 +1,14 @@
 # Capacitor mobile build (Phase D / feature #6)
 
-This artifact ships to web (PennPaps.com) AND iOS / Android via
-Capacitor. The same Vite bundle runs in all three; native is a thin
-shell that hosts the web view + a few plugins for hardware-only bits
-(biometric login, push notifications, secure storage).
+This artifact ships to web (the platform host plus each tenant's own
+domain) AND iOS / Android via Capacitor. The same Vite bundle runs in all
+three; native is a thin shell that hosts the web view + a few plugins for
+hardware-only bits (biometric login, push notifications, secure storage).
+
+The native shell carries the **platform** identity — `appId`
+`com.caremetric.breathe`, display name "CareMetric Breathe" — because
+there is one store listing for every tenant. Tenant branding is resolved
+inside the web view at runtime, not baked into the shell.
 
 ## Why Capacitor (not React Native)
 

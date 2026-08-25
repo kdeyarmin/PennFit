@@ -106,9 +106,9 @@ export const BREATHE_FEATURE_DETAIL = [
   "and a control center.",
   "",
   "Works with the systems they already have — it imports and exports with",
-  "PacWare (the legacy desktop billing system) by file exchange, so PennFit-",
-  "style resupply runs the front of the house while their billing system of",
-  "record stays in place. Patient and therapy data can be migrated in during",
+  "PacWare (the legacy desktop billing system) by file exchange, so CareMetric",
+  "Breathe runs the front of the house while their billing system of record",
+  "stays in place. Patient and therapy data can be migrated in during",
   "onboarding.",
 ].join("\n");
 

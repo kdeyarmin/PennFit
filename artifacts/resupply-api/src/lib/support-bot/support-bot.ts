@@ -29,6 +29,11 @@ import {
   buildAdminAssistantSystemPrompt,
   type AdminAssistantContext,
 } from "../admin-assistant/adminAssistantKnowledge";
+import {
+  applyCompanyIdentityToText,
+  applyPlatformBranding,
+  getPlatformIdentity,
+} from "../company-info";
 import { logger } from "../logger";
 import {
   DEFAULT_ANTHROPIC_MODEL_CHAT,
@@ -122,12 +127,32 @@ export type SupportBotResult =
   /** No LLM provider configured — caller routes to a human. */
   | { kind: "offline" };
 
+/**
+ * Normalize the in-source brand placeholders to the PLATFORM's own names.
+ *
+ * This desk answers AS CareMetric Breathe, to a tenant that is not this
+ * deployment's seed tenant — so it must not inherit the seed's identity the
+ * way a tenant-scoped surface does. `getPlatformIdentity()` maps PennFit →
+ * CareMetric Breathe, PennBot/PennPilot → the platform assistant names, and
+ * any residual tenant placeholder in the shared knowledge base → the
+ * platform's own site and mailbox.
+ */
+function brandAsPlatform(text: string): string {
+  const identity = getPlatformIdentity();
+  return applyCompanyIdentityToText(
+    applyPlatformBranding(text, identity),
+    identity,
+  );
+}
+
 function buildSystemPrompt(input: SupportBotInput): string {
   const ctx: AdminAssistantContext = {
     adminEmail: input.adminEmail,
     adminRole: input.adminRole,
   };
-  return buildAdminAssistantSystemPrompt(ctx) + "\n" + SUPPORT_ADDENDUM;
+  return brandAsPlatform(
+    buildAdminAssistantSystemPrompt(ctx) + "\n" + SUPPORT_ADDENDUM,
+  );
 }
 
 export function buildSupportUserPrompt(input: SupportBotInput): string {
@@ -372,7 +397,10 @@ export function parseModelOutput(
     },
     "support-bot: drafted high-confidence answer",
   );
-  return { kind: "answer", reply, confidence };
+  // Belt-and-braces: the prompt is already platform-branded, so the model
+  // shouldn't have a Penn* token to echo — but this reply is sent to a
+  // tenant unreviewed, and a stray one would name another customer.
+  return { kind: "answer", reply: brandAsPlatform(reply), confidence };
 }
 
 function truncate(s: string, max: number): string {

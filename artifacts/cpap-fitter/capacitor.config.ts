@@ -22,9 +22,14 @@
 
 import type { CapacitorConfig } from "@capacitor/cli";
 
+// The native shell is the PLATFORM's app, not a tenant's: one store
+// listing, one bundle, and the SPA inside resolves the operating tenant's
+// brand from the host it loads (see src/lib/branding.ts). Naming it after a
+// single tenant would put that tenant's name on every other tenant's home
+// screen — so the app id and display name are CareMetric Breathe.
 const config: CapacitorConfig = {
-  appId: "com.pennpaps.app",
-  appName: "Penn Home Medical Supply",
+  appId: "com.caremetric.breathe",
+  appName: "CareMetric Breathe",
   // Vite build output. Make sure `pnpm build` runs before
   // `pnpm cap sync`.
   webDir: "dist/public",

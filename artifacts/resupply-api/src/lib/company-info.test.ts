@@ -29,6 +29,25 @@ vi.mock("./app-config/store.js", () => ({
   getTenantConfigValue: getTenantConfigValueMock,
 }));
 
+// The `resupply.organizations` directory — where a self-serve tenant's
+// signup name lands. Mocked so the "tenant with no dme_organization row"
+// path is driven directly rather than through the shared response queue.
+const resolveBrandingByOrgIdMock = vi.hoisted(() =>
+  vi.fn(async (_orgId: string) => ({
+    storefrontName: "CareMetric Breathe",
+    legalName: "CareMetric Breathe",
+    tagline: "The CPAP resupply platform for modern DME teams.",
+    logoUrl: null as string | null,
+  })),
+);
+const resolveTenantBaseUrlMock = vi.hoisted(() =>
+  vi.fn(async (_orgId: string): Promise<string | null> => null),
+);
+vi.mock("./tenant-branding.js", () => ({
+  resolveBrandingByOrgId: resolveBrandingByOrgIdMock,
+  resolveTenantBaseUrl: resolveTenantBaseUrlMock,
+}));
+
 import {
   __resetCompanyInfoForTests,
   applyCompanyIdentityToText,
@@ -69,6 +88,15 @@ beforeEach(() => {
   __resetCompanyInfoForTests();
   getTenantConfigValueMock.mockReset();
   getTenantConfigValueMock.mockResolvedValue(null);
+  resolveBrandingByOrgIdMock.mockReset();
+  resolveBrandingByOrgIdMock.mockResolvedValue({
+    storefrontName: "CareMetric Breathe",
+    legalName: "CareMetric Breathe",
+    tagline: "The CPAP resupply platform for modern DME teams.",
+    logoUrl: null,
+  });
+  resolveTenantBaseUrlMock.mockReset();
+  resolveTenantBaseUrlMock.mockResolvedValue(null);
 });
 
 afterEach(() => {
@@ -260,6 +288,75 @@ describe("getCompanyInfo", () => {
     // CareMetric Breathe — the platform identity, NOT the seed tenant brand.
     expect(info.name).toBe("CareMetric Breathe");
     expect(info.supportPhoneDisplay).toBe("");
+  });
+
+  it("names a tenant that has not filled in Company Information from its signup name", async () => {
+    // The naming rule: the software is CareMetric Breathe, the BUSINESS is
+    // whatever its owner typed at signup. That name lands on the
+    // `organizations` directory row, not on `dme_organization` — which only
+    // /admin/company-information writes — so a brand-new tenant used to be
+    // called "CareMetric Breathe" on its own storefront.
+    resolveBrandingByOrgIdMock.mockResolvedValue({
+      storefrontName: "Acme Sleep",
+      legalName: "Acme Home Medical LLC",
+      tagline: "t",
+      logoUrl: null,
+    });
+    resolveTenantBaseUrlMock.mockResolvedValue("https://acme.example");
+    stageSupabaseResponse("dme_organization", "select", { data: null });
+
+    const info = await getCompanyInfo("org-acme");
+
+    expect(info.name).toBe("Acme Sleep");
+    expect(info.legalName).toBe("Acme Home Medical LLC");
+    expect(info.websiteUrl).toBe("https://acme.example");
+    // Only the NAME is known — contact details are still platform defaults,
+    // and `source` stays "fallback" so the admin page keeps nudging them to
+    // save real ones.
+    expect(info.source).toBe("fallback");
+    expect(info.supportEmail).toBe("support@cmbreathe.com");
+    expect(info.supportPhoneDisplay).toBe("");
+  });
+
+  it("rewrites the baked-in placeholders to a signup-named tenant's own identity", async () => {
+    resolveBrandingByOrgIdMock.mockResolvedValue({
+      storefrontName: "Acme Sleep",
+      legalName: "Acme Home Medical LLC",
+      tagline: "t",
+      logoUrl: null,
+    });
+    resolveTenantBaseUrlMock.mockResolvedValue("https://acme.example");
+    stageSupabaseResponse("dme_organization", "select", { data: null });
+    const info = await getCompanyInfo("org-acme");
+
+    // Consent/notice bodies name the registered entity, so the legal name is
+    // what replaces the in-source placeholder; the site becomes the tenant's.
+    expect(
+      applyCompanyIdentityToText(
+        "Penn Home Medical Supply protects your health information. Visit pennpaps.com.",
+        info,
+      ),
+    ).toBe(
+      "Acme Home Medical LLC protects your health information. Visit acme.example.",
+    );
+  });
+
+  it("still reaches the platform identity when the directory cannot name the tenant", async () => {
+    // resolveBrandingByOrgId degrades to the platform brand on a miss or an
+    // error, so an unnamed tenant is exactly as it was before.
+    stageSupabaseResponse("dme_organization", "select", { data: null });
+    const info = await getCompanyInfo("org-unknown");
+    expect(info.name).toBe("CareMetric Breathe");
+    expect(info.websiteUrl).toBe("https://cmbreathe.com");
+  });
+
+  it("does not read the org directory for the seed tenant", async () => {
+    // The seed org row is created by the migrations carrying THIS repo's
+    // tenant name, so reading it would hand an unrelated deployment the seed
+    // tenant's brand — the exact leak the platform fallback prevents.
+    stageSupabaseResponse("dme_organization", "select", { data: null });
+    await getCompanyInfo();
+    expect(resolveBrandingByOrgIdMock).not.toHaveBeenCalled();
   });
 });
 

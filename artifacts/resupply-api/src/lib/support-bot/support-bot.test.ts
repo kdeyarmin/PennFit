@@ -157,4 +157,50 @@ describe("answerSupportTicket", () => {
     const out = await answerSupportTicket(BASE, { OPENAI_API_KEY: "sk-test" });
     expect(out).toEqual({ kind: "handoff" });
   });
+
+  it("speaks as the platform, never as this deployment's seed tenant", async () => {
+    // The ticket comes from a TENANT and the reply goes back unreviewed, so
+    // the desk must answer as CareMetric Breathe. The in-source placeholders
+    // (PennFit / PennPilot, and any tenant name in the shared admin-console
+    // knowledge base) must be resolved to the platform's own names before
+    // either the prompt or the reply leaves the process.
+    let sentSystemPrompt = "";
+    const fetchStub = vi.fn(async (_url: unknown, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? "{}")) as {
+        messages?: Array<{ role: string; content: string }>;
+      };
+      sentSystemPrompt =
+        body.messages?.find((m) => m.role === "system")?.content ?? "";
+      return new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  handoff: false,
+                  // A stray placeholder the model echoed out of its prompt.
+                  reply: "PennPilot can walk you through PennFit's Team page.",
+                  confidence: 0.95,
+                }),
+              },
+            },
+          ],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    });
+    __setSupportBotFetchForTests(fetchStub as unknown as typeof fetch);
+
+    const out = await answerSupportTicket(BASE, { OPENAI_API_KEY: "sk-test" });
+
+    expect(sentSystemPrompt).not.toMatch(/PennFit|PennPilot|PennBot/);
+    expect(sentSystemPrompt).not.toMatch(/Penn Home Medical Supply|pennpaps/i);
+    expect(sentSystemPrompt).toContain("CareMetric Breathe");
+    expect(out).toEqual({
+      kind: "answer",
+      reply:
+        "CareMetric Copilot can walk you through CareMetric Breathe's Team page.",
+      confidence: 0.95,
+    });
+  });
 });

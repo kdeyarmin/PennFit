@@ -68,13 +68,47 @@ Practical rules:
   seed-org fallback for the brand keys in `NON_INHERITABLE_TENANT_KEYS` (the
   two `RESUPPLY_ASSISTANT_*` names), so an un-seeded tenant resolves to the
   CareMetric defaults instead of Penn's `PennBot`/`PennPilot`; and (2)
-  `getCompanyInfo(orgId)` for an explicit NON-seed tenant with no
-  `dme_organization` row returns the neutral platform identity
-  (`platformFallbackInfo()`), never the seed's env-folded
-  `RESUPPLY_PRACTICE_NAME`. Single global brand fallbacks that used to read
-  `... ?? "PennPaps"` now read `... ?? "CareMetric Breathe"` (the MFA TOTP
-  issuer, SMS/voice practice name, packet `FALLBACK_COMPANY`, etc.) — a
-  configured tenant's own value still wins, so the Penn tenant is unchanged.
+  `getCompanyInfo(orgId)` for an explicit NON-seed tenant never falls back to
+  the seed's env-folded `RESUPPLY_PRACTICE_NAME`. Single global brand
+  fallbacks that used to read `... ?? "PennPaps"` now read
+  `... ?? "CareMetric Breathe"` (the MFA TOTP issuer, SMS/voice practice name,
+  packet `FALLBACK_COMPANY`, etc.) — a configured tenant's own value still
+  wins, so the Penn tenant is unchanged.
+- **…but a new tenant is called by its OWN name, not the platform's.**
+  `getCompanyInfo(orgId)` for a NON-seed tenant resolves in three steps:
+  the `dme_organization` row (`/admin/company-information`), then the
+  business name its owner typed at signup — `organizations.name` /
+  `storefront_name`, read via `orgDirectoryFallbackInfo()` — and only then
+  the neutral `platformFallbackInfo()`. The middle step matters because
+  `tenant-signup-service.ts` writes the `organizations` row and **nothing
+  writes `dme_organization` except the admin page**, so without it every
+  CompanyInfo-driven patient surface (`GET /api/company-info` → the
+  storefront footer/legal pages, the chatbots' self-description, generated
+  PDFs, the MFA issuer, SMS/voice copy) called a brand-new tenant
+  "CareMetric Breathe". Only the NAME and the verified custom domain come
+  from the directory — phone/address/mailbox stay platform defaults and
+  `source` stays `"fallback"`, so the admin page keeps nudging for real
+  ones. The **seed** tenant deliberately skips this step: its
+  `organizations` row is created by the migrations carrying THIS repo's
+  tenant name, so reading it would hand an unrelated deployment the Penn
+  brand. Use `getPlatformIdentity()` wherever the app speaks **as the
+  platform** to a non-tenant audience (the support desk in
+  `lib/support-bot`, B2B sales copy); passing it to
+  `applyPlatformBranding`/`applyCompanyIdentityToText` normalizes the
+  in-source Penn\* placeholders to CareMetric's own names, where the default
+  (`getCompanyInfoSync()`) would give them the seed tenant's brand.
+- **Two prose surfaces are guarded by specs, because nothing rewrites them.**
+  `lib/resupply-ai/src/breathe-sales-knowledge.ts` (the B2B sales voice
+  agent) is composed inside the `RealtimeClient` constructor in a pure
+  package that must not reach the data layer — there is **no** normalization
+  pass, so whatever is typed there is spoken to a prospect. And
+  `adminAssistantKnowledge.ts` gets `applyPlatformBrandingForOrg` (which
+  resolves `PennFit`/`PennPilot`) but **not** `applyCompanyIdentityToText`,
+  so a tenant name typed there reaches every other tenant's console. The
+  `*.brand.test.ts` spec beside each one fails on a tenant token; the
+  admin-assistant spec also asserts the platform placeholders are still
+  present, so nobody "fixes" it by hand-typing CareMetric names and breaking
+  a tenant's own assistant rename.
 
 ## Start-of-session checklist
 

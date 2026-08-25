@@ -3,11 +3,18 @@
 // One place answers "what is this company called and how do patients
 // reach it" for every surface: SMS/email copy, the voice agent, the
 // chatbots, generated PDFs, and the storefront footer. The source of
-// truth is the dme_organization singleton the admin edits at
-// /admin/company-information (DB wins), falling back to the
-// RESUPPLY_PRACTICE_NAME environment variable and finally to the
-// historical hardcoded defaults so dev/preview environments keep
-// working with nothing seeded.
+// truth is the dme_organization row the admin edits at
+// /admin/company-information (DB wins), then — for a NON-seed tenant that
+// hasn't been there yet — the business name it entered at signup, on the
+// `resupply.organizations` directory row, and finally the neutral
+// CareMetric Breathe platform identity. The seed/default tenant keeps its
+// historical fallback (the RESUPPLY_PRACTICE_NAME environment variable),
+// so dev/preview environments keep working with nothing seeded.
+//
+// Naming rule this enforces: the app refers to ITSELF as CareMetric
+// Breathe, and to the operating business by the name that business gave.
+// A tenant is never called by the platform's name, and never by another
+// tenant's — see the brand architecture section of CLAUDE.md.
 //
 // Posture mirrors lib/app-config/store.ts:
 //   * Fail-soft. A Supabase error/timeout degrades to env + defaults;
@@ -24,6 +31,10 @@ import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import { logger } from "./logger";
 import { getTenantConfigValue } from "./app-config/store.js";
+import {
+  resolveBrandingByOrgId,
+  resolveTenantBaseUrl,
+} from "./tenant-branding.js";
 
 /**
  * The platform/parent-company brand. PennFit is the codename of this
@@ -194,9 +205,10 @@ function envFallbackInfo(): CompanyInfo {
 
 // The NEUTRAL platform identity, with NO reading of the process-global
 // RESUPPLY_PRACTICE_NAME / RESUPPLY_ASSISTANT_* env (which the boot hydration
-// folds to the SEED tenant's brand). Used for an explicitly-addressed tenant
-// that has no dme_organization row yet: a brand-new tenant must fall back to
-// CareMetric Breathe, never inherit the seed (Penn) tenant's name/bots.
+// folds to the SEED tenant's brand). The LAST resort for an
+// explicitly-addressed tenant, below `orgDirectoryFallbackInfo()`: a tenant
+// the org directory can't name falls back to CareMetric Breathe, never to the
+// seed (Penn) tenant's name/bots.
 function platformFallbackInfo(): CompanyInfo {
   return {
     name: DEFAULTS.name,
@@ -219,6 +231,65 @@ function platformFallbackInfo(): CompanyInfo {
     assistantStorefrontName: DEFAULT_STOREFRONT_ASSISTANT_NAME,
     assistantAdminName: DEFAULT_ADMIN_ASSISTANT_NAME,
     source: "fallback",
+  };
+}
+
+/**
+ * The neutral platform identity: CareMetric Breathe, its own site and
+ * mailbox, and the platform's default assistant names.
+ *
+ * Use it wherever the app speaks AS THE PLATFORM rather than as a tenant —
+ * the platform support desk, B2B sales copy, operator mail. Passing it to
+ * `applyPlatformBranding` / `applyCompanyIdentityToText` normalizes the
+ * in-source Penn* placeholders to the platform's own names, which is what
+ * those surfaces want; the default (`getCompanyInfoSync()`) would give them
+ * the SEED tenant's brand instead.
+ */
+export function getPlatformIdentity(): CompanyInfo {
+  return platformFallbackInfo();
+}
+
+/**
+ * Identity for a tenant that has NOT yet filled in Company Information.
+ *
+ * A self-serve tenant types its BUSINESS NAME when it signs up, and that
+ * lands on the `resupply.organizations` directory row (`name` +
+ * `storefront_name`) — NOT on `dme_organization`, which only the admin's
+ * /admin/company-information page ever writes. Without this step such a
+ * tenant dropped straight to `platformFallbackInfo()`, so every surface that
+ * reads CompanyInfo — the storefront footer and legal pages via
+ * GET /api/company-info, the chatbots' self-description, generated PDFs, the
+ * MFA TOTP issuer, SMS/voice practice name — called the business
+ * "CareMetric Breathe" instead of the name its owner had just typed in.
+ *
+ * So the org directory sits BELOW `dme_organization` (an admin who fills in
+ * Company Information still wins) and ABOVE the platform identity. Only the
+ * NAME and the tenant's own web address come from it: the tenant genuinely
+ * hasn't supplied a phone, address, or support mailbox yet, so those stay
+ * platform defaults, the assistant names stay the platform defaults
+ * `platformFallbackInfo()` already returns, and `source` stays "fallback" —
+ * which both keeps the admin page's "not saved yet" nudge honest and keeps
+ * `applyCompanyIdentityToText` rewriting the baked-in placeholders.
+ *
+ * Fail-soft by construction: both resolvers swallow their own errors and
+ * degrade to the platform brand, which is exactly what this returns anyway.
+ * Both are cached ~60s per org, so this costs nothing on a warm path.
+ */
+async function orgDirectoryFallbackInfo(orgId: string): Promise<CompanyInfo> {
+  const base = platformFallbackInfo();
+  const [branding, tenantBaseUrl] = await Promise.all([
+    resolveBrandingByOrgId(orgId),
+    resolveTenantBaseUrl(orgId),
+  ]);
+  const legalName = branding.legalName.trim() || base.legalName;
+  return {
+    ...base,
+    name: branding.storefrontName.trim() || legalName,
+    legalName,
+    // A verified custom domain is the tenant's own site; otherwise the
+    // platform's, so `identityReplacements()` still rewrites the historical
+    // "pennpaps.com" placeholder to a host that actually resolves.
+    websiteUrl: tenantBaseUrl || base.websiteUrl,
   };
 }
 
@@ -310,13 +381,24 @@ export async function getCompanyInfo(orgId?: string): Promise<CompanyInfo> {
     const explicitOrgId = orgId?.trim();
     const seedOrgId = await resolveSeedOrgId();
     if (explicitOrgId && explicitOrgId !== seedOrgId) {
-      // A specific NON-seed tenant. Its own row, or the neutral platform
-      // identity — never the seed (Penn) tenant's env-folded brand. This is
-      // what stops a new/unconfigured tenant from inheriting "Penn Home Medical Supply".
-      info = (await loadFromDb(explicitOrgId)) ?? platformFallbackInfo();
+      // A specific NON-seed tenant. Its Company Information row, else the
+      // business name it entered at signup, else the neutral platform
+      // identity — never the seed (Penn) tenant's env-folded brand. That
+      // ordering is what stops a new tenant both from inheriting "Penn Home
+      // Medical Supply" AND from being called "CareMetric Breathe" on its own
+      // storefront before an admin has visited /admin/company-information.
+      info =
+        (await loadFromDb(explicitOrgId)) ??
+        (await orgDirectoryFallbackInfo(explicitOrgId));
     } else {
       // The seed tenant (explicit or default). Single-tenant behavior is
-      // unchanged: its DB row wins, else the env-folded practice name.
+      // unchanged: its DB row wins, else the env-folded practice name. The
+      // org-directory step above deliberately does NOT apply here — the seed
+      // org row is created by the migrations carrying THIS repo's tenant
+      // name, so reading it would hand a fresh, unrelated deployment the seed
+      // tenant's brand, which is the leak the platform fallback exists to
+      // prevent. An operator names a seed deployment with
+      // RESUPPLY_PRACTICE_NAME or on /admin/company-information.
       const effectiveOrgId = explicitOrgId || seedOrgId;
       info = effectiveOrgId
         ? ((await loadFromDb(effectiveOrgId)) ?? envFallbackInfo())
