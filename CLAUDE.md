@@ -412,9 +412,11 @@ degraded`) in both the route and the SPA store: a lookup that never
   the platform default (`noreply@cmbreathe.com`) in place.
   **The auth email's NAME is a separate question from its From address, and
   the two are deliberately split.** The patient storefront mount
-  (`/api/auth` in `app.ts`) resolves the brand PER REQUEST from the Host —
-  `resolveOrgIdByHost` → `resolveBrandingByOrgId` — via the auth router's
-  `resolveBrand` hook (`lib/resupply-auth/src/http/brand.ts`), so someone
+  (`/api/auth` in `app.ts`) resolves the brand PER REQUEST from the Host via
+  the auth router's `resolveBrand` hook
+  (`lib/resupply-auth/src/http/brand.ts`), wired to
+  `storefrontAuthBrandResolver`
+  (`artifacts/resupply-api/src/lib/auth-email-brand.ts`), so someone
   verifying an address or resetting a password on a tenant's storefront is
   named by that tenant, not by the platform they've never heard of. The
   From address on that mail is still the shared `createSendgridClient()`
@@ -437,9 +439,10 @@ degraded`) in both the route and the SPA store: a lookup that never
   `resolveBrandingByHost`, NEVER `resolveOrgIdByHost`: the data resolver
   answers an unmatched host, an unbound domain, and any lookup error with
   the SEED org, so it would put the seed tenant's brand on platform-host
-  mail. `lib/auth-email-brand.test.ts` pins that, including a structural
-  assertion that the data resolver is never called — the bug is invisible in
-  output here, because the seed org IS the tenant it would leak.
+  mail. `artifacts/resupply-api/src/lib/auth-email-brand.test.ts` pins that,
+  including a structural assertion that the data resolver is never called —
+  the bug is invisible in output here, because the seed org IS the tenant it
+  would leak.
   Deliverability still requires
   the tenant's sending **domain** to be authenticated in SendGrid (SPF/DKIM)
   — storing an unauthenticated `from_email` sends but lands in spam, so
