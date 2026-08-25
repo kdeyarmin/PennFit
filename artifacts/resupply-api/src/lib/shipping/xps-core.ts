@@ -23,7 +23,7 @@ import {
 
 import { getEffectiveEnvForOrg } from "../app-config/store";
 import { resolveSmsRecipientForShopOrder } from "../shop-orders-sms-resolver";
-import { sendShippingNotificationIfNew } from "../../routes/admin/shop-orders";
+import { sendShippingNotificationIfNew } from "../order-emails/send-shipping-notification-if-new";
 
 type ShopOrderUpdate = Database["resupply"]["Tables"]["shop_orders"]["Update"];
 

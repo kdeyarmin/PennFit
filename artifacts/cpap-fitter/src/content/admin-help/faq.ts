@@ -163,7 +163,6 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
     category: "patients",
     answer: [
       "Try their phone number and any previous or maiden name, then check Duplicate review /admin/patients/duplicates in case the record was split.",
-      "Storefront customers who have never placed a clinical order live under Customers /admin/shop/customers rather than the clinical roster, which catches people out regularly.",
     ],
     seeAlso: "find-and-work-a-patient",
     keywords: ["search", "find", "missing patient", "duplicate", "customer"],
@@ -240,73 +239,6 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
       "The app shows you the data and who needs attention. The clinical judgment stays with a clinician.",
     ],
     keywords: ["clinical", "medical advice", "pressure", "ahi", "prescription"],
-  },
-
-  // ---------------------------------------------------------------
-  // Orders
-  // ---------------------------------------------------------------
-  {
-    id: "order-origins",
-    question:
-      "Do orders from the storefront, the counter, and a fitting behave differently?",
-    category: "orders",
-    answer: [
-      "No — they all land in Orders /admin/shop/orders and follow the same fulfillment, return, and billing paths.",
-      "The one difference is that an order from a fitting appears in Fitter requests /admin/fitter/orders and may need a clinical approval before it ships.",
-    ],
-    seeAlso: "fulfill-and-ship-an-order",
-    keywords: ["order", "source", "storefront", "counter", "fitter", "queue"],
-  },
-  {
-    id: "out-of-stock",
-    question: "An item on an order is out of stock. What do I do?",
-    category: "orders",
-    answer: [
-      "Record it in Backorders & subs /admin/shop/backorders rather than silently swapping the item. That is what tells the patient and billing what actually shipped.",
-      "A silent substitution is the origin of a surprising number of returns and denied claims — the billed item and the delivered item stop matching.",
-    ],
-    seeAlso: "fulfill-and-ship-an-order",
-    keywords: ["backorder", "out of stock", "substitute", "shortage"],
-  },
-  {
-    id: "return-reason",
-    question: "Does it matter which return reason I pick?",
-    category: "orders",
-    answer: [
-      'Yes, quite a lot. "Did not fit", "wrong item shipped", and "changed mind" produce completely different follow-ups, and the reason feeds Fitter outcomes /admin/analytics/fitter-outcomes and Mask-fit feedback /admin/clinical/mask-fit.',
-      "A fit-related return is a clinical signal. Consider a rescan or a size override rather than shipping the same mask again.",
-    ],
-    seeAlso: "handle-a-return",
-    keywords: ["return", "reason", "rma", "exchange", "fit"],
-  },
-  {
-    id: "chargeback",
-    question: "A patient disputed a charge with their bank. What happens?",
-    category: "orders",
-    answer: [
-      "It appears in Chargeback disputes /admin/billing/disputes with an evidence deadline attached.",
-      "That deadline is hard. If it passes without a response, the money is gone regardless of the merits — treat a dispute as more urgent than an ordinary return.",
-    ],
-    seeAlso: "handle-a-return",
-    keywords: ["chargeback", "dispute", "bank", "card", "evidence", "deadline"],
-  },
-  {
-    id: "patient-has-too-many",
-    question: "A patient says they have too many supplies and wants to cancel.",
-    category: "orders",
-    answer: [
-      "They usually want a longer interval, not a cancellation — say so before they reach for cancel. You cannot make the change for them from this console: Subscriptions /admin/shop/subscriptions is a read-only health dashboard, and the plan is changed by the patient from their own account. Their current state is visible on their customer record at /admin/shop/customers.",
-      "Cancelling drops them out of the reminder program entirely, and patients rarely restart on their own. Stretching the interval keeps the relationship.",
-    ],
-    seeAlso: "manage-subscriptions",
-    keywords: [
-      "cancel",
-      "pause",
-      "too many",
-      "subscription",
-      "cadence",
-      "interval",
-    ],
   },
 
   // ---------------------------------------------------------------
@@ -637,61 +569,6 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
       "purge",
       "permission",
       "documents",
-    ],
-  },
-  {
-    id: "reject-a-bad-review",
-    question: "Can I reject a negative review?",
-    category: "orders",
-    answer: [
-      "Reject for conduct, not for criticism — spam, abuse, or anything containing another person's private information. A genuine negative review is not grounds for rejection, and publishing it with a good reply serves you better than a wall of implausible five-star ratings.",
-      "The one hard rule: never publish a review containing a patient's health details, even if the patient wrote them. Reject it and reach out privately.",
-    ],
-    seeAlso: "moderate-reviews-and-questions",
-    keywords: [
-      "review",
-      "reject",
-      "negative",
-      "moderation",
-      "criticism",
-      "phi",
-    ],
-  },
-  {
-    id: "cart-nudge-count",
-    question: "Why does an abandoned cart only get one reminder?",
-    category: "orders",
-    answer: [
-      "By design. The nudge is one-shot per cart — carts already marked Recovered (they paid) or Cleared (they emptied it themselves) are never nudged at all.",
-      "There is no escalating sequence because a second and third reminder about a forgotten cart reads as pestering. If you want more conversions here, improve the checkout rather than the reminder count.",
-    ],
-    seeAlso: "recover-abandoned-carts",
-    keywords: [
-      "abandoned cart",
-      "reminder",
-      "nudge",
-      "sequence",
-      "once",
-      "recovery",
-    ],
-  },
-  {
-    id: "back-in-stock-manual",
-    question:
-      "When do I need to fan out a back-in-stock notification manually?",
-    category: "orders",
-    answer: [
-      "Rarely. The notification fires automatically when an item goes from zero to in-stock in the inventory editor.",
-      "The manual trigger covers the case where stock is already positive and that automatic moment passed — a backorder window that closed, or a restock nobody dispatched at the time.",
-    ],
-    seeAlso: "recover-abandoned-carts",
-    keywords: [
-      "back in stock",
-      "waitlist",
-      "notify",
-      "manual",
-      "fanout",
-      "restock",
     ],
   },
   {

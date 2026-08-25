@@ -15,7 +15,6 @@ import {
   demoReorderSuggestions,
   demoBillingBalance,
   demoBillingStatements,
-  demoPayments,
   demoInsuranceEstimate,
   DEMO_CUSTOMER,
 } from "../fixtures/account";
@@ -337,7 +336,6 @@ export const accountHandlers: DemoHandler[] = [
   route("GET", "/api/me/billing-statements", () =>
     json(demoBillingStatements()),
   ),
-  route("GET", "/api/me/payments", () => json(demoPayments())),
   route("GET", "/api/me/insurance-estimate", () =>
     json(demoInsuranceEstimate()),
   ),

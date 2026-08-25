@@ -1,7 +1,7 @@
 // Shared SKU autocomplete input.
 //
-// Backorders and the substitution catalog both key off a catalog
-// `shop_sku`. Staff used to type these codes by hand into a bare text
+// Backorders and the substitution catalog both key off a catalog SKU.
+// Staff used to type these codes by hand into a bare text
 // field — and a single typo silently breaks the link (a substitution
 // rule keyed off a SKU that doesn't exist simply never fires). This
 // suggests matching catalog SKUs as you type via a native `<datalist>`,
@@ -21,7 +21,7 @@
 import { useId } from "react";
 import { useQuery } from "@tanstack/react-query";
 
-import { listShopInventory } from "@/lib/admin/shop-inventory-api";
+import { fetchCatalog } from "@/lib/admin/catalog-api";
 import { Input } from "@/components/admin/Input";
 
 export interface SkuComboboxInputProps {
@@ -48,18 +48,18 @@ export function SkuComboboxInput({
   // every SKU input on the page (same query key → one request).
   const catalog = useQuery({
     queryKey: ["sku-combobox-catalog"],
-    queryFn: listShopInventory,
+    // The Postgres catalog (migration 0520) replaced the Stripe product
+    // list this used to read. Include archived SKUs: a backorder or a
+    // substitution rule can legitimately target one.
+    queryFn: () => fetchCatalog({ includeInactive: true, limit: 200 }),
     staleTime: 5 * 60_000,
   });
 
-  // Only products that actually carry a shop_sku are suggestable. A
-  // product without one (preview fixtures, a mis-tagged Stripe product)
-  // is simply omitted — free entry still covers it.
-  const options = (catalog.data?.products ?? []).flatMap((p) =>
-    typeof p.sku === "string" && p.sku.length > 0
-      ? [{ id: p.id, sku: p.sku, name: p.name }]
-      : [],
-  );
+  const options = (catalog.data?.products ?? []).map((p) => ({
+    id: p.sku,
+    sku: p.sku,
+    name: p.name,
+  }));
 
   return (
     <>

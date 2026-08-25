@@ -482,9 +482,12 @@ describe("Stripe checks in production mode", () => {
     expect(stdout).toContain("STRIPE_SECRET_KEY");
   });
 
-  it("fails when STRIPE_SECRET_KEY is missing in production", () => {
+  it("passes when STRIPE_SECRET_KEY is missing — patient checkout is gone", () => {
+    // The legacy key is now only the fallback account platform billing
+    // runs on until STRIPE_PLATFORM_SECRET_KEY is provisioned, so an
+    // insurance-only deployment can leave it unset.
     const { exitCode } = run(withEnv({ STRIPE_SECRET_KEY: undefined }));
-    expect(exitCode).toBe(1);
+    expect(exitCode).toBe(0);
   });
 
   it("fails when STRIPE_WEBHOOK_SIGNING_SECRET does not start with whsec_", () => {
@@ -503,11 +506,13 @@ describe("Stripe checks in production mode", () => {
     expect(stdout).toContain("placeholder");
   });
 
-  it("fails when STRIPE_WEBHOOK_SIGNING_SECRET is missing in production", () => {
+  it("passes when STRIPE_WEBHOOK_SIGNING_SECRET is missing", () => {
+    // There is no patient/Connect webhook to verify anymore; the dedicated
+    // platform-billing webhook carries its own signing secret.
     const { exitCode } = run(
       withEnv({ STRIPE_WEBHOOK_SIGNING_SECRET: undefined }),
     );
-    expect(exitCode).toBe(1);
+    expect(exitCode).toBe(0);
   });
 
   // Dedicated platform-billing account (optional). Unset = single-account
@@ -1177,15 +1182,16 @@ describe("@example.* email scan for arbitrary _EMAIL vars", () => {
 // ---------------------------------------------------------------------------
 
 describe("non-production mode — missing vendor vars warn rather than fail", () => {
-  it("warns (not fails) when STRIPE_WEBHOOK_SIGNING_SECRET is missing in non-prod", () => {
+  it("does not flag a missing STRIPE_WEBHOOK_SIGNING_SECRET in non-prod", () => {
+    // No patient/Connect webhook exists to verify anymore, so an unset
+    // legacy signing secret is unremarkable rather than a warning.
     const env = withEnv({
       NODE_ENV: "development",
       STRIPE_WEBHOOK_SIGNING_SECRET: undefined,
     });
     const { exitCode, stdout } = run(env);
     expect(exitCode).toBe(0);
-    expect(stdout).toContain("STRIPE_WEBHOOK_SIGNING_SECRET");
-    expect(stdout).toContain("WARN");
+    expect(stdout).not.toContain("STRIPE_WEBHOOK_SIGNING_SECRET");
   });
 
   it("warns (not fails) when SENDGRID_API_KEY is missing in non-prod", () => {

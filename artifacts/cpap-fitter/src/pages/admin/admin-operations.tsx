@@ -22,8 +22,6 @@ import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { PageHeader } from "@/components/admin/PageHeader";
 import {
   fetchOpsStatus,
-  runAbandonedCartDispatcher,
-  runReviewRequestDispatcher,
   runRxRenewalDispatcher,
   runSmartTriggerDispatcher,
   runSmartTriggerEvaluator,
@@ -388,20 +386,6 @@ function DispatchersPanel({
         Dispatchers
       </h2>
       <div className="grid gap-3 sm:grid-cols-2">
-        <DispatcherCard
-          title="Cart-abandonment nudge"
-          subtitle="One reminder email per cart that has sat idle for 24+ hours, gated by communication preferences and quiet hours."
-          eligibleNow={dispatchers.abandonedCart.eligibleNow}
-          run={runAbandonedCartDispatcher}
-          onRefresh={onRefresh}
-        />
-        <DispatcherCard
-          title="Post-purchase review request"
-          subtitle="Emails customers ~14 days after a paid order asking for a product review. Comm-prefs + DND aware."
-          eligibleNow={dispatchers.reviewRequest.eligibleNow}
-          run={runReviewRequestDispatcher}
-          onRefresh={onRefresh}
-        />
         <DispatcherCard
           title="Rx renewal — email"
           subtitle="Patients whose CPAP prescription is within 30 days of expiry get a one-time email asking them to coordinate a renewal."

@@ -48,9 +48,6 @@ import {
   type SavedCard,
 } from "@/lib/account-api";
 import { fetchShopProducts } from "@/lib/shop-api";
-import { OrdersSection } from "@/components/account/OrdersSection";
-import { MembershipSection } from "@/components/account/MembershipSection";
-import { SubscriptionsSection } from "@/components/account/SubscriptionsSection";
 import { DocumentsSection } from "@/components/account/DocumentsSection";
 import { ProfileSection } from "@/components/account/ProfileSection";
 import { SecuritySection } from "@/components/account/SecuritySection";
@@ -65,14 +62,12 @@ import {
   EsignFormsSection,
   ReferralProgramSection,
 } from "@/components/self-service-sections";
-import { ReorderSuggestionsSection } from "@/components/reorder-suggestions-section";
 import { InsightsSection } from "@/components/insights-section";
 import { TherapySummarySection } from "@/components/therapy-summary-section";
 import { MaintenanceSection } from "@/components/maintenance-section";
 import { MaskLeakWizardSection } from "@/components/mask-leak-wizard-section";
 import { SubstitutionsSection } from "@/components/substitutions-section";
 import { EducationFeedSection } from "@/components/education-feed-section";
-import { MyReturnsSection } from "@/components/my-returns-section";
 import { BiometricLockGate } from "@/components/biometric-lock-gate";
 
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -82,7 +77,6 @@ const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 // active tab's sections mount (less to load, less to wade through).
 const ACCOUNT_TABS = [
   { id: "overview", label: "Overview", icon: UserCircle2 },
-  { id: "orders", label: "Orders & returns", icon: Package },
   { id: "therapy", label: "Therapy & supplies", icon: HeartPulse },
   { id: "messages", label: "Messages", icon: MessageSquare },
   { id: "account", label: "Account", icon: Settings },
@@ -103,7 +97,6 @@ export function hashToAccountTab(hash: string): AccountTabId | null {
   if (h === "messages") return "messages";
   if (h === "therapy") return "therapy";
   if (h === "account") return "account";
-  if (h === "autoship" || h === "orders") return "orders";
   return null;
 }
 
@@ -454,19 +447,6 @@ function AccountInner() {
                 <InsightsSection />
               </>
             )}
-            {activeTab === "orders" && (
-              <>
-                <ReorderSuggestionsSection />
-                <MembershipSection />
-                <SubscriptionsSection previewMode={previewMode === true} />
-                <OrdersSection
-                  orders={data.recentOrders ?? []}
-                  previewMode={previewMode === true}
-                />
-                <MyReturnsSection />
-                <SubstitutionsSection />
-              </>
-            )}
             {activeTab === "therapy" && (
               <>
                 <TherapySummarySection />
@@ -474,6 +454,7 @@ function AccountInner() {
                 <MaskLeakWizardSection />
                 <EducationFeedSection />
                 <EquipmentRegistrySection />
+                <SubstitutionsSection />
               </>
             )}
             {activeTab === "messages" && (

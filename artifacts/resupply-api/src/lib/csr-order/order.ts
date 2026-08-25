@@ -1,10 +1,14 @@
-// Shared helpers for CSR-created "sign & pay" orders.
+// Shared helpers for CSR-created signature orders.
 //
-// Used by both the admin routes (create / resend / cancel / list) and
-// the public token-gated routes (view / sign / checkout) so the two
-// surfaces can never drift on: the paperwork snapshot shape, the
-// signing-link format, the invite copy, and how payment state is
-// derived from the mirrored shop_orders row.
+// Used by both the admin routes (create / resend / cancel / list) and the
+// public token-gated routes (view / sign) so the two surfaces can never
+// drift on: the paperwork snapshot shape, the signing-link format, and the
+// invite copy.
+//
+// Nothing is charged here. The patient signs the required paperwork
+// (assignment of benefits, delivery confirmation) and the order is billed
+// to their insurance through the claims pipeline — there is no cash-pay
+// checkout, so this flow collects a signature, not a payment.
 //
 // PHI / logging posture: invite emails and SMS contain the link only —
 // order line items are patient-facing but are never logged; signature
@@ -172,74 +176,11 @@ export function buildCsrOrderSigningLink(
 ): string {
   const token = signCsrOrderToken(orderRequestId, linkVersion, ttlSeconds);
   const base = getAuthDeps().publicBaseUrl.replace(/\/$/, "");
-  return `${base}/order-pay?token=${encodeURIComponent(token)}`;
-}
-
-/** Payment state derived from the mirrored shop_orders row (the Stripe
- *  charge webhook owns the status flip — see lib/stripe/webhook-handler). */
-export interface CsrOrderPaymentState {
-  status: "not_started" | "pending" | "paid" | "refunded";
-  paidAt: string | null;
-  shopOrderId: string | null;
-}
-
-export async function lookupPaymentState(
-  supabase: SupabaseClient,
-  stripeSessionId: string | null,
-): Promise<CsrOrderPaymentState> {
-  if (!stripeSessionId) {
-    return { status: "not_started", paidAt: null, shopOrderId: null };
-  }
-  const { data, error } = await supabase
-    .from("shop_orders")
-    .select("id, status, paid_at")
-    .eq("stripe_session_id", stripeSessionId)
-    .limit(1)
-    .maybeSingle();
-  if (error) throw error;
-  if (!data) return { status: "not_started", paidAt: null, shopOrderId: null };
-  if (data.status === "paid") {
-    return { status: "paid", paidAt: data.paid_at, shopOrderId: data.id };
-  }
-  if (data.status === "refunded") {
-    return { status: "refunded", paidAt: data.paid_at, shopOrderId: data.id };
-  }
-  return { status: "pending", paidAt: null, shopOrderId: data.id };
-}
-
-/** Batch variant for the admin list view: session id → payment state. */
-export async function lookupPaymentStates(
-  supabase: SupabaseClient,
-  stripeSessionIds: string[],
-): Promise<Map<string, CsrOrderPaymentState>> {
-  const map = new Map<string, CsrOrderPaymentState>();
-  if (stripeSessionIds.length === 0) return map;
-  const { data, error } = await supabase
-    .from("shop_orders")
-    .select("id, stripe_session_id, status, paid_at")
-    .in("stripe_session_id", stripeSessionIds);
-  if (error) throw error;
-  for (const row of data ?? []) {
-    map.set(row.stripe_session_id, {
-      status:
-        row.status === "paid"
-          ? "paid"
-          : row.status === "refunded"
-            ? "refunded"
-            : "pending",
-      paidAt: row.status === "paid" ? row.paid_at : null,
-      shopOrderId: row.id,
-    });
-  }
-  return map;
-}
-
-export function formatUsd(cents: number): string {
-  return `$${(cents / 100).toFixed(2)}`;
+  return `${base}/order-sign?token=${encodeURIComponent(token)}`;
 }
 
 /**
- * Deliver the sign-&-pay invite over email and/or SMS. Best-effort per
+ * Deliver the signature invite over email and/or SMS. Best-effort per
  * channel: a missing contact point, an unconfigured vendor, or a send
  * error leaves that channel's flag false without throwing — the CSR
  * can always copy the link from the admin UI instead.
@@ -251,7 +192,6 @@ export async function deliverCsrOrderInvite(input: {
   phone: string | null;
   link: string;
   orderReference: string;
-  amountTotalCents: number;
   hasDocuments: boolean;
   reminder?: boolean;
   /** For log correlation only. */
@@ -261,7 +201,6 @@ export async function deliverCsrOrderInvite(input: {
     return { emailSent: false, smsSent: false };
   }
   const company = await resolveCompanyProfile(input.supabase);
-  const amount = formatUsd(input.amountTotalCents);
 
   let emailSent = false;
   if (input.email) {
@@ -276,13 +215,12 @@ export async function deliverCsrOrderInvite(input: {
         to: input.email,
         subject: input.reminder
           ? `Reminder: complete your ${company.legalName} order ${input.orderReference}`
-          : `Your ${company.legalName} order ${input.orderReference} — review, sign & pay`,
+          : `Your ${company.legalName} order ${input.orderReference} — review & sign`,
         html: renderOrderInviteHtml({
           company: company.legalName,
           customerName: input.customerName,
           link: input.link,
           orderReference: input.orderReference,
-          amount,
           hasDocuments: input.hasDocuments,
         }),
         text: renderOrderInviteText({
@@ -290,7 +228,6 @@ export async function deliverCsrOrderInvite(input: {
           customerName: input.customerName,
           link: input.link,
           orderReference: input.orderReference,
-          amount,
           hasDocuments: input.hasDocuments,
         }),
       });
@@ -332,8 +269,8 @@ export async function deliverCsrOrderInvite(input: {
         tenantSms.messagingServiceSid)
     ) {
       const body =
-        `${company.legalName}: your order ${input.orderReference} (${amount}) is ready. ` +
-        `Review${input.hasDocuments ? ", sign" : ""} & pay securely here: ${input.link}` +
+        `${company.legalName}: your order ${input.orderReference} is ready. ` +
+        `Review${input.hasDocuments ? " & sign" : ""} securely here: ${input.link}` +
         ` Reply STOP to opt out.`;
       try {
         const client = createTwilioSmsClient({
@@ -370,28 +307,25 @@ function renderOrderInviteHtml(input: {
   customerName: string;
   link: string;
   orderReference: string;
-  amount: string;
   hasDocuments: boolean;
 }): string {
   const safeName = escapeHtml(input.customerName);
   const steps = input.hasDocuments
-    ? "review your order, sign the required paperwork, and complete your payment"
-    : "review your order and complete your payment";
+    ? "review your order and sign the required paperwork"
+    : "review and confirm your order";
   // Chrome comes from the shared CareMetric Breathe email design system.
   // `input.company` goes into slots the layout escapes itself — pass it
   // raw or it double-escapes.
   return renderBrandedEmail({
     brandName: input.company,
     heading: `Order ${input.orderReference}`,
-    preheader: `We've prepared order ${input.orderReference} for you (total ${input.amount}).`,
+    preheader: `We've prepared order ${input.orderReference} for you.`,
     contentHtml: [
       paragraph(`Hello ${safeName},`),
       paragraph(
         `We&#39;ve prepared order <strong>${escapeHtml(
           input.orderReference,
-        )}</strong> for you (total <strong>${escapeHtml(
-          input.amount,
-        )}</strong>). Please ${steps}. It only takes a few minutes on any phone, tablet, or computer.`,
+        )}</strong> for you. Please ${steps}. It only takes a few minutes on any phone, tablet, or computer.`,
       ),
     ].join("\n"),
     button: { label: "Review & complete my order", url: input.link },
@@ -408,18 +342,17 @@ function renderOrderInviteText(input: {
   customerName: string;
   link: string;
   orderReference: string;
-  amount: string;
   hasDocuments: boolean;
 }): string {
   const steps = input.hasDocuments
-    ? "review your order, sign the required paperwork, and complete your payment"
-    : "review your order and complete your payment";
+    ? "review your order and sign the required paperwork"
+    : "review and confirm your order";
   return [
     `${input.company}`,
     "",
     `Hello ${input.customerName},`,
     "",
-    `We've prepared order ${input.orderReference} for you (total ${input.amount}). Please ${steps}. It only takes a few minutes on any device.`,
+    `We've prepared order ${input.orderReference} for you. Please ${steps}. It only takes a few minutes on any device.`,
     "",
     `Review & complete: ${input.link}`,
     "",

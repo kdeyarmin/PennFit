@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "seed:shop": "tsx ./src/seed-stripe-products.ts",
+    "import:catalog": "tsx ./src/import-stripe-catalog.ts",
     "seed:product-costs": "tsx ./src/seed-product-costs.ts",
     "seed:sample": "tsx ./src/seed-sample-data.ts",
     "demo:seed": "tsx ./src/seed-demo-tenant.ts",

@@ -74,12 +74,20 @@ describe("Account notification deep links", () => {
     expect(SRC).toContain('path="/account/orders"');
   });
 
-  it("redirects account aliases to the hash tabs the account page understands", () => {
+  it("redirects /account/insights to the hash tab the account page understands", () => {
     expect(SRC).toContain('<AccountHashRedirect hash="insights" />');
-    expect(SRC).toContain('<AccountHashRedirect hash="orders" />');
     expect(SRC).toContain(
       "setLocation(`/account${search}#${hash}`, { replace: true })",
     );
+  });
+
+  it("lands /account/orders on the account itself, not a dead hash", () => {
+    // The retail Orders tab retired with cash-pay, so `#orders` no longer
+    // resolves and hashToAccountTab() would silently fall back to Overview.
+    // Pushes sent before that deploy still carry the path, so the route
+    // stays — pointing somewhere real.
+    expect(SRC).not.toContain('<AccountHashRedirect hash="orders" />');
+    expect(SRC).toContain('<Redirect to="/account" />');
   });
 });
 

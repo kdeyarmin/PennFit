@@ -26,16 +26,6 @@ const GUIDES = [
     export: "HelpFindYourMask",
   },
   {
-    href: "/help/place-an-order",
-    module: "help-place-an-order",
-    export: "HelpPlaceAnOrder",
-  },
-  {
-    href: "/help/shop-and-checkout",
-    module: "help-shop-and-checkout",
-    export: "HelpShopAndCheckout",
-  },
-  {
     href: "/help/track-your-order",
     module: "help-track-your-order",
     export: "HelpTrackYourOrder",
@@ -56,19 +46,9 @@ const GUIDES = [
     export: "HelpInsuranceEstimate",
   },
   {
-    href: "/help/returns-and-refunds",
-    module: "help-returns-and-refunds",
-    export: "HelpReturnsAndRefunds",
-  },
-  {
     href: "/help/reset-password",
     module: "help-reset-password",
     export: "HelpResetPassword",
-  },
-  {
-    href: "/help/save-to-wishlist",
-    module: "help-save-to-wishlist",
-    export: "HelpSaveToWishlist",
   },
 ] as const;
 

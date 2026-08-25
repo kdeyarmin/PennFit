@@ -8,9 +8,12 @@ describe("account hash deep links", () => {
     expect(hashToAccountTab("insights")).toBe("overview");
   });
 
-  it("opens the orders tab for order and autoship links", () => {
-    expect(hashToAccountTab("#orders")).toBe("orders");
-    expect(hashToAccountTab("#autoship")).toBe("orders");
+  it("no longer resolves the retired orders/autoship links", () => {
+    // The orders tab retired with cash-pay. An old push or email deep link
+    // now falls through to the account page's default tab rather than
+    // targeting a tab that no longer exists.
+    expect(hashToAccountTab("#orders")).toBeNull();
+    expect(hashToAccountTab("#autoship")).toBeNull();
   });
 
   it("ignores unknown hashes so the account page can use its default tab", () => {

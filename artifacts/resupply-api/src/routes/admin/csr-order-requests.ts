@@ -6,11 +6,11 @@
 //   POST /admin/csr-order-requests/:id/resend   — reissue link + resend invite
 //   POST /admin/csr-order-requests/:id/cancel   — cancel (invalidates links)
 //
-// A CSR builds an order (free-form line items priced in cents),
-// optionally attaches paperwork from the patient-packet template
-// catalog, and the customer receives a signed HMAC link to review,
-// e-sign, and pay via Stripe Hosted Checkout. Payment state is derived
-// from the mirrored shop_orders row — see lib/csr-order/order.ts.
+// A CSR builds an order (free-form line items priced in cents, for the
+// claim), optionally attaches paperwork from the patient-packet template
+// catalog, and the customer receives a signed HMAC link to review and
+// e-sign. Nothing is charged to the patient — the order is billed to their
+// insurance through the claims pipeline.
 //
 // Permission posture: `returns.manage` — the operational CSR tier that
 // already owns shop-order fulfillment actions. The signing link is an
@@ -29,12 +29,9 @@ import {
   computeAmountTotalCents,
   deliverCsrOrderInvite,
   generateCsrOrderReference,
-  lookupPaymentState,
-  lookupPaymentStates,
   parseOrderDocuments,
   parseOrderItems,
   snapshotOrderDocuments,
-  type CsrOrderPaymentState,
 } from "../../lib/csr-order/order";
 import {
   adminRateLimit,
@@ -46,8 +43,8 @@ const router: IRouter = Router();
 
 const idParam = z.object({ id: z.string().uuid() });
 
-// Stripe's minimum USD charge is $0.50; enforcing it at create time
-// surfaces the problem to the CSR instead of the customer.
+// A zero-value order is almost always a data-entry slip; the floor
+// surfaces it to the CSR at create time rather than on the claim.
 const MIN_TOTAL_CENTS = 50;
 const MAX_TOTAL_CENTS = 100_000_00; // $100k sanity cap
 
@@ -99,15 +96,14 @@ interface OrderRequestRow {
   signed_at: string | null;
   signer_name: string | null;
   canceled_at: string | null;
-  stripe_session_id: string | null;
   created_by_email: string | null;
   created_at: string;
 }
 
 const LIST_COLUMNS =
-  "id, order_reference, status, customer_name, customer_email, customer_phone, items, amount_total_cents, currency, note_to_customer, documents, link_version, expires_at, sent_at, first_viewed_at, signed_at, signer_name, canceled_at, stripe_session_id, created_by_email, created_at";
+  "id, order_reference, status, customer_name, customer_email, customer_phone, items, amount_total_cents, currency, note_to_customer, documents, link_version, expires_at, sent_at, first_viewed_at, signed_at, signer_name, canceled_at, created_by_email, created_at";
 
-function projectRequest(row: OrderRequestRow, payment: CsrOrderPaymentState) {
+function projectRequest(row: OrderRequestRow) {
   const documents = parseOrderDocuments(row.documents);
   return {
     id: row.id,
@@ -117,7 +113,6 @@ function projectRequest(row: OrderRequestRow, payment: CsrOrderPaymentState) {
     customerEmail: row.customer_email,
     customerPhone: row.customer_phone,
     items: parseOrderItems(row.items),
-    amountTotalCents: row.amount_total_cents,
     currency: row.currency,
     noteToCustomer: row.note_to_customer,
     documents: documents.map((d) => ({
@@ -131,7 +126,6 @@ function projectRequest(row: OrderRequestRow, payment: CsrOrderPaymentState) {
     signedAt: row.signed_at,
     signerName: row.signer_name,
     canceledAt: row.canceled_at,
-    payment,
     createdByEmail: row.created_by_email,
     createdAt: row.created_at,
   };
@@ -188,24 +182,8 @@ router.get(
     if (error) throw error;
 
     const rows = (data ?? []) as OrderRequestRow[];
-    const payments = await lookupPaymentStates(
-      supabase,
-      rows.flatMap((r) => (r.stripe_session_id ? [r.stripe_session_id] : [])),
-    );
-
     res.json({
-      requests: rows.map((r) =>
-        projectRequest(
-          r,
-          (r.stripe_session_id
-            ? payments.get(r.stripe_session_id)
-            : undefined) ?? {
-            status: "not_started",
-            paidAt: null,
-            shopOrderId: null,
-          },
-        ),
-      ),
+      requests: rows.map((r) => projectRequest(r)),
       total: count ?? 0,
       page,
       pageSize,
@@ -321,7 +299,6 @@ router.post(
       phone: phoneE164,
       link: signingLink,
       orderReference: created.order_reference,
-      amountTotalCents,
       hasDocuments: snapshot.documents.length > 0,
       orderRequestId: created.id,
     });
@@ -388,10 +365,8 @@ router.get(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getOrgScopedClient(orgId);
-    const payment = await lookupPaymentState(supabase, row.stripe_session_id);
     res.json({
-      request: projectRequest(row, payment),
+      request: projectRequest(row),
       // A copyable link for the CURRENT version — only while open.
       signingLink:
         row.status === "canceled"
@@ -431,9 +406,8 @@ router.post(
       return;
     }
     const supabase = getOrgScopedClient(orgId);
-    const payment = await lookupPaymentState(supabase, row.stripe_session_id);
-    if (payment.status === "paid" || payment.status === "refunded") {
-      res.status(409).json({ error: "already_paid" });
+    if (row.signed_at) {
+      res.status(409).json({ error: "already_signed" });
       return;
     }
 
@@ -463,7 +437,6 @@ router.post(
       phone: row.customer_phone,
       link: signingLink,
       orderReference: row.order_reference,
-      amountTotalCents: row.amount_total_cents,
       hasDocuments: parseOrderDocuments(row.documents).length > 0,
       reminder: true,
       orderRequestId: row.id,
@@ -513,11 +486,9 @@ router.post(
       return;
     }
     const supabase = getOrgScopedClient(orgId);
-    const payment = await lookupPaymentState(supabase, row.stripe_session_id);
-    if (payment.status === "paid" || payment.status === "refunded") {
-      // A paid order is refunded through the shop-order refund flow,
-      // not canceled here.
-      res.status(409).json({ error: "already_paid" });
+    if (row.signed_at) {
+      // A signed order is worked through the claim, not canceled here.
+      res.status(409).json({ error: "already_signed" });
       return;
     }
 

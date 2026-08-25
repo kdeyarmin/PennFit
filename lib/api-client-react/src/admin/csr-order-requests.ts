@@ -19,12 +19,6 @@ export interface CsrOrderItem {
 
 export type CsrOrderRequestStatus = "sent" | "viewed" | "signed" | "canceled";
 
-export interface CsrOrderPaymentState {
-  status: "not_started" | "pending" | "paid" | "refunded";
-  paidAt: string | null;
-  shopOrderId: string | null;
-}
-
 export interface CsrOrderRequestSummary {
   id: string;
   orderReference: string;
@@ -33,6 +27,8 @@ export interface CsrOrderRequestSummary {
   customerEmail: string | null;
   customerPhone: string | null;
   items: CsrOrderItem[];
+  /** Order value billed to the patient's insurance. Nothing is charged
+   *  to the patient — this flow collects a signature, not a payment. */
   amountTotalCents: number;
   currency: string;
   noteToCustomer: string | null;
@@ -43,7 +39,6 @@ export interface CsrOrderRequestSummary {
   signedAt: string | null;
   signerName: string | null;
   canceledAt: string | null;
-  payment: CsrOrderPaymentState;
   createdByEmail: string | null;
   createdAt: string;
 }

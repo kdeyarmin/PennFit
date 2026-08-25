@@ -203,20 +203,25 @@ PATIENTS & CLINICAL:
         Asset recovery (/admin/asset-recovery) — chase back rental equipment
         that is out with a patient who has stopped therapy (permission: cases.read).
 
-ORDERS & SHOP:
+ORDERS & LEADS:
+  Patients do not buy supplies with a card — everything is billed to their
+  insurance — so there is no storefront checkout, cart, or retail order book.
+  - Catalog (module: inventory):
+      * Catalog (/admin/catalog) — the SKUs you dispense and how many are on
+        the shelf (inventory.read to view). Stock is recorded as a MOVEMENT
+        with a reason (received / returned / counted / adjusted), never typed
+        in as a new total, so every count has a ledgered history. Low-stock
+        SKUs are badged here and emailed as a digest every 6 hours.
+      * Backorders (/admin/shop/backorders) — mark a SKU out of stock and
+        manage the resupply substitution rules (returns.manage). NOT retail:
+        the insurance fulfillment path reads this state, so an uncleared
+        backorder keeps substituting away from that SKU. Recording a receipt
+        on the Catalog page clears it automatically.
   - Orders:
-      * Orders (/admin/shop/orders) — all storefront/resupply orders (returns.manage).
       * Fitter requests (/admin/fitter/orders) — orders that came out of a fitting.
       * Shipping labels (/admin/shipping) — buy/print labels, track parcels (returns.manage).
-      * Subscriptions (/admin/shop/subscriptions) — Subscribe-and-Save / resupply subs.
-      * Returns & RMAs (/admin/shop/returns), Backorders & subs (/admin/shop/backorders).
-  - Inventory (module: inventory):
-      * Inventory (/admin/shop/inventory), Reconcile (/admin/shop/inventory/reconcile).
-  - Storefront & leads (module: storefront):
-      * Customers (/admin/shop/customers), Reviews (/admin/shop/reviews),
-        Product Q&A (/admin/shop/product-questions), Abandoned Carts
-        (/admin/shop/abandoned-carts), Back-in-Stock (/admin/shop/back-in-stock),
-        Insurance Leads (/admin/shop/insurance-leads),
+  - Leads (module: storefront):
+      * Insurance Leads (/admin/shop/insurance-leads),
         Fitter Invites (/admin/fitter-invites) — text/email a fitting link to anyone,
         including someone not yet in the system,
         Fit Requests (/admin/fitter-requests) — finished fittings where the patient
@@ -361,7 +366,7 @@ HOW TO USE THIS:
     of the console, and /admin/resources/faq holds short answers to
     common questions.
 
-Guides (55):
+Guides (47):
   Getting started:
     finish-workspace-setup — Finish setting up your workspace
     invite-your-team — Add a teammate and set their role
@@ -384,16 +389,8 @@ Guides (55):
     coach-a-struggling-patient — Run an adherence coaching plan
     manage-document-retention — Place a legal hold or destroy an expired document
   Orders & shop:
-    take-a-front-desk-order — Ring up a walk-in at the front desk
-    fulfill-and-ship-an-order — Fulfill an order and print a shipping label
-    handle-a-return — Process a return, exchange, or refund
-    manage-subscriptions — Answer a question about a resupply subscription
-    count-and-reconcile-inventory — Run an inventory count and reconcile variance
-    moderate-reviews-and-questions — Moderate product reviews and answer customer questions
-    recover-abandoned-carts — Recover abandoned carts and clear back-in-stock waitlists
     work-insurance-leads — Work the insurance-coverage lead queue
     recover-rental-equipment — Recover a rental device from a patient who stopped therapy
-    set-inventory-reorder-points — Set reorder points so you stop running out
   Billing & claims:
     verify-a-patients-insurance — Verify a patient's insurance right now
     submit-a-claim — Take a claim from eligibility to submission

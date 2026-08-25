@@ -115,11 +115,6 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
             what: "Landing dashboard — today's work, queues, and signals.",
           },
           {
-            path: "/admin/front-desk",
-            label: "Front Desk",
-            what: "Capture a walk-in and ring up a counter order.",
-          },
-          {
             path: "/admin/conversations",
             label: "Conversations",
             what: "Unified inbound SMS, MMS, and email threads.",
@@ -504,29 +499,20 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
     title: "Orders and fulfillment",
     category: "orders",
     intro:
-      "Every way an order arrives ends up in one queue, and every order leaves through the same fulfillment path.",
+      "Supplies are dispensed against a patient's insurance, and every parcel leaves through the same fulfillment path.",
     blocks: [
       {
         kind: "para",
-        text: "Orders arrive four ways: storefront checkout, the front desk counter, an approved fitter recommendation, and a recurring resupply subscription. All of them land in Orders, so the fulfillment, return, and billing workflows behave identically regardless of origin. Fitter requests is the subset that came from a fitting, which often needs a clinical approval before it ships.",
+        text: "Patients do not buy supplies with a card — everything is billed to their plan. An order therefore starts either from an approved fitter recommendation or from the resupply engine, and the claim is what collects the money. Fitter requests is the subset that came from a fitting, which often needs a clinical approval before it ships.",
       },
       {
         kind: "para",
-        text: "Shipping labels buys, prints, and tracks — use it rather than a carrier's own site so the tracking number attaches to the order and reaches the patient. Backorders and substitutions is where a stock shortage gets recorded deliberately rather than silently swapped. Returns and RMAs runs the return, and the reason recorded there feeds both fit analytics and mask-fit feedback.",
-      },
-      {
-        kind: "para",
-        text: "Subscriptions is a read-only health dashboard for the subscription base — active and paused counts, pending cancellations, cancellations in the last 30 days, a six-month cohort retention table, and a 30-day churn rate. It has no per-subscription controls: an individual's subscription state shows on their customer record, and the patient makes plan changes from their own account. The most useful thing to know when one calls is that somebody with too many supplies wants a longer interval, not a cancellation.",
+        text: "Shipping labels buys, prints, and tracks — use it rather than a carrier's own site so the tracking number attaches to the order and reaches the patient.",
       },
       {
         kind: "pages",
         title: "Order pages",
         rows: [
-          {
-            path: "/admin/shop/orders",
-            label: "Orders",
-            what: "Every storefront, counter, fitter, and resupply order.",
-          },
           {
             path: "/admin/fitter/orders",
             label: "Fitter requests",
@@ -536,118 +522,6 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
             path: "/admin/shipping",
             label: "Shipping labels",
             what: "Buy, print, and track parcels.",
-          },
-          {
-            path: "/admin/shop/subscriptions",
-            label: "Subscriptions",
-            what: "Read-only subscription health: counts, cohort retention, churn.",
-          },
-          {
-            path: "/admin/shop/returns",
-            label: "Returns & RMAs",
-            what: "Start, track, and close returns and exchanges.",
-          },
-          {
-            path: "/admin/shop/backorders",
-            label: "Backorders & subs",
-            what: "Recorded shortages and deliberate substitutions.",
-          },
-        ],
-      },
-    ],
-  },
-
-  // ---------------------------------------------------------------
-  {
-    id: "inventory",
-    title: "Inventory",
-    category: "orders",
-    intro:
-      "What you have, what you counted, and what that says about what to order.",
-    blocks: [
-      {
-        kind: "para",
-        text: "Inventory is the on-hand position the system believes. Reconcile is where a physical count is recorded, with a reason for every variance — variance without reasons is noise, while variance with reasons is a fixable receiving or picking problem. Inventory turnover, over in analytics, is what turns counts into better reorder points.",
-      },
-      {
-        kind: "pages",
-        title: "Inventory pages",
-        rows: [
-          {
-            path: "/admin/shop/inventory",
-            label: "Inventory",
-            what: "On-hand position by item.",
-          },
-          {
-            path: "/admin/shop/inventory/reconcile",
-            label: "Reconcile",
-            what: "Record a physical count and explain variance.",
-          },
-          {
-            path: "/admin/analytics/inventory-turnover",
-            label: "Inventory turnover",
-            what: "What is moving and what is dead stock.",
-          },
-        ],
-      },
-    ],
-  },
-
-  // ---------------------------------------------------------------
-  {
-    id: "storefront",
-    title: "Storefront and leads",
-    category: "orders",
-    intro:
-      "The customer-facing shop and everyone who touched it without finishing — the cheapest pipeline you have.",
-    blocks: [
-      {
-        kind: "para",
-        text: "Customers is the storefront account roster, with clinical context and in-app messaging. Around it sit the moderation and recovery surfaces: reviews to moderate and reply to, product questions to answer, abandoned carts to recover, back-in-stock waitlists to notify, and insurance leads from people who asked whether their plan covers supplies.",
-      },
-      {
-        kind: "callout",
-        tone: "tip",
-        text: "Abandoned carts and back-in-stock waitlists are people who already chose an item. Working those two lists usually converts better than any campaign to a cold audience.",
-      },
-      {
-        kind: "pages",
-        title: "Storefront pages",
-        rows: [
-          {
-            path: "/admin/shop/customers",
-            label: "Customers",
-            what: "Storefront accounts, with clinical info and messaging.",
-          },
-          {
-            path: "/admin/shop/reviews",
-            label: "Reviews",
-            what: "Moderate and reply to product reviews.",
-          },
-          {
-            path: "/admin/shop/product-questions",
-            label: "Product Q&A",
-            what: "Answer or reject customer-submitted questions.",
-          },
-          {
-            path: "/admin/shop/abandoned-carts",
-            label: "Abandoned Carts",
-            what: "Carts to recover through outreach.",
-          },
-          {
-            path: "/admin/shop/back-in-stock",
-            label: "Back-in-Stock",
-            what: "Customers waiting on a restocked item.",
-          },
-          {
-            path: "/admin/shop/insurance-leads",
-            label: "Insurance Leads",
-            what: "People who asked about insurance coverage.",
-          },
-          {
-            path: "/admin/fitter/analytics",
-            label: "Storefront Analytics",
-            what: "How the storefront and fitter funnel are performing.",
           },
         ],
       },

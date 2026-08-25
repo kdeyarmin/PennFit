@@ -283,14 +283,6 @@ describe("layout.tsx — auxiliary components", () => {
   it("mounts FitFlowStepper between header and main", () => {
     expect(SRC).toContain("FitFlowStepper");
   });
-
-  it("renders WishlistNavLink in the header", () => {
-    expect(SRC).toContain("WishlistNavLink");
-  });
-
-  it("renders MiniCart in the header", () => {
-    expect(SRC).toContain("MiniCart");
-  });
 });
 
 // ---------------------------------------------------------------------------

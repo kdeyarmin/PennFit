@@ -8,16 +8,12 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import {
-  Clock,
   Compass,
-  Heart,
   HelpCircle,
   Home as HomeIcon,
   ShoppingBag,
 } from "lucide-react";
 import { useDocumentTitle } from "@/hooks/use-document-title";
-import { useRecentlyViewed } from "@/hooks/use-recently-viewed";
-import { useWishlist } from "@/lib/wishlist";
 import { useCompanyContact } from "@/lib/contact";
 
 export default function NotFound() {
@@ -30,9 +26,6 @@ export default function NotFound() {
   // prior shop activity, surface direct links back to it. The page
   // they were trying to reach is gone, but their cart and saved
   // items aren't, and that's usually what brought them here.
-  const { productIds: recentIds } = useRecentlyViewed();
-  const { count: wishlistCount } = useWishlist();
-  const hasRecoveryHints = recentIds.length > 0 || wishlistCount > 0;
   return (
     <div className="container max-w-2xl mx-auto px-4 py-20 animate-shimmer-in">
       <Card className="border-0 glass-card rounded-2xl">
@@ -62,14 +55,6 @@ export default function NotFound() {
               Return home
             </Button>
           </Link>
-          <Link href="/shop">
-            <Button
-              variant="outline"
-              className="w-full sm:w-auto rounded-full glass-panel border-0 px-6"
-            >
-              Shop CPAP supplies
-            </Button>
-          </Link>
           <Link href="/consent">
             <Button
               variant="outline"
@@ -80,51 +65,6 @@ export default function NotFound() {
           </Link>
         </CardContent>
       </Card>
-      {/* Recovery card — only shown when the visitor has a sign of
-          prior shop activity in localStorage. Two compact link rows
-          (recently viewed, saved items) plus an FAQ jump that
-          handles the "I think I came here from a broken email link"
-          case. Stays out of the way for first-time 404 hits. */}
-      {hasRecoveryHints && (
-        <Card
-          className="border-0 glass-card rounded-2xl mt-6"
-          data-testid="not-found-recovery"
-        >
-          <CardContent className="p-5 space-y-3">
-            <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-semibold">
-              Pick up where you left off
-            </div>
-            <div className="grid sm:grid-cols-2 gap-2">
-              {recentIds.length > 0 && (
-                <Link
-                  href="/shop"
-                  className="flex items-center gap-3 rounded-lg border border-border/60 px-3 py-2.5 hover:border-[hsl(var(--penn-gold))]/50 hover:bg-secondary/30 transition-colors text-sm"
-                  data-testid="not-found-link-recent"
-                >
-                  <Clock className="w-4 h-4 text-[hsl(var(--penn-navy))]/80" />
-                  <span>
-                    Continue browsing the shop ({recentIds.length} recently
-                    viewed)
-                  </span>
-                </Link>
-              )}
-              {wishlistCount > 0 && (
-                <Link
-                  href="/shop/wishlist"
-                  className="flex items-center gap-3 rounded-lg border border-border/60 px-3 py-2.5 hover:border-[hsl(var(--penn-gold))]/50 hover:bg-secondary/30 transition-colors text-sm"
-                  data-testid="not-found-link-wishlist"
-                >
-                  <Heart className="w-4 h-4 text-[hsl(var(--penn-navy))]/80" />
-                  <span>
-                    {wishlistCount} item{wishlistCount === 1 ? "" : "s"} in your
-                    saved list
-                  </span>
-                </Link>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-      )}
 
       {/* Always-on jump links to the most useful destinations. */}
       <div className="mt-6 grid sm:grid-cols-3 gap-2">

@@ -27,7 +27,6 @@ import { Button } from "@/components/admin/Button";
 import { Card } from "@/components/admin/Card";
 import { FitterInviteButton } from "@/components/admin/FitterInviteButton";
 import { StartVideoVisitButton } from "@/components/admin/StartVideoVisitModal";
-import { PatientPaymentLinkButton } from "@/components/admin/PatientPaymentLinkButton";
 import { VerifyInsuranceButton } from "@/components/admin/VerifyInsuranceButton";
 import { useConfirmDialog } from "@/hooks/use-confirm-dialog";
 
@@ -370,27 +369,6 @@ export function PatientActionBar({
             Texts or emails the patient a secure video-call link for an
             equipment setup, troubleshooting, or a follow-up — no app needed on
             their side.
-          </p>
-        </div>
-
-        <div>
-          <p
-            className="text-xs uppercase tracking-wider font-semibold mb-2"
-            style={{ color: "hsl(var(--penn-gold-deep))" }}
-          >
-            Collect a payment
-          </p>
-          <div className="flex flex-wrap items-center gap-2">
-            <PatientPaymentLinkButton
-              patientId={patient.id}
-              hasEmail={patient.hasEmail}
-              hasPhone={patient.hasPhone}
-              onSent={onAfterAction}
-            />
-          </div>
-          <p className="mt-2 text-xs" style={{ color: "hsl(var(--ink-3))" }}>
-            Emails or texts the patient a secure Stripe link to pay a balance by
-            card. Nothing is charged until they complete the payment.
           </p>
         </div>
 

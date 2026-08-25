@@ -23,7 +23,7 @@ import {
 } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
-import { ensureShopCustomerRow } from "../../lib/stripe/customer";
+import { ensureShopCustomerRow } from "../../lib/shop-customer/record";
 import { readCustomerProfile } from "../../lib/customer-profile";
 import {
   attachSignedIn,

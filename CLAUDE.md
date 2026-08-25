@@ -175,17 +175,17 @@ This is a `pnpm` workspaces monorepo (Node v24, TypeScript ~6.0, pnpm 11.7.0).
 Workspace globs (`pnpm-workspace.yaml`): `artifacts/*`, `lib/*`,
 and `scripts`.
 
-| Path                         | Purpose                                                                                                                                                                                                                                                                                                                                                                                                |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `artifacts/resupply-api`     | Single Express 5 API process. Hosts the storefront/fitter routes (`/api/*`), the resupply admin/voice routes (`/resupply-api/*`), AND the in-process `pg-boss` worker (reminders + PHI sweep) booted from `src/worker/index.ts`.                                                                                                                                                                       |
-| `artifacts/cpap-fitter`      | Customer-facing SPA (Vite + React + Wouter + Tailwind). Mounts the internal admin console at `/admin/*` (gated by `useGetAdminMe`); legacy `/resupply/*` URLs SPA-redirect to `/admin/*` preserving query strings.                                                                                                                                                                                     |
-| `artifacts/shared`           | Cross-artifact static assets (favicons served at root).                                                                                                                                                                                                                                                                                                                                                |
-| `lib/resupply-*`             | Shared workspace packages: `db`, `auth` (+ `auth-react`), `messaging`, `email`, `ai`, `telecom`, `audit`, `domain`, `secrets`, `reminders`, `templates`.                                                                                                                                                                                                                                               |
-| `lib/resupply-integrations*` | Partner-connectivity layer (therapy-cloud pulls, inbound order webhooks, payer/claims). `lib/resupply-integrations` is the shared contract; the per-vendor adapters live alongside it. See **Integrations layer** below.                                                                                                                                                                               |
-| `lib/api-client-react`       | Hand-maintained API client + React hooks (`src/{admin,storefront}/generated/`).                                                                                                                                                                                                                                                                                                                        |
-| `scripts/`                   | Architecture/route/migration drift checks (`check-resupply-architecture`, `check-admin-route-gates`, `check-resupply-migration-prefix`, `ci-check-ts-syntax`) plus operator utilities under `src/`: `preflight-prod-env.ts` (env validator), `verify-deploy.ts` (post-deploy routing probe), `auth-bootstrap-admin.ts` / `auth-set-admin-password.ts`, `seed-stripe-products.ts`, `probe-supabase.ts`. |
-| `e2e/`                       | Playwright end-to-end suite (storefront load, results-page resilience, axe a11y). Run from the repo root, not a workspace.                                                                                                                                                                                                                                                                             |
-| `docs/`                      | Architecture notes, post-mortems, production readiness, runbooks.                                                                                                                                                                                                                                                                                                                                      |
+| Path                         | Purpose                                                                                                                                                                                                                                                                                                                                                                     |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `artifacts/resupply-api`     | Single Express 5 API process. Hosts the storefront/fitter routes (`/api/*`), the resupply admin/voice routes (`/resupply-api/*`), AND the in-process `pg-boss` worker (reminders + PHI sweep) booted from `src/worker/index.ts`.                                                                                                                                            |
+| `artifacts/cpap-fitter`      | Customer-facing SPA (Vite + React + Wouter + Tailwind). Mounts the internal admin console at `/admin/*` (gated by `useGetAdminMe`); legacy `/resupply/*` URLs SPA-redirect to `/admin/*` preserving query strings.                                                                                                                                                          |
+| `artifacts/shared`           | Cross-artifact static assets (favicons served at root).                                                                                                                                                                                                                                                                                                                     |
+| `lib/resupply-*`             | Shared workspace packages: `db`, `auth` (+ `auth-react`), `messaging`, `email`, `ai`, `telecom`, `audit`, `domain`, `secrets`, `reminders`, `templates`.                                                                                                                                                                                                                    |
+| `lib/resupply-integrations*` | Partner-connectivity layer (therapy-cloud pulls, inbound order webhooks, payer/claims). `lib/resupply-integrations` is the shared contract; the per-vendor adapters live alongside it. See **Integrations layer** below.                                                                                                                                                    |
+| `lib/api-client-react`       | Hand-maintained API client + React hooks (`src/{admin,storefront}/generated/`).                                                                                                                                                                                                                                                                                             |
+| `scripts/`                   | Architecture/route/migration drift checks (`check-resupply-architecture`, `check-admin-route-gates`, `check-resupply-migration-prefix`, `ci-check-ts-syntax`) plus operator utilities under `src/`: `preflight-prod-env.ts` (env validator), `verify-deploy.ts` (post-deploy routing probe), `auth-bootstrap-admin.ts` / `auth-set-admin-password.ts`, `probe-supabase.ts`. |
+| `e2e/`                       | Playwright end-to-end suite (storefront load, results-page resilience, axe a11y). Run from the repo root, not a workspace.                                                                                                                                                                                                                                                  |
+| `docs/`                      | Architecture notes, post-mortems, production readiness, runbooks.                                                                                                                                                                                                                                                                                                           |
 
 There is **one** customer-facing app. The platform/home site is
 `cmbreathe.com` (with `pennfit.up.railway.app/` as the Railway fallback),
@@ -243,6 +243,33 @@ expects a port distinct from the SPA (typically 3000). On Railway,
 These are non-negotiable invariants of the codebase. Treat them as
 correctness, not style:
 
+- **Patients are insurance-only — no cash-pay, no card payments.** The
+  storefront checkout, cart, shoppable catalog, memberships, subscriptions,
+  patient payment links, autopay, payment plans, Stripe Connect, and the
+  patient/Connect webhook were all removed. Patients receive equipment
+  through the insurance pipeline (`fulfillments` → `claim-builder` →
+  Office Ally), and CSR-created orders collect a **signature**, not a
+  payment (`/order-sign`, `lib/csr-order/order.ts`). Do NOT reintroduce a
+  patient-facing charge, a card-on-file, or a storefront that sells.
+  Stripe's ONLY remaining role is **platform SaaS billing** — tenants
+  paying the platform — via `STRIPE_PLATFORM_SECRET_KEY`,
+  `lib/platform-billing/stripe.ts`, and the single webhook at
+  `/resupply-api/stripe/platform-webhook`. The `shop_*` tables are
+  retained for historical rows and analytics; they take no new writes.
+- **The product catalog is Postgres, and stock only moves through the
+  RPC.** `resupply.products` (migration 0520) is the SKU registry that
+  replaced the Stripe Products list; on-hand used to be
+  `product.metadata.stock_count` and is now `products.stock_count`, where
+  **NULL means untracked, not zero**. Never `UPDATE products.stock_count`
+  directly — go through `adjustStock()` (`lib/catalog/store.ts`), which
+  calls `resupply.adjust_product_stock`. That function takes a
+  per-`(org, sku)` advisory lock and writes `product_stock_ledger` in the
+  same transaction, so a plain read-modify-write would both lose a
+  concurrent decrement and leave the ledger disagreeing with the balance.
+  A dispense is recorded when a fulfillment is **queued** (the only
+  lifecycle transition this app owns — PacWare marks things shipped out of
+  band) and is deliberately fail-soft: an un-catalogued SKU is logged and
+  skipped, never allowed to fail a resupply the patient is due.
 - **A patient never files their own order, and never gets a mask for the
   wrong age.** Two invariants of the mask fitter, both added by
   migration 0518:
@@ -382,15 +409,16 @@ getCompanyInfo(orgId))` / `resolveBrandingByOrgId(orgId)`. The unconfigured
 
 Long-running services validate required env vars at startup and fail fast
 with a single error listing **every** missing variable. Optional / feature-
-gated variables (Twilio, SendGrid, OpenAI, Stripe, object storage) degrade
+gated variables (Twilio, SendGrid, OpenAI, Stripe platform billing,
+object storage) degrade
 gracefully when unset so dev/preview environments don't need every
 third-party credential.
 
 **HTTP serving is decoupled from the in-process worker** (`src/index.ts`):
 the Express listener binds first, then pg-boss starts in the background and
 retries on a backoff if it can't reach Postgres. A worker/DB hiccup must
-NOT take the whole site down — the static storefront and the public shop
-catalog (Stripe-less preview fallback) need neither the worker nor the DB.
+NOT take the whole site down — the static storefront needs neither the
+worker nor the DB.
 Accordingly Railway's health check is `/resupply-api/healthz` (liveness,
 no dependency), **not** `/readyz`; `/readyz` still reports DB + worker
 readiness but is a monitoring/alerting signal, not a deploy gate. Don't

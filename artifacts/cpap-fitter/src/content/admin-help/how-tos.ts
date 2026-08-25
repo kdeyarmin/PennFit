@@ -314,7 +314,7 @@ export const HOW_TO_GUIDES: readonly HowToGuide[] = [
       {
         symptom:
           "Search finds nothing but the patient swears they have an account.",
-        fix: "If you used the header lookup, remember it does not match names — search again from /admin/patients. Then try their phone number, their maiden or previous name, and /admin/patients/duplicates. Storefront customers who have never ordered appear under Customers /admin/shop/customers rather than the clinical roster.",
+        fix: "If you used the header lookup, remember it does not match names — search again from /admin/patients. Then try their phone number, their maiden or previous name, and /admin/patients/duplicates.",
       },
     ],
     related: ["answer-a-patient-message", "send-a-fitting-invite"],
@@ -733,259 +733,6 @@ export const HOW_TO_GUIDES: readonly HowToGuide[] = [
       "resmed",
       "philips",
       "device data",
-    ],
-  },
-
-  // ---------------------------------------------------------------
-  // Orders & shop
-  // ---------------------------------------------------------------
-  {
-    slug: "take-a-front-desk-order",
-    title: "Ring up a walk-in at the front desk",
-    category: "orders",
-    summary:
-      "Front Desk /admin/front-desk captures a walk-in and takes a counter order in one flow — find or create the patient, add items, take payment, and hand them the receipt.",
-    audience: "CSR with order-create permission",
-    timeEstimate: "About 5 minutes",
-    primaryPath: "/admin/front-desk",
-    prerequisites: [
-      "The Front Desk module is on and your role includes creating orders.",
-      "Payments are connected for your account.",
-    ],
-    steps: [
-      {
-        title: "Open Front Desk",
-        body: "Workspace → Front Desk /admin/front-desk. It is built for someone standing at the counter, so it front-loads the search and keeps the order on one screen.",
-      },
-      {
-        title: "Find or create the person",
-        body: "Search first — most walk-ins already exist. Creating a second record for someone you already have splits their order history and doubles their reminders.",
-      },
-      {
-        title: "Add the items",
-        body: "Add what they are taking today. Inventory /admin/shop/inventory is the stock position behind those items; if something is short, Backorders & subs /admin/shop/backorders is where the substitution decision gets recorded.",
-      },
-      {
-        title: "Record the payment path — the screen does not charge a card",
-        body: 'Front Desk records how the order will be paid: "Cash / collected now" or "Bill to insurance". It does not run a card and it does not produce a receipt. Choosing cash asserts you have already taken the money at the counter; choosing insurance records that nothing was collected and flags the order for the billing team. Once placed, the order appears in Orders /admin/shop/orders like any other, so returns, billing, and history behave normally.',
-        callout: {
-          tone: "warning",
-          text: 'Only choose "Cash / collected now" once the money is actually in the drawer — the order is recorded as paid on your say-so and nothing verifies it. Receipts, if you give one, come from your own till.',
-        },
-      },
-      {
-        title: "Set up what comes next",
-        body: "Before they leave, offer the fitting link if they need a mask (Fitter Invites /admin/fitter-invites) and get them on resupply reminders. Both take under a minute at the counter and are much harder to do later.",
-      },
-    ],
-    related: ["fulfill-and-ship-an-order", "send-a-fitting-invite"],
-    keywords: [
-      "walk-in",
-      "counter",
-      "point of sale",
-      "pos",
-      "front desk",
-      "retail",
-    ],
-  },
-  {
-    slug: "fulfill-and-ship-an-order",
-    title: "Fulfill an order and print a shipping label",
-    category: "orders",
-    summary:
-      "Work Orders /admin/shop/orders as the queue, confirm the paperwork and stock, then buy and print the label from Shipping labels /admin/shipping. Tracking flows back to the patient automatically.",
-    audience: "Fulfillment staff or CSR",
-    timeEstimate: "About 4 minutes per order",
-    primaryPath: "/admin/shop/orders",
-    featured: true,
-    prerequisites: [
-      "Your role includes returns and fulfillment management.",
-      "The order has a valid shipping address on the patient record.",
-    ],
-    steps: [
-      {
-        title: "Work the order queue",
-        body: "Orders /admin/shop/orders holds every storefront and resupply order. Fitter requests /admin/fitter/orders is the subset that came out of a fitting — those often need a clinical approval before they ship.",
-      },
-      {
-        title: "Check the paperwork before you pick",
-        body: "For anything billed to insurance, confirm the prescription and any required documentation are on file. Shipping first and chasing paperwork afterward is how claims end up on Bill hold /admin/billing/bill-hold.",
-        callout: {
-          tone: "warning",
-          text: "Shipping an item whose documentation is not complete does not just delay payment — it can make the claim unbillable. Check first.",
-        },
-      },
-      {
-        title: "Confirm stock, or substitute deliberately",
-        body: "If an item is short, do not silently swap it. Backorders & subs /admin/shop/backorders is where the substitution or backorder is recorded so the patient can be told and billing sees the right item.",
-      },
-      {
-        title: "Buy and print the label",
-        body: "Shipping labels /admin/shipping buys the label, prints it, and tracks the parcel. Use it rather than a carrier site so the tracking number attaches to the order and reaches the patient.",
-      },
-      {
-        title: "Track the parcel, not the message queue",
-        body: "Carrier tracking lives with the order and its label in Shipping labels /admin/shipping. Delivery Failures /admin/delivery-failures is a different queue — failed SMS, email, and voice sends — so a stuck parcel will never appear there. A shipment problem caught the same week is a re-ship; caught a month later it is a refund and a bad review.",
-      },
-    ],
-    related: ["handle-a-return", "manage-subscriptions"],
-    keywords: [
-      "shipping",
-      "label",
-      "fulfillment",
-      "pick pack",
-      "tracking",
-      "order queue",
-    ],
-  },
-  {
-    slug: "handle-a-return",
-    title: "Process a return, exchange, or refund",
-    category: "orders",
-    summary:
-      "Start the RMA from Returns & RMAs /admin/shop/returns, tell the patient what to send back and how, then refund or exchange per policy once it arrives. Restock what is resellable.",
-    audience: "CSR",
-    timeEstimate: "About 5 minutes to start, plus receiving",
-    primaryPath: "/admin/shop/returns",
-    prerequisites: [
-      "The original order is in the system and you know why it is coming back.",
-    ],
-    steps: [
-      {
-        title: "Start the return",
-        body: "Returns & RMAs /admin/shop/returns creates and tracks the return. Start it from here rather than promising a refund in a message thread — the RMA is what fulfillment and billing both read.",
-      },
-      {
-        title: "Record the real reason",
-        body: '"Did not fit", "wrong item shipped", and "changed mind" lead to completely different follow-ups. The reason you record is what shows up later in Fitter outcomes /admin/analytics/fitter-outcomes and in Mask-fit feedback /admin/clinical/mask-fit.',
-        callout: {
-          tone: "tip",
-          text: "A fit-related return is a clinical signal, not just a refund. Consider a rescan or a size override rather than shipping the same mask again.",
-        },
-      },
-      {
-        title: "Tell the patient exactly what to do",
-        body: "What to send back, how, and by when. Ambiguity here is the single biggest cause of returns that never arrive.",
-      },
-      {
-        title: "Close it out when it lands",
-        body: "Receive the return, refund or exchange per your policy, and restock anything resellable through Inventory /admin/shop/inventory. If the item was billed, make sure the claim or the patient balance is adjusted too.",
-      },
-      {
-        title: "Handle a card dispute separately",
-        body: "If the patient disputed the charge with their bank instead of asking you, it appears in Chargeback disputes /admin/billing/disputes with its evidence deadline. That deadline is hard — miss it and the money is gone regardless of who was right.",
-      },
-    ],
-    related: ["fulfill-and-ship-an-order", "review-a-fit-session"],
-    keywords: [
-      "return",
-      "rma",
-      "refund",
-      "exchange",
-      "restock",
-      "chargeback",
-      "dispute",
-    ],
-  },
-  {
-    slug: "manage-subscriptions",
-    title: "Answer a question about a resupply subscription",
-    category: "orders",
-    summary:
-      "Subscriptions /admin/shop/subscriptions is a health dashboard, not a management screen — tiles, a cohort table, and 30-day churn. A specific patient's subscription state shows on their customer record, and the patient changes the plan themselves from their account.",
-    audience: "CSR",
-    timeEstimate: "About 5 minutes",
-    primaryPath: "/admin/shop/subscriptions",
-    prerequisites: ["The Storefront module is on."],
-    steps: [
-      {
-        title: "Know what the Subscriptions page is for",
-        body: 'Subscriptions /admin/shop/subscriptions answers "how healthy is the subscription base" — counts of active and paused, pending cancellations, cancellations in the last 30 days, a six-month cohort retention table, and a 30-day churn rate. It is read-only. There is no list of individual subscriptions here and no cadence, pause, or cancel control.',
-        callout: {
-          tone: "warning",
-          text: "Do not go to this page to change someone's subscription — it cannot. Going there first is the most common wrong turn on this workflow.",
-        },
-      },
-      {
-        title: "Look up the specific patient instead",
-        body: "For one person, open their record from Customers /admin/shop/customers. Their subscription state — status, items, current period end, and whether it is set to cancel at period end — shows there alongside their orders and carts.",
-      },
-      {
-        title: "Walk the patient through changing it themselves",
-        body: "Plan changes are the patient's to make from their own account area, which is where their payment method and billing portal live. Talk them through it rather than promising to do it for them, because from this console you cannot.",
-        callout: {
-          tone: "tip",
-          text: "A patient with too many supplies wants a longer interval, not a cancellation. Say that explicitly before they reach for cancel — it is the single sentence that saves the most subscriptions.",
-        },
-      },
-      {
-        title: "Time future reminders from real usage",
-        body: "If the underlying problem is that supplies arrive before they are needed, Resupply Opportunities /admin/therapy-resupply is driven by actual device usage rather than a fixed calendar, and the cadence rules behind reminders live in Frequency rules /admin/rules.",
-      },
-      {
-        title: "Watch the trend, not the individual",
-        body: "If pending cancellations or 30-day churn are climbing on /admin/shop/subscriptions, that is a program problem — usually cadence or price — rather than a run of unrelated individual decisions.",
-      },
-    ],
-    troubleshooting: [
-      {
-        symptom: "A patient asked us to pause and I can't find the control.",
-        fix: "There isn't one in this console. Their subscription state is visible on their customer record at /admin/shop/customers, but the change itself is made by the patient from their account. Walk them through it on the call.",
-      },
-    ],
-    related: ["set-up-resupply-reminders", "fulfill-and-ship-an-order"],
-    keywords: [
-      "subscription",
-      "auto-ship",
-      "recurring",
-      "churn",
-      "cohort",
-      "cancel",
-      "pause",
-      "resupply",
-    ],
-  },
-  {
-    slug: "count-and-reconcile-inventory",
-    title: "Run an inventory count and reconcile variance",
-    category: "orders",
-    summary:
-      "Count against Inventory /admin/shop/inventory, then record what you actually found in Reconcile /admin/shop/inventory/reconcile with a reason for every variance.",
-    audience: "Warehouse or admin",
-    timeEstimate: "Depends on catalog size; budget half a day monthly",
-    primaryPath: "/admin/shop/inventory/reconcile",
-    prerequisites: ["The Inventory module is on for your account."],
-    steps: [
-      {
-        title: "Pick a cadence and hold it",
-        body: "Monthly is the usual rhythm. The value of a count comes from the trend across counts, so an irregular count tells you much less than a boring regular one.",
-      },
-      {
-        title: "Count against the system position",
-        body: "Inventory /admin/shop/inventory is the on-hand position the app believes. Count physically first and compare afterwards, so you are not unconsciously counting toward the expected number.",
-      },
-      {
-        title: "Record variance with a reason",
-        body: "Reconcile /admin/shop/inventory/reconcile takes the counted figures. Always record why a line varied — damage, an unrecorded sale, a mis-pick. Variance without a reason is noise; variance with reasons is a fixable process problem.",
-        callout: {
-          tone: "note",
-          text: "Repeated shrink on one SKU is usually a receiving or picking process problem, not theft. The reason codes are what let you tell the difference.",
-        },
-      },
-      {
-        title: "Feed the result back into ordering",
-        body: "Inventory turnover /admin/analytics/inventory-turnover shows what is moving and what is dead stock. Use it to set reorder points rather than reordering from memory.",
-      },
-    ],
-    related: ["fulfill-and-ship-an-order"],
-    keywords: [
-      "inventory",
-      "count",
-      "cycle count",
-      "stock",
-      "variance",
-      "reconcile",
-      "shrink",
     ],
   },
 
@@ -1420,11 +1167,7 @@ export const HOW_TO_GUIDES: readonly HowToGuide[] = [
         fix: "Simulate them in /admin/rule-tester to see which rule is firing. A per-patient override beats the rule, so check for one before editing a rule that affects everybody.",
       },
     ],
-    related: [
-      "manage-subscriptions",
-      "send-a-bulk-campaign",
-      "monitor-therapy-adherence",
-    ],
+    related: ["send-a-bulk-campaign", "monitor-therapy-adherence"],
     keywords: [
       "reminder",
       "resupply",
@@ -2168,107 +1911,6 @@ export const HOW_TO_GUIDES: readonly HowToGuide[] = [
     ],
   },
   {
-    slug: "moderate-reviews-and-questions",
-    title: "Moderate product reviews and answer customer questions",
-    category: "orders",
-    summary:
-      "Reviews /admin/shop/reviews opens on Pending with inline approve and reject; a rejection takes a short note. Product Q&A /admin/shop/product-questions is the same shape but you compose an answer instead of approving.",
-    audience: "CSR or storefront owner",
-    timeEstimate: "About 15 minutes daily",
-    primaryPath: "/admin/shop/reviews",
-    prerequisites: ["The Storefront module is on."],
-    steps: [
-      {
-        title: "Work the Pending tab",
-        body: "Reviews /admin/shop/reviews lands on Pending because that is the only state that needs you. Approve or reject inline; the row leaves the tab as you act, so the queue visibly shrinks.",
-      },
-      {
-        title: "Reject for conduct, not for criticism",
-        body: "A rejection takes a short note. Reject spam, abuse, and anything containing another person's private information. A negative but genuine review is not a rejection — publishing it and replying well is far better for you than an implausible wall of five stars.",
-        callout: {
-          tone: "warning",
-          text: "Never publish a review that contains a patient's health details, even if the patient wrote it themselves. Reject it and reach out privately.",
-        },
-      },
-      {
-        title: "Answer product questions",
-        body: "Product Q&A /admin/shop/product-questions has a simpler lifecycle — pending, then answered or rejected. Pending rows let you compose the answer inline.",
-      },
-      {
-        title: "Answer for the next hundred readers",
-        body: "A published answer is read by everyone who looks at that product, not only the person who asked. Answer the general question, and keep anything patient-specific out of it.",
-      },
-      {
-        title: "Feed what you learn back",
-        body: "Repeated questions about sizing or compatibility are a product-page problem, not a Q&A problem. A recurring complaint about fit belongs with Mask-fit feedback /admin/clinical/mask-fit and the formulary.",
-      },
-    ],
-    related: ["recover-abandoned-carts", "act-on-customer-feedback"],
-    keywords: [
-      "review",
-      "moderation",
-      "question",
-      "q&a",
-      "approve",
-      "reject",
-      "storefront",
-      "answer",
-    ],
-  },
-  {
-    slug: "recover-abandoned-carts",
-    title: "Recover abandoned carts and clear back-in-stock waitlists",
-    category: "orders",
-    summary:
-      "Abandoned Carts /admin/shop/abandoned-carts sends a single reminder to carts that qualify — recovered and cleared carts are never nudged. Back-in-Stock /admin/shop/back-in-stock shows who is waiting on what and can fan out manually.",
-    audience: "CSR or storefront owner",
-    timeEstimate: "About 10 minutes weekly",
-    primaryPath: "/admin/shop/abandoned-carts",
-    prerequisites: [
-      "The Storefront module is on.",
-      "Your email sender is configured at /admin/email-settings so the nudge comes from your brand.",
-    ],
-    steps: [
-      {
-        title: "Read the cart statuses before sending",
-        body: "Abandoned Carts /admin/shop/abandoned-carts marks each row: Recovered means they paid, Cleared means they emptied the cart themselves, and Nudged means the reminder already went. Recovered and cleared carts are never nudged.",
-      },
-      {
-        title: "Send the due reminders",
-        body: "One action sends the reminders that are actually due. The nudge is deliberately one-shot per cart — there is no escalating sequence, because a second and third reminder about a forgotten cart reads as pestering.",
-        callout: {
-          tone: "note",
-          text: "One reminder per cart is the whole design. If you want more conversions here, improve the checkout, not the reminder count.",
-        },
-      },
-      {
-        title: "Use the waitlist as a restock signal",
-        body: "Back-in-Stock /admin/shop/back-in-stock shows who is waiting on what. The item with twenty-three people waiting is the item to refill first — read it before you place your next purchase order.",
-      },
-      {
-        title: "Fan out manually when you need to",
-        body: "The waitlist notification fires automatically when an item goes from zero to in-stock in the inventory editor. The manual trigger exists for the case where stock is already positive and the automatic moment passed — a closed backorder window, or a restock nobody dispatched.",
-      },
-      {
-        title: "Measure it where the numbers live",
-        body: "Outreach Attribution /admin/analytics/outreach-attribution shows what this actually converted, and Channel engagement /admin/analytics/channel-engagement shows whether email is the right channel for this audience.",
-      },
-    ],
-    related: [
-      "moderate-reviews-and-questions",
-      "count-and-reconcile-inventory",
-    ],
-    keywords: [
-      "abandoned cart",
-      "back in stock",
-      "waitlist",
-      "nudge",
-      "recovery",
-      "restock",
-      "conversion",
-    ],
-  },
-  {
     slug: "work-insurance-leads",
     title: "Work the insurance-coverage lead queue",
     category: "orders",
@@ -2307,7 +1949,7 @@ export const HOW_TO_GUIDES: readonly HowToGuide[] = [
         body: "Set the row's status and leave a note. The note is what stops the next person from repeating the same eligibility call to the same patient a week later.",
       },
     ],
-    related: ["verify-a-patients-insurance", "recover-abandoned-carts"],
+    related: ["verify-a-patients-insurance"],
     keywords: [
       "insurance lead",
       "coverage",
@@ -2667,7 +2309,7 @@ export const HOW_TO_GUIDES: readonly HowToGuide[] = [
         body: "Set a target in Goals & targets /admin/goals and check the trend next month. If a change you made did not move the number, stop doing it rather than doing more of it.",
       },
     ],
-    related: ["find-and-read-a-report", "moderate-reviews-and-questions"],
+    related: ["find-and-read-a-report"],
     keywords: [
       "nps",
       "survey",
@@ -2848,66 +2490,6 @@ export const HOW_TO_GUIDES: readonly HowToGuide[] = [
       "payer",
       "win rate",
       "reconsideration",
-    ],
-  },
-  {
-    slug: "set-inventory-reorder-points",
-    title: "Set reorder points so you stop running out",
-    category: "orders",
-    summary:
-      "Every SKU in Inventory /admin/shop/inventory carries a low-stock threshold — 5 by default until you set one. Tune it per SKU from real demand, and use Inventory turnover /admin/analytics/inventory-turnover to tell fast movers from dead stock.",
-    audience: "Warehouse or admin",
-    timeEstimate: "About an hour for a first pass",
-    primaryPath: "/admin/shop/inventory",
-    prerequisites: [
-      "The Inventory module is on.",
-      "You have a few months of order history to reason from — a threshold set on guesswork is just a different guess.",
-    ],
-    steps: [
-      {
-        title: "Know what the threshold actually does",
-        body: "Each product has its own low-stock threshold, and any SKU without one falls back to a default of 5. That default is a placeholder, not a recommendation — it is almost certainly wrong for both your fastest and your slowest movers.",
-        callout: {
-          tone: "note",
-          text: "One default across a catalog means you stock out of cushions and sit on headgear. The whole value here is that the number is per SKU.",
-        },
-      },
-      {
-        title: "Set it from demand and lead time together",
-        body: "A workable threshold covers what you expect to sell while a replacement order is in transit, plus a buffer for a bad week. A SKU you sell ten of a week with a two-week lead time needs a far higher threshold than one you sell ten of a year, even though both are ordinary items.",
-      },
-      {
-        title: "Let turnover tell you which SKUs matter",
-        body: "Inventory turnover /admin/analytics/inventory-turnover separates what is moving from what is dead stock. Spend your tuning effort on the fast movers — they are where a stockout actually costs you an order.",
-      },
-      {
-        title: "Watch what the waitlist is telling you",
-        body: "Back-in-Stock /admin/shop/back-in-stock is the honest scoreboard for this. A SKU that keeps accumulating people waiting has a threshold set too low, whatever your arithmetic said.",
-      },
-      {
-        title: "Correct against your counts",
-        body: "Reconcile /admin/shop/inventory/reconcile is where physical reality meets the recorded position. A threshold built on a stock figure that has been drifting for six months will not protect you, so keep the counts honest first.",
-      },
-      {
-        title: "Revisit after a season",
-        body: "Demand moves — a new mask you start recommending changes the cushion mix underneath it. Re-check thresholds when your formulary changes and after a seasonal swing, rather than setting them once and trusting them forever.",
-      },
-    ],
-    troubleshooting: [
-      {
-        symptom: "We keep stocking out of one item despite a threshold.",
-        fix: "Either the lead time grew or demand did. Check Inventory turnover /admin/analytics/inventory-turnover for the trend and raise the threshold to cover the real replacement window, not the one you assumed.",
-      },
-    ],
-    related: ["count-and-reconcile-inventory", "recover-abandoned-carts"],
-    keywords: [
-      "reorder point",
-      "low stock",
-      "threshold",
-      "par level",
-      "stockout",
-      "inventory",
-      "restock",
     ],
   },
   {

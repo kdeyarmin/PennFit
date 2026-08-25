@@ -66,11 +66,6 @@ import { AgreementsGate } from "@/pages/admin/agreements-gate";
 const PatientsPage = lazyWithRetry(() =>
   import("@/pages/admin/patients").then((m) => ({ default: m.PatientsPage })),
 );
-const FrontDeskPage = lazyWithRetry(() =>
-  import("@/pages/admin/front-desk").then((m) => ({
-    default: m.FrontDeskPage,
-  })),
-);
 const AdminPatientsDuplicatesPage = lazyWithRetry(() =>
   import("@/pages/admin/admin-patients-duplicates").then((m) => ({
     default: m.AdminPatientsDuplicatesPage,
@@ -130,26 +125,6 @@ const AdminComplianceRulesPage = lazyWithRetry(() =>
 const AdminLocationsPage = lazyWithRetry(() =>
   import("@/pages/admin/admin-locations").then((m) => ({
     default: m.AdminLocationsPage,
-  })),
-);
-const AdminShopReviewsPage = lazyWithRetry(() =>
-  import("@/pages/admin/admin-shop-reviews").then((m) => ({
-    default: m.AdminShopReviewsPage,
-  })),
-);
-const AdminProductQuestionsPage = lazyWithRetry(() =>
-  import("@/pages/admin/admin-product-questions").then((m) => ({
-    default: m.AdminProductQuestionsPage,
-  })),
-);
-const AdminShopReturnsPage = lazyWithRetry(() =>
-  import("@/pages/admin/admin-shop-returns").then((m) => ({
-    default: m.AdminShopReturnsPage,
-  })),
-);
-const AdminShopOrdersPage = lazyWithRetry(() =>
-  import("@/pages/admin/admin-shop-orders").then((m) => ({
-    default: m.AdminShopOrdersPage,
   })),
 );
 const AdminFollowupsPage = lazyWithRetry(() =>
@@ -245,6 +220,16 @@ const AdminAnalyticsChannelEngagementPage = lazyWithRetry(() =>
 const AdminLtvCacPage = lazyWithRetry(() =>
   import("@/pages/admin/admin-ltv-cac").then((m) => ({
     default: m.AdminLtvCacPage,
+  })),
+);
+const AdminBackordersPage = lazyWithRetry(() =>
+  import("@/pages/admin/admin-backorders").then((m) => ({
+    default: m.AdminBackordersPage,
+  })),
+);
+const AdminCatalogPage = lazyWithRetry(() =>
+  import("@/pages/admin/admin-catalog").then((m) => ({
+    default: m.AdminCatalogPage,
   })),
 );
 const AdminInventoryTurnoverPage = lazyWithRetry(() =>
@@ -357,11 +342,6 @@ const AdminAlertsPage = lazyWithRetry(() =>
     default: m.AdminAlertsPage,
   })),
 );
-const AdminShopSubscriptionsPage = lazyWithRetry(() =>
-  import("@/pages/admin/admin-shop-subscriptions").then((m) => ({
-    default: m.AdminShopSubscriptionsPage,
-  })),
-);
 const AdminTeamPage = lazyWithRetry(() =>
   import("@/pages/admin/admin-team").then((m) => ({
     default: m.AdminTeamPage,
@@ -385,11 +365,6 @@ const AdminControlCenterPage = lazyWithRetry(() =>
 const AdminProductivityPage = lazyWithRetry(() =>
   import("@/pages/admin/admin-productivity").then((m) => ({
     default: m.AdminProductivityPage,
-  })),
-);
-const AdminBackordersPage = lazyWithRetry(() =>
-  import("@/pages/admin/admin-backorders").then((m) => ({
-    default: m.AdminBackordersPage,
   })),
 );
 const AdminClosuresPage = lazyWithRetry(() =>
@@ -490,46 +465,6 @@ const AdminRuleTesterPage = lazyWithRetry(() =>
 const AdminSettingsPage = lazyWithRetry(() =>
   import("@/pages/admin/admin-settings").then((m) => ({
     default: m.AdminSettingsPage,
-  })),
-);
-const AdminShopInventoryPage = lazyWithRetry(() =>
-  import("@/pages/admin/admin-shop-inventory").then((m) => ({
-    default: m.AdminShopInventoryPage,
-  })),
-);
-const AdminShopProductNewPage = lazyWithRetry(() =>
-  import("@/pages/admin/admin-shop-product-new").then((m) => ({
-    default: m.AdminShopProductNewPage,
-  })),
-);
-const AdminShopArchivedProductsPage = lazyWithRetry(() =>
-  import("@/pages/admin/admin-shop-archived-products").then((m) => ({
-    default: m.AdminShopArchivedProductsPage,
-  })),
-);
-const AdminShopProductEditPage = lazyWithRetry(() =>
-  import("@/pages/admin/admin-shop-product-edit").then((m) => ({
-    default: m.AdminShopProductEditPage,
-  })),
-);
-const AdminShopInventoryReconcilePage = lazyWithRetry(() =>
-  import("@/pages/admin/admin-shop-inventory-reconcile").then((m) => ({
-    default: m.AdminShopInventoryReconcilePage,
-  })),
-);
-const AdminShopInventoryReconcileEditPage = lazyWithRetry(() =>
-  import("@/pages/admin/admin-shop-inventory-reconcile-edit").then((m) => ({
-    default: m.AdminShopInventoryReconcileEditPage,
-  })),
-);
-const AdminShopAbandonedCartsPage = lazyWithRetry(() =>
-  import("@/pages/admin/admin-shop-abandoned-carts").then((m) => ({
-    default: m.AdminShopAbandonedCartsPage,
-  })),
-);
-const AdminShopBackInStockPage = lazyWithRetry(() =>
-  import("@/pages/admin/admin-shop-back-in-stock").then((m) => ({
-    default: m.AdminShopBackInStockPage,
   })),
 );
 const AdminInsuranceLeadsPage = lazyWithRetry(() =>
@@ -808,16 +743,6 @@ const AdminResourceUserGuidePage = lazyWithRetry(() =>
 const AdminResourceFaqPage = lazyWithRetry(() =>
   import("@/pages/admin/admin-resources-faq").then((m) => ({
     default: m.AdminResourceFaqPage,
-  })),
-);
-const AdminCustomerDetailPage = lazyWithRetry(() =>
-  import("@/pages/admin/admin-customer-detail").then((m) => ({
-    default: m.AdminCustomerDetailPage,
-  })),
-);
-const AdminShopCustomersPage = lazyWithRetry(() =>
-  import("@/pages/admin/admin-shop-customers").then((m) => ({
-    default: m.AdminShopCustomersPage,
   })),
 );
 // Renamed-export pattern: the source files export AdminOrders /
@@ -1116,7 +1041,6 @@ function AdminConsole() {
                 />
               )}
             </Route>
-            <Route path="/admin/front-desk" component={FrontDeskPage} />
             <Route path="/admin/patients" component={PatientsPage} />
             <Route
               path="/admin/patient-packets"
@@ -1163,46 +1087,6 @@ function AdminConsole() {
             />
             <Route path="/admin/locations" component={AdminLocationsPage} />
             <Route
-              path="/admin/shop/reviews"
-              component={AdminShopReviewsPage}
-            />
-            <Route
-              path="/admin/shop/product-questions"
-              component={AdminProductQuestionsPage}
-            />
-            <Route
-              path="/admin/shop/inventory"
-              component={AdminShopInventoryPage}
-            />
-            <Route
-              path="/admin/shop/inventory/new"
-              component={AdminShopProductNewPage}
-            />
-            <Route
-              path="/admin/shop/inventory/archived"
-              component={AdminShopArchivedProductsPage}
-            />
-            <Route
-              path="/admin/shop/inventory/:productId/edit"
-              component={AdminShopProductEditPage}
-            />
-            <Route
-              path="/admin/shop/inventory/reconcile"
-              component={AdminShopInventoryReconcilePage}
-            />
-            <Route
-              path="/admin/shop/inventory/reconcile/:id"
-              component={AdminShopInventoryReconcileEditPage}
-            />
-            <Route
-              path="/admin/shop/abandoned-carts"
-              component={AdminShopAbandonedCartsPage}
-            />
-            <Route
-              path="/admin/shop/back-in-stock"
-              component={AdminShopBackInStockPage}
-            />
-            <Route
               path="/admin/shop/insurance-leads"
               component={AdminInsuranceLeadsPage}
             />
@@ -1217,18 +1101,6 @@ function AdminConsole() {
             <Route
               path="/admin/fitter-invites"
               component={AdminFitterInvitesPage}
-            />
-            <Route
-              path="/admin/shop/customers"
-              component={AdminShopCustomersPage}
-            />
-            <Route path="/admin/shop/customers/:userId">
-              {(params) => <AdminCustomerDetailPage userId={params.userId} />}
-            </Route>
-            <Route path="/admin/shop/orders" component={AdminShopOrdersPage} />
-            <Route
-              path="/admin/shop/returns"
-              component={AdminShopReturnsPage}
             />
             <Route path="/admin/followups" component={AdminFollowupsPage} />
             {/* /admin/today and /admin/work-queue merged into the Home
@@ -1388,10 +1260,6 @@ function AdminConsole() {
                 )
               }
             </Route>
-            <Route
-              path="/admin/shop/subscriptions"
-              component={AdminShopSubscriptionsPage}
-            />
             <Route path="/admin/team">
               {() =>
                 canManageTools ? (
@@ -1437,10 +1305,6 @@ function AdminConsole() {
             <Route
               path="/admin/live-staffing"
               component={AdminLiveStaffingPage}
-            />
-            <Route
-              path="/admin/shop/backorders"
-              component={AdminBackordersPage}
             />
             <Route path="/admin/closures" component={AdminClosuresPage} />
             <Route
@@ -1503,6 +1367,11 @@ function AdminConsole() {
                 brand in every tenant's admin URL bar. The legacy paths
                 below redirect so existing bookmarks keep working — the
                 same courtesy the /resupply/* → /admin/* move got. */}
+            <Route path="/admin/catalog" component={AdminCatalogPage} />
+            <Route
+              path="/admin/shop/backorders"
+              component={AdminBackordersPage}
+            />
             <Route path="/admin/fitter/orders" component={FitterOrdersPage} />
             <Route
               path="/admin/fitter/orders/:id"

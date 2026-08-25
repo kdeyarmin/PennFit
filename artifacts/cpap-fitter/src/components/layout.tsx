@@ -1,14 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "wouter";
-import {
-  ShieldCheck,
-  Menu,
-  X,
-  Package,
-  Heart,
-  ChevronDown,
-} from "lucide-react";
-import { SignedIn } from "@/lib/identity";
+import { ShieldCheck, Menu, X, ChevronDown } from "lucide-react";
 import {
   PLATFORM_LOGO_URL,
   hasDistinctStorefrontName,
@@ -17,37 +9,9 @@ import {
 import { UserMenu } from "@/components/user-menu";
 import { FitFlowStepper } from "@/components/fit-flow-stepper";
 import { MobileCtaBar } from "@/components/mobile-cta-bar";
-import { MiniCart } from "@/components/shop/mini-cart";
 import { KeyboardShortcutsDialog } from "@/components/keyboard-shortcuts-dialog";
 import { FloatingContactLauncher } from "@/components/floating-contact-launcher";
-import { useWishlist } from "@/lib/wishlist";
 import { useCompanyContact } from "@/lib/contact";
-
-// Wishlist nav indicator — small heart with count badge that
-// only renders once the shopper has saved at least one item, so
-// the header stays uncluttered for first-time browsers. Visible
-// on both desktop and mobile (the shop affordances cluster
-// together on mobile alongside the cart icon).
-function WishlistNavLink() {
-  const { count } = useWishlist();
-  if (count === 0) return null;
-  return (
-    <Link
-      href="/shop/wishlist"
-      className="relative inline-flex items-center justify-center h-10 w-10 rounded-lg text-muted-foreground hover:text-primary hover:bg-secondary/40 transition-colors"
-      aria-label={`Wishlist (${count} saved)`}
-      data-testid="nav-wishlist"
-    >
-      <Heart className="h-5 w-5" />
-      <span
-        className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-[hsl(var(--penn-gold))] text-[hsl(var(--penn-navy))] text-[10px] font-bold leading-[18px] text-center"
-        data-testid="nav-wishlist-count"
-      >
-        {count > 99 ? "99+" : count}
-      </span>
-    </Link>
-  );
-}
 
 // Reset scroll to the top on every route change. Without this, navigating
 // from a long page (e.g. Results) into a new page leaves the user halfway
@@ -204,29 +168,6 @@ function NavDropdown({ label, items }: { label: string; items: NavLeaf[] }) {
   );
 }
 
-// (CartNavIcon was replaced by MiniCart — see
-// components/shop/mini-cart.tsx. The header now opens a popover
-// with the current cart contents instead of navigating away.)
-//
-// "Your orders" header link — only rendered for signed-in visitors.
-// Lives next to the cart icon so the two shop affordances are
-// grouped. Hidden for signed-out visitors so the header stays
-// uncluttered for first-time browsers.
-function YourOrdersNavLink() {
-  return (
-    <SignedIn>
-      <Link
-        href="/shop/orders"
-        className="hidden md:inline-flex items-center gap-1.5 h-10 px-3 rounded-lg text-sm font-medium text-muted-foreground hover:text-primary hover:bg-secondary/40 transition-colors"
-        data-testid="nav-your-orders"
-      >
-        <Package className="h-4 w-4" aria-hidden="true" />
-        Your orders
-      </Link>
-    </SignedIn>
-  );
-}
-
 /**
  * Application shell that renders the global header, navigation, fit-flow stepper, main content area, and footer while managing mobile navigation state and accessibility helpers.
  *
@@ -337,17 +278,12 @@ export function Layout({ children }: { children: React.ReactNode }) {
                   </Link>
                 );
               })}
-              <YourOrdersNavLink />
-              <WishlistNavLink />
-              <MiniCart />
               <UserMenu />
             </nav>
 
-            {/* Mobile actions: cart icon + hamburger */}
+            {/* Mobile actions: hamburger */}
             <div className="md:hidden flex items-center gap-2">
               <UserMenu />
-              <WishlistNavLink />
-              <MiniCart />
               <button
                 type="button"
                 onClick={() => setMobileOpen((v) => !v)}

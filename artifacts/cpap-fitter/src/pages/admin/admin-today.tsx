@@ -23,7 +23,6 @@ import {
   FileText,
   Inbox,
   MessageSquare,
-  PackageX,
   Pill,
   RefreshCw,
 } from "lucide-react";
@@ -95,7 +94,6 @@ export function TodayWorklistSection() {
           <AssignedAppointmentsCard data={data} />
           <ConversationsCard data={data} />
           <FollowupsCard data={data} />
-          <ReturnsCard data={data} />
           <ComplianceAlertsCard data={data} />
           <RxRenewalsCard data={data} />
           <DocumentsCard data={data} />
@@ -276,49 +274,6 @@ function FollowupsCard({ data }: { data: TodayResponse }) {
               </li>
             );
           })}
-        </ul>
-      )}
-    </Card>
-  );
-}
-
-function ReturnsCard({ data }: { data: TodayResponse }) {
-  const items = data.pendingReturns;
-  return (
-    <Card
-      title={
-        <SectionTitle
-          icon={<PackageX className="h-4 w-4" />}
-          label="Returns to action"
-          count={items.length}
-        />
-      }
-      action={
-        <Link
-          href="/admin/shop/returns"
-          className="text-xs font-semibold hover:underline"
-          style={{ color: "hsl(var(--penn-navy))" }}
-        >
-          All returns →
-        </Link>
-      }
-    >
-      {items.length === 0 ? (
-        <EmptyState>No returns waiting.</EmptyState>
-      ) : (
-        <ul className="space-y-2">
-          {items.map((r) => (
-            <li key={r.id} className="text-sm">
-              <Link href={`/admin/shop/returns`} className="hover:underline">
-                <span className="font-medium">
-                  {humanizeReturnStatus(r.status)}
-                </span>
-                <span className="ml-2" style={{ color: "hsl(var(--ink-3))" }}>
-                  — {r.reason} · opened {relativeAge(r.created_at)}
-                </span>
-              </Link>
-            </li>
-          ))}
         </ul>
       )}
     </Card>
@@ -627,21 +582,6 @@ function SeverityChip({
 function daysUntil(iso: string): number {
   const ms = new Date(iso).getTime() - Date.now();
   return Math.max(0, Math.ceil(ms / (1000 * 60 * 60 * 24)));
-}
-
-function humanizeReturnStatus(s: string): string {
-  switch (s) {
-    case "requested":
-      return "New return request";
-    case "approved":
-      return "Awaiting customer ship-back";
-    case "shipped_back":
-      return "In transit to warehouse";
-    case "received":
-      return "Received — needs refund or replacement";
-    default:
-      return s;
-  }
 }
 
 function humanizeAlertType(t: string): string {
