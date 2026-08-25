@@ -150,7 +150,7 @@ export function HelpOrderByPhone() {
           blurb: "Reminder texts include this number too.",
         },
         {
-          href: "/help/resupply-reminders",
+          href: "/help/request-your-mask",
           label: "Ask for your recommended mask",
           blurb: "Prefer the web? Do the same thing online.",
         },

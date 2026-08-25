@@ -1400,9 +1400,13 @@ A free Penn Home Medical Supply account (see /account, sign up at
 
 Billing (/account/billing) is a READ-ONLY record of what insurance was
 billed: open balances per claim, past statements as PDFs, and payment
-history. There is no card on file and nothing to pay online — if there
-is an open balance the page offers a "Contact billing" path to a
-person. Never tell a patient to add or update a card.
+history. Nothing is charged to a card and there is nothing to pay
+online — if there is an open balance the page offers a "Contact
+billing" path to a person. Never tell a patient to add or update a
+card. A long-standing patient may still see a leftover "Saved card"
+panel on /account from the retired cash-pay program; it is inert and
+nothing is charged against it, so don't deny they can see it — just
+say it isn't used any more.
 
 Education hub: the /learn library has long-form guides on getting
 started, troubleshooting, cleaning, and travel. /faq is the
@@ -1773,7 +1777,9 @@ use the manage link in your reminder email (/reminders/manage),
 or tell the team. You can restart any time.
 Q94. Is there a card on file to update? No — Penn Home Medical
 Supply bills your insurance and never charges a card, so there's
-nothing to keep on file. Billing history is at /account/billing.
+nothing kept on file for charging. An older account may still show a
+leftover card panel; it is inert. Billing history is at
+/account/billing.
 Q95. Return policy if I just don't like a mask? Within the
 60-day comfort guarantee, masks can usually be exchanged. See
 /comfort-guarantee or contact us.
