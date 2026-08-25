@@ -412,21 +412,37 @@ degraded`) in both the route and the SPA store: a lookup that never
   the platform default (`noreply@cmbreathe.com`) in place.
   **The auth email's NAME is a separate question from its From address, and
   the two are deliberately split.** The patient storefront mount
-  (`/api/auth` in `app.ts`) resolves the brand PER REQUEST from the Host —
-  `resolveOrgIdByHost` → `resolveBrandingByOrgId` — via the auth router's
-  `resolveBrand` hook (`lib/resupply-auth/src/http/brand.ts`), so someone
+  (`/api/auth` in `app.ts`) resolves the brand PER REQUEST from the Host via
+  the auth router's `resolveBrand` hook
+  (`lib/resupply-auth/src/http/brand.ts`), wired to
+  `storefrontAuthBrandResolver`
+  (`artifacts/resupply-api/src/lib/auth-email-brand.ts`), so someone
   verifying an address or resetting a password on a tenant's storefront is
   named by that tenant, not by the platform they've never heard of. The
   From address on that mail is still the shared `createSendgridClient()`
   default, because moving it to a tenant's own sender is what the SPF/DKIM
   gate below governs, and a reset link in a spam folder locks a patient out
-  of their account. The staff-console and provider-portal mounts stay fully
-  platform-branded (the console chrome already says CareMetric Breathe, and
-  that mail fires before a tenant is resolved). The hook is **fail-soft by
-  contract** — any throw or blank name degrades to the mount's static
-  `productName` — because an unsent verification or reset email blocks the
-  user outright. `app.auth-email-brand.test.ts` guards which mount gets
-  which. Deliverability still requires
+  of their account. The **staff-console** and **provider-portal** mounts
+  stay fully platform-branded and pass no resolver: the console chrome
+  already says CareMetric Breathe and that mail fires before a tenant is
+  resolved, and the provider portal has **no self-service reset flow at
+  all** — `provider-sign-in.tsx` deliberately links to none and routes
+  recovery through a coordinator, so `/api/provider/auth/forgot-password`
+  is reachable only by an unauthenticated direct POST. Branding it by host
+  would therefore serve no real provider while letting any caller make the
+  platform emit a security email falsely stamped with an arbitrary tenant's
+  name; leave it on the platform identity unless that flow is ever exposed.
+  The hook is **fail-soft by contract** — any throw or blank name degrades
+  to the mount's static `productName` — because an unsent verification or
+  reset email blocks the user outright. Resolvers must read
+  `resolveBrandingByHost`, NEVER `resolveOrgIdByHost`: the data resolver
+  answers an unmatched host, an unbound domain, and any lookup error with
+  the SEED org, so it would put the seed tenant's brand on platform-host
+  mail. `artifacts/resupply-api/src/lib/auth-email-brand.test.ts` pins that,
+  including a structural assertion that the data resolver is never called —
+  the bug is invisible in output here, because the seed org IS the tenant it
+  would leak.
+  Deliverability still requires
   the tenant's sending **domain** to be authenticated in SendGrid (SPF/DKIM)
   — storing an unauthenticated `from_email` sends but lands in spam, so
   enabling a tenant sender is gated on domain auth out of band. The same
