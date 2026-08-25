@@ -9,8 +9,8 @@
 //
 // Lives here rather than inline in `app.ts` so it is nameable and testable:
 // the auth router only sees an opaque function, and the interesting behavior
-// (which host resolves to which brand, and what happens when the lookup
-// fails) deserves assertions of its own.
+// (which host resolves to which brand, and what an unclaimed host does)
+// deserves assertions of its own.
 //
 // Only the patient mount uses this. The staff console and the provider portal
 // stay on the platform identity — that mail is the software's own, and it
@@ -19,25 +19,33 @@
 import type { AuthBrandResolver } from "@workspace/resupply-auth";
 
 import { requestHost } from "./request-host";
-import { resolveBrandingByOrgId, resolveOrgIdByHost } from "./tenant-branding";
+import { resolveBrandingByHost } from "./tenant-branding";
 
 /**
- * Resolve the storefront brand for the tenant whose host this request came
- * in on, or `null` to leave the auth router on its static platform default.
+ * The storefront brand for the host this request arrived on.
  *
- * `null` is the honest answer for a request that resolves to no tenant — the
- * platform's own marketing site, or a domain that isn't bound. The router
- * treats it as "use the mount's configured name".
+ * Uses `resolveBrandingByHost` — NOT `resolveOrgIdByHost` +
+ * `resolveBrandingByOrgId`. The two resolvers in `tenant-branding.ts` answer
+ * deliberately different questions and fall back differently, and only one of
+ * them is safe here:
  *
- * Both resolvers are cached (~60s per org) and fail soft to the platform
- * brand on their own, so this adds no round-trip to a warm path and cannot
- * throw. That matters: the auth router's contract is that a branding lookup
- * must never be able to stop a verification or reset email from going out.
+ *   * `resolveOrgIdByHost` answers "whose DATA does this request operate on",
+ *     so an unmatched host, an unbound domain, or a lookup error all resolve
+ *     to the SEED org — the single-tenant-correct answer for data access.
+ *   * `resolveBrandingByHost` answers "what does this host LOOK like", so the
+ *     same cases resolve to the PLATFORM brand.
+ *
+ * Routing a branding question through the data resolver would have rendered
+ * the seed tenant's name — today, Penn Home Medical Supply — into auth email
+ * sent from the platform's own host, from any unclaimed domain, and from
+ * every host during a lookup blip. That is the cross-tenant leak this whole
+ * area exists to prevent, so the branding resolver is the only correct input.
+ *
+ * Never throws and never returns null: an unresolved host yields the platform
+ * brand, which is exactly what the mount's static default already is.
  */
 export const storefrontAuthBrandResolver: AuthBrandResolver = async (req) => {
-  const orgId = await resolveOrgIdByHost(requestHost(req));
-  if (!orgId) return null;
-  const brand = await resolveBrandingByOrgId(orgId);
+  const brand = await resolveBrandingByHost(requestHost(req));
   return {
     productName: brand.storefrontName,
     signatureName: brand.legalName,

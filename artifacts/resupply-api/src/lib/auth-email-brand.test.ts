@@ -1,24 +1,34 @@
 // Behavior of the patient auth-email brand resolver.
 //
-// Drives the exported resolver directly with a fake request and stubbed
-// tenant lookups, so these assert what it DOES — which brand a given host
-// produces, and that a failing lookup can't take the email down with it.
+// Drives the exported resolver directly with a fake request and a stubbed
+// host→branding lookup, so these assert what it DOES — which host produces
+// which brand, and that a host belonging to no tenant can never borrow one.
 
 import type { Request } from "express";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const resolveOrgIdByHostMock = vi.hoisted(() =>
-  vi.fn(async (_host: string | undefined): Promise<string | null> => null),
-);
-const resolveBrandingByOrgIdMock = vi.hoisted(() =>
-  vi.fn(async (_orgId: string | undefined) => ({
+const PLATFORM_BRANDING = {
+  storefrontName: "CareMetric Breathe",
+  legalName: "CareMetric Breathe",
+  tagline: "The CPAP resupply platform for modern DME teams.",
+  logoUrl: null as string | null,
+};
+
+const resolveBrandingByHostMock = vi.hoisted(() =>
+  vi.fn(async (_host: string | undefined) => ({
     storefrontName: "CareMetric Breathe",
     legalName: "CareMetric Breathe",
-    tagline: "t",
+    tagline: "The CPAP resupply platform for modern DME teams.",
     logoUrl: null as string | null,
   })),
 );
+// Guard against the resolver reaching for the DATA resolver instead: that one
+// answers unmatched hosts with the SEED org, which would leak the seed
+// tenant's brand into platform-host auth mail.
+const resolveOrgIdByHostMock = vi.hoisted(() => vi.fn());
+const resolveBrandingByOrgIdMock = vi.hoisted(() => vi.fn());
 vi.mock("./tenant-branding", () => ({
+  resolveBrandingByHost: resolveBrandingByHostMock,
   resolveOrgIdByHost: resolveOrgIdByHostMock,
   resolveBrandingByOrgId: resolveBrandingByOrgIdMock,
 }));
@@ -30,12 +40,14 @@ function reqForHost(host: string): Request {
 }
 
 beforeEach(() => {
+  resolveBrandingByHostMock.mockReset();
+  resolveBrandingByHostMock.mockResolvedValue({ ...PLATFORM_BRANDING });
   resolveOrgIdByHostMock.mockReset();
-  resolveOrgIdByHostMock.mockResolvedValue(null);
+  resolveOrgIdByHostMock.mockResolvedValue("org-seed-penn");
   resolveBrandingByOrgIdMock.mockReset();
   resolveBrandingByOrgIdMock.mockResolvedValue({
-    storefrontName: "CareMetric Breathe",
-    legalName: "CareMetric Breathe",
+    storefrontName: "Penn Home Medical Supply",
+    legalName: "Penn Home Medical Supply",
     tagline: "t",
     logoUrl: null,
   });
@@ -43,8 +55,7 @@ beforeEach(() => {
 
 describe("storefrontAuthBrandResolver", () => {
   it("returns the tenant's storefront brand for a host that resolves to one", async () => {
-    resolveOrgIdByHostMock.mockResolvedValue("org-penn");
-    resolveBrandingByOrgIdMock.mockResolvedValue({
+    resolveBrandingByHostMock.mockResolvedValue({
       storefrontName: "Penn Home Medical Supply",
       legalName: "Penn Home Medical Supply",
       tagline: "t",
@@ -58,14 +69,12 @@ describe("storefrontAuthBrandResolver", () => {
       signatureName: "Penn Home Medical Supply",
     });
     // Resolved from the REQUEST's host, not a constant.
-    expect(resolveOrgIdByHostMock).toHaveBeenCalledWith("pennpaps.com");
-    expect(resolveBrandingByOrgIdMock).toHaveBeenCalledWith("org-penn");
+    expect(resolveBrandingByHostMock).toHaveBeenCalledWith("pennpaps.com");
   });
 
   it("carries a storefront name distinct from the legal entity", async () => {
     // A tenant that trades under a DBA signs with its registered name.
-    resolveOrgIdByHostMock.mockResolvedValue("org-acme");
-    resolveBrandingByOrgIdMock.mockResolvedValue({
+    resolveBrandingByHostMock.mockResolvedValue({
       storefrontName: "Acme Sleep",
       legalName: "Acme Home Medical LLC",
       tagline: "t",
@@ -80,26 +89,29 @@ describe("storefrontAuthBrandResolver", () => {
     });
   });
 
-  it("defers to the mount's platform default when the host names no tenant", async () => {
-    // The platform's own site, or a domain nobody has bound. `null` tells the
-    // auth router to keep its configured name rather than invent one.
-    resolveOrgIdByHostMock.mockResolvedValue(null);
+  it("gives the platform brand — never a tenant's — on a host that owns none", async () => {
+    // THE regression this file exists for. Routing this through
+    // `resolveOrgIdByHost` looked equivalent but is not: that resolver
+    // answers the platform host, an unbound domain, AND any lookup error
+    // with the SEED org, so auth mail sent from cmbreathe.com would have
+    // gone out branded as the seed tenant. `resolveBrandingByHost` answers
+    // all three with the platform brand.
+    resolveBrandingByHostMock.mockResolvedValue({ ...PLATFORM_BRANDING });
 
     await expect(
       storefrontAuthBrandResolver(reqForHost("cmbreathe.com")),
-    ).resolves.toBeNull();
-    expect(resolveBrandingByOrgIdMock).not.toHaveBeenCalled();
+    ).resolves.toEqual({
+      productName: "CareMetric Breathe",
+      signatureName: "CareMetric Breathe",
+    });
   });
 
-  it("propagates a lookup failure for the router to absorb", async () => {
-    // The resolvers fail soft on their own, but if one ever throws, the
-    // rejection has to reach the router's guard rather than being swallowed
-    // into a blank brand here — a blank wordmark would ship an unbranded
-    // email, which is worse than falling back to the platform name.
-    resolveOrgIdByHostMock.mockRejectedValue(new Error("supabase down"));
-
-    await expect(
-      storefrontAuthBrandResolver(reqForHost("pennpaps.com")),
-    ).rejects.toThrow("supabase down");
+  it("never consults the data resolver, whose fallback is the seed tenant", async () => {
+    // A structural assertion, because the mistake is invisible in the
+    // output: on THIS deployment the seed org is Penn, so a reviewer
+    // eyeballing pennpaps.com sees the right answer either way.
+    await storefrontAuthBrandResolver(reqForHost("cmbreathe.com"));
+    expect(resolveOrgIdByHostMock).not.toHaveBeenCalled();
+    expect(resolveBrandingByOrgIdMock).not.toHaveBeenCalled();
   });
 });
