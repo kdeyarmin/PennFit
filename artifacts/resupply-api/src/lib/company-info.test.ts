@@ -341,6 +341,28 @@ describe("getCompanyInfo", () => {
     );
   });
 
+  it("keeps naming the tenant when its Company Information read fails", async () => {
+    // A transient dme_organization failure (timeout / Supabase blip) must not
+    // put "CareMetric Breathe" on a configured tenant's own storefront for the
+    // length of the hiccup. The read is guarded separately from the outer
+    // catch so the directory step still runs — and the directory resolvers
+    // are independently cached, so this usually costs no round-trip.
+    resolveBrandingByOrgIdMock.mockResolvedValue({
+      storefrontName: "Acme Sleep",
+      legalName: "Acme Home Medical LLC",
+      tagline: "t",
+      logoUrl: null,
+    });
+    stageSupabaseResponse("dme_organization", "select", {
+      error: { message: "boom" },
+    });
+
+    const info = await getCompanyInfo("org-acme");
+
+    expect(info.name).toBe("Acme Sleep");
+    expect(info.legalName).toBe("Acme Home Medical LLC");
+  });
+
   it("still reaches the platform identity when the directory cannot name the tenant", async () => {
     // resolveBrandingByOrgId degrades to the platform brand on a miss or an
     // error, so an unnamed tenant is exactly as it was before.

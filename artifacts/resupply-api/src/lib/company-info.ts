@@ -387,9 +387,32 @@ export async function getCompanyInfo(orgId?: string): Promise<CompanyInfo> {
       // ordering is what stops a new tenant both from inheriting "Penn Home
       // Medical Supply" AND from being called "CareMetric Breathe" on its own
       // storefront before an admin has visited /admin/company-information.
-      info =
-        (await loadFromDb(explicitOrgId)) ??
-        (await orgDirectoryFallbackInfo(explicitOrgId));
+      //
+      // The dme_organization read is guarded SEPARATELY from the outer catch
+      // so a transient failure (timeout, Supabase blip) still reaches the
+      // directory step. Letting it fall through would put "CareMetric
+      // Breathe" on a fully-configured tenant's own storefront for the length
+      // of a hiccup. The directory resolvers carry their own ~60s cache that
+      // the storefront's branding fetch keeps warm, so this usually answers
+      // with no round-trip at all — and when it can't, they fail soft to the
+      // same platform identity the catch would have produced anyway.
+      let fromDb: CompanyInfo | null = null;
+      try {
+        fromDb = await loadFromDb(explicitOrgId);
+      } catch (err) {
+        logger.warn(
+          {
+            event: "company_info_org_row_load_failed",
+            orgId: explicitOrgId,
+            err:
+              err instanceof Error
+                ? err
+                : new Error(String((err as unknown) ?? "unknown")),
+          },
+          "company info: dme_organization read failed; falling back to the org directory",
+        );
+      }
+      info = fromDb ?? (await orgDirectoryFallbackInfo(explicitOrgId));
     } else {
       // The seed tenant (explicit or default). Single-tenant behavior is
       // unchanged: its DB row wins, else the env-folded practice name. The
