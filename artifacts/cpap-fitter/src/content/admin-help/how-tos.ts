@@ -2643,7 +2643,7 @@ export const HOW_TO_GUIDES: readonly HowToGuide[] = [
     primaryPath: "/admin/catalog",
     prerequisites: [
       "The Inventory module is on for your tenant.",
-      "You hold the inventory.read permission (and inventory.write to record movements).",
+      "You hold the inventory.read permission to view the catalog, and admin.tools.manage to record a movement.",
     ],
     steps: [
       {

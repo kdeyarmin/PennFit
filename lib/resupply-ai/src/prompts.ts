@@ -140,7 +140,7 @@ import { BREATHE_SALES_KNOWLEDGE } from "./breathe-sales-knowledge";
  * changes — the patient and shop_customer renders are byte-for-byte unchanged
  * from v18.
  */
-export const PROMPT_VERSION = "2026-06-22.v23" as const;
+export const PROMPT_VERSION = "2026-08-25.v24" as const;
 
 /**
  * Caller-facing greeting phrase. Exposed so callers can A/B without

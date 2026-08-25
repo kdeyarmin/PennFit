@@ -81,7 +81,9 @@ const steps: HelpStep[] = [
         A <BrandName /> representative reviews your request, confirms what your
         plan covers, sorts out the prescription with your sleep provider if one
         is needed, and places the order for you. We aim to be in touch within{" "}
-        <strong>one business day</strong>.
+        <strong>one business day</strong> — how long the rest takes depends on
+        your plan and your prescription, so we&apos;ll tell you where you stand
+        when we call.
       </p>
     ),
     tip: (
@@ -108,9 +110,9 @@ export function HelpRequestYourMask() {
         <>
           On your results page, choose <strong>Send my details</strong> or{" "}
           <strong>Ask a representative to contact me</strong>. Insurance details
-          are optional. A <BrandName /> representative verifies your benefits,
-          handles the prescription, and places the order — usually within one
-          business day.
+          are optional. A <BrandName /> representative gets in touch — usually
+          within one business day — then verifies your benefits, handles the
+          prescription, and places the order for you.
         </>
       }
       prerequisites={[

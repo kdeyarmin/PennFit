@@ -184,6 +184,13 @@ const PROMPT_VERSION_HASHES: Readonly<Record<string, string>> = {
   // below.
   "2026-06-22.v23":
     "8d7fb4c7ff77bb8e7b7aa65a2b2db91973b2de48b3096a2c2b243170b225cff0",
+  // v24 drops the claim that patient payments run through Stripe and states
+  // the platform is insurance-billing rather than retail. Like v22 and v23
+  // this only moves the SALES knowledge base — the PATIENT render is
+  // byte-for-byte unchanged from v18, so this hash matches v18's, and the
+  // sales variant moves in BREATHE_SALES_PROMPT_HASH below.
+  "2026-08-25.v24":
+    "8d7fb4c7ff77bb8e7b7aa65a2b2db91973b2de48b3096a2c2b243170b225cff0",
 };
 
 function renderCanonicalPrompt(): string {

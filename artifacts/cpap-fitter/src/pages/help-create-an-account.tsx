@@ -144,7 +144,7 @@ export function HelpCreateAnAccount() {
       }}
       faqs={[
         {
-          q: "Do I have to create an account to order?",
+          q: "Do I have to create an account to ask for a mask?",
           a: (
             <>
               No. You can{" "}
@@ -152,10 +152,11 @@ export function HelpCreateAnAccount() {
                 href="/help/request-your-mask"
                 className="text-primary hover:underline"
               >
-                order as a guest
+                send us a request without an account
               </Link>
-              . An account just saves your details and order history so future
-              orders are quicker.
+              . You never place the order yourself — our team verifies your
+              coverage and places it for you. An account just keeps your
+              details, shipments and statements in one place afterwards.
             </>
           ),
         },

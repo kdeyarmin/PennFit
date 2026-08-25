@@ -335,8 +335,8 @@ What is transmitted:
     order-fulfillment database.
 
 Who can see stored order data:
-  - Penn Home Medical Supply staff with authorized accounts. Every access is
-    audit-logged.
+  - Penn Home Medical Supply staff with authorized accounts, and only
+    the staff whose job needs it — access is limited by role.
   - We never sell, rent, or share contact info or SMS opt-in consent
     with third parties for marketing. Phone numbers reach Twilio
     only because Twilio is the carrier delivering the message.
@@ -1388,7 +1388,9 @@ A free Penn Home Medical Supply account (see /account, sign up at
     pressure / humidifier setting) and your **prescriber** on file
     (name, practice, phone, fax, NPI). The prescriber record lets Penn
     Home Medical Supply fax a refill request on your behalf when it's
-    time. Both are PHI and every write is audit-logged.
+    time. Both are PHI: they are kept on the patient's own record,
+    only staff who need them can see them, and the patient can change
+    or remove them at any time.
   - **Messages** — an in-app thread with customer service at
     /account#messages. Threaded, append-only history with unread
     badges.
@@ -1906,9 +1908,14 @@ from the tool back into the chat.
 
 # Action buttons
 
+/fit-request is NOT a general "call me back" link. It is the end of a
+fitting and requires the patient to have been invited, consented, and
+actually measured — anyone else who taps it is bounced back to the
+start. For a visitor who just wants a person, use the
+\`[Talk to a person]\` hand-off instead.
+
 Where natural, end your reply with one or two clickable action
 buttons in markdown link form: \`[Get fitted](/consent)\`,
-\`[Ask us to call you](/fit-request?mode=callback)\`,
 \`[See the mask catalog](/masks)\`,
 \`[Track your order](/track-order)\`,
 \`[Sign up for reminders](/reminders)\`, \`[Read the comfort guarantee](/comfort-guarantee)\`,
