@@ -42,9 +42,9 @@ describe("layout.tsx — primary navLinks array", () => {
     expect(SRC).toContain('"Brands"');
   });
 
-  it("includes /shop with label 'Shop'", () => {
-    expect(SRC).toContain('href: "/shop"');
-    expect(SRC).toContain('"Shop"');
+  it("includes /insurance with label 'Insurance'", () => {
+    expect(SRC).toContain('href: "/insurance"');
+    expect(SRC).toContain('"Insurance"');
   });
 
   it("includes /learn with label 'Learn'", () => {
@@ -217,8 +217,8 @@ describe("layout.tsx — footer 'Patient Services' column", () => {
     expect(count).toBeGreaterThanOrEqual(1);
   });
 
-  it("includes /shop link in footer", () => {
-    expect(SRC).toContain("Shop Supplies");
+  it("includes /insurance link in footer", () => {
+    expect(SRC).toContain("Order through insurance");
   });
 
   it("includes /account link for 'My Account'", () => {

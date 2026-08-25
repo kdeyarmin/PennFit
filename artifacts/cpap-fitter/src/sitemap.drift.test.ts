@@ -48,8 +48,9 @@ const EXCLUDED_PREFIXES = [
   "/platform", // platform super-admin console (G4) — gated, never indexed
   "/provider",
   "/resupply", // legacy redirect namespace
+  "/shop", // legacy cash-pay redirect namespace (forwards to /insurance)
   "/account",
-  "/shop/", // cart / checkout-* / orders / wishlist / p/:id — /shop itself IS indexed
+  "/shop/", // legacy cart / checkout-* / orders / wishlist / p/:id paths
   "/sign-in",
   "/sign-up",
   // CareMetric.ai "Breathe" marketing surface — the landing page plus its

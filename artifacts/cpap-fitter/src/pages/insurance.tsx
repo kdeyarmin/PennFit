@@ -20,7 +20,6 @@ import {
   Sparkles,
   ArrowRight,
   HelpCircle,
-  ShoppingBag,
   Stethoscope,
 } from "lucide-react";
 import {
@@ -32,7 +31,7 @@ import {
 import { InsuranceLeadForm } from "@/components/insurance-lead-form";
 import { openPennBot } from "@/lib/chat-events";
 import { useCompanyContact } from "@/lib/contact";
-import { BrandName, LegalName } from "@/components/company-contact";
+import { BrandName, LegalName, SupportPhoneLink } from "@/components/company-contact";
 
 type Step = {
   Icon: React.ComponentType<{ className?: string }>;
@@ -183,16 +182,9 @@ const faqs: FaqRow[] = [
     q: "What if my insurance won't cover something I need?",
     a: (
       <>
-        You always have the option to pay cash through our{" "}
-        <Link
-          href="/shop"
-          className="text-primary underline-offset-4 hover:underline"
-        >
-          shop
-        </Link>{" "}
-        — usually the same supplies, billed directly to your card with no
-        insurance hoops. We'll tell you upfront if cash-pay is the better path
-        for any specific item.
+        Call <BrandName /> at <SupportPhoneLink /> before you pay out of pocket.
+        We can often find an in-network alternative, help your provider update
+        the prescription, or walk you through what your plan allows.
       </>
     ),
   },
@@ -498,7 +490,7 @@ export function Insurance() {
         </div>
       </section>
 
-      {/* No insurance? */}
+      {/* Uninsured / out-of-network */}
       <section>
         <div className="glass-card rounded-2xl relative overflow-hidden">
           <div
@@ -511,29 +503,18 @@ export function Insurance() {
           />
           <div className="p-6 sm:p-8 flex flex-col sm:flex-row gap-5 items-start relative">
             <div className="shrink-0 h-12 w-12 rounded-xl icon-halo-gold flex items-center justify-center">
-              <ShoppingBag className="w-5 h-5" />
+              <PhoneCall className="w-5 h-5" />
             </div>
             <div className="space-y-2 flex-1">
               <h3 className="text-xl font-semibold tracking-tight">
-                No insurance? You can still order direct.
+                Uninsured or out of network?
               </h3>
               <p className="text-sm text-muted-foreground leading-relaxed">
-                The <BrandName /> shop sells the same cushions, filters, tubing,
-                and bundles on a cash-pay basis — no prescription needed for
-                most consumables, and we ship fast.
+                <BrandName /> supplies patients through insurance. If your plan
+                is out of network or you do not have coverage yet, call us at{" "}
+                <SupportPhoneLink /> and we will walk through what is possible
+                before you pay anything out of pocket.
               </p>
-              <div className="flex flex-wrap gap-3 pt-2">
-                <Link href="/shop">
-                  <Button
-                    variant="outline"
-                    className="rounded-full glass-panel border-border/60 gap-2"
-                    data-testid="insurance-cta-shop"
-                  >
-                    Browse the cash-pay shop
-                    <ArrowRight className="w-4 h-4" />
-                  </Button>
-                </Link>
-              </div>
             </div>
           </div>
         </div>

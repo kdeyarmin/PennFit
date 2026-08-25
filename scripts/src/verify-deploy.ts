@@ -25,9 +25,11 @@
 //       → 200, JSON, body.status === "ok".  A 404 or an HTML body
 //         means the API tree isn't mounted in the host answering this
 //         domain.
-//   * GET /resupply-api/shop/products  (Accept: application/json)
-//       → 200, JSON, body.products is an array.  This is the exact
-//         call the shop page makes.
+//   * GET /api/company-info  (Accept: application/json)
+//       → 200, JSON, body.name is a non-empty string.  This is a
+//         storefront route the SPA calls on first paint; it proves
+//         /api/* is mounted (the cash-pay /shop/products catalog was
+//         retired with the insurance-only storefront).
 //   * GET /  (Accept: text/html)
 //       → 200, HTML.  Confirms the SPA shell is served (informational;
 //         a non-200 here is a warning, not a hard failure, since the
@@ -275,10 +277,13 @@ async function main(): Promise<number> {
       : `status was ${JSON.stringify(json["status"])}`,
   );
 
-  // The exact call the shop page makes. Reachability is what we assert;
-  // an empty catalog (preview mode with no SKUs) is still a pass.
-  await checkApiJson(base, "/resupply-api/shop/products", (json) =>
-    Array.isArray(json["products"]) ? null : "body had no `products` array",
+  // Storefront identity the SPA resolves on boot. Reachability is what
+  // we assert; the tenant name can be the platform fallback on an
+  // unbound host.
+  await checkApiJson(base, "/api/company-info", (json) =>
+    typeof json["name"] === "string" && json["name"].length > 0
+      ? null
+      : "body had no non-empty `name` string",
   );
 
   await checkSpaShell(base);

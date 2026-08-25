@@ -66,7 +66,7 @@ const navLinks: NavEntry[] = [
       { href: "/cpap-masks/fisher-paykel", label: "Fisher & Paykel" },
     ],
   },
-  { href: "/shop", label: "Shop" },
+  { href: "/insurance", label: "Insurance" },
   { href: "/learn", label: "Learn" },
   { href: "/help", label: "Help" },
 ];
@@ -467,10 +467,10 @@ export function Layout({ children }: { children: React.ReactNode }) {
                   </li>
                   <li>
                     <Link
-                      href="/shop"
+                      href="/insurance"
                       className="text-muted-foreground hover:text-primary transition-colors"
                     >
-                      Shop Supplies
+                      Order through insurance
                     </Link>
                   </li>
                   <li>

@@ -20,7 +20,7 @@ export default function NotFound() {
   const contact = useCompanyContact();
   useDocumentTitle(
     "Page not found",
-    `We couldn't find that page on ${contact.name}. Try the home page, the shop, or the mask catalog.`,
+    `We couldn't find that page on ${contact.name}. Try the home page, insurance ordering, or the mask fitter.`,
   );
   // Recovery hints — when the visitor has any localStorage signal of
   // prior shop activity, surface direct links back to it. The page
@@ -45,7 +45,7 @@ export default function NotFound() {
           </CardTitle>
           <CardDescription className="text-base max-w-md mx-auto">
             The page you're looking for doesn't exist on {contact.name}. Try the
-            home page, the supply shop, or the mask fitter.
+            home page, insurance ordering, or the mask fitter.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col sm:flex-row gap-3 justify-center pt-4 pb-8 flex-wrap">
@@ -69,12 +69,12 @@ export default function NotFound() {
       {/* Always-on jump links to the most useful destinations. */}
       <div className="mt-6 grid sm:grid-cols-3 gap-2">
         <Link
-          href="/shop"
+          href="/insurance"
           className="flex items-center justify-center gap-2 text-sm text-muted-foreground hover:text-[hsl(var(--penn-navy))] py-2 rounded-md hover:bg-secondary/30 transition-colors"
-          data-testid="not-found-jump-shop"
+          data-testid="not-found-jump-insurance"
         >
           <ShoppingBag className="w-3.5 h-3.5" />
-          Shop
+          Insurance
         </Link>
         <Link
           href="/faq"
