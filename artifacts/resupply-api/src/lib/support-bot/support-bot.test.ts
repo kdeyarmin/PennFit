@@ -203,4 +203,22 @@ describe("answerSupportTicket", () => {
       confidence: 0.95,
     });
   });
+
+  it("quotes a tenant's own domain, email and phone back verbatim", () => {
+    // The reply-side normalizer must NOT run applyCompanyIdentityToText.
+    // Its needles are tenant CONTACT DATA, and a support answer legitimately
+    // repeats those when the ticket is about them. Against the platform
+    // identity the domain/email rewrites would turn correct tenant-specific
+    // guidance into wrong guidance, and the phone needles map to the empty
+    // string — silently deleting the number the operator asked about.
+    const reply =
+      "Point pennpaps.com at the CNAME, keep info@pennpaps.com as the From " +
+      "address, and callers still reach you on (814) 471-0627.";
+    const out = parseModelOutput(
+      "openai",
+      JSON.stringify({ handoff: false, reply, confidence: 0.95 }),
+      0.7,
+    );
+    expect(out).toEqual({ kind: "answer", reply, confidence: 0.95 });
+  });
 });

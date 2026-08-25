@@ -128,7 +128,7 @@ export type SupportBotResult =
   | { kind: "offline" };
 
 /**
- * Normalize the in-source brand placeholders to the PLATFORM's own names.
+ * Normalize the STATIC prompt text to the PLATFORM's own names.
  *
  * This desk answers AS CareMetric Breathe, to a tenant that is not this
  * deployment's seed tenant — so it must not inherit the seed's identity the
@@ -136,8 +136,11 @@ export type SupportBotResult =
  * CareMetric Breathe, PennBot/PennPilot → the platform assistant names, and
  * any residual tenant placeholder in the shared knowledge base → the
  * platform's own site and mailbox.
+ *
+ * Safe to apply wholesale here because every byte is text WE wrote. Do not
+ * reuse it on model output — see `brandPlaceholdersOnly` below.
  */
-function brandAsPlatform(text: string): string {
+function brandPromptAsPlatform(text: string): string {
   const identity = getPlatformIdentity();
   return applyCompanyIdentityToText(
     applyPlatformBranding(text, identity),
@@ -145,12 +148,34 @@ function brandAsPlatform(text: string): string {
   );
 }
 
+/**
+ * The reply-side normalizer: platform/assistant CODENAMES only.
+ *
+ * `applyCompanyIdentityToText` is deliberately NOT applied to model output.
+ * Its needles are tenant CONTACT DATA — `pennpaps.com`, `info@pennpaps.com`,
+ * `(814) 471-0627` — and a reply may legitimately quote those back when the
+ * ticket itself is about them ("why isn't pennpaps.com resolving?"). Against
+ * the platform identity those rewrites turn correct tenant-specific guidance
+ * into wrong guidance, and the phone needles map to the empty string (the
+ * platform has no support line), which would silently DELETE the number the
+ * operator asked about.
+ *
+ * `applyPlatformBranding` has no such hazard: `PennFit` / `PennBot` /
+ * `PennPilot` are internal codenames with no legitimate use in a support
+ * answer, so mapping them to the product's real names is right no matter who
+ * put them there. The prompt is already branded, so this is only a net for a
+ * token the model produced on its own.
+ */
+function brandPlaceholdersOnly(text: string): string {
+  return applyPlatformBranding(text, getPlatformIdentity());
+}
+
 function buildSystemPrompt(input: SupportBotInput): string {
   const ctx: AdminAssistantContext = {
     adminEmail: input.adminEmail,
     adminRole: input.adminRole,
   };
-  return brandAsPlatform(
+  return brandPromptAsPlatform(
     buildAdminAssistantSystemPrompt(ctx) + "\n" + SUPPORT_ADDENDUM,
   );
 }
@@ -398,9 +423,11 @@ export function parseModelOutput(
     "support-bot: drafted high-confidence answer",
   );
   // Belt-and-braces: the prompt is already platform-branded, so the model
-  // shouldn't have a Penn* token to echo — but this reply is sent to a
-  // tenant unreviewed, and a stray one would name another customer.
-  return { kind: "answer", reply: brandAsPlatform(reply), confidence };
+  // shouldn't have a codename to echo — but this reply is sent to a tenant
+  // unreviewed, and a stray one would name another customer. Codenames only;
+  // tenant contact data quoted back from the ticket must survive verbatim
+  // (see brandPlaceholdersOnly).
+  return { kind: "answer", reply: brandPlaceholdersOnly(reply), confidence };
 }
 
 function truncate(s: string, max: number): string {
