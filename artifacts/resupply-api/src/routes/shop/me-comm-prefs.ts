@@ -22,7 +22,7 @@ import {
   getOrgScopedClient,
 } from "@workspace/resupply-db";
 
-import { ensureShopCustomerRow } from "../../lib/stripe/customer";
+import { ensureShopCustomerRow } from "../../lib/shop-customer/record";
 import { requireSignedIn } from "../../middlewares/requireSignedIn";
 
 const router: IRouter = Router();

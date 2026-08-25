@@ -231,40 +231,6 @@ function buildPreviews(): DemoPreview[] {
   }
 
   out.push({
-    id: "orders.confirmation",
-    group: "orders",
-    label: "Order confirmed",
-    description:
-      "Receipt for a storefront order: what was bought, the total, and where it is going.",
-    trigger: "Stripe reports the checkout session as paid.",
-    fidelity: "mirrored",
-    source:
-      "artifacts/resupply-api/src/lib/order-emails/send-order-confirmation-email.ts",
-    email: {
-      subject: `Your ${BRAND.name} order is confirmed`,
-      text: [
-        `Thanks for your order at ${BRAND.name}. Your payment was received and we're getting it ready to ship.`,
-        "",
-        "Order summary:",
-        itemsText(),
-        "",
-        "Total: $84.60",
-      ].join("\n"),
-      html: shell(
-        [
-          para(
-            `Thanks for your order at ${BRAND.name}. Your payment was received and we're getting it ready to ship.`,
-          ),
-          para("<strong>Order summary</strong>"),
-          itemsHtml(),
-          para("<strong>Total: $84.60</strong>"),
-        ].join("\n"),
-      ),
-    },
-    sms: null,
-  });
-
-  out.push({
     id: "orders.shipped",
     group: "orders",
     label: "Order shipped",
@@ -289,7 +255,8 @@ function buildPreviews(): DemoPreview[] {
         ].join("\n"),
       ),
     },
-    smsSource: "artifacts/resupply-api/src/routes/admin/shop-orders.ts",
+    smsSource:
+      "artifacts/resupply-api/src/lib/order-emails/send-shipping-notification-if-new.ts",
     sms: meter(
       `Hi ${FIRST}: your CPAP supplies just shipped (UPS 1Z999AA10123456784). Reply STOP to opt out.`,
     ),
@@ -322,101 +289,6 @@ function buildPreviews(): DemoPreview[] {
     sms: meter(
       `Hi ${FIRST}: your CPAP supplies were delivered. Reply STOP to opt out.`,
     ),
-  });
-
-  out.push({
-    id: "orders.ready_for_pickup",
-    group: "orders",
-    label: "Ready for pickup",
-    description:
-      "Tells the patient their order is waiting at the branch, and where to collect it.",
-    trigger: "Staff mark a pickup order ready on the fulfilment queue.",
-    fidelity: "mirrored",
-    source:
-      "artifacts/resupply-api/src/lib/order-emails/send-ready-for-pickup-email.ts",
-    email: {
-      subject: `Your ${BRAND.name} order is ready for pickup`,
-      text: `Hi ${FIRST}, your order is packed and waiting at Riverside Main Street branch.\n\nPlease bring a photo ID.`,
-      html: shell(
-        [
-          para(
-            `Hi ${FIRST}, your order is packed and waiting at <strong>Riverside Main Street branch</strong>.`,
-          ),
-          para("Please bring a photo ID."),
-          itemsHtml(),
-        ].join("\n"),
-      ),
-    },
-    sms: meter(
-      `Hi ${FIRST}, your ${BRAND.name} order is ready to collect at Riverside Main Street branch. Bring photo ID. Reply STOP to opt out.`,
-    ),
-  });
-
-  out.push({
-    id: "orders.refunded",
-    group: "orders",
-    label: "Refund issued",
-    description:
-      "Confirms a refund and states how long the money takes to land.",
-    trigger: "Staff issue a refund from the order detail page.",
-    fidelity: "mirrored",
-    source:
-      "artifacts/resupply-api/src/lib/order-emails/send-refund-notification-email.ts",
-    email: {
-      subject: `Your ${BRAND.name} refund is on its way`,
-      text: `Hi ${FIRST}, we've refunded $84.60 for order CMB-DEMO-4417.\n\nRefunds usually appear on your statement within 5-10 business days.`,
-      html: shell(
-        [
-          para(
-            `Hi ${FIRST}, we've refunded <strong>$84.60</strong> for order CMB-DEMO-4417.`,
-          ),
-          para(
-            "Refunds usually appear on your statement within 5-10 business days, depending on your bank.",
-          ),
-        ].join("\n"),
-      ),
-    },
-    sms: null,
-  });
-
-  // Rendered server-side from the seeded `shop.back_in_stock.email`
-  // template row, so it is exact there; the demo mirrors that output.
-  out.push({
-    id: "orders.back_in_stock",
-    group: "orders",
-    label: "Back in stock",
-    description:
-      "Tells a patient who asked to be notified that a product they wanted is available again.",
-    trigger:
-      "Inventory for a product with a waiting list goes back above zero.",
-    fidelity: "exact",
-    source: "artifacts/resupply-api/src/lib/message-templates/seed-bodies.ts",
-    email: {
-      subject: "Back in stock: Nasal cushion (medium)",
-      text: `Nasal cushion (medium) is back in stock at ${BRAND.name}.\nPrice: $24.00\nStock can run low quickly, so grab one while it's available:\n${BRAND.baseUrl}/shop\n\nYou're receiving this because you signed up for a back-in-stock alert at ${BRAND.name}. We only email once per signup.`,
-      html: `<!DOCTYPE html><html><body style="margin:0;padding:0;background:#f7f4ec;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;">
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f7f4ec;padding:24px 0;">
-    <tr><td align="center">
-      <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;padding:32px;max-width:560px;">
-        <tr><td style="padding-bottom:16px;border-bottom:2px solid #c9a24a;">
-          <div style="font-size:13px;letter-spacing:0.08em;color:#7a5d00;text-transform:uppercase;font-weight:600;">${BRAND.name} · Back in stock</div>
-          <div style="font-size:22px;color:#0a1f44;font-weight:700;margin-top:4px;">Nasal cushion (medium) is available again</div>
-        </td></tr>
-        <tr><td style="padding-top:18px;color:#333;font-size:15px;line-height:1.55;">
-          Good news — the item you asked us to watch is back in stock at ${BRAND.name}. Stock can run low quickly, so grab one while it's available.
-          <div style="padding-top:10px;font-weight:700;color:#0a1f44;">$24.00</div>
-        </td></tr>
-        <tr><td align="center" style="padding-top:24px;">
-          <a href="${BRAND.baseUrl}/shop" style="display:inline-block;background:#c9a24a;color:#0a1f44;text-decoration:none;padding:13px 26px;border-radius:8px;font-weight:700;">View product</a>
-        </td></tr>
-        <tr><td style="padding-top:28px;border-top:1px solid #eee;color:#888;font-size:12px;line-height:1.4;">
-          You're receiving this because you signed up for a back-in-stock alert at ${BRAND.name}. We'll only email you once per signup.
-        </td></tr>
-      </table>
-    </td></tr>
-  </table></body></html>`,
-    },
-    sms: null,
   });
 
   out.push({
@@ -603,77 +475,6 @@ function buildPreviews(): DemoPreview[] {
           ),
           para(
             `If something looks wrong, reply to this email or call ${BRAND.supportPhoneDisplay} &mdash; we would rather fix it than have you pay it.`,
-          ),
-        ].join("\n"),
-      ),
-    },
-    sms: null,
-  });
-
-  out.push({
-    id: "billing.payment_link",
-    group: "billing",
-    label: "Secure payment link",
-    description:
-      "A pay-by-link text, usually sent while the patient is on the phone with a CSR.",
-    trigger: "A CSR sends a payment link from the patient's billing tab.",
-    fidelity: "mirrored",
-    source: "artifacts/resupply-api/src/routes/admin/patient-payment-link.ts",
-    email: null,
-    sms: meter(
-      `${BRAND.name}: your secure payment link for $42.15 is ${BRAND.baseUrl}/pay/demo Reply STOP to opt out.`,
-    ),
-  });
-
-  out.push({
-    id: "billing.payment_receipt",
-    group: "billing",
-    label: "Subscription payment receipt",
-    description:
-      "Receipt confirming a recurring supply-subscription charge went through.",
-    trigger: "A subscription renewal payment succeeds.",
-    fidelity: "mirrored",
-    source:
-      "artifacts/resupply-api/src/lib/order-emails/send-subscription-billing-email.ts",
-    email: {
-      subject: `Your ${BRAND.name} subscription payment receipt`,
-      text: `Hi ${FIRST},\n\nWe've charged $84.60 for your ${BRAND.name} supply subscription. Your next shipment is on its way.\n\nKeep this email as your receipt.`,
-      html: shell(
-        [
-          para(`Hi ${FIRST},`),
-          para(
-            `We've charged <strong>$84.60</strong> for your ${BRAND.name} supply subscription. Your next shipment is on its way.`,
-          ),
-          para("Keep this email as your receipt."),
-        ].join("\n"),
-      ),
-    },
-    sms: null,
-  });
-
-  out.push({
-    id: "billing.subscription_renewal",
-    group: "billing",
-    label: "Subscription renews soon",
-    description:
-      "Gives the patient advance notice before their supply subscription charges again, so a renewal is never a surprise.",
-    trigger:
-      "A subscription's next billing date falls inside the advance-notice window.",
-    fidelity: "mirrored",
-    source:
-      "artifacts/resupply-api/src/lib/order-emails/send-subscription-billing-email.ts",
-    email: {
-      subject: `Your ${BRAND.name} subscription renews soon`,
-      text: `Hi ${FIRST},\n\nYour ${BRAND.name} supply subscription renews shortly, and we'll charge the card on file $84.60.\n\nWhat's coming:\n${itemsText()}\n\nNeed to change, pause, or cancel? ${BRAND.baseUrl}/account/subscriptions`,
-      html: shell(
-        [
-          para(`Hi ${FIRST},`),
-          para(
-            `Your ${BRAND.name} supply subscription renews shortly, and we'll charge the card on file <strong>$84.60</strong>.`,
-          ),
-          itemsHtml(),
-          para(
-            `<a href="${BRAND.baseUrl}/account/subscriptions" style="display:inline-block;padding:10px 18px;background:#0a1f44;color:#ffffff;border-radius:6px;text-decoration:none;font-size:14px;">Manage subscription</a>`,
           ),
         ].join("\n"),
       ),

@@ -313,15 +313,6 @@ export function DashboardPage() {
               Active patients →
             </Link>
           </li>
-          <li>
-            <Link
-              href="/admin/shop/abandoned-carts"
-              className="underline"
-              style={{ color: "hsl(var(--ink-1))" }}
-            >
-              Abandoned shop carts →
-            </Link>
-          </li>
         </ul>
       </section>
     </div>

@@ -21,11 +21,6 @@
     <priority>1.0</priority>
   </url>
   <url>
-    <loc>https://pennpaps.com/shop</loc>
-    <changefreq>weekly</changefreq>
-    <priority>0.9</priority>
-  </url>
-  <url>
     <loc>https://pennpaps.com/masks</loc>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
@@ -266,17 +261,7 @@
     <priority>0.5</priority>
   </url>
   <url>
-    <loc>https://pennpaps.com/help/manage-subscriptions</loc>
-    <changefreq>monthly</changefreq>
-    <priority>0.5</priority>
-  </url>
-  <url>
     <loc>https://pennpaps.com/help/order-by-phone</loc>
-    <changefreq>monthly</changefreq>
-    <priority>0.5</priority>
-  </url>
-  <url>
-    <loc>https://pennpaps.com/help/payment-methods</loc>
     <changefreq>monthly</changefreq>
     <priority>0.5</priority>
   </url>
@@ -291,32 +276,12 @@
     <priority>0.5</priority>
   </url>
   <url>
-    <loc>https://pennpaps.com/help/place-an-order</loc>
-    <changefreq>monthly</changefreq>
-    <priority>0.5</priority>
-  </url>
-  <url>
     <loc>https://pennpaps.com/help/reset-password</loc>
     <changefreq>monthly</changefreq>
     <priority>0.5</priority>
   </url>
   <url>
     <loc>https://pennpaps.com/help/resupply-reminders</loc>
-    <changefreq>monthly</changefreq>
-    <priority>0.5</priority>
-  </url>
-  <url>
-    <loc>https://pennpaps.com/help/returns-and-refunds</loc>
-    <changefreq>monthly</changefreq>
-    <priority>0.5</priority>
-  </url>
-  <url>
-    <loc>https://pennpaps.com/help/save-to-wishlist</loc>
-    <changefreq>monthly</changefreq>
-    <priority>0.5</priority>
-  </url>
-  <url>
-    <loc>https://pennpaps.com/help/shop-and-checkout</loc>
     <changefreq>monthly</changefreq>
     <priority>0.5</priority>
   </url>
@@ -344,11 +309,6 @@
     <loc>https://pennpaps.com/comfort-guarantee</loc>
     <changefreq>monthly</changefreq>
     <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://pennpaps.com/returns</loc>
-    <changefreq>monthly</changefreq>
-    <priority>0.5</priority>
   </url>
   <url>
     <loc>https://pennpaps.com/track-order</loc>

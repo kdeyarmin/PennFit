@@ -13,6 +13,13 @@ import { csrfHeader } from "../csrf";
 
 export type FitRequestStatus = "new" | "contacted" | "in_progress" | "closed";
 export type FitRequestType = "full_details" | "callback";
+/** How a closed request turned out (migration 0519). Only `fulfilled`
+ *  stamps the linked fitting as dispensed. */
+export type FitRequestClosedOutcome =
+  | "fulfilled"
+  | "not_proceeding"
+  | "unreachable"
+  | "duplicate";
 
 export interface FitRequestRow {
   id: string;
@@ -41,6 +48,7 @@ export interface FitRequestRow {
   contactedAt: string | null;
   contactedBy: string | null;
   closedAt: string | null;
+  closedOutcome: FitRequestClosedOutcome | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -77,6 +85,8 @@ export async function listFitRequests(
 export interface UpdateFitRequestInput {
   status?: FitRequestStatus;
   csrNote?: string | null;
+  /** Omit to leave the recorded outcome alone; null clears it. */
+  closedOutcome?: FitRequestClosedOutcome | null;
 }
 
 export interface UpdateFitRequestResponse {
@@ -86,6 +96,7 @@ export interface UpdateFitRequestResponse {
   contactedAt: string | null;
   contactedBy: string | null;
   closedAt: string | null;
+  closedOutcome: FitRequestClosedOutcome | null;
   updatedAt: string;
 }
 

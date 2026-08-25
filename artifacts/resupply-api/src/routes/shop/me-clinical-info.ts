@@ -40,7 +40,7 @@ import {
 } from "@workspace/resupply-db";
 import { logAudit } from "@workspace/resupply-audit";
 
-import { ensureShopCustomerRow } from "../../lib/stripe/customer";
+import { ensureShopCustomerRow } from "../../lib/shop-customer/record";
 import { requireSignedIn } from "../../middlewares/requireSignedIn";
 import { logger } from "../../lib/logger";
 

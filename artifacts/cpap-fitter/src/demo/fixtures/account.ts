@@ -16,7 +16,6 @@ import type {
 import type {
   BillingBalanceResponse,
   PatientStatementsResponse,
-  PatientPaymentsResponse,
   PersonalEstimateResponse,
 } from "@/lib/me-billing-api";
 import { daysAgo, daysFromNow, dateOnly } from "./dates";
@@ -338,24 +337,6 @@ export function demoBillingStatements(): PatientStatementsResponse {
         deliveryMethod: "email",
         deliveredAt: daysAgo(15),
         createdAt: daysAgo(15),
-      },
-    ],
-  };
-}
-
-export function demoPayments(): PatientPaymentsResponse {
-  return {
-    payments: [
-      {
-        id: "demo-pay-1",
-        amount_cents: 2999,
-        currency: "usd",
-        status: "succeeded",
-        applied_claims_json: [],
-        note: "Auto-ship resupply",
-        failure_reason: null,
-        succeeded_at: daysAgo(74),
-        created_at: daysAgo(74),
       },
     ],
   };

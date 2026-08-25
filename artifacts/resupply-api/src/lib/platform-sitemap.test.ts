@@ -364,7 +364,9 @@ describe("regression: a tenant domain never publishes another tenant's URLs", ()
   it("works the same for a platform subdomain tenant", () => {
     const { sitemap, robots } = serve("acme.cmbreathe.com");
     expect(sitemap).not.toContain("pennpaps.com");
-    expect(sitemap).toContain("<loc>https://acme.cmbreathe.com/shop</loc>");
+    expect(sitemap).toContain(
+      "<loc>https://acme.cmbreathe.com/insurance</loc>",
+    );
     expect(robots).toContain("Sitemap: https://acme.cmbreathe.com/sitemap.xml");
   });
 

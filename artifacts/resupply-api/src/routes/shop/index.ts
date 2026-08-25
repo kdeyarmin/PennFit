@@ -7,9 +7,6 @@
 
 import { Router, type IRouter } from "express";
 
-import cartSnapshotRouter from "./cart-snapshot";
-import checkoutRouter from "./checkout";
-import pickupLocationsRouter from "./pickup-locations";
 import insuranceLeadRouter from "./insurance-lead";
 import fitterLeadRouter from "./fitter-lead";
 import fitterRequestRouter from "./fitter-request";
@@ -20,7 +17,6 @@ import insuranceEstimateRouter from "./insurance-estimate";
 import npsResponseRouter from "./nps-response";
 import maskFitResponseRouter from "./mask-fit-response";
 import educationVideosRouter from "./education-videos";
-import backInStockRouter from "./back-in-stock";
 import meRouter from "./me";
 import meClinicalInfoRouter from "./me-clinical-info";
 import meChatRouter from "./me-chat";
@@ -28,19 +24,6 @@ import meCommPrefsRouter from "./me-comm-prefs";
 import meDashboardRouter from "./me-dashboard";
 import meMessagesRouter from "./me-messages";
 import meExportRouter from "./me-export";
-import meReorderSuggestionsRouter from "./me-reorder-suggestions";
-import myOrdersRouter from "./my-orders";
-import myReturnsRouter from "./my-returns";
-import membershipCheckoutRouter from "./membership-checkout";
-import mySubscriptionsRouter from "./my-subscriptions";
-import orderRouter from "./order";
-import orderPodRouter from "./order-pod";
-import productsRouter from "./products";
-import quickCheckoutRouter from "./quick-checkout";
-import resendReceiptRouter from "./resend-receipt";
-import reviewsRouter from "./reviews";
-import productQuestionsRouter from "./product-questions";
-import productCompatibilityRouter from "./product-compatibility";
 import mePushSubscriptionsRouter from "./me-push-subscriptions";
 import meInsightsRouter from "./me-insights";
 import meTherapySummaryRouter from "./me-therapy-summary";
@@ -48,7 +31,6 @@ import meMaintenanceRouter from "./me-maintenance";
 import meSubstitutionsRouter from "./me-substitutions";
 import meEducationFeedRouter from "./me-education-feed";
 import meQuarterlySummaryRouter from "./me-quarterly-summary";
-import meLossClaimRouter from "./me-loss-claim";
 import validateAddressRouter from "./validate-address";
 import meEquipmentRouter from "./me-equipment";
 import meInsuranceRouter from "./me-insurance";
@@ -56,19 +38,10 @@ import meSleepStudyRouter from "./me-sleep-study";
 import meFormAcknowledgementsRouter from "./me-form-acknowledgements";
 import meReferralsRouter from "./me-referrals";
 import meDocumentsRouter from "./me-documents";
-import meBillingPortalRouter from "./me-billing-portal";
 import meCaregiverRouter from "./me-caregiver";
 import meAccountRouter from "./me-account";
 
 const router: IRouter = Router();
-router.use(productsRouter);
-router.use(checkoutRouter);
-// /shop/pickup-locations — public list of in-store pickup options +
-// an `enabled` flag (gated by the storefront.pickup feature flag and
-// the presence of at least one active location).
-router.use(pickupLocationsRouter);
-router.use(orderRouter);
-router.use(orderPodRouter);
 // /shop/me/* — auth-aware patient account endpoints. Mounted
 // alongside the public catalog so the frontend can reach both with
 // the same base path. The handlers themselves apply the auth provider gating
@@ -112,10 +85,6 @@ router.use(meEducationFeedRouter);
 // /shop/me/quarterly-summary — print-friendly 90-day therapy
 // rollup the patient can share with their sleep MD.
 router.use(meQuarterlySummaryRouter);
-// /shop/me/orders/:orderId/loss-claim — patient self-reports a paid
-// shipped order never arrived. Opens a shop_order_loss_claims row
-// for the CSR queue (does not auto-issue a refund).
-router.use(meLossClaimRouter);
 // /shop/validate-address — pre-checkout shipping-address probe.
 // Heuristic-only today; pluggable for a future Smarty/USPS adapter.
 router.use(validateAddressRouter);
@@ -136,11 +105,6 @@ router.use(meReferralsRouter);
 // /shop/me/documents/* — patient self-service document upload.
 // Patients upload insurance cards, prescriptions, etc. for CSR review.
 router.use(meDocumentsRouter);
-// /shop/me/billing-portal — Stripe Customer Portal session minter.
-// Customer can change saved card, billing address, and review
-// invoices without going through a checkout flow. Replaces the
-// previous "read-only saved card" stub on /account.
-router.use(meBillingPortalRouter);
 // /shop/me/caregiver — designated authorized contact (single named
 // person who receives a copy of shipment + delivery notifications
 // on behalf of the patient). Critical for the elderly CPAP cohort
@@ -148,32 +112,6 @@ router.use(meBillingPortalRouter);
 router.use(meCaregiverRouter);
 router.use(meAccountRouter);
 router.use(meExportRouter);
-router.use(meReorderSuggestionsRouter);
-router.use(myOrdersRouter);
-router.use(myReturnsRouter);
-// Mounted after myOrdersRouter so the more-specific
-// `/shop/me/orders/:sessionId/resend-receipt` POST sits next to
-// the GET it complements. Keeps grep / "where do I find the
-// receipt re-send route" answerable.
-router.use(resendReceiptRouter);
-router.use(mySubscriptionsRouter);
-router.use(membershipCheckoutRouter);
-router.use(quickCheckoutRouter);
-router.use(cartSnapshotRouter);
-// Customer-submitted product reviews. Public reads + author writes
-// here; admin moderation queue lives at routes/admin/shop-reviews.ts
-// and is mounted from routes/index.ts alongside the other admin
-// surfaces.
-router.use(reviewsRouter);
-// Customer-submitted product Q&A (Phase A.5). Public list of
-// answered Q&A + auth-gated submit; admin moderation + answer
-// flow lives at routes/admin/product-questions.ts.
-router.use(productQuestionsRouter);
-// Product compatibility lookup (Phase B.3). Public reads — used by
-// the catalog filter "show only parts compatible with my machine"
-// and the product-detail "compatible with your AirSense 11" badge.
-// Admin writes live in routes/admin/product-compatibility.ts.
-router.use(productCompatibilityRouter);
 // Public lead-capture form on /insurance. Sends two SendGrid
 // emails (team notification + patient confirmation); does not
 // write to the DB — the verifications team works the inbox.
@@ -209,15 +147,13 @@ router.use(quizLeadRouter);
 // only, returns a static range, persists a fitter_leads row with
 // source='insurance_quote' and emails a written estimate.
 router.use(insuranceEstimateRouter);
-// /shop/orders/nps — public NPS capture endpoint for the post-
-// delivery follow-up email links. Token-bound (HMAC-signed,
-// 30-day TTL); rate-limited per IP; persists to
-// shop_order_nps_responses.
-router.use(npsResponseRouter);
 // /shop/orders/mask-fit — public mask-fit micro-survey capture (RT #22a).
+// /shop/orders/nps — post-delivery NPS capture. The delivery-followup job
+// still emails signed rating links for historical orders, so this endpoint
+// has to stay reachable or those links 404.
+router.use(npsResponseRouter);
 router.use(maskFitResponseRouter);
 // /shop/education-videos — public education-video library (RT #25).
 router.use(educationVideosRouter);
-router.use(backInStockRouter);
 
 export default router;

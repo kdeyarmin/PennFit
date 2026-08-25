@@ -242,28 +242,6 @@ function tenantSetupChecklist() {
       href: "/admin/billing/config/organization",
       required: true,
     },
-    {
-      id: "team",
-      group: "Team & catalog",
-      title: "Invite your team",
-      description:
-        "Add colleagues as admins or customer-service reps so you're not the only login.",
-      status: "complete",
-      detail: "4 active staff accounts.",
-      href: "/admin/team",
-      required: false,
-    },
-    {
-      id: "catalog",
-      group: "Team & catalog",
-      title: "Add your product catalog",
-      description:
-        "Load products so your storefront isn't empty. Start from a generic CPAP-supply catalog with one click, then edit pricing to match yours.",
-      status: "complete",
-      detail: "100+ products in your catalog.",
-      href: "/admin/shop/inventory",
-      required: false,
-    },
   ];
   const requiredItems = items.filter((i) => i.required);
   const requiredDone = requiredItems.filter(

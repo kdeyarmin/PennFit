@@ -549,11 +549,16 @@ function runChecks(): void {
   const prodMode = prodModeEarly;
   const prodSeverity: Severity = prodMode ? "fail" : "warn";
 
-  // Stripe — sk_live_ in prod, never the test or placeholder key.
-  // The shape regex anchors on a real-key body after the prefix to
-  // refuse cute hybrids like `sk_live_test_replace_me` that would
-  // otherwise satisfy a bare `startsWith("sk_live_")` check and pass
-  // the prod-mode gate.
+  // Stripe — the ONLY Stripe surface left is platform (SaaS) billing:
+  // tenants paying the platform. Patient card checkout was removed, so the
+  // legacy STRIPE_SECRET_KEY / STRIPE_WEBHOOK_SIGNING_SECRET pair is no
+  // longer required — it is just the fallback account platform billing runs
+  // on until STRIPE_PLATFORM_SECRET_KEY is provisioned. Unset is fine; a
+  // wrong-mode key still is not.
+  //
+  // The shape regex anchors on a real-key body after the prefix to refuse
+  // cute hybrids like `sk_live_test_replace_me` that would otherwise satisfy
+  // a bare `startsWith("sk_live_")` check and pass the prod-mode gate.
   const STRIPE_LIVE_KEY_SHAPE = /^sk_live_[A-Za-z0-9]{20,}$/;
   const STRIPE_TEST_KEY_SHAPE = /^sk_test_[A-Za-z0-9]{20,}$/;
   if (!refusePlaceholder("STRIPE_SECRET_KEY", "sk_test_replace_me")) {
@@ -561,8 +566,8 @@ function runChecks(): void {
     if (sk === undefined) {
       record(
         "STRIPE_SECRET_KEY",
-        prodSeverity,
-        "unset (Stripe checkout will be disabled)",
+        "pass",
+        "unset (fine — only the legacy fallback for platform billing)",
       );
     } else if (prodMode && !STRIPE_LIVE_KEY_SHAPE.test(sk)) {
       // Distinguish the common-mistake case ("sk_test_ in production")
@@ -582,13 +587,7 @@ function runChecks(): void {
 
   if (!refusePlaceholder("STRIPE_WEBHOOK_SIGNING_SECRET", "whsec_replace_me")) {
     const w = getTrimmed("STRIPE_WEBHOOK_SIGNING_SECRET");
-    if (w === undefined) {
-      record(
-        "STRIPE_WEBHOOK_SIGNING_SECRET",
-        prodSeverity,
-        "unset (Stripe webhook verification will fail closed)",
-      );
-    } else {
+    if (w !== undefined) {
       requirePrefix("STRIPE_WEBHOOK_SIGNING_SECRET", "whsec_");
     }
   }
@@ -597,7 +596,7 @@ function runChecks(): void {
   // platform billing shares STRIPE_SECRET_KEY (single-account mode) and
   // there is nothing to check. When SET, it must be a live key in prod, it
   // must be paired with its own webhook signing secret, and it must NOT be
-  // the same key as patient checkout (that would defeat the split).
+  // the same key as the legacy account (that would defeat the split).
   const platformKey = getTrimmed("STRIPE_PLATFORM_SECRET_KEY");
   if (platformKey !== undefined) {
     if (prodMode && !STRIPE_LIVE_KEY_SHAPE.test(platformKey)) {
@@ -1047,7 +1046,7 @@ function runChecks(): void {
   // STRIPE_WEBHOOK_SECRET vs STRIPE_WEBHOOK_SIGNING_SECRET: an older
   // `admin/system-integrations-status` field reads `STRIPE_WEBHOOK_SECRET`
   // for a display tile, but the actual webhook handler in
-  // `artifacts/resupply-api/src/lib/stripe/config.ts:66` reads
+  // `artifacts/resupply-api/src/lib/stripe/config.ts` reads
   // `STRIPE_WEBHOOK_SIGNING_SECRET`. An operator who mistakes the
   // display name for the production name silently breaks webhook
   // verification on the first event. Flag the mismatch loudly.

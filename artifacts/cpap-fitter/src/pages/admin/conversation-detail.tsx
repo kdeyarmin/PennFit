@@ -44,7 +44,6 @@ import {
 import { triageApi } from "@/lib/admin/conversation-triage-api";
 import { ConversationEscalatePanel } from "@/components/admin/ConversationEscalatePanel";
 import { Patient360Panel } from "@/components/admin/Patient360Panel";
-import { Customer360Panel } from "@/components/admin/Customer360Panel";
 import { ConversationAssignmentBar } from "@/components/admin/ConversationAssignmentBar";
 import { useDraftAutosave } from "@/lib/admin/use-draft-autosave";
 import { setConversationStatus } from "@/lib/admin/conversation-assignment-api";
@@ -377,19 +376,11 @@ export function ConversationDetailPage({ id }: { id: string }) {
         </div>
         <aside className="space-y-4">
           {/*
-            For patient-flow threads: Patient360Panel pulls timeline +
-            episodes. For in-app threads (Phase 11): Customer360Panel
-            pulls device + latest order + recent internal notes inline
-            so the CSR can answer most questions without leaving this
-            page.
+            Patient360Panel pulls timeline + episodes so the CSR can
+            answer most questions without leaving this page. The
+            shop-customer variant retired with the cash-pay storefront.
           */}
-          {data.customerId ? (
-            <Customer360Panel
-              customerId={data.customerId}
-              displayName={data.customerDisplayName ?? null}
-              email={data.customerEmail ?? null}
-            />
-          ) : data.patientId ? (
+          {data.patientId ? (
             <Patient360Panel patientId={data.patientId} />
           ) : null}
         </aside>

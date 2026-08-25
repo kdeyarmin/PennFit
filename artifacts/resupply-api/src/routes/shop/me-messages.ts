@@ -27,7 +27,7 @@ import { z } from "zod";
 import { getOrgScopedClient } from "@workspace/resupply-db";
 import { logAudit } from "@workspace/resupply-audit";
 
-import { ensureShopCustomerRow } from "../../lib/stripe/customer";
+import { ensureShopCustomerRow } from "../../lib/shop-customer/record";
 import { notifyCsrInboxOfCustomerMessage } from "../../lib/messaging/csr-inbox-notify";
 import {
   IN_APP_MESSAGE_BODY_MAX,

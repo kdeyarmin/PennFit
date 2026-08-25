@@ -19,7 +19,7 @@ const supabaseMock = installSupabaseMock();
 import {
   tryDeleteWebhookEventRecord,
   tryRecordWebhookEvent,
-} from "./webhook-handler";
+} from "./platform-webhook-handler";
 
 beforeEach(() => {
   supabaseMock.reset();

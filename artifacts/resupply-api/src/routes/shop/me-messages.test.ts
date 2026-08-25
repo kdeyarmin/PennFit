@@ -48,7 +48,7 @@ vi.mock("@workspace/resupply-audit", () => ({
 const ensureShopCustomerRowMock = vi.hoisted(() =>
   vi.fn(async () => undefined),
 );
-vi.mock("../../lib/stripe/customer", () => ({
+vi.mock("../../lib/shop-customer/record", () => ({
   ensureShopCustomerRow: ensureShopCustomerRowMock,
 }));
 

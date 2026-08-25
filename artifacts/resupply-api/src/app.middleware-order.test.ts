@@ -41,7 +41,9 @@ describe("app.ts middleware ordering", () => {
   it("mounts express.raw on the Stripe webhook BEFORE express.json", () => {
     const code = stripComments(APP_SOURCE);
 
-    const stripeWebhookIdx = code.indexOf('"/resupply-api/stripe/webhook"');
+    const stripeWebhookIdx = code.indexOf(
+      '"/resupply-api/stripe/platform-webhook"',
+    );
     // Match only the real `express.json(...)` global mount, not any
     // documentation reference. The global mount lives inside an
     // `app.use(...)` call, so we anchor the search there.
@@ -73,7 +75,7 @@ describe("app.ts middleware ordering", () => {
     // and the next handler to make the contract impossible to miss in
     // code review.
     const webhookBlock = APP_SOURCE.match(
-      /app\.post\(\s*"\/resupply-api\/stripe\/webhook"\s*,[\s\S]*?stripeWebhookHandler/,
+      /app\.post\(\s*"\/resupply-api\/stripe\/platform-webhook"\s*,[\s\S]*?stripePlatformBillingWebhookHandler/,
     );
     expect(webhookBlock).not.toBeNull();
     expect(webhookBlock?.[0]).toContain("express.raw(");

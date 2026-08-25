@@ -47,14 +47,12 @@ import {
   Users,
   CopyCheck,
   ShoppingBag,
-  Repeat,
   Undo2,
   ShoppingCart,
   PackageCheck,
   HeartHandshake,
   HeartPulse,
   Star,
-  HelpCircle,
   Boxes,
   AlertOctagon,
   CalendarOff,
@@ -184,15 +182,6 @@ export const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         href: "/admin",
         matchPrefix: "/admin",
         hint: "Your day at a glance — KPIs, today's worklist, and quick links into every queue",
-      },
-      {
-        label: "Front Desk",
-        requiredFeature: "module.front_desk",
-        icon: Store,
-        href: "/admin/front-desk",
-        matchPrefix: "/admin/front-desk",
-        hint: "Capture a walk-in customer and ring up a counter order in real time",
-        requiredPermission: "orders.create",
       },
       {
         label: "Conversations",
@@ -605,21 +594,31 @@ export const NAV_GROUPS: ReadonlyArray<NavGroup> = [
     ],
   },
   {
-    label: "Orders & Shop",
+    label: "Orders & Leads",
     items: [
+      {
+        label: "Catalog",
+        requiredFeature: "module.inventory",
+        icon: Boxes,
+        href: "/admin/catalog",
+        matchPrefix: "/admin/catalog",
+        hint: "The SKUs you dispense and how many are on the shelf — record receipts, counts, and adjustments",
+        requiredPermission: "inventory.read",
+      },
+      {
+        label: "Backorders",
+        requiredFeature: "module.inventory",
+        icon: AlertOctagon,
+        href: "/admin/shop/backorders",
+        matchPrefix: "/admin/shop/backorders",
+        hint: "Mark a SKU out of stock and manage resupply substitution rules — read by the insurance fulfillment path",
+        requiredPermission: "returns.manage",
+      },
       {
         label: "Orders",
         icon: ShoppingBag,
-        hint: "Storefront fulfillment — orders, subscriptions, returns, backorders",
+        hint: "Fulfillment — fitter requests and shipping labels",
         tabs: [
-          {
-            href: "/admin/shop/orders",
-            label: "Orders",
-            icon: ShoppingBag,
-            matchPrefix: "/admin/shop/orders",
-            requiredPermission: "returns.manage",
-            hint: "Paid storefront orders — look one up, set tracking, mark delivered, refund",
-          },
           {
             href: "/admin/fitter/orders",
             label: "Fitter requests",
@@ -635,97 +634,17 @@ export const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             requiredPermission: "returns.manage",
             hint: "Print XPS shipping labels with the patient address merged in; tracking auto-fills",
           },
-          {
-            href: "/admin/shop/subscriptions",
-            label: "Subscriptions",
-            icon: Repeat,
-            matchPrefix: "/admin/shop/subscriptions",
-            hint: "Recurring resupply plans and health",
-          },
-          {
-            href: "/admin/shop/returns",
-            label: "Returns & RMAs",
-            icon: Undo2,
-            matchPrefix: "/admin/shop/returns",
-            hint: "Return requests, restocks, refund decisions",
-            badgeKey: "pendingReturns",
-          },
-          {
-            href: "/admin/shop/backorders",
-            label: "Backorders & subs",
-            icon: AlertOctagon,
-            matchPrefix: "/admin/shop/backorders",
-            hint: "Mark SKUs out of stock; manage resupply substitution rules",
-          },
         ],
       },
       {
-        label: "Inventory",
-        requiredFeature: "module.inventory",
-        icon: Boxes,
-        hint: "Catalog, stock levels, product editor, monthly reconciliation",
-        tabs: [
-          {
-            href: "/admin/shop/inventory",
-            label: "Inventory",
-            icon: Boxes,
-            matchPrefix: "/admin/shop/inventory",
-            hint: "Catalog, stock levels, product editor",
-          },
-          {
-            href: "/admin/shop/inventory/reconcile",
-            label: "Reconcile",
-            icon: ClipboardCheck,
-            matchPrefix: "/admin/shop/inventory/reconcile",
-            hint: "Monthly physical count & variance report",
-          },
-        ],
-      },
-      {
-        // Customer-facing shop surfaces plus the new-customer funnel —
-        // one entry for "people who shop (or might)". The old separate
-        // Leads section lives on as the three trailing tabs.
-        label: "Storefront & leads",
+        // The new-customer funnel. The cash-pay storefront surfaces
+        // (shop accounts, reviews, product Q&A, carts, back-in-stock)
+        // retired with card checkout — patients are insurance-only.
+        label: "Leads",
         requiredFeature: "module.storefront",
         icon: ShoppingCart,
-        hint: "Shop accounts, reviews, product Q&A, carts to recover, and new-customer leads",
+        hint: "Benefit-verification requests and the mask-fitter funnel",
         tabs: [
-          {
-            href: "/admin/shop/customers",
-            label: "Customers",
-            icon: UsersRound,
-            matchPrefix: "/admin/shop/customers",
-            hint: "Registered shop accounts, with clinical info + in-app messaging",
-          },
-          {
-            href: "/admin/shop/reviews",
-            label: "Reviews",
-            icon: Star,
-            matchPrefix: "/admin/shop/reviews",
-            hint: "Customer product reviews — moderate & reply",
-            badgeKey: "pendingReviews",
-          },
-          {
-            href: "/admin/shop/product-questions",
-            label: "Product Q&A",
-            icon: HelpCircle,
-            matchPrefix: "/admin/shop/product-questions",
-            hint: "Customer-submitted questions — answer or reject",
-          },
-          {
-            href: "/admin/shop/abandoned-carts",
-            label: "Abandoned Carts",
-            icon: ShoppingCart,
-            matchPrefix: "/admin/shop/abandoned-carts",
-            hint: "Carts to recover via outreach",
-          },
-          {
-            href: "/admin/shop/back-in-stock",
-            label: "Back-in-Stock",
-            icon: PackageCheck,
-            matchPrefix: "/admin/shop/back-in-stock",
-            hint: "Customers waiting on restocked items",
-          },
           {
             href: "/admin/shop/insurance-leads",
             label: "Insurance Leads",

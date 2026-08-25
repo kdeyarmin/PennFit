@@ -56,6 +56,7 @@ import { z } from "zod";
 import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { verifyFitterInviteToken } from "../../lib/fitter-invite-token";
+import { redactDbErr } from "../../lib/redact-db-err";
 import { sendFitRequestEmails } from "../../lib/fit-request-email";
 import { recordFitRequest } from "../../lib/fit-request-record";
 import { resolveOrgIdForSignedRecord } from "../../lib/storefront/signed-link-org";
@@ -268,6 +269,25 @@ router.post("/shop/fitter-requests", requestLimiter, async (req, res) => {
     return;
   }
 
+  // A re-submit of a request already open in the queue is not a new
+  // request, and must not produce a second staff notification or a
+  // second patient confirmation. `recordFitRequest` has already folded
+  // any newly supplied detail into the existing row, so the queue is
+  // current; there is simply nothing further to tell anyone.
+  //
+  // The patient still gets the ordinary confirmation SCREEN. From where
+  // they are standing their request landed, which is true — telling them
+  // "you already did that" would only make them wonder whether the first
+  // one counted.
+  if (recorded.duplicate) {
+    req.log?.info?.(
+      { event: "fit_request_duplicate", requestType: data.requestType },
+      "shop/fitter-requests: re-submit folded into the open request",
+    );
+    res.json({ ok: true });
+    return;
+  }
+
   // Email is the fast path, not the record. A SendGrid outage must not
   // fail a request that is already filed and already visible in the
   // queue, so failures are reported in the log line and swallowed.
@@ -289,7 +309,10 @@ router.post("/shop/fitter-requests", requestLimiter, async (req, res) => {
     recommendedMaskName: data.recommendedMaskName,
     recommendedMaskSize: data.recommendedMaskSize,
   }).catch((err: unknown) => {
-    req.log?.warn?.({ err }, "shop/fitter-requests: email send threw");
+    req.log?.warn?.(
+      { err: redactDbErr(err) },
+      "shop/fitter-requests: email send threw",
+    );
     return {
       configured: false,
       notificationDelivered: false,
@@ -355,7 +378,7 @@ async function resolveOwnedFitSession(
     return fitSessionId;
   } catch (err) {
     req.log?.warn?.(
-      { err },
+      { err: redactDbErr(err) },
       "shop/fitter-requests: fit session ownership check failed — filing without the link",
     );
     return null;

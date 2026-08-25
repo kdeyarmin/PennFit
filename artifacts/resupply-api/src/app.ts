@@ -40,10 +40,7 @@ import {
 } from "./middlewares/csrf";
 import { adminMutationLooseLimit } from "./middlewares/rate-limit";
 import { securityHeaders } from "./middlewares/securityHeaders";
-import {
-  stripePlatformBillingWebhookHandler,
-  stripeWebhookHandler,
-} from "./lib/stripe/webhook-handler";
+import { stripePlatformBillingWebhookHandler } from "./lib/stripe/platform-webhook-handler";
 import faxWebhooksRouter from "./routes/fax/webhooks";
 import carrierTrackingWebhookRouter from "./routes/webhooks/carrier-tracking";
 import { createTrustProxyFn } from "./lib/trusted-proxies";
@@ -253,7 +250,7 @@ app.use(
 // metadata. See `lib/request-context.ts` for the full rationale.
 app.use(requestContextMiddleware);
 
-// Stripe webhook is registered BEFORE express.json() because Stripe's
+// The Stripe webhook is registered BEFORE express.json() because Stripe's
 // signature verification is computed over the exact bytes Stripe sent
 // — express.json() would mutate `req.body` to a parsed object that we
 // can't re-serialize byte-identically. Mounting it directly on `app`
@@ -270,16 +267,10 @@ const stripeWebhookLimiter = expressRateLimit({
   keyGenerator: (req: Request) => ipKeyGenerator(req.ip ?? "0.0.0.0"),
   message: { error: "too_many_requests" },
 });
-app.post(
-  "/resupply-api/stripe/webhook",
-  stripeWebhookLimiter,
-  express.raw({ type: "application/json", limit: "256kb" }),
-  stripeWebhookHandler,
-);
-// Dedicated platform-billing (SaaS) Stripe account posts here with its
-// own signing secret — separate from the patient/Connect webhook above.
-// Same raw-body-before-express.json() contract; inert in shared-account
-// mode (returns 503/ignored). See webhook-handler.ts.
+// The platform-billing (SaaS) Stripe account posts here — tenants paying
+// the platform. This is the only Stripe webhook we serve; the patient /
+// Connect webhook went away with the cash-pay storefront. Inert in
+// shared-account mode (returns 503/ignored). See platform-webhook-handler.ts.
 app.post(
   "/resupply-api/stripe/platform-webhook",
   stripeWebhookLimiter,

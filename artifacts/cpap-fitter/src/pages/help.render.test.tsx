@@ -13,15 +13,11 @@ import { Router } from "wouter";
 
 import { Help } from "./help";
 import { HelpFindYourMask } from "./help-find-your-mask";
-import { HelpPlaceAnOrder } from "./help-place-an-order";
-import { HelpShopAndCheckout } from "./help-shop-and-checkout";
 import { HelpTrackYourOrder } from "./help-track-your-order";
 import { HelpCreateAnAccount } from "./help-create-an-account";
 import { HelpResupplyReminders } from "./help-resupply-reminders";
 import { HelpInsuranceEstimate } from "./help-insurance-estimate";
-import { HelpReturnsAndRefunds } from "./help-returns-and-refunds";
 import { HelpResetPassword } from "./help-reset-password";
-import { HelpSaveToWishlist } from "./help-save-to-wishlist";
 
 afterEach(() => cleanup());
 
@@ -40,7 +36,7 @@ describe("Help Center hub renders", () => {
     renderAt(<Help />);
     expect(screen.getByTestId("help-category-getting-started")).toBeTruthy();
     expect(screen.getByTestId("help-topic-find-your-mask")).toBeTruthy();
-    expect(screen.getByTestId("help-topic-returns-and-refunds")).toBeTruthy();
+    expect(screen.getByTestId("help-topic-track-your-order")).toBeTruthy();
   });
 });
 
@@ -50,8 +46,6 @@ const GUIDES: Array<[string, React.ReactNode, string]> = [
     <HelpFindYourMask />,
     "Find your mask with the Virtual Fitter",
   ],
-  ["place an order", <HelpPlaceAnOrder />, "Order your recommended mask"],
-  ["shop and checkout", <HelpShopAndCheckout />, "Shop supplies & check out"],
   ["track your order", <HelpTrackYourOrder />, "Track your order"],
   ["create an account", <HelpCreateAnAccount />, "Create an account & sign in"],
   [
@@ -64,13 +58,7 @@ const GUIDES: Array<[string, React.ReactNode, string]> = [
     <HelpInsuranceEstimate />,
     "Get an insurance estimate",
   ],
-  [
-    "returns and refunds",
-    <HelpReturnsAndRefunds />,
-    "Returns, exchanges & refunds",
-  ],
   ["reset password", <HelpResetPassword />, "Reset your password"],
-  ["save to wishlist", <HelpSaveToWishlist />, "Save favorites & reorder"],
 ];
 
 describe("Help Center guides render", () => {

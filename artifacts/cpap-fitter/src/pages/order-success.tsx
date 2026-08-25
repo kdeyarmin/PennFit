@@ -299,7 +299,7 @@ export function OrderSuccess() {
           order through insurance — now is the moment to enroll them
           in the cushion / filter / tubing reminder cadence so the
           rest of the supply chain stays on schedule. The shop's
-          checkout-success page already does this; mirroring it here
+          reminder opt-in wants the same shape; mirroring it here
           keeps both order-completion paths consistent. */}
       <div className="mb-6">
         <SubscribeRemindersCta variant="compact" />

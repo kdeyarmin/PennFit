@@ -50,7 +50,7 @@ import { recordOutboundMessageUsage } from "../../lib/metering/usage.js";
 import { redactDbErr } from "../../lib/redact-db-err.js";
 import { requireCsrfWhenSession } from "../../middlewares/csrf.js";
 import { attachSignedIn } from "../../middlewares/requireSignedIn.js";
-import { ensureShopCustomerRow } from "../../lib/stripe/customer.js";
+import { ensureShopCustomerRow } from "../../lib/shop-customer/record.js";
 
 const router = Router();
 

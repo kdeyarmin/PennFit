@@ -1,9 +1,13 @@
-// Behavioral test for the dedicated platform-billing webhook handler's
-// front-door gating: it must refuse (or no-op) when the deployment isn't
-// in dedicated-account mode, and reject a missing signature — both before
-// any Stripe verification or DB write. The full happy-path dispatch is
-// covered indirectly by the platform-billing service tests; here we pin
-// the guard branches that keep a misrouted delivery from doing work.
+// Behavioral test for the platform-billing webhook handler's front-door
+// gating.
+//
+// The gate turns on ONE thing: a verifiable delivery. Both billing modes
+// are supported — `dedicated` (its own account + signing secret) and
+// `shared` (the legacy STRIPE_SECRET_KEY account still carrying platform
+// billing) — and this handler is the only thing left that reconciles
+// either, so refusing shared mode would leave those tenants creating
+// checkout sessions that never settle. What it must still refuse is an
+// event it cannot verify: no config, or no signing secret.
 
 import type { Request, Response } from "express";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -28,7 +32,7 @@ vi.mock("../platform-billing/stripe", () => ({
 vi.mock("../../worker/index.js", () => ({ getBoss: vi.fn() }));
 
 const { stripePlatformBillingWebhookHandler } =
-  await import("./webhook-handler");
+  await import("./platform-webhook-handler");
 
 function makeRes() {
   const res = {
@@ -74,9 +78,25 @@ describe("stripePlatformBillingWebhookHandler gating", () => {
     else process.env.NODE_ENV = ORIGINAL_NODE_ENV;
   });
 
-  it("503s in production when not in dedicated mode", async () => {
+  it("PROCESSES shared mode — it is a supported billing configuration", async () => {
+    // Regression guard. This handler used to require `mode: "dedicated"`,
+    // which meant a deployment on the legacy shared key had its tenant
+    // invoices and subscriptions silently never reconciled. Reaching the
+    // signature check (400) proves the delivery was accepted for
+    // processing rather than turned away at the door.
     process.env.NODE_ENV = "production";
     cfg.current = SHARED;
+    const res = makeRes();
+    await stripePlatformBillingWebhookHandler(makeReq(), res, vi.fn());
+    expect(res.statusCode).toBe(400);
+    expect((res.body as { error: string }).error).toBe(
+      "missing_stripe_signature",
+    );
+  });
+
+  it("503s in production when no config resolves at all", async () => {
+    process.env.NODE_ENV = "production";
+    cfg.current = null;
     const res = makeRes();
     await stripePlatformBillingWebhookHandler(makeReq(), res, vi.fn());
     expect(res.statusCode).toBe(503);
@@ -85,15 +105,25 @@ describe("stripePlatformBillingWebhookHandler gating", () => {
     );
   });
 
-  it("acks 200 (ignored) outside production when not in dedicated mode", async () => {
+  it("acks 200 (ignored) outside production when unconfigured", async () => {
     process.env.NODE_ENV = "test";
-    cfg.current = SHARED;
+    cfg.current = null;
     const res = makeRes();
     await stripePlatformBillingWebhookHandler(makeReq(), res, vi.fn());
     expect(res.statusCode).toBe(200);
     expect((res.body as { ignored: string }).ignored).toBe(
-      "platform_billing_not_dedicated",
+      "platform_billing_unconfigured",
     );
+  });
+
+  it("refuses a shared-mode delivery it cannot verify", async () => {
+    // No signing secret = no way to authenticate the event. Acting on an
+    // unverified billing event is worse than dropping it.
+    process.env.NODE_ENV = "production";
+    cfg.current = { ...SHARED, webhookSigningSecret: null };
+    const res = makeRes();
+    await stripePlatformBillingWebhookHandler(makeReq(), res, vi.fn());
+    expect(res.statusCode).toBe(503);
   });
 
   it("400s when the stripe-signature header is missing (dedicated mode)", async () => {

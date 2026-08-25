@@ -12,19 +12,13 @@ import {
   Sparkles,
   ArrowRight,
   ScanFace,
-  PackageCheck,
-  ShoppingCart,
   Truck,
   UserCircle,
   BellRing,
   ShieldCheck,
-  RotateCcw,
   HelpCircle,
   PhoneCall,
   KeyRound,
-  Heart,
-  Repeat,
-  CreditCard,
   Bell,
   FileText,
   UserPlus,
@@ -77,33 +71,14 @@ const categories: HelpCategory[] = [
         keywords: "fitter scan camera measure measurements recommendation",
         tone: "gold",
       },
-      {
-        href: "/help/place-an-order",
-        Icon: PackageCheck,
-        title: "Order your recommended mask",
-        blurb:
-          "Turn a recommendation into an order — shipping, insurance, and prescription.",
-        keywords: "order checkout prescription insurance submit",
-        tone: "navy",
-      },
     ],
   },
   {
     id: "shopping",
-    eyebrow: "Shop & orders",
-    title: "Shopping & Orders",
-    caption:
-      "Buy supplies direct, check out, and follow your package to the door.",
+    eyebrow: "Orders",
+    title: "Orders & Delivery",
+    caption: "Follow your supplies from our warehouse to your door.",
     topics: [
-      {
-        href: "/help/shop-and-checkout",
-        Icon: ShoppingCart,
-        title: "Shop supplies & check out",
-        blurb:
-          "Browse cushions, filters, and tubing, add to cart, and pay securely.",
-        keywords: "shop cart buy purchase cushion filter tubing checkout pay",
-        tone: "navy",
-      },
       {
         href: "/help/track-your-order",
         Icon: Truck,
@@ -111,34 +86,6 @@ const categories: HelpCategory[] = [
         blurb:
           "Look up any order by reference and email and watch its delivery status.",
         keywords: "track shipping delivery status reference where is my order",
-        tone: "gold",
-      },
-      {
-        href: "/help/save-to-wishlist",
-        Icon: Heart,
-        title: "Save favorites & reorder",
-        blurb:
-          "Save products to your wishlist and reorder past purchases in one tap.",
-        keywords: "wishlist save favorite reorder repeat buy again heart",
-        tone: "navy",
-      },
-      {
-        href: "/help/returns-and-refunds",
-        Icon: RotateCcw,
-        title: "Returns, exchanges & refunds",
-        blurb:
-          "Start a return and use the 60-day comfort guarantee on your mask.",
-        keywords: "return refund exchange comfort guarantee money back",
-        tone: "navy",
-      },
-      {
-        href: "/help/manage-subscriptions",
-        Icon: Repeat,
-        title: "Manage auto-ship subscriptions",
-        blurb:
-          "Pause for a trip, change how often supplies ship, or cancel anytime.",
-        keywords:
-          "subscription auto-ship autoship recurring pause resume cancel cadence travel",
         tone: "gold",
       },
       {
@@ -243,16 +190,6 @@ const categories: HelpCategory[] = [
         keywords:
           "insurance estimate cost out of pocket medicare coverage deductible price",
         tone: "gold",
-      },
-      {
-        href: "/help/payment-methods",
-        Icon: CreditCard,
-        title: "Payment methods & billing",
-        blurb:
-          "See the card on file, update it securely, and fix a past-due payment.",
-        keywords:
-          "payment card credit billing stripe update saved hsa fsa past due",
-        tone: "navy",
       },
     ],
   },

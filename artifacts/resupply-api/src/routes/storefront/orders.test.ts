@@ -90,7 +90,7 @@ vi.mock("../../lib/storefront/orderEmail", () => ({
 }));
 
 // Stub the Stripe customer helper.
-vi.mock("../../lib/stripe/customer", () => ({
+vi.mock("../../lib/shop-customer/record", () => ({
   ensureShopCustomerRow: vi.fn(async () => "cus_test"),
 }));
 

@@ -52,10 +52,7 @@ import {
 } from "../patient-packet/invite-email";
 import { BREATHE_COLORS, renderBrandedEmail } from "@workspace/resupply-email";
 
-import {
-  renderImageBlockHtml,
-  renderPriceBlockHtml,
-} from "../back-in-stock-email";
+import {} from "../back-in-stock-email";
 
 export type PreviewGroup = "resupply" | "orders" | "clinical" | "billing";
 
@@ -322,49 +319,6 @@ export function buildMessagePreviews(brand: PreviewBrand): MessagePreview[] {
     });
   }
 
-  // ── Orders & shipping (mirrored) ──────────────────────────────────
-  out.push({
-    id: "orders.confirmation",
-    group: "orders",
-    label: "Order confirmed",
-    description:
-      "Receipt for a storefront order: what was bought, the total, and where it is going.",
-    trigger: "Stripe reports the checkout session as paid.",
-    fidelity: "mirrored",
-    source:
-      "artifacts/resupply-api/src/lib/order-emails/send-order-confirmation-email.ts",
-    email: {
-      subject: `Your ${brandName} order is confirmed`,
-      text: [
-        `Thanks for your order at ${brandName}. Your payment was received and we're getting it ready to ship.`,
-        "",
-        "Order summary:",
-        itemsText(),
-        "",
-        `Total: ${money(SAMPLE.amountTotalCents)}`,
-        "",
-        `View your order: ${baseUrl}/shop/checkout-success?session_id=demo`,
-        "",
-        "We'll send another email with tracking info once your order ships. Reply to this message if you need to make a change — we read every reply.",
-      ].join("\n"),
-      html: shell(
-        brand,
-        [
-          p(
-            `Thanks for your order at ${escapeHtml(brandName)}. Your payment was received and we're getting it ready to ship.`,
-          ),
-          p("<strong>Order summary</strong>"),
-          itemsHtml(),
-          p(`<strong>Total: ${money(SAMPLE.amountTotalCents)}</strong>`),
-          p(
-            `We'll send another email with tracking info once your order ships. Reply to this message if you need to make a change &mdash; we read every reply.`,
-          ),
-        ].join("\n"),
-      ),
-    },
-    sms: null,
-  });
-
   out.push({
     id: "orders.shipped",
     group: "orders",
@@ -443,121 +397,6 @@ export function buildMessagePreviews(brand: PreviewBrand): MessagePreview[] {
       `Hi ${first}: your CPAP supplies were delivered. Reply STOP to opt out.`,
     ),
   });
-
-  out.push({
-    id: "orders.ready_for_pickup",
-    group: "orders",
-    label: "Ready for pickup",
-    description:
-      "Tells the patient their order is waiting at the branch, and where to collect it.",
-    trigger: "Staff mark a pickup order ready on the fulfilment queue.",
-    fidelity: "mirrored",
-    source:
-      "artifacts/resupply-api/src/lib/order-emails/send-ready-for-pickup-email.ts",
-    email: {
-      subject: `Your ${brandName} order is ready for pickup`,
-      text: [
-        `Hi ${first}, your order is packed and waiting at ${SAMPLE.pickupLocation}.`,
-        "",
-        "Please bring a photo ID. If someone else is collecting for you, reply to this email with their name first.",
-        "",
-        "What's waiting:",
-        itemsText(),
-      ].join("\n"),
-      html: shell(
-        brand,
-        [
-          p(
-            `Hi ${escapeHtml(first)}, your order is packed and waiting at <strong>${escapeHtml(SAMPLE.pickupLocation)}</strong>.`,
-          ),
-          p(
-            "Please bring a photo ID. If someone else is collecting for you, reply to this email with their name first.",
-          ),
-          itemsHtml(),
-        ].join("\n"),
-      ),
-    },
-    sms: meterSms(
-      `Hi ${first}, your ${brandName} order is ready to collect at ${SAMPLE.pickupLocation}. Bring photo ID. Reply STOP to opt out.`,
-    ),
-  });
-
-  out.push({
-    id: "orders.refunded",
-    group: "orders",
-    label: "Refund issued",
-    description:
-      "Confirms a refund and states how long the money takes to land.",
-    trigger: "Staff issue a refund from the order detail page.",
-    fidelity: "mirrored",
-    source:
-      "artifacts/resupply-api/src/lib/order-emails/send-refund-notification-email.ts",
-    email: {
-      subject: `Your ${brandName} refund is on its way`,
-      text: [
-        `Hi ${first}, we've refunded ${money(SAMPLE.amountTotalCents)} for order ${SAMPLE.orderNumber}.`,
-        "",
-        "Refunds usually appear on your statement within 5-10 business days, depending on your bank.",
-        "",
-        "Reply to this email if anything looks wrong.",
-      ].join("\n"),
-      html: shell(
-        brand,
-        [
-          p(
-            `Hi ${escapeHtml(first)}, we've refunded <strong>${money(SAMPLE.amountTotalCents)}</strong> for order ${escapeHtml(SAMPLE.orderNumber)}.`,
-          ),
-          p(
-            "Refunds usually appear on your statement within 5-10 business days, depending on your bank.",
-          ),
-        ].join("\n"),
-      ),
-    },
-    sms: null,
-  });
-
-  // EXACT: seeded template row.
-  const backInStock = fromSeed("shop.back_in_stock.email", {
-    product_name: "Nasal cushion (medium)",
-    product_name_html: escapeHtml("Nasal cushion (medium)"),
-    product_url: `${baseUrl}/shop`,
-    // Href slot: matches `brandedButton`'s quote-only escape, as the
-    // production dispatcher does.
-    product_url_html: `${baseUrl}/shop`.replace(/"/g, "&quot;"),
-    price_label: money(2400),
-    price_line_text: `Price: ${money(2400)}`,
-    // These `*_block_html` variables are pre-rendered markup the sender
-    // supplies. Call the PRODUCTION fragment renderers rather than
-    // re-typing their markup here — hand-copied versions drifted (the
-    // preview had padding-top:10px and no font-size), which quietly made
-    // an "exact" preview differ from the email that ships. The sample has
-    // no image, and renderImageBlockHtml(null) is how production spells
-    // that.
-    image_block_html: renderImageBlockHtml(null),
-    price_block_html: renderPriceBlockHtml(money(2400)),
-    brand_name: brandName,
-    brand_name_html: escapeHtml(brandName),
-    copyright_year: PREVIEW_YEAR,
-  });
-  if (backInStock) {
-    out.push({
-      id: "orders.back_in_stock",
-      group: "orders",
-      label: "Back in stock",
-      description:
-        "Tells a patient who asked to be notified that a product they wanted is available again.",
-      trigger:
-        "Inventory for a product with a waiting list goes back above zero.",
-      fidelity: "exact",
-      source: "artifacts/resupply-api/src/lib/message-templates/seed-bodies.ts",
-      email: {
-        subject: backInStock.subject ?? `Back in stock at ${brandName}`,
-        text: backInStock.text,
-        html: backInStock.html ?? shell(brand, p(escapeHtml(backInStock.text))),
-      },
-      sms: null,
-    });
-  }
 
   // ── Clinical & compliance ─────────────────────────────────────────
   // EXACT: seeded template rows for both channels.
@@ -751,96 +590,6 @@ export function buildMessagePreviews(brand: PreviewBrand): MessagePreview[] {
     sms: null,
   });
 
-  out.push({
-    id: "billing.payment_receipt",
-    group: "billing",
-    label: "Subscription payment receipt",
-    description:
-      "Receipt confirming a recurring supply-subscription charge went through.",
-    trigger: "A subscription renewal payment succeeds.",
-    fidelity: "mirrored",
-    source:
-      "artifacts/resupply-api/src/lib/order-emails/send-subscription-billing-email.ts",
-    email: {
-      subject: `Your ${brandName} subscription payment receipt`,
-      text: [
-        `Hi ${first},`,
-        "",
-        `We've charged ${money(SAMPLE.amountTotalCents)} for your ${brandName} supply subscription. Your next shipment is on its way.`,
-        "",
-        "Keep this email as your receipt.",
-        "",
-        `Manage your subscription: ${baseUrl}/account/subscriptions`,
-      ].join("\n"),
-      html: shell(
-        brand,
-        [
-          p(`Hi ${escapeHtml(first)},`),
-          p(
-            `We've charged <strong>${money(SAMPLE.amountTotalCents)}</strong> for your ${escapeHtml(brandName)} supply subscription. Your next shipment is on its way.`,
-          ),
-          p("Keep this email as your receipt."),
-        ].join("\n"),
-      ),
-    },
-    sms: null,
-  });
-
-  out.push({
-    id: "billing.payment_link",
-    group: "billing",
-    label: "Secure payment link",
-    description:
-      "A pay-by-link text, usually sent while the patient is on the phone with a CSR.",
-    trigger: "A CSR sends a payment link from the patient's billing tab.",
-    fidelity: "mirrored",
-    source: "artifacts/resupply-api/src/routes/admin/patient-payment-link.ts",
-    email: null,
-    sms: meterSms(
-      `${brandName}: your secure payment link for ${money(SAMPLE.balanceCents)} is ${baseUrl}/pay/demo Reply STOP to opt out.`,
-    ),
-  });
-
-  out.push({
-    id: "billing.subscription_renewal",
-    group: "billing",
-    label: "Subscription renews soon",
-    description:
-      "Gives the patient advance notice before their supply subscription charges again, so a renewal is never a surprise.",
-    trigger:
-      "A subscription's next billing date falls inside the advance-notice window.",
-    fidelity: "mirrored",
-    source:
-      "artifacts/resupply-api/src/lib/order-emails/send-subscription-billing-email.ts",
-    email: {
-      subject: `Your ${brandName} subscription renews soon`,
-      text: [
-        `Hi ${first},`,
-        "",
-        `Your ${brandName} supply subscription renews shortly, and we'll charge the card on file ${money(SAMPLE.amountTotalCents)}.`,
-        "",
-        "What's coming:",
-        itemsText(),
-        "",
-        `Need to change, pause, or cancel? ${baseUrl}/account/subscriptions`,
-      ].join("\n"),
-      html: shell(
-        brand,
-        [
-          p(`Hi ${escapeHtml(first)},`),
-          p(
-            `Your ${escapeHtml(brandName)} supply subscription renews shortly, and we'll charge the card on file <strong>${money(SAMPLE.amountTotalCents)}</strong>.`,
-          ),
-          itemsHtml(),
-          p(
-            `<a href="${escapeHtml(baseUrl)}/account/subscriptions" style="display:inline-block;padding:10px 18px;background:#0a1f44;color:#ffffff;border-radius:6px;text-decoration:none;font-size:14px;">Manage subscription</a>`,
-          ),
-        ].join("\n"),
-      ),
-    },
-    sms: null,
-  });
-
   return out;
 }
 
@@ -873,19 +622,6 @@ export const MIRRORED_FINGERPRINTS: ReadonlyArray<{
   fingerprint: string;
 }> = [
   {
-    id: "orders.confirmation",
-    source:
-      "artifacts/resupply-api/src/lib/order-emails/send-order-confirmation-email.ts",
-    fingerprint: "order is confirmed",
-  },
-  {
-    id: "orders.confirmation",
-    source:
-      "artifacts/resupply-api/src/lib/order-emails/send-order-confirmation-email.ts",
-    fingerprint:
-      "Your payment was received and we're getting it ready to ship.",
-  },
-  {
     id: "orders.shipped",
     source:
       "artifacts/resupply-api/src/lib/order-emails/send-shipping-notification-email.ts",
@@ -894,7 +630,8 @@ export const MIRRORED_FINGERPRINTS: ReadonlyArray<{
   {
     // The shipped TEXT is assembled in the route, not the email module.
     id: "orders.shipped",
-    source: "artifacts/resupply-api/src/routes/admin/shop-orders.ts",
+    source:
+      "artifacts/resupply-api/src/lib/order-emails/send-shipping-notification-if-new.ts",
     fingerprint: "your CPAP supplies just shipped",
   },
   {
@@ -902,18 +639,6 @@ export const MIRRORED_FINGERPRINTS: ReadonlyArray<{
     source:
       "artifacts/resupply-api/src/lib/order-emails/delivered-notification.ts",
     fingerprint: "your CPAP supplies were delivered",
-  },
-  {
-    id: "orders.ready_for_pickup",
-    source:
-      "artifacts/resupply-api/src/lib/order-emails/send-ready-for-pickup-email.ts",
-    fingerprint: "ready for pickup",
-  },
-  {
-    id: "orders.refunded",
-    source:
-      "artifacts/resupply-api/src/lib/order-emails/send-refund-notification-email.ts",
-    fingerprint: "refund",
   },
   {
     id: "clinical.recall",
@@ -931,22 +656,5 @@ export const MIRRORED_FINGERPRINTS: ReadonlyArray<{
     id: "billing.statement",
     source: "artifacts/resupply-api/src/lib/billing/statement-send.ts",
     fingerprint: "billing statement",
-  },
-  {
-    id: "billing.payment_link",
-    source: "artifacts/resupply-api/src/routes/admin/patient-payment-link.ts",
-    fingerprint: "payment link",
-  },
-  {
-    id: "billing.payment_receipt",
-    source:
-      "artifacts/resupply-api/src/lib/order-emails/send-subscription-billing-email.ts",
-    fingerprint: "subscription payment receipt",
-  },
-  {
-    id: "billing.subscription_renewal",
-    source:
-      "artifacts/resupply-api/src/lib/order-emails/send-subscription-billing-email.ts",
-    fingerprint: "subscription renews",
   },
 ];

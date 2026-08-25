@@ -217,3 +217,264 @@ export async function markFitSessionDispensed(
     return { stamped: false };
   }
 }
+
+/**
+ * Stamp the dispense for a fitting that never went through the shop.
+ *
+ * WHY THIS EXISTS ALONGSIDE THE SHOP PATH
+ * ---------------------------------------
+ * `markFitSessionDispensed` above keys on `shop_order_id`, because it was
+ * written for the one path a fitting could reach a patient by: the
+ * patient bought the mask themselves at checkout. Migration 0518 removed
+ * that path — the fitter now ends in a request a CSR works, and the
+ * patient is dispensed through the DME's ordinary fulfillment, which
+ * produces no `shop_orders` row for the fitting to point at.
+ *
+ * So the loop this module exists to close was quietly opened again: the
+ * outcomes dashboard's dispense rate, its accepted-vs-overridden split,
+ * and the re-fit campaign's discontinued-mask branch all read columns
+ * that no longer had a writer. This is that writer, on the new path.
+ *
+ * "Dispensed" keeps its meaning from the shop path — the patient HAS the
+ * mask, not merely that someone agreed to send one. The caller is the
+ * CSR closing a fit request as fulfilled, which is that same assertion
+ * made by a person instead of a carrier webhook.
+ *
+ * `orderedMaskSlug` is the mask the PATIENT chose on the results page,
+ * which may be an alternative rather than the engine's top pick. That
+ * distinction is the whole value of the metric — see the note at the top
+ * of this file — so it is never back-filled from the recommendation.
+ *
+ * Guarded on `dispensed_at IS NULL`: reopening and re-closing a request
+ * must not move a dispense date that has already been recorded. Never
+ * throws — attribution must not cost a CSR their close.
+ */
+export async function markFitSessionDispensedById(
+  orgId: string,
+  input: { fitSessionId: string; orderedMaskSlug?: string | null },
+): Promise<{ stamped: boolean }> {
+  try {
+    const supabase = getOrgScopedClient(orgId);
+
+    // Same slug → uuid resolution as the shop path, with two differences
+    // that matter here.
+    //
+    // 1. A lookup ERROR is not "no such mask". Swallowing it would stamp
+    //    `dispensed_at` with a null mask, and because every later attempt
+    //    is guarded on `dispensed_at IS NULL`, that fitting could never
+    //    be repaired — the accepted-vs-overridden metric would lose it
+    //    permanently over a transient database blip. An error aborts the
+    //    stamp so the CSR's next close (or a retry) can complete it.
+    //    A successful lookup with no match still falls back to null: the
+    //    mask is decoration next to the dispense itself.
+    //
+    // 2. A tenant may carry a PRIVATE model that shadows a platform one
+    //    on the same slug. An unordered limit(1) over both would record
+    //    whichever row the planner happened to return, so the outcome
+    //    could disagree with the model the engine actually ranked.
+    //    Tenant rows are ordered first and win.
+    let orderedMaskModelId: string | null = null;
+    if (input.orderedMaskSlug) {
+      const { data, error: lookupErr } = (await supabase
+        .raw()
+        .schema("resupply")
+        .from("mask_models")
+        .select("id")
+        .or(`org_id.is.null,org_id.eq.${orgId}`)
+        .eq("slug", input.orderedMaskSlug)
+        .order("org_id", { ascending: false, nullsFirst: false })
+        .limit(1)
+        .maybeSingle()) as {
+        data: { id?: string } | null;
+        error: { message: string } | null;
+      };
+      if (lookupErr) {
+        logger.warn(
+          {
+            event: "fit_dispense_stamp_failed",
+            orgId,
+            err: lookupErr.message,
+          },
+          "mask lookup failed; leaving the dispense unstamped so it can be retried",
+        );
+        return { stamped: false };
+      }
+      orderedMaskModelId = data?.id ?? null;
+    }
+
+    // The slug is CLIENT-supplied — it rode in on the patient's request
+    // body — and it is about to become `ordered_mask_model_id`, which is
+    // what decides "did the patient take our recommendation". A stale or
+    // edited payload naming some other real mask would corrupt that
+    // metric for a session that is otherwise entirely valid.
+    //
+    // So it is checked against what the engine actually showed this
+    // patient: the primary recommendation, or one of the alternatives
+    // beside it. Anything else is not a choice they could have made on
+    // that screen. A mask that fails the check is DROPPED rather than
+    // rejected — `dispensed_at` still stands, because the patient did
+    // receive something; we simply decline to name it.
+    if (orderedMaskModelId) {
+      const offered = await sessionOfferedMask(
+        supabase,
+        input.fitSessionId,
+        orderedMaskModelId,
+        input.orderedMaskSlug ?? null,
+      );
+      if (!offered) {
+        logger.warn(
+          { event: "fit_dispense_mask_not_offered", orgId },
+          "claimed mask was not among this fitting's candidates — stamping the dispense without it",
+        );
+        orderedMaskModelId = null;
+      }
+    }
+
+    const nowIso = new Date().toISOString();
+    const { data: updated, error } = (await supabase
+      .from("fit_sessions")
+      .update({
+        dispensed_at: nowIso,
+        ...(orderedMaskModelId
+          ? { ordered_mask_model_id: orderedMaskModelId }
+          : {}),
+        updated_at: nowIso,
+      })
+      .eq("id", input.fitSessionId)
+      .is("dispensed_at", null)
+      .select("id")
+      .limit(1)
+      .maybeSingle()) as {
+      data: { id?: string } | null;
+      error: { message: string } | null;
+    };
+    if (error) {
+      logger.warn(
+        { event: "fit_dispense_stamp_failed", orgId, err: error.message },
+        "could not stamp fit session dispense from a fit request",
+      );
+      return { stamped: false };
+    }
+    return { stamped: Boolean(updated) };
+  } catch (err) {
+    logger.warn(
+      {
+        event: "fit_dispense_stamp_failed",
+        orgId,
+        err: err instanceof Error ? err.message : String(err),
+      },
+      "could not stamp fit session dispense from a fit request",
+    );
+    return { stamped: false };
+  }
+}
+
+/**
+ * Undo a dispense this queue stamped, when the CSR corrects the outcome.
+ *
+ * A mis-click on "Fulfilled" stamps the fitting immediately. Correcting
+ * the outcome afterwards has to reach the fitting too, or the outcomes
+ * dashboard keeps counting a dispense that never happened and the re-fit
+ * campaign chases the patient about a mask they were never given.
+ *
+ * GUARDED ON `shop_order_id IS NULL`, and that guard is the whole safety
+ * argument. A fitting whose dispense came from the SHOP path was stamped
+ * because a carrier confirmed delivery — an admin correcting a queue row
+ * must never erase that. A fitting with no shop order can only have been
+ * stamped from here, so it is ours to take back.
+ *
+ * Never throws.
+ */
+export async function clearFitSessionDispenseById(
+  orgId: string,
+  fitSessionId: string,
+): Promise<{ cleared: boolean }> {
+  try {
+    const supabase = getOrgScopedClient(orgId);
+    const { data: updated, error } = (await supabase
+      .from("fit_sessions")
+      .update({
+        dispensed_at: null,
+        ordered_mask_model_id: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", fitSessionId)
+      .is("shop_order_id", null)
+      .select("id")
+      .limit(1)
+      .maybeSingle()) as {
+      data: { id?: string } | null;
+      error: { message: string } | null;
+    };
+    if (error) {
+      logger.warn(
+        { event: "fit_dispense_clear_failed", orgId, err: error.message },
+        "could not withdraw the fit session dispense",
+      );
+      return { cleared: false };
+    }
+    return { cleared: Boolean(updated) };
+  } catch (err) {
+    logger.warn(
+      {
+        event: "fit_dispense_clear_failed",
+        orgId,
+        err: err instanceof Error ? err.message : String(err),
+      },
+      "could not withdraw the fit session dispense",
+    );
+    return { cleared: false };
+  }
+}
+
+/**
+ * Was this mask one of the ones the fitting actually offered?
+ *
+ * Checks the session's own stored result: `primary_mask_model_id`, or a
+ * `maskSlug` in the `alternatives` snapshot. Both were written by the
+ * engine at compute time and are never recomputed on read, so they are
+ * the authoritative record of what the patient was shown.
+ *
+ * Returns TRUE when the session cannot be read or carries no result at
+ * all — a legacy session with no snapshot must not lose its mask
+ * attribution to a check that has nothing to check against. The
+ * scenario this guards is a payload naming a DIFFERENT mask, not a
+ * missing snapshot.
+ */
+async function sessionOfferedMask(
+  supabase: ReturnType<typeof getOrgScopedClient>,
+  fitSessionId: string,
+  maskModelId: string,
+  maskSlug: string | null,
+): Promise<boolean> {
+  const { data, error } = (await supabase
+    .from("fit_sessions")
+    .select("primary_mask_model_id, alternatives")
+    .eq("id", fitSessionId)
+    .limit(1)
+    .maybeSingle()) as {
+    data: {
+      primary_mask_model_id?: string | null;
+      alternatives?: unknown;
+    } | null;
+    error: { message: string } | null;
+  };
+  if (error || !data) return true;
+
+  if (data.primary_mask_model_id === maskModelId) return true;
+
+  const alternatives = Array.isArray(data.alternatives)
+    ? (data.alternatives as Array<Record<string, unknown>>)
+    : null;
+  // No snapshot to compare against — see the note above.
+  if (!alternatives) return data.primary_mask_model_id == null;
+
+  return alternatives.some((candidate) => {
+    const slug = candidate?.maskSlug;
+    const id = candidate?.maskId;
+    return (
+      (typeof slug === "string" && maskSlug !== null && slug === maskSlug) ||
+      (typeof id === "string" && id === maskModelId)
+    );
+  });
+}

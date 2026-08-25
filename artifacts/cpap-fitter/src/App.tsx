@@ -12,9 +12,8 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/not-found";
 import { Layout } from "@/components/layout";
 import { ErrorBoundary } from "@/components/error-boundary";
-import { CartSnapshotSync } from "@/hooks/use-cart-snapshot";
-import { lazyWithRetry } from "@/lib/lazy-with-retry";
 import { getCompanyContact } from "@/lib/contact";
+import { lazyWithRetry } from "@/lib/lazy-with-retry";
 
 // The landing page is the ONE eagerly-imported route. It's the most
 // common entry point, so keeping it in the initial chunk avoids a
@@ -23,13 +22,6 @@ import { getCompanyContact } from "@/lib/contact";
 // below) so its page code never weighs down the initial bundle.
 import { Home } from "@/pages/home";
 
-// Formerly-eager public pages, now code-split. Each becomes its own
-// chunk, loaded on demand under the shared <Suspense> boundary in
-// PatientRouter. They had grown large (shop/learn/faq are 800–1200+
-// lines) and were the bulk of the >400 kB initial chunk.
-const Shop = lazyWithRetry(() =>
-  import("@/pages/shop").then((m) => ({ default: m.Shop })),
-);
 const Masks = lazyWithRetry(() =>
   import("@/pages/masks").then((m) => ({ default: m.Masks })),
 );
@@ -59,11 +51,11 @@ const InsuranceEstimate = lazyWithRetry(() =>
     default: m.InsuranceEstimate,
   })),
 );
-const TrackOrder = lazyWithRetry(() =>
-  import("@/pages/track-order").then((m) => ({ default: m.TrackOrder })),
-);
 const NpsLanding = lazyWithRetry(() =>
   import("@/pages/nps").then((m) => ({ default: m.NpsLanding })),
+);
+const TrackOrder = lazyWithRetry(() =>
+  import("@/pages/track-order").then((m) => ({ default: m.TrackOrder })),
 );
 const MaskFitLanding = lazyWithRetry(() =>
   import("@/pages/mask-fit").then((m) => ({ default: m.MaskFitLanding })),
@@ -126,30 +118,6 @@ const SleepApneaQuiz = lazyWithRetry(() =>
     default: m.SleepApneaQuiz,
   })),
 );
-const ShopCart = lazyWithRetry(() =>
-  import("@/pages/shop-cart").then((m) => ({ default: m.ShopCart })),
-);
-const ShopProductDetail = lazyWithRetry(() =>
-  import("@/pages/shop-product-detail").then((m) => ({
-    default: m.ShopProductDetail,
-  })),
-);
-const ShopCheckoutSuccess = lazyWithRetry(() =>
-  import("@/pages/shop-checkout-success").then((m) => ({
-    default: m.ShopCheckoutSuccess,
-  })),
-);
-const ShopCheckoutCancel = lazyWithRetry(() =>
-  import("@/pages/shop-checkout-cancel").then((m) => ({
-    default: m.ShopCheckoutCancel,
-  })),
-);
-const ShopOrders = lazyWithRetry(() =>
-  import("@/pages/shop-orders").then((m) => ({ default: m.ShopOrders })),
-);
-const ShopWishlist = lazyWithRetry(() =>
-  import("@/pages/shop-wishlist").then((m) => ({ default: m.ShopWishlist })),
-);
 const AccountPage = lazyWithRetry(() =>
   import("@/pages/account").then((m) => ({ default: m.AccountPage })),
 );
@@ -179,9 +147,6 @@ const VerifyEmailPage = lazyWithRetry(() =>
     default: m.VerifyEmailPage,
   })),
 );
-const ReturnsPage = lazyWithRetry(() =>
-  import("@/pages/returns").then((m) => ({ default: m.ReturnsPage })),
-);
 
 // Help Center — task-oriented, "how do I use this feature" documentation.
 // Distinct from /learn (medical patient education) and /faq (quick clinical
@@ -196,16 +161,6 @@ const Help = lazyWithRetry(() =>
 const HelpFindYourMask = lazyWithRetry(() =>
   import("@/pages/help-find-your-mask").then((m) => ({
     default: m.HelpFindYourMask,
-  })),
-);
-const HelpPlaceAnOrder = lazyWithRetry(() =>
-  import("@/pages/help-place-an-order").then((m) => ({
-    default: m.HelpPlaceAnOrder,
-  })),
-);
-const HelpShopAndCheckout = lazyWithRetry(() =>
-  import("@/pages/help-shop-and-checkout").then((m) => ({
-    default: m.HelpShopAndCheckout,
   })),
 );
 const HelpTrackYourOrder = lazyWithRetry(() =>
@@ -228,29 +183,9 @@ const HelpInsuranceEstimate = lazyWithRetry(() =>
     default: m.HelpInsuranceEstimate,
   })),
 );
-const HelpReturnsAndRefunds = lazyWithRetry(() =>
-  import("@/pages/help-returns-and-refunds").then((m) => ({
-    default: m.HelpReturnsAndRefunds,
-  })),
-);
 const HelpResetPassword = lazyWithRetry(() =>
   import("@/pages/help-reset-password").then((m) => ({
     default: m.HelpResetPassword,
-  })),
-);
-const HelpSaveToWishlist = lazyWithRetry(() =>
-  import("@/pages/help-save-to-wishlist").then((m) => ({
-    default: m.HelpSaveToWishlist,
-  })),
-);
-const HelpManageSubscriptions = lazyWithRetry(() =>
-  import("@/pages/help-manage-subscriptions").then((m) => ({
-    default: m.HelpManageSubscriptions,
-  })),
-);
-const HelpPaymentMethods = lazyWithRetry(() =>
-  import("@/pages/help-payment-methods").then((m) => ({
-    default: m.HelpPaymentMethods,
   })),
 );
 const HelpCommunicationPreferences = lazyWithRetry(() =>
@@ -688,9 +623,9 @@ const PatientPacketSign = lazyWithRetry(() =>
     default: m.PatientPacketSign,
   })),
 );
-const OrderPay = lazyWithRetry(() =>
-  import("@/pages/order-pay").then((m) => ({
-    default: m.OrderPay,
+const OrderSign = lazyWithRetry(() =>
+  import("@/pages/order-sign").then((m) => ({
+    default: m.OrderSign,
   })),
 );
 const VideoVisitPage = lazyWithRetry(() =>
@@ -958,27 +893,6 @@ function GuardedOrder() {
   return <Order />;
 }
 
-function GuardedShopOrders() {
-  const { isSignedIn, isLoaded } = useShopIdentity();
-  if (!isLoaded) return <RouteFallback />;
-  if (!isSignedIn) return <Redirect to="/sign-in" />;
-  return <ShopOrders />;
-}
-
-function GuardedAccount() {
-  const { isSignedIn, isLoaded } = useShopIdentity();
-  if (!isLoaded) return <RouteFallback />;
-  if (!isSignedIn) return <Redirect to="/sign-in" />;
-  return <AccountPage />;
-}
-
-function GuardedAccountBilling() {
-  const { isSignedIn, isLoaded } = useShopIdentity();
-  if (!isLoaded) return <RouteFallback />;
-  if (!isSignedIn) return <Redirect to="/sign-in" />;
-  return <AccountBillingPage />;
-}
-
 /**
  * Order-success gating. The confirmation normally lives in
  * sessionStorage (so a refresh after order doesn't re-submit). If
@@ -1098,6 +1012,31 @@ function GuardedOrderSuccess() {
   return <OrderSuccess />;
 }
 
+function GuardedAccount() {
+  const { isSignedIn, isLoaded } = useShopIdentity();
+  if (!isLoaded) return <RouteFallback />;
+  if (!isSignedIn) return <Redirect to="/sign-in" />;
+  return <AccountPage />;
+}
+
+function GuardedAccountBilling() {
+  const { isSignedIn, isLoaded } = useShopIdentity();
+  if (!isLoaded) return <RouteFallback />;
+  if (!isSignedIn) return <Redirect to="/sign-in" />;
+  return <AccountBillingPage />;
+}
+
+/**
+ * Order-success gating. The confirmation normally lives in
+ * sessionStorage (so a refresh after order doesn't re-submit). If
+ * that's gone — tab crashed, cache cleared, deep link from an email
+ * — we fall back to recovering the confirmation server-side using
+ * the ?ref + ?email URL params that /order appended on submit.
+ * The /api/orders/track endpoint already enforces matching email +
+ * rate limiting, so this doesn't widen the attack surface beyond
+ * the existing track-order page.
+ */
+
 function PatientRouter() {
   const [location] = useLocation();
   return (
@@ -1109,7 +1048,6 @@ function PatientRouter() {
         on every patient page where the cart can change. No-op for
         signed-out visitors.
       */}
-      <CartSnapshotSync />
       {/*
         Inline error boundary INSIDE the Layout so a crash in any single
         page falls back to a recoverable card while the header/nav/footer
@@ -1147,11 +1085,6 @@ function PatientRouter() {
             {/* Help Center — specific /help/* guides registered before the
               /help hub so wouter's <Switch> matches them first. */}
             <Route path="/help/find-your-mask" component={HelpFindYourMask} />
-            <Route path="/help/place-an-order" component={HelpPlaceAnOrder} />
-            <Route
-              path="/help/shop-and-checkout"
-              component={HelpShopAndCheckout}
-            />
             <Route
               path="/help/track-your-order"
               component={HelpTrackYourOrder}
@@ -1168,23 +1101,7 @@ function PatientRouter() {
               path="/help/insurance-estimate"
               component={HelpInsuranceEstimate}
             />
-            <Route
-              path="/help/returns-and-refunds"
-              component={HelpReturnsAndRefunds}
-            />
             <Route path="/help/reset-password" component={HelpResetPassword} />
-            <Route
-              path="/help/save-to-wishlist"
-              component={HelpSaveToWishlist}
-            />
-            <Route
-              path="/help/manage-subscriptions"
-              component={HelpManageSubscriptions}
-            />
-            <Route
-              path="/help/payment-methods"
-              component={HelpPaymentMethods}
-            />
             <Route
               path="/help/communication-preferences"
               component={HelpCommunicationPreferences}
@@ -1300,21 +1217,6 @@ function PatientRouter() {
             <Route path="/track-order" component={TrackOrder} />
             <Route path="/nps" component={NpsLanding} />
             <Route path="/mask-fit" component={MaskFitLanding} />
-            <Route path="/shop" component={Shop} />
-            <Route path="/shop/p/:productId">
-              {(params) => <ShopProductDetail productId={params.productId} />}
-            </Route>
-            <Route path="/shop/cart" component={ShopCart} />
-            <Route
-              path="/shop/checkout-success"
-              component={ShopCheckoutSuccess}
-            />
-            <Route
-              path="/shop/checkout-cancel"
-              component={ShopCheckoutCancel}
-            />
-            <Route path="/shop/orders" component={GuardedShopOrders} />
-            <Route path="/shop/wishlist" component={ShopWishlist} />
             {/* Push-notification deep links. The backend sends pushes
                 with url=/account/orders (shipping updates) and
                 /account/insights (smart triggers); both surfaces are
@@ -1323,25 +1225,28 @@ function PatientRouter() {
             <Route path="/account/insights">
               {() => <AccountHashRedirect hash="insights" />}
             </Route>
+            {/* Legacy deep link: the retail Orders tab retired with
+                cash-pay, but pushes sent before this deploy still carry
+                the URL. Land them on the account rather than a hash that
+                resolves to nothing. */}
             <Route path="/account/orders">
-              {() => <AccountHashRedirect hash="orders" />}
+              {() => <Redirect to="/account" />}
             </Route>
             <Route path="/account" component={GuardedAccount} />
             <Route path="/account/billing" component={GuardedAccountBilling} />
             <Route path="/reminders" component={Reminders} />
             <Route path="/reminders/manage" component={RemindersManage} />
             <Route path="/patient-packet-sign" component={PatientPacketSign} />
-            {/* Public token-gated "review, sign & pay" page for
+            {/* Public token-gated "review & sign" page for
                 CSR-created orders (link arrives by SMS/email; token
                 rides the query string like /patient-packet-sign). */}
-            <Route path="/order-pay" component={OrderPay} />
+            <Route path="/order-sign" component={OrderSign} />
             {/* Public token-gated telehealth join page (link arrives by
                 SMS/email; token rides the query string like
                 /patient-packet-sign). */}
             <Route path="/video-visit" component={VideoVisitPage} />
             <Route path="/privacy" component={Privacy} />
             <Route path="/terms" component={Terms} />
-            <Route path="/returns" component={ReturnsPage} />
 
             {/* Guarded routes — see GuardedXxx components above. */}
             <Route path="/measure" component={GuardedMeasure} />
