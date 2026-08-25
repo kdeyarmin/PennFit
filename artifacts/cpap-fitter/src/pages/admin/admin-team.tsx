@@ -85,7 +85,7 @@ export function AdminTeamPage() {
     <div className="space-y-6" data-testid="admin-team-page">
       <PageHeader
         title="Team"
-        description="Invite admins and customer-service reps. Invitees receive a welcome email that explains the console, what their role covers, and how to get signed in — with the getting-started guide and the handbook for their job attached — plus the sign-up link they must accept before they can log in. Revoking removes access immediately; pending and revoked invites can also be deleted entirely, as if they were never sent."
+        description="Invite owners, admins, customer-service reps, and billers — the role you pick decides what they can see. Invitees receive a welcome email that explains the console, what their role covers, and how to get signed in — with the getting-started guide and the handbook for their job attached — plus the sign-up link they must accept before they can log in. Revoking removes access immediately; pending and revoked invites can also be deleted entirely, as if they were never sent."
       />
       <InviteCard />
       <TeamList />
