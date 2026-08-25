@@ -76,12 +76,12 @@ export function Masks() {
             >
               on-device fitter
             </a>
-            , or order a complete mask direct from{" "}
+            , or ask us to order a mask through{" "}
             <a
-              href="/shop"
+              href="/insurance"
               className="text-primary underline-offset-4 hover:underline"
             >
-              the shop
+              your insurance
             </a>
             .
           </p>

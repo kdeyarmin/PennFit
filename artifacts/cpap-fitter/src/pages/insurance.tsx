@@ -18,7 +18,6 @@ import {
   Truck,
   PhoneCall,
   Sparkles,
-  ArrowRight,
   HelpCircle,
   Stethoscope,
 } from "lucide-react";

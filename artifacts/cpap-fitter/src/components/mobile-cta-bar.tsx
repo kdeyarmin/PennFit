@@ -8,10 +8,9 @@
 // /reset-password), inside the fit-flow (/capture, /measure,
 // /questionnaire, /results, /order, /order-success — already a
 // dedicated stepper there), the cart/checkout pages, and the
-// admin-console-tied storefront pages. Everywhere else (home, learn,
-// faq, masks, shop list, account, insurance, etc.) the bar is
-// visible on mobile and hidden on md+ screens where the desktop nav
-// already puts these affordances in the header.
+// everywhere else (home, learn, faq, masks, account, insurance, etc.)
+// the bar is visible on mobile and hidden on md+ screens where the desktop
+// nav already puts these affordances in the header.
 //
 // Layout note: the bar is `fixed bottom-0` and uses
 // env(safe-area-inset-bottom) so it sits above the iOS home
@@ -21,7 +20,7 @@
 
 import React from "react";
 import { Link, useLocation } from "wouter";
-import { ScanFace, ShoppingBag, MessageCircle } from "lucide-react";
+import { ScanFace, ClipboardCheck, MessageCircle } from "lucide-react";
 
 const HIDDEN_PREFIXES = [
   "/admin",
@@ -37,8 +36,6 @@ const HIDDEN_PREFIXES = [
   "/results",
   "/order",
   "/order-success",
-  "/shop/cart",
-  "/shop/checkout",
 ];
 
 function shouldHide(rawPath: string): boolean {
@@ -77,12 +74,16 @@ export function MobileCtaBar() {
           <span>Get fitted</span>
         </Link>
         <Link
-          href="/shop"
+          href="/insurance"
           className="flex flex-col items-center justify-center gap-1 px-2 py-2.5 text-[hsl(var(--penn-navy))] active:bg-secondary/40 transition-colors border-l border-r border-border/40"
-          data-testid="mobile-cta-shop"
+          data-testid="mobile-cta-order"
         >
-          <ShoppingBag className="w-5 h-5" strokeWidth={2} aria-hidden="true" />
-          <span>Shop</span>
+          <ClipboardCheck
+            className="w-5 h-5"
+            strokeWidth={2}
+            aria-hidden="true"
+          />
+          <span>Order</span>
         </Link>
         <Link
           href="/help"
