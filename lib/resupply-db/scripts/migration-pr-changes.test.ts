@@ -1080,5 +1080,32 @@ describe.skipIf(!dbUrl)(
         { slug: "fisher-paykel-nova-nasal", size_code: "STD" },
       ]);
     }, 20_000);
+
+    // `mask_components` carries only a uuid primary key and two NON-unique
+    // indexes, so the `ON CONFLICT DO NOTHING` that 0486, 0494 and (until
+    // review) 0522 all end their component inserts with matches no arbiter
+    // and suppresses nothing. Re-running one of those files inserts a
+    // second copy of every row, and the admin catalog then lists each
+    // replacement part twice. migrate.mjs skips already-applied files by
+    // NAME, so its own idempotence test cannot see this — only the
+    // resulting data can.
+    it("lists each replacement component once per model", async () => {
+      const { rows } = await pool.query<{
+        slug: string;
+        component_type: string;
+        name: string;
+        copies: string;
+      }>(
+        `SELECT m.slug, c.component_type, c.name, count(*)::text AS copies
+           FROM resupply.mask_components c
+           JOIN resupply.mask_models m ON m.id = c.mask_model_id
+          GROUP BY m.slug, c.component_type, c.name
+         HAVING count(*) > 1
+          ORDER BY m.slug, c.component_type, c.name`,
+      );
+      expect(
+        rows.map((r) => `${r.slug}/${r.name}: ${r.copies} copies`),
+      ).toEqual([]);
+    }, 20_000);
   },
 );

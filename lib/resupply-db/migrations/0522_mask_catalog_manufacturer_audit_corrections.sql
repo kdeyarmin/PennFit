@@ -235,10 +235,29 @@ WHERE "mask_model_id" IN (
 -- patient with bridge soreness or a bridge pressure injury is steered by.
 UPDATE "resupply"."mask_models"
 SET "avoids_nasal_bridge" = false,
+    -- The seed also had this mask scored as if a beard broke its seal:
+    -- facial_hair_tolerance='poor' plus a facial_hair contraindication
+    -- whose rationale reads "the seal runs across the cheeks and chin".
+    -- That is a FULL FACE rationale on a mask that seals on the nose. It
+    -- is the same misreading this section exists to fix, it left the DB
+    -- and static-catalog paths ranking bearded patients differently, and
+    -- of the 32 current nasal masks only this one and the AirFit N20
+    -- carried it. 'fair' is the value its closest comparable — the
+    -- DreamWear nasal cushion, same over-the-nose class, same
+    -- top-of-head tube — already carries.
+    "facial_hair_tolerance" = 'fair',
     "cushion_material" = 'Silicone (Wisp over-the-nose nasal cushion)',
     "description" = 'Nasal mask pairing the Wisp''s compact over-the-nose cushion with a top-of-head tube connection, so the hose routes over the crown instead of across the chest. The cushion covers the nose and rests against the nasal bridge — it is not an under-nose cradle.',
     "updated_at" = now()
 WHERE "slug" = 'philips-dreamwisp' AND "org_id" IS NULL;
+--> statement-breakpoint
+
+DELETE FROM "resupply"."mask_contraindications" c
+USING "resupply"."mask_models" m
+WHERE c."mask_model_id" = m."id"
+  AND m."org_id" IS NULL
+  AND m."slug" = 'philips-dreamwisp'
+  AND c."factor" = 'facial_hair';
 --> statement-breakpoint
 
 -- ---------------------------------------------------------------
@@ -544,23 +563,23 @@ FROM (VALUES
   -- resmed-airtouch-f30i-comfort (frames carry no facial geometry)
   ('resmed-airtouch-f30i-comfort', 'frame', 'S', 'Small', 0,
    NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
-   false, 'A7030', '63368'),
+   false, 'A7030', NULL),
   ('resmed-airtouch-f30i-comfort', 'frame', 'STD', 'Standard', 10,
    NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
-   true, 'A7030', '63369'),
+   true, 'A7030', NULL),
   ('resmed-airtouch-f30i-comfort', 'frame', 'L', 'Large', 20,
    NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
-   false, 'A7030', '63370'),
+   false, 'A7030', NULL),
   -- resmed-airtouch-f30i-clear (frames carry no facial geometry)
   ('resmed-airtouch-f30i-clear', 'frame', 'S', 'Small', 0,
    NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
-   false, 'A7030', '63368'),
+   false, 'A7030', NULL),
   ('resmed-airtouch-f30i-clear', 'frame', 'STD', 'Standard', 10,
    NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
-   true, 'A7030', '63369'),
+   true, 'A7030', NULL),
   ('resmed-airtouch-f30i-clear', 'frame', 'L', 'Large', 20,
    NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
-   false, 'A7030', '63370'),
+   false, 'A7030', NULL),
   -- resmed-airtouch-n30i (frames carry no facial geometry)
   ('resmed-airtouch-n30i', 'frame', 'S', 'Small', 0,
    NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
@@ -667,7 +686,18 @@ FROM (VALUES
 ) AS c("slug", "component_type", "name", "hcpcs_code", "category")
 JOIN "resupply"."mask_models" m
   ON m."slug" = c."slug" AND m."org_id" IS NULL
-ON CONFLICT DO NOTHING;
+-- NOT a redundant ON CONFLICT. `mask_components` carries only a uuid
+-- primary key and two NON-unique indexes, so ON CONFLICT DO NOTHING
+-- (which 0486 and 0494 both use here) matches no arbiter and suppresses
+-- nothing: a replay of this file would insert a second copy of all 27
+-- rows and the admin catalog would show every replacement part twice.
+WHERE NOT EXISTS (
+  SELECT 1
+    FROM "resupply"."mask_components" existing
+   WHERE existing."mask_model_id"  = m."id"
+     AND existing."component_type" = c."component_type"
+     AND existing."name"           = c."name"
+);
 --> statement-breakpoint
 
 -- ---------------------------------------------------------------
