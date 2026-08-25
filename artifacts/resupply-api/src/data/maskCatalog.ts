@@ -627,12 +627,12 @@ export const maskCatalog: MaskEntry[] = [
   },
   {
     id: "philips-dreamwear-np",
-    name: "DreamWear Nasal Pillow",
+    name: "DreamWear Gel Pillows",
     modelNumber: "PHM-PR-DWP",
     manufacturer: "Philips Respironics",
     type: "nasalPillow",
     description:
-      "Combines DreamWear's signature top-of-head hose design with comfortable silicone nasal pillows. The hollow soft frame channels air down the sides for a lightweight, unrestricted feel.",
+      "Philips' GEL pillows cushion on the DreamWear frame: gel-ringed pillows that seat at the nostrils, with the signature top-of-head hose routing. The hollow soft frame channels air down the sides for a lightweight, unrestricted feel. DreamWear's SILICONE pillows are a separate cushion on the same frame.",
     fitRanges: {
       noseWidthMin: 29.3,
       noseWidthMax: 42.1,
@@ -648,7 +648,7 @@ export const maskCatalog: MaskEntry[] = [
       "Frame swaps with other DreamWear cushions",
     ],
     contraindications: ["Mouth breathers", "High pressures"],
-    cushionMaterial: "Silicone",
+    cushionMaterial: "Gel (gel-ringed nasal pillows)",
     headgearStyle: "Soft fabric wrap",
     hoseConnection: "top",
     weightGrams: 84,
@@ -1249,7 +1249,7 @@ export const maskCatalog: MaskEntry[] = [
   },
   {
     id: "fisher-paykel-solo",
-    name: "Solo",
+    name: "Solo Nasal",
     modelNumber: "PHM-FP-SOLO",
     manufacturer: "Fisher & Paykel",
     type: "nasal",
@@ -1409,7 +1409,7 @@ export const maskCatalog: MaskEntry[] = [
     manufacturer: "Philips Respironics",
     type: "nasal",
     description:
-      "Nasal mask combining the under-nose Wisp cushion with a DreamWear-style top-of-head hose connection. The soft frame routes air over the cheeks and across the crown so the bridge of the nose stays clear.",
+      "Nasal mask combining the Wisp's compact over-the-nose cushion with a DreamWear-style top-of-head hose connection. The soft frame routes air over the cheeks and across the crown, so the hose stays out of your line of sight — but the cushion covers the nose and rests against the bridge, unlike an under-nose cradle.",
     fitRanges: {
       noseWidthMin: 29.3,
       noseWidthMax: 42.1,
@@ -1426,9 +1426,9 @@ export const maskCatalog: MaskEntry[] = [
     ],
     contraindications: [
       "Severe nasal congestion",
-      "Beard at upper-lip area (under-nose seal)",
+      "Nasal-bridge soreness or skin breakdown (the cushion seals over the nose)",
     ],
-    cushionMaterial: "Silicone (Wisp under-nose nasal cushion)",
+    cushionMaterial: "Silicone (Wisp over-the-nose nasal cushion)",
     headgearStyle: "Four-point fabric headgear with magnetic clips",
     hoseConnection: "top",
     weightGrams: 90,

@@ -8,6 +8,14 @@ and [`0512`](../lib/resupply-db/migrations/0512_mask_size_run_corrections.sql)
 and the legacy-catalog rewrite; the geometry story is in
 [`mask-fit-band-audit-2026-08-21.md`](./mask-fit-band-audit-2026-08-21.md).
 
+> **Superseded in part by 0519 (2026-08-25).** A later pass against the
+> manufacturers' own sites corrected the 30i **frame** runs (which this
+> registry never covered — it audited cushions and pillows), restructured
+> the Evora Full frame/headgear, and added nine current masks. Frame runs,
+> the per-claim verdicts and the remaining open questions are in
+> [`mask-catalog-manufacturer-audit-2026-08-25.md`](./mask-catalog-manufacturer-audit-2026-08-25.md).
+> The cushion/pillow runs below are unchanged by it.
+
 **Evidence bar.** A run was only changed on (a) a manufacturer-hosted
 document or manufacturer page, or (b) two independent, consistent
 sources, preferably with per-size SKUs. "Confirmed" below means the
@@ -119,4 +127,8 @@ Pinned by `lib/fitting/catalog-bands.test.ts` (DB) and
 - Non-Big-3 manufacturers (React Health, Sleepnet, Circadiance, Bleep,
   Hans Rudolph, Inogen, Rain8) were **not** re-verified in this pass —
   their bands were re-derived on the correct axis by 0511, but their
-  size runs still carry seed provenance.
+  size runs still carry seed provenance. **React Health was since
+  verified** against React's own PAP mask page (0519): four current masks
+  were missing and are now seeded with per-size part numbers, and the
+  status of the six React models React no longer list is an open
+  question, not a confirmed run.

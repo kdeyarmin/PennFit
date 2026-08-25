@@ -53,6 +53,7 @@ const read = (file: string) =>
 const MODEL_SOURCES = [
   "0486_mask_catalog_seed.sql",
   "0494_mask_catalog_seed_addendum.sql",
+  "0519_mask_catalog_manufacturer_audit_corrections.sql",
 ];
 /**
  * Migrations that state platform cushion/pillow bands, oldest first.
@@ -67,6 +68,7 @@ const BAND_SOURCES = [
   "0511_mask_fit_band_conventions.sql",
   "0512_mask_size_run_corrections.sql",
   "0514_for_her_size_bands.sql",
+  "0519_mask_catalog_manufacturer_audit_corrections.sql",
 ];
 
 /**
