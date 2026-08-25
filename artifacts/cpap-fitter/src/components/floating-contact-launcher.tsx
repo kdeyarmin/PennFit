@@ -102,7 +102,7 @@ const SUGGESTION_BUCKETS: Array<{
     ],
   },
   {
-    match: (l) => l === "/insurance",
+    match: (l) => l === "/insurance" || l.startsWith("/insurance/"),
     prompts: [
       "Which insurance plans do you accept?",
       "What does Medicare typically cover?",
@@ -111,12 +111,12 @@ const SUGGESTION_BUCKETS: Array<{
     ],
   },
   {
-    match: (l) => l === "/shop" || l.startsWith("/shop"),
+    match: (l) => l === "/masks" || l.startsWith("/masks"),
     prompts: [
-      "Do I need a prescription for filters or tubing?",
-      "How fast does cash-pay shipping arrive?",
-      "What does Subscribe & Save cover?",
-      "What's your return policy?",
+      "Which mask style is best for mouth breathers?",
+      "How do I pick between nasal and full-face masks?",
+      "Do I need a prescription to order a mask?",
+      "What's your comfort guarantee?",
     ],
   },
   {

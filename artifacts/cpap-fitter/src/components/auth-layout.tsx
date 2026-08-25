@@ -146,10 +146,10 @@ export function AuthLayout({ variant, children }: Props) {
               </Link>
               <span aria-hidden="true">·</span>
               <Link
-                href="/shop"
+                href="/insurance"
                 className="hover:text-[hsl(var(--penn-navy))] transition-colors"
               >
-                Shop
+                Order
               </Link>
               <span aria-hidden="true">·</span>
               <Link

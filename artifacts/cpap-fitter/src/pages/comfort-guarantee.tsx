@@ -222,7 +222,7 @@ export function ComfortGuaranteePage() {
             <Sparkles className="w-4 h-4 mr-2" /> Ask{" "}
             {contact.assistantStorefrontName}
           </Button>
-          <Link href="/shop/orders">
+          <Link href="/account/orders">
             <Button>
               View my orders <ArrowRight className="w-4 h-4 ml-1" />
             </Button>

@@ -140,7 +140,7 @@ describe("home — hero CTA buttons", () => {
     expect(SRC).not.toContain("btn-gold-glow");
   });
 
-  it("secondary 'Shop' button does NOT carry the btn-on-dark-outline class", () => {
+  it("secondary 'Order' button does NOT carry the btn-on-dark-outline class", () => {
     // btn-on-dark-outline was a dark-background-specific override; removed
     // on the light editorial card.
     expect(SRC).not.toContain("btn-on-dark-outline");

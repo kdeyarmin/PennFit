@@ -221,13 +221,9 @@ export function Reminders() {
       </div>
 
       {/*
-          Primary CTA — Subscribe & ship. Per the /reminders restructure
-          (item #5), auto-ship is the hero. The link sends the patient
-          to /shop with a fragment so the shop page can scroll to or
-          surface the subscribe-default consumables (filters, cushions,
-          tubing). The fragment is non-blocking: /shop renders identically
-          if it's missing, and the toggles default to subscribe on
-          consumables anyway.
+          Primary CTA — insurance resupply. Auto-ship checkout lived on the
+          retired cash-pay shop; patients now start resupply through insurance
+          or set up email reminders below.
         */}
       <div
         className="glass-card rounded-2xl p-6 mb-6 border-l-4 border-l-[hsl(var(--penn-gold))]"
@@ -248,13 +244,13 @@ export function Reminders() {
             </p>
             <div className="mt-4 flex flex-wrap items-center gap-3">
               <Button asChild size="lg" data-testid="reminders-subscribe-cta">
-                <Link href="/shop#autoship">
+                <Link href="/insurance">
                   <Truck className="w-4 h-4 mr-2" />
-                  Browse auto-ship supplies
+                  Order resupply through insurance
                 </Link>
               </Button>
               <p className="text-xs text-muted-foreground">
-                Same price as one-time · no membership fee · cancel anytime
+                We verify benefits and ship on your plan&apos;s schedule
               </p>
             </div>
           </div>

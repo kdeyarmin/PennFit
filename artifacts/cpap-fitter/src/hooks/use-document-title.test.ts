@@ -95,7 +95,7 @@ describe("use-document-title — title building logic", () => {
     // of the DME's own name.
     expect(SRC).toContain(": siteDefaultTitle");
     expect(SRC).not.toContain(": previousTitle;");
-    expect(SRC).toContain("`${brandName} — CPAP Fitter, Shop & Resupply`");
+    expect(SRC).toContain("`${brandName} — CPAP Fitter & Resupply`");
     // The ternary produces the full title when pageTitle is truthy.
     expect(SRC).toContain("? `${pageTitle}${siteTitleSuffix}`");
   });

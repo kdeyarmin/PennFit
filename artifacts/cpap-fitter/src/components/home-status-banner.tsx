@@ -134,7 +134,7 @@ function SignedInBanner() {
               )}
               {data.pendingOrders > 0 && (
                 <Link
-                  href="/shop/orders"
+                  href="/account/orders"
                   className="inline-flex items-center gap-1.5 rounded-full bg-[hsl(var(--penn-gold)/0.18)] px-3 py-1 text-xs font-medium text-[hsl(var(--penn-navy))] hover:bg-[hsl(var(--penn-gold)/0.28)]"
                 >
                   <Truck className="w-3.5 h-3.5" />
@@ -183,7 +183,7 @@ function OrderTile({
   }
 
   return (
-    <Link href="/shop/orders">
+    <Link href="/account/orders">
       <div className="rounded-xl border bg-background/70 p-4 hover:border-[hsl(var(--penn-gold))] transition-colors cursor-pointer h-full">
         <div className="flex items-start gap-3">
           <div className="h-9 w-9 rounded-lg bg-[hsl(var(--penn-gold)/0.18)] flex items-center justify-center shrink-0">
@@ -317,7 +317,7 @@ function CartTile({
   cart: NonNullable<ShopMeDashboardResponse["abandonedCart"]>;
 }) {
   return (
-    <Link href="/shop/cart?resume=1">
+    <Link href="/insurance">
       <div className="rounded-xl border bg-background/70 p-4 hover:border-[hsl(var(--penn-gold))] transition-colors cursor-pointer h-full">
         <div className="flex items-start gap-3">
           <div className="h-9 w-9 rounded-lg bg-[hsl(var(--penn-gold)/0.18)] flex items-center justify-center shrink-0">
@@ -325,11 +325,11 @@ function CartTile({
           </div>
           <div className="min-w-0 flex-1">
             <p className="text-sm font-semibold text-[hsl(var(--penn-navy))]">
-              {cart.itemCount} item{cart.itemCount === 1 ? "" : "s"} in your
-              cart
+              {cart.itemCount} supply item{cart.itemCount === 1 ? "" : "s"}{" "}
+              ready to order
             </p>
             <p className="text-xs text-muted-foreground">
-              Pick up where you left off.
+              Continue through insurance.
             </p>
           </div>
         </div>

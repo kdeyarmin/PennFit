@@ -42,7 +42,8 @@ import type { FitAssessment, FitCandidate } from "@/lib/fit-assess-api";
  * beside each candidate and drop the mask into the Stripe cart; it was
  * removed with the self-serve order form, because a fitting that ends in
  * a checkout is still a patient placing their own order — just a paid
- * one. The shop is unchanged and reachable on its own at /shop.
+ * removed with the self-serve order form. Patients order through insurance
+ * or ask our team to place the order — not via a cash-pay checkout.
  */
 export interface ClinicalResultsProps {
   assessment: FitAssessment;

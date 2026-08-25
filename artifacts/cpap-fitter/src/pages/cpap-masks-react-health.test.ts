@@ -158,16 +158,16 @@ describe("cpap-masks-react-health — CTAs", () => {
     expect(SRC).toContain('"rh-bottom-cta-fit"');
   });
 
-  it("marks the bottom shop CTA with rh-bottom-cta-shop", () => {
-    expect(SRC).toContain('"rh-bottom-cta-shop"');
+  it("marks the bottom insurance CTA with rh-bottom-cta-insurance", () => {
+    expect(SRC).toContain('"rh-bottom-cta-insurance"');
   });
 
   it("navigates to /consent when fitter CTAs are clicked", () => {
     expect(SRC).toContain('navigate("/consent")');
   });
 
-  it("navigates to /shop when shop CTAs are clicked", () => {
-    expect(SRC).toContain('navigate("/shop")');
+  it("navigates to /insurance when order CTAs are clicked", () => {
+    expect(SRC).toContain('navigate("/insurance")');
   });
 });
 
