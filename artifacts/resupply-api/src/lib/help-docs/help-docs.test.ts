@@ -95,11 +95,46 @@ describe("staffHelpDocs", () => {
     expect(blob).toContain("revenue cycle");
     expect(blob).toContain("A/R Aging");
     // …and does NOT describe somebody else's job.
-    expect(blob).not.toContain("Therapy Fleet");
+    expect(blob).not.toContain("Clinical Encounters");
 
     const rt = JSON.stringify(staffHelpDocs("rt", CO)[1]!);
-    expect(rt).toContain("Therapy Fleet");
+    expect(rt).toContain("Clinical Encounters");
     expect(rt).not.toContain("A/R Aging");
+  });
+
+  // Onboarding must never send a new hire at a screen their role 403s on:
+  // a written promise is worse than a dead end they'd have discovered.
+  // Each assertion below tracks a permission the role does NOT hold in
+  // `EFFECTIVE_ROLE_PERMISSIONS` (lib/resupply-auth/src/rbac.ts).
+  it("never promises work the role has no permission for", () => {
+    // customer_service_rep lacks bulk_campaigns.send, and every
+    // bulk-campaign route requires it — including draft creation.
+    const csr = JSON.stringify(staffHelpDocs("csr", CO));
+    expect(csr).not.toMatch(/bulk campaign/i);
+
+    // A biller may READ payer profiles / fee schedules (reports.read) but
+    // the writes are requireAdminOnly, i.e. the Owner.
+    const bill = JSON.stringify(staffHelpDocs("biller", CO));
+    expect(bill).not.toMatch(/keep payer profiles[^"]*current/i);
+
+    // clinician holds no reports.read / returns.read / cases.read, so the
+    // population dashboards, recalls and asset recovery don't load. The
+    // handbook must say so rather than list them as the RT's work.
+    const rt = staffHelpDocs("rt", CO)[1]!;
+    const caveat = rt.sections.find((sec) =>
+      sec.heading?.startsWith("Screens you can see"),
+    );
+    expect(caveat).toBeDefined();
+    const rtDuties = JSON.stringify({
+      areas: staffRoleProfile("rt").areas,
+      highlights: staffRoleProfile("rt").highlights,
+      firstTasks: staffRoleProfile("rt").firstTasks,
+    });
+    for (const screen of ["Therapy Fleet", "Setup Adherence", "Recalls"]) {
+      expect(JSON.stringify(caveat)).toContain(screen);
+      // …and named ONLY there, never as a duty of the role.
+      expect(rtDuties).not.toContain(screen);
+    }
   });
 
   it("keys each family's handbook separately so the byte cache can't cross roles", () => {
@@ -143,6 +178,21 @@ describe("staffHelpDocs", () => {
       (sec) => sec.heading === "Activating your account",
     );
     expect(activation?.steps?.length).toBeGreaterThan(0);
+  });
+
+  // POST /admin/team/:id/resend 409s on any non-pending row, so an ACTIVE
+  // member whose reset email went missing cannot be helped that way.
+  it("does not tell an already-active user to ask for an invite resend", () => {
+    const guide = staffHelpDocs("csr", CO)[0]!;
+    const signingIn = guide.sections.find((sec) =>
+      sec.heading?.startsWith("Signing in from then on"),
+    );
+    expect(JSON.stringify(signingIn)).not.toMatch(/resend your invite/i);
+    // The pending-invite case genuinely can be resent, and still says so.
+    const activating = guide.sections.find(
+      (sec) => sec.heading === "Activating your account",
+    );
+    expect(JSON.stringify(activating)).toMatch(/resend your invite/i);
   });
 
   it("gives the role-neutral guide no role-specific copy", () => {

@@ -215,7 +215,7 @@ const STAFF_GETTING_STARTED = (company: string): HelpDoc => ({
       heading: "Signing in from then on",
       paragraphs: [
         "Sign in at the /admin sign-in page of your workspace — the invitation email contains the exact address, and it is worth bookmarking. If multi-factor authentication is enabled on your account, you will enter a six-digit code from your authenticator app after your password.",
-        "Forgotten your password? Use Forgot password on the sign-in page. If the reset email does not arrive, ask an administrator to resend your invite rather than trying repeatedly.",
+        "Forgotten your password? Use Forgot password on the sign-in page. If the reset email does not arrive, check your spam folder, then contact your administrator rather than requesting it repeatedly — once your account is active, an invite can no longer be resent, so they will need to sort the delivery problem out with you directly.",
       ],
     },
     {

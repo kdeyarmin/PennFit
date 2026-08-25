@@ -233,7 +233,7 @@ const CSR: StaffRoleProfile = {
     "Look up any patient and read their full 360° timeline before you reply.",
     "Take fit requests from the mask fitter, confirm coverage, and turn them into orders.",
     "Fulfil and ship orders, print labels, and handle returns and backorders.",
-    "Schedule follow-ups and video visits, and run bulk SMS or email campaigns.",
+    "Schedule follow-ups and video visits, and keep patients moving with reminders and canned replies.",
     "Send document packets for e-signature and triage inbound faxes and referrals.",
   ],
   areas: [
@@ -249,7 +249,7 @@ const CSR: StaffRoleProfile = {
       label: "Schedule & outreach",
       items: [
         "Company Calendar, Video Visits, Follow-ups",
-        "Bulk Campaigns, Alert Library, Reminders",
+        "Alert Library and Reminders",
         "Playbooks, Canned Replies, Automated Messages",
       ],
     },
@@ -291,7 +291,7 @@ const BILLER: StaffRoleProfile = {
     "Submit claims through the clearinghouse and post ERA (835) remittances.",
     "Work denials and appeals, and let the AI Queue fix and resubmit the routine ones.",
     "Manage A/R aging, timely-filing deadlines, secondary claims, statements, and collections.",
-    "Keep payer profiles, fee schedules, and billing configuration current.",
+    "Keep billing configuration current, and work from the payer profiles and fee schedules your Owner maintains.",
   ],
   areas: [
     {
@@ -321,7 +321,8 @@ const BILLER: StaffRoleProfile = {
       label: "Tools & configuration",
       items: [
         "ERA Files, Office Ally, Manual Claim",
-        "Billing Config — payers, fee schedules, and rules",
+        "Billing Config — the billing rules and settings you maintain",
+        "Payer profiles and fee schedules — your reference while working claims; an Owner makes the edits",
       ],
     },
   ],
@@ -340,47 +341,61 @@ const RT: StaffRoleProfile = {
   family: "rt",
   title: "Respiratory therapist",
   summary:
-    "You watch therapy, keep patients adherent, and document the clinical care that backs every claim.",
+    "You keep patients adherent and document the clinical care that backs every claim.",
   highlights: [
-    "Review the therapy fleet and spot at-risk patients before they fall off therapy.",
-    "Track CMS 90-day setup adherence and open interventions for non-adherent patients.",
-    "Document clinical encounters and adherence coaching in the patient's chart.",
-    "Triage mask-fit feedback and work the resupply-due worklist.",
-    "Produce provider-ready therapy reports and check equipment recalls.",
+    "Document clinical encounters, interventions, and adherence coaching straight into the patient's chart.",
+    "Work the clinical outreach list and follow up with patients drifting off therapy.",
+    "Read each patient's therapy history and clinical timeline before you act on it.",
+    "Triage mask-fit feedback, and override a fitting's recommended mask or size when the clinical picture calls for it.",
+    "Curate the mask formulary so the fitter recommends what your practice actually dispenses.",
+    "Track your own encounters, patients, and interventions on RT Outcomes.",
   ],
   areas: [
     {
-      label: "Therapy monitoring",
+      label: "Clinical work",
       items: [
-        "RT Overview and Therapy Fleet",
-        "Setup Adherence — the CMS 90-day window",
-        "Resupply Opportunities and RT Outcomes",
+        "Clinical Encounters — document what you did and what you found",
+        "Interventions — the structured plan for a non-adherent patient",
+        "Clinical Outreach and Adherence Coaching",
       ],
     },
     {
-      label: "Clinical work",
+      label: "Patients & therapy history",
       items: [
-        "Clinical Encounters and Interventions",
-        "Mask-fit Feedback, Clinical Outreach, Adherence Coaching",
+        "Patients — the roster and each patient's chart",
+        "The clinical timeline and therapy insights on a patient's record",
+        "Providers — who is prescribing for your patients",
+      ],
+    },
+    {
+      label: "Fitting & formulary",
+      items: [
+        "Mask-fit feedback and the fit-review queue — yours to sign off",
+        "Formulary — the masks the fitter is allowed to recommend",
         "Video Library",
       ],
     },
     {
-      label: "Providers, devices & reports",
-      items: [
-        "Providers and prescription renewals",
-        "Recalls and Asset Recovery",
-        "Therapy Report and each patient's clinical timeline",
+      label: "Your activity",
+      items: ["RT Outcomes — your encounters, patients, and interventions"],
+    },
+  ],
+  extraSections: [
+    {
+      heading: "Screens you can see but not load",
+      paragraphs: [
+        "The Therapy monitoring menu also lists population dashboards — Therapy Fleet, Setup Adherence, Resupply Opportunities — plus Recalls, Asset Recovery, and the printable Therapy Report. Those read from the reporting, returns, and case permissions, which your role does not hold, so they will not load for you even though the menu shows them.",
+        "That is expected, not a fault to report. Ask an Owner or Admin to pull the population view you need, or to widen your access if the work has become part of your job.",
       ],
     },
   ],
   firstTasks: [
     "Sign in and turn on multi-factor authentication on your own account.",
-    "Review the therapy board and find the patients most at risk.",
+    "Open a patient's chart and read their clinical timeline end to end.",
+    "Document a clinical encounter on that patient.",
     "Open a non-adherence intervention and work it.",
-    "Document a clinical encounter in a patient's chart.",
-    "Check where your patients sit against the CMS 90-day setup window.",
-    "Generate a provider-ready therapy report.",
+    "Work the clinical outreach list and log what came of each contact.",
+    "Triage a mask-fit feedback item and sign off the fitting.",
   ],
   customerServiceManual: false,
 };
