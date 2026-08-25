@@ -420,13 +420,27 @@ degraded`) in both the route and the SPA store: a lookup that never
   From address on that mail is still the shared `createSendgridClient()`
   default, because moving it to a tenant's own sender is what the SPF/DKIM
   gate below governs, and a reset link in a spam folder locks a patient out
-  of their account. The staff-console and provider-portal mounts stay fully
-  platform-branded (the console chrome already says CareMetric Breathe, and
-  that mail fires before a tenant is resolved). The hook is **fail-soft by
-  contract** — any throw or blank name degrades to the mount's static
-  `productName` — because an unsent verification or reset email blocks the
-  user outright. `app.auth-email-brand.test.ts` guards which mount gets
-  which. Deliverability still requires
+  of their account. The **provider-portal** mount resolves the same way but
+  through `providerPortalAuthBrandResolver`, which keeps the
+  `"<brand> Provider Portal"` shape: a provider's INVITE already names the
+  tenant (`routes/admin/provider-esign.ts`), so a reset under the platform's
+  name was one account addressed by two brands — and an unrecognised sender
+  on a security email is what recipients are trained to treat as phishing.
+  The suffix is load-bearing (a provider may hold accounts with several
+  DMEs), which is why that mount does not simply reuse the storefront
+  resolver. The **staff-console** mount stays fully platform-branded and
+  passes no resolver: the console chrome already says CareMetric Breathe,
+  and that mail fires before a tenant is resolved. Both hooks are
+  **fail-soft by contract** — any throw or blank name degrades to the
+  mount's static `productName` — because an unsent verification or reset
+  email blocks the user outright. Both resolvers must read
+  `resolveBrandingByHost`, NEVER `resolveOrgIdByHost`: the data resolver
+  answers an unmatched host, an unbound domain, and any lookup error with
+  the SEED org, so it would put the seed tenant's brand on platform-host
+  mail. `lib/auth-email-brand.test.ts` pins that, including a structural
+  assertion that the data resolver is never called — the bug is invisible in
+  output here, because the seed org IS the tenant it would leak.
+  Deliverability still requires
   the tenant's sending **domain** to be authenticated in SendGrid (SPF/DKIM)
   — storing an unauthenticated `from_email` sends but lands in spam, so
   enabling a tenant sender is gated on domain auth out of band. The same
