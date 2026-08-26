@@ -72,12 +72,20 @@ const resolveBrandOrgIdByHostMock = vi.hoisted(() =>
 const resolveTenantBaseUrlMock = vi.hoisted(() =>
   vi.fn<() => Promise<string | null>>(async () => null),
 );
+const resolveTenantLinkBaseUrlMock = vi.hoisted(() =>
+  vi.fn(async (_orgId: string, _platformFallback: string) => {
+    // Prefer an explicit tenant base from the sibling mock; null means
+    // the route keeps the request Host via a path-only 302.
+    return resolveTenantBaseUrlMock();
+  }),
+);
 const resolveOrgIdForSignedRecordMock = vi.hoisted(() =>
   vi.fn<() => Promise<string | null>>(async () => "org-from-lead"),
 );
 vi.mock("../../lib/tenant-branding", () => ({
   resolveBrandOrgIdByHost: resolveBrandOrgIdByHostMock,
   resolveTenantBaseUrl: resolveTenantBaseUrlMock,
+  resolveTenantLinkBaseUrl: resolveTenantLinkBaseUrlMock,
 }));
 vi.mock("../../lib/storefront/signed-link-org", () => ({
   resolveOrgIdForSignedRecord: resolveOrgIdForSignedRecordMock,
@@ -151,6 +159,7 @@ beforeEach(() => {
   supabaseMockLegacy.mockReset();
   resolveBrandOrgIdByHostMock.mockReset().mockResolvedValue("org-from-host");
   resolveTenantBaseUrlMock.mockReset().mockResolvedValue(null);
+  resolveTenantLinkBaseUrlMock.mockClear();
   resolveOrgIdForSignedRecordMock
     .mockReset()
     .mockResolvedValue("org-from-lead");

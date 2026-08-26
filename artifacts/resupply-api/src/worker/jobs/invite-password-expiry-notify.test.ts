@@ -30,8 +30,9 @@ vi.mock("@workspace/resupply-email", async (importOriginal) => ({
   }),
 }));
 
-// Per-recipient tenant branding: "org-b" is a second tenant; any other
-// org (or none) falls back to the seed/platform copy.
+// Per-recipient tenant branding: "org-b" is a second tenant with its own
+// verified domain; every other org falls through to the platform base
+// (seed-style). A null result would skip the send entirely.
 vi.mock("../../lib/tenant-branding", () => ({
   resolveBrandingByOrgId: vi.fn(async (orgId?: string) => ({
     storefrontName: orgId === "org-b" ? "Foo DME" : "Penn Home Medical Supply",
@@ -39,8 +40,11 @@ vi.mock("../../lib/tenant-branding", () => ({
     tagline: "",
     logoUrl: null,
   })),
-  resolveTenantBaseUrl: vi.fn(async (orgId?: string) =>
-    orgId === "org-b" ? "https://foodme.example" : null,
+  resolveTenantLinkBaseUrl: vi.fn(
+    async (orgId?: string, platformFallback?: string) =>
+      orgId === "org-b"
+        ? "https://foodme.example"
+        : (platformFallback ?? "https://pennfit.example").replace(/\/$/, ""),
   ),
 }));
 

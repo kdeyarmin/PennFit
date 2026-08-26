@@ -85,8 +85,10 @@ describe("the patient is handed a signing link, not a pay link", () => {
       "11111111-1111-4111-8111-111111111111",
       1,
     );
-    expect(link).toContain("https://example.test/order-sign?token=");
-    expect(link).not.toContain("/order-pay");
+    // No orgId → platform public base (legacy/test callers).
+    expect(link).toBeTruthy();
+    expect(link!).toContain("https://example.test/order-sign?token=");
+    expect(link!).not.toContain("/order-pay");
   });
 
   it("carries a token the signing page can present", async () => {
@@ -94,7 +96,8 @@ describe("the patient is handed a signing link, not a pay link", () => {
       "11111111-1111-4111-8111-111111111111",
       2,
     );
-    const token = new URL(link).searchParams.get("token");
+    expect(link).toBeTruthy();
+    const token = new URL(link!).searchParams.get("token");
     expect(token).toBeTruthy();
     expect(token!.length).toBeGreaterThan(20);
   });

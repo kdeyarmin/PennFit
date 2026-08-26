@@ -23,6 +23,20 @@ vi.mock("../../lib/feature-flags", () => ({
   isFeatureEnabled: vi.fn(async () => true),
 }));
 
+// Pin tenant link base so eligibility/send tests do not skip on a
+// missing custom-domain row in the synthetic org fixture.
+vi.mock("../../lib/tenant-branding", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("../../lib/tenant-branding")>();
+  return {
+    ...actual,
+    resolveTenantLinkBaseUrl: vi.fn(
+      async (_orgId: string, platformFallback: string) =>
+        platformFallback.replace(/\/$/, ""),
+    ),
+  };
+});
+
 import {
   composeFirstDayEmail,
   composeFirstDaySms,

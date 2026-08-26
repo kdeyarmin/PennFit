@@ -62,7 +62,7 @@ import { logger } from "../../lib/logger";
 import { createTenantSendgridClient } from "../../lib/email/tenant-sender.js";
 import {
   resolveBrandingByOrgId,
-  resolveTenantBaseUrl,
+  resolveTenantLinkBaseUrl,
 } from "../../lib/tenant-branding.js";
 import { resolveTenantSmsClientOptions } from "../../lib/messaging/tenant-telecom.js";
 import { recordOutboundMessageUsage } from "../../lib/metering/usage.js";
@@ -324,8 +324,16 @@ async function firstDayNudgeSweepForOrg(
   const practiceName = brand.storefrontName;
   // Build patient links from the tenant's own storefront origin (its verified
   // custom domain) when it has one; the seed tenant falls through to the env/
-  // default, so single-tenant is unchanged. Resolved once per tenant sweep.
-  const resumeUrl = `${publicBaseUrl((await resolveTenantBaseUrl(orgId)) ?? undefined)}/consent`;
+  // default. Non-seed without a domain: skip — never nudge to the platform host.
+  const baseUrl = await resolveTenantLinkBaseUrl(orgId, publicBaseUrl());
+  if (!baseUrl) {
+    logger.info(
+      { org_id: orgId },
+      "fitter-lead.first-day-nudge: skipped (no tenant domain)",
+    );
+    return;
+  }
+  const resumeUrl = `${baseUrl}/consent`;
 
   for (const lead of candidates) {
     stats.scanned += 1;

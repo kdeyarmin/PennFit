@@ -34,7 +34,7 @@ import { logger } from "../../lib/logger";
 import { createTenantSendgridClient } from "../../lib/email/tenant-sender.js";
 import {
   resolveBrandingByOrgId,
-  resolveTenantBaseUrl,
+  resolveTenantLinkBaseUrl,
 } from "../../lib/tenant-branding.js";
 import { recordOutboundMessageUsage } from "../../lib/metering/usage.js";
 import { forEachActiveOrg } from "../lib/for-each-active-org.js";
@@ -210,10 +210,19 @@ async function maintenanceNudgeSweepForOrg(
   const brand = await resolveBrandingByOrgId(orgId);
   // Build the account link from the tenant's own storefront origin (its
   // verified custom domain) when it has one; the seed tenant falls through to
-  // the env-derived platform base, so single-tenant is unchanged. Resolved once
-  // per tenant sweep.
-  const tenantBaseUrl =
-    (await resolveTenantBaseUrl(orgId)) ?? cfg.publicBaseUrl;
+  // the env-derived platform base. Non-seed without a domain: skip the sweep
+  // so we never email a cmbreathe.com /account link for the wrong org.
+  const tenantBaseUrl = await resolveTenantLinkBaseUrl(
+    orgId,
+    cfg.publicBaseUrl,
+  );
+  if (!tenantBaseUrl) {
+    logger.info(
+      { org_id: orgId },
+      "maintenance-nudges: skipped (no tenant domain)",
+    );
+    return stats;
+  }
   const supabase = getOrgScopedClient(orgId);
 
   // Eligible patients: anyone with an email AND at least one

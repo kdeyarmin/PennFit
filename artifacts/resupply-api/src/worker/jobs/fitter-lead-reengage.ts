@@ -58,7 +58,7 @@ import { logger } from "../../lib/logger";
 import { createTenantSendgridClient } from "../../lib/email/tenant-sender.js";
 import {
   resolveBrandingByOrgId,
-  resolveTenantBaseUrl,
+  resolveTenantLinkBaseUrl,
 } from "../../lib/tenant-branding.js";
 import { recordOutboundMessageUsage } from "../../lib/metering/usage.js";
 import { forEachActiveOrg } from "../lib/for-each-active-org.js";
@@ -328,9 +328,15 @@ async function fitterLeadReengageSweepForOrg(
   const brand = await resolveBrandingByOrgId(orgId);
   // Build the resume link from the tenant's own storefront origin (its verified
   // custom domain) when it has one; the seed tenant falls through to the
-  // env-derived platform base, so single-tenant is unchanged. Resolved once per
-  // tenant sweep.
-  const tenantBaseUrl = (await resolveTenantBaseUrl(orgId)) ?? publicBaseUrl;
+  // env-derived platform base. Non-seed without a domain: skip the sweep.
+  const tenantBaseUrl = await resolveTenantLinkBaseUrl(orgId, publicBaseUrl);
+  if (!tenantBaseUrl) {
+    logger.info(
+      { org_id: orgId },
+      "fitter-lead-reengage: skipped (no tenant domain)",
+    );
+    return;
+  }
   const { subject, html, text } = composeReengageEmail({
     practiceName: brand.storefrontName,
     publicBaseUrl: tenantBaseUrl,

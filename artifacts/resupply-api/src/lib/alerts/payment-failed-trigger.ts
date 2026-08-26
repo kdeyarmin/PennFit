@@ -25,7 +25,8 @@
 import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import { isFeatureEnabled } from "../feature-flags";
-import { resolveTenantBaseUrl } from "../tenant-branding";
+import { resolveTenantLinkBaseUrl } from "../tenant-branding";
+import { getAuthDeps } from "../auth-deps";
 import { dispatchAlert } from "./dispatch";
 
 export interface PaymentFailedTriggerInput {
@@ -157,8 +158,20 @@ export async function dispatchPaymentFailedAlertOrThrow(
     return;
   }
 
-  const billingBase =
-    (await resolveTenantBaseUrl(orgId)) ?? "https://cmbreathe.com";
+  const billingBase = await resolveTenantLinkBaseUrl(
+    orgId,
+    getAuthDeps().publicBaseUrl,
+  );
+  if (!billingBase) {
+    log?.info?.(
+      {
+        event: "payment_failed_alert_skipped",
+        reason: "tenant_domain_required",
+      },
+      "alerts: payment_failed trigger — no safe tenant billing URL",
+    );
+    return;
+  }
   const outcome = await dispatchAlert({
     alertKey: "payment_failed",
     channel: "email",
@@ -171,7 +184,7 @@ export async function dispatchPaymentFailedAlertOrThrow(
       amount: formatAmount(input.amountDueCents, input.currency),
       // Patients are insurance-only — point at the statements page, not a
       // Stripe payment-method portal (cash-pay checkout is retired).
-      billing_url: `${billingBase.replace(/\/$/, "")}/account/billing`,
+      billing_url: `${billingBase}/account/billing`,
     },
   });
 

@@ -37,7 +37,7 @@ import { logger } from "../../lib/logger";
 import { requestHost } from "../../lib/request-host";
 import {
   resolveBrandOrgIdByHost,
-  resolveTenantBaseUrl,
+  resolveTenantLinkBaseUrl,
 } from "../../lib/tenant-branding";
 import { resolveOrgIdForSignedRecord } from "../../lib/storefront/signed-link-org";
 
@@ -910,14 +910,15 @@ function publicBaseUrl(override?: string): string {
   ).replace(/\/$/, "");
 }
 
-/** Prefer the lead's tenant custom domain for CTA redirects. Fail-soft
- *  to the platform env base when the lead/org lookup fails. */
-async function resolveClickBaseUrl(leadId: string): Promise<string> {
+/** Prefer the lead's tenant custom domain for CTA redirects. Seed org
+ *  may fall through to the platform env base; non-seed without a
+ *  verified domain returns null so the caller can keep the request Host
+ *  via a path-only redirect (never bounce onto cmbreathe.com / Railway). */
+async function resolveClickBaseUrl(leadId: string): Promise<string | null> {
   try {
     const orgId = await resolveOrgIdForSignedRecord("fitter_leads", leadId);
     if (orgId) {
-      const tenantBase = await resolveTenantBaseUrl(orgId);
-      if (tenantBase) return publicBaseUrl(tenantBase);
+      return resolveTenantLinkBaseUrl(orgId, publicBaseUrl());
     }
   } catch (err) {
     logger.warn(
@@ -925,15 +926,16 @@ async function resolveClickBaseUrl(leadId: string): Promise<string> {
       "shop/track/c: tenant base resolve failed",
     );
   }
-  return publicBaseUrl();
+  return null;
 }
 
 /** Fallback destination when verification fails — we still 302 the
  *  user somewhere (a broken CTA mid-marketing-email is a worse UX
  *  than a redirect to the storefront), but we don't record the
- *  click. */
-function fallbackDestination(base = publicBaseUrl()): string {
-  return `${base}/insurance`;
+ *  click. Prefer a path-only redirect so the request Host (tenant
+ *  domain that served the tracked link) is preserved. */
+function fallbackDestination(base?: string | null): string {
+  return base ? `${base.replace(/\/$/, "")}/insurance` : "/insurance";
 }
 
 router.get("/shop/track/c", clickTrackRateLimiter, async (req, res) => {
@@ -959,6 +961,15 @@ router.get("/shop/track/c", clickTrackRateLimiter, async (req, res) => {
   // Resolve tenant BEFORE the redirect so pennpaps.com campaign emails
   // do not bounce patients onto the platform host.
   const base = await resolveClickBaseUrl(verify.leadId);
+  if (!base) {
+    // Keep Host from the tracked email URL (tenant domain). Empty base
+    // yields path-only destinations (/consent, /contact, …).
+    res.redirect(
+      302,
+      CTA_DESTINATIONS[verify.linkKey]?.("") ?? fallbackDestination(),
+    );
+    return;
+  }
 
   // Compute the destination from our server-side allowlist.
   // CTA_DESTINATIONS has been narrowed by verifyClickTrackingToken

@@ -34,6 +34,21 @@ vi.mock("../../lib/feature-flags", () => ({
   isFeatureEnabled: vi.fn(async () => true),
 }));
 
+// Tenant link base: tests use a synthetic org without a verified custom
+// domain row — pin the platform fallback so the sweep still exercises
+// the send path (production skips non-seed orgs without a domain).
+vi.mock("../../lib/tenant-branding", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("../../lib/tenant-branding")>();
+  return {
+    ...actual,
+    resolveTenantLinkBaseUrl: vi.fn(
+      async (_orgId: string, platformFallback: string) =>
+        platformFallback.replace(/\/$/, ""),
+    ),
+  };
+});
+
 import {
   composeReengageEmail,
   readReengageMessagingConfig,
