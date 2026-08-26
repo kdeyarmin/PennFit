@@ -24,4 +24,11 @@ describe("inbound-reorder actionable episode filter", () => {
   it("does not ask shop callers for a card on file", () => {
     expect(SRC).not.toMatch(/card on file/i);
   });
+
+  it("routes shared-number calls by caller patient phone before seed", () => {
+    expect(SRC).toContain("resolveOrgIdByPatientPhone");
+    expect(SRC).toMatch(
+      /resolveOrgIdByCalledNumber[\s\S]*resolveOrgIdByPatientPhone[\s\S]*resolveSeedOrgId/,
+    );
+  });
 });

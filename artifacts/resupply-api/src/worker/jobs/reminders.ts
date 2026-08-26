@@ -77,7 +77,6 @@ import {
   type Database,
   type OrgScopedClient,
   getOrgScopedClient,
-  resolveSeedOrgId,
 } from "@workspace/resupply-db";
 import { DEFAULT_SENDGRID_FROM_EMAIL } from "@workspace/resupply-email";
 import {
@@ -979,15 +978,14 @@ export async function registerReminderJobs(boss: PgBoss): Promise<void> {
       );
       return;
     }
-    // Prefer the tenant stamped by the per-tenant scan fan-out; fall back
-    // to the seed org for jobs enqueued before the fan-out deploy. Treat an
-    // empty/whitespace payload orgId as absent (a blank id would otherwise
-    // throw in getOrgScopedClient instead of using the seed fallback).
-    const orgId = j.data.orgId?.trim() || (await resolveSeedOrgId());
+    // Prefer the tenant stamped by the per-tenant scan fan-out. Jobs without
+    // a real orgId are skipped (never seed-fallback) so a stale/malformed
+    // payload cannot text a patient under the wrong tenant.
+    const orgId = j.data.orgId?.trim() || null;
     if (!orgId) {
       logger.warn(
         { job_id: j.id },
-        "reminders.send-sms: no org resolved — skipping",
+        "reminders.send-sms: missing orgId — skipping",
       );
       return;
     }
@@ -1113,15 +1111,14 @@ export async function registerReminderJobs(boss: PgBoss): Promise<void> {
       );
       return;
     }
-    // Prefer the tenant stamped by the per-tenant scan fan-out; fall back
-    // to the seed org for jobs enqueued before the fan-out deploy. Treat an
-    // empty/whitespace payload orgId as absent (a blank id would otherwise
-    // throw in getOrgScopedClient instead of using the seed fallback).
-    const orgId = j.data.orgId?.trim() || (await resolveSeedOrgId());
+    // Prefer the tenant stamped by the per-tenant scan fan-out. Jobs without
+    // a real orgId are skipped (never seed-fallback) so a stale/malformed
+    // payload cannot email a patient under the wrong tenant.
+    const orgId = j.data.orgId?.trim() || null;
     if (!orgId) {
       logger.warn(
         { job_id: j.id },
-        "reminders.send-email: no org resolved — skipping",
+        "reminders.send-email: missing orgId — skipping",
       );
       return;
     }

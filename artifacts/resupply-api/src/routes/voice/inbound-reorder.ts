@@ -39,7 +39,10 @@ import {
 import { getCompanyInfo } from "../../lib/company-info";
 import { isFeatureEnabled } from "../../lib/feature-flags";
 import { logger } from "../../lib/logger";
-import { resolveOrgIdByCalledNumber } from "../../lib/messaging/tenant-telecom";
+import {
+  resolveOrgIdByCalledNumber,
+  resolveOrgIdByPatientPhone,
+} from "../../lib/messaging/tenant-telecom";
 import { resolveBrandingByOrgId } from "../../lib/tenant-branding";
 import { getPendingSessions } from "../../lib/voice/pending-sessions";
 import { resolveCallerByPhone } from "../../lib/voice/resolve-caller";
@@ -128,13 +131,18 @@ router.post("/voice/inbound-reorder", signatureMiddleware, async (req, res) => {
   const { From, CallSid } = parsed.data;
 
   // Webhook: no req.orgId. Route by the CALLED number to the tenant that
-  // owns it (G7), falling back to the seed org when unregistered. On miss
-  // degrade to a clean Hangup so a tenant-context gap never retry-storms
-  // Twilio. With no per-tenant numbers configured this resolves to seed.
+  // owns it (G7). On a shared platform number, route by the CALLER's patient
+  // phone (same ladder as SMS inbound) so a second tenant's patient is not
+  // mis-attributed to the seed org. Fall back to seed only when the phone is
+  // unknown everywhere. On total miss, Hangup so a tenant-context gap never
+  // retry-storms Twilio.
   const calledNumber = parsed.data.Called ?? parsed.data.To;
-  const orgId =
-    (await resolveOrgIdByCalledNumber(calledNumber)) ??
-    (await resolveSeedOrgId());
+  const callerForOrg = parsed.data.From ?? parsed.data.Caller;
+  const calledOrgId = await resolveOrgIdByCalledNumber(calledNumber);
+  const orgId = calledOrgId
+    ? calledOrgId
+    : ((await resolveOrgIdByPatientPhone(callerForOrg)) ??
+      (await resolveSeedOrgId()));
   if (!orgId) {
     res
       .status(200)

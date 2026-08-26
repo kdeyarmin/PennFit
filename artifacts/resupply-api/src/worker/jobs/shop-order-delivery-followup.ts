@@ -347,6 +347,7 @@ async function deliveryFollowupSweepForOrg(
       const smsRecipient = await resolveSmsRecipientForShopOrder({
         customerId: claimed.customer_id,
         customerEmailFromOrder: claimed.customer_email ?? null,
+        orgId,
       });
       if (
         smsRecipient &&

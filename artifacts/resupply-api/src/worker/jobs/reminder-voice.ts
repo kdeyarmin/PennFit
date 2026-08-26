@@ -26,7 +26,7 @@
 
 import type PgBoss from "pg-boss";
 
-import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger.js";
 import { markEpisodeAwaitingResponse } from "../../lib/episodes/mark-awaiting-response.js";
@@ -82,14 +82,14 @@ export async function registerReminderVoiceJob(boss: PgBoss): Promise<void> {
       return;
     }
 
-    // Prefer the tenant stamped by the escalation scan; fall back to the
-    // seed org for jobs enqueued before the fan-out deploy. Treat an
-    // empty/whitespace payload orgId as absent.
-    const orgId = j.data.orgId?.trim() || (await resolveSeedOrgId());
+    // Prefer the tenant stamped by the escalation scan. Jobs without a real
+    // orgId are skipped (never seed-fallback) so a stale/malformed payload
+    // cannot place a call under the wrong tenant.
+    const orgId = j.data.orgId?.trim() || null;
     if (!orgId) {
       logger.warn(
         { job_id: j.id },
-        "reminders.place-call: no org resolved — skipping",
+        "reminders.place-call: missing orgId — skipping",
       );
       return;
     }

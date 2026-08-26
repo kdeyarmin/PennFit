@@ -49,7 +49,7 @@ export async function sendReviewRequestEmail(
   // Control Center feature gate. Returns the same shape as the
   // SendGrid-not-configured branch so the dispatcher's counters
   // (sent / skipped) flow uninterrupted.
-  if (!(await isFeatureEnabled("storefront.reviews_collection"))) {
+  if (!(await isFeatureEnabled("storefront.reviews_collection", input.orgId))) {
     return { sent: false, reason: "feature_disabled" };
   }
 

@@ -166,7 +166,7 @@ export async function preflightClaim(
   // Blocks submit when the claim still owes a required signed document.
   // Feature-flagged to match the batch-submit gate exactly. Fail-closed:
   // missing/unreadable paperwork state blocks submit until a CSR can verify it.
-  if (await isFeatureEnabled("billing.bill_hold")) {
+  if (await isFeatureEnabled("billing.bill_hold", orgId)) {
     try {
       let reqs = await listClaimRequirements(claim.id, supabase.raw());
       if (reqs.length === 0) {
