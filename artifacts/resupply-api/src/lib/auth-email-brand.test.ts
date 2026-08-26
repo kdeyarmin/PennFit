@@ -27,10 +27,14 @@ const resolveBrandingByHostMock = vi.hoisted(() =>
 // tenant's brand into platform-host auth mail.
 const resolveOrgIdByHostMock = vi.hoisted(() => vi.fn());
 const resolveBrandingByOrgIdMock = vi.hoisted(() => vi.fn());
+const resolveBrandOrgIdByHostMock = vi.hoisted(() => vi.fn());
+const resolveTenantBaseUrlMock = vi.hoisted(() => vi.fn());
 vi.mock("./tenant-branding", () => ({
   resolveBrandingByHost: resolveBrandingByHostMock,
   resolveOrgIdByHost: resolveOrgIdByHostMock,
   resolveBrandingByOrgId: resolveBrandingByOrgIdMock,
+  resolveBrandOrgIdByHost: resolveBrandOrgIdByHostMock,
+  resolveTenantBaseUrl: resolveTenantBaseUrlMock,
 }));
 
 import { storefrontAuthBrandResolver } from "./auth-email-brand";
@@ -51,6 +55,10 @@ beforeEach(() => {
     tagline: "t",
     logoUrl: null,
   });
+  resolveBrandOrgIdByHostMock.mockReset();
+  resolveBrandOrgIdByHostMock.mockResolvedValue(null);
+  resolveTenantBaseUrlMock.mockReset();
+  resolveTenantBaseUrlMock.mockResolvedValue(null);
 });
 
 describe("storefrontAuthBrandResolver", () => {
@@ -61,15 +69,20 @@ describe("storefrontAuthBrandResolver", () => {
       tagline: "t",
       logoUrl: null,
     });
+    resolveBrandOrgIdByHostMock.mockResolvedValue("org-penn");
+    resolveTenantBaseUrlMock.mockResolvedValue("https://pennpaps.com");
 
     await expect(
       storefrontAuthBrandResolver(reqForHost("pennpaps.com")),
     ).resolves.toEqual({
       productName: "Penn Home Medical Supply",
       signatureName: "Penn Home Medical Supply",
+      publicBaseUrl: "https://pennpaps.com",
     });
     // Resolved from the REQUEST's host, not a constant.
     expect(resolveBrandingByHostMock).toHaveBeenCalledWith("pennpaps.com");
+    expect(resolveBrandOrgIdByHostMock).toHaveBeenCalledWith("pennpaps.com");
+    expect(resolveTenantBaseUrlMock).toHaveBeenCalledWith("org-penn");
   });
 
   it("carries a storefront name distinct from the legal entity", async () => {

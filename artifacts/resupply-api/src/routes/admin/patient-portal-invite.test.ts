@@ -64,8 +64,12 @@ const resolveBrandingByOrgIdMock = vi.hoisted(() =>
     logoUrl: null,
   })),
 );
+const resolveTenantBaseUrlMock = vi.hoisted(() =>
+  vi.fn(async (_orgId?: string) => "https://shop.acme.example"),
+);
 vi.mock("../../lib/tenant-branding", () => ({
   resolveBrandingByOrgId: resolveBrandingByOrgIdMock,
+  resolveTenantBaseUrl: resolveTenantBaseUrlMock,
 }));
 
 // Keep the real exports (roleHasPermission for the auth mock) and stub
@@ -208,6 +212,7 @@ describe("POST /admin/patients/:id/portal-invite/resend", () => {
     const ctx = vi.mocked(renderPatientPortalInviteEmail).mock.calls[0]![0];
     expect(ctx.productName).toBe("Acme Sleep");
     expect(ctx.signatureName).toBe("Acme Sleep Supply LLC");
+    expect(ctx.publicBaseUrl).toBe("https://shop.acme.example");
     expect(ctx.productName).not.toContain("Penn Home Medical Supply");
   });
 });

@@ -44,7 +44,7 @@ import { getAuthDeps } from "../../lib/auth-deps";
 import { buildInviteHelpAttachments } from "../../lib/help-docs";
 import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
-import { resolveBrandingByOrgId } from "../../lib/tenant-branding";
+import { resolveBrandingByOrgId, resolveTenantBaseUrl } from "../../lib/tenant-branding";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
 
@@ -360,7 +360,10 @@ router.post(
     if (tokenErr) throw tokenErr;
 
     const deps = getAuthDeps();
-    const baseUrl = deps.publicBaseUrl.replace(/\/$/, "");
+    const baseUrl = (
+      (await resolveTenantBaseUrl(orgId).catch(() => null)) ??
+      deps.publicBaseUrl
+    ).replace(/\/$/, "");
     const inviteLink = `${baseUrl}/reset-password?token=${encodeURIComponent(token.raw)}`;
 
     // Brand the patient-facing invite with the INVITING tenant's own
@@ -507,7 +510,10 @@ router.post(
     if (tokenErr) throw tokenErr;
 
     const deps = getAuthDeps();
-    const baseUrl = deps.publicBaseUrl.replace(/\/$/, "");
+    const baseUrl = (
+      (await resolveTenantBaseUrl(orgId).catch(() => null)) ??
+      deps.publicBaseUrl
+    ).replace(/\/$/, "");
     const inviteLink = `${baseUrl}/reset-password?token=${encodeURIComponent(token.raw)}`;
 
     // Brand the resend with the inviting tenant's own identity (same

@@ -70,12 +70,8 @@ export function demoMeResponse(profile: ShopMeProfile): ShopMeResponse {
   return {
     signedIn: true,
     profile,
-    savedCard: {
-      brand: "visa",
-      last4: "4242",
-      expMonth: 8,
-      expYear: 2029,
-    },
+    // Cash-pay card-on-file is retired — match production GET /shop/me.
+    savedCard: null,
     recentOrders: [
       {
         id: "demo-order-1",
@@ -116,13 +112,8 @@ export function demoClinicalInfo(): ShopClinicalInfoResponse {
 
 export function demoDashboard(): ShopMeDashboardResponse {
   return {
-    nextShipment: {
-      subscriptionId: "demo-sub-1",
-      date: daysFromNow(18),
-      daysUntil: 18,
-      firstItemName: "AirFit N20 Nasal Cushion",
-      cancelAtPeriodEnd: false,
-    },
+    // Subscribe & Save is retired — match production dashboard nulls.
+    nextShipment: null,
     eligibility: {
       eligibleNow: [],
       soonest: { firstItemName: "AirFit N20 Nasal Cushion", daysUntil: 18 },
@@ -136,7 +127,7 @@ export function demoDashboard(): ShopMeDashboardResponse {
       trackingCarrier: "UPS",
       trackingNumber: "1Z999AA10123456784",
     },
-    activeSubscriptions: 1,
+    activeSubscriptions: 0,
     pendingOrders: 0,
     abandonedCart: null,
   };

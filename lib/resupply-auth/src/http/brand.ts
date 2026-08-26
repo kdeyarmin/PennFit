@@ -23,6 +23,11 @@ import type { Request } from "express";
 export interface AuthEmailBrand {
   productName: string;
   signatureName?: string;
+  /**
+   * Optional absolute origin for links in the email (verified tenant
+   * custom domain). When omitted, the mount's `deps.publicBaseUrl` is used.
+   */
+  publicBaseUrl?: string;
 }
 
 /**
@@ -79,8 +84,10 @@ export async function resolveAuthEmailBrand(
   const productName = clean(resolved?.productName);
   if (!productName) return staticBrand(options);
   const signatureName = clean(resolved?.signatureName);
+  const publicBaseUrl = clean(resolved?.publicBaseUrl);
   return {
     productName,
     ...(signatureName !== undefined ? { signatureName } : {}),
+    ...(publicBaseUrl !== undefined ? { publicBaseUrl } : {}),
   };
 }

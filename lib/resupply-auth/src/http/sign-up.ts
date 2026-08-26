@@ -85,9 +85,13 @@ export function makeSignUpHandler(
     // Brand the verification email to the site the user just signed up on.
     // Fail-soft: an unsent verification email blocks the sign-up outright, so
     // this can only ever downgrade to the mount's static name.
+    const brand = await resolveAuthEmailBrand(options, req);
     const ctx: AuthEmailContext = {
-      ...(await resolveAuthEmailBrand(options, req)),
-      publicBaseUrl: deps.publicBaseUrl,
+      productName: brand.productName,
+      ...(brand.signatureName !== undefined
+        ? { signatureName: brand.signatureName }
+        : {}),
+      publicBaseUrl: brand.publicBaseUrl ?? deps.publicBaseUrl,
       uiPathPrefix: options.uiPathPrefix,
     };
 
