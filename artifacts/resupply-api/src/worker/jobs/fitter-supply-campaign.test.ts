@@ -28,10 +28,11 @@ const SRC = readFileSync(
 const BASE_OPTS = {
   practiceName: "Penn Home Medical Supply",
   resumeUrl: "https://example.test/results",
-  shopUrl: "https://example.test/shop",
+  shopUrl: "https://example.test/contact",
   recommendedMaskName: "ResMed AirFit P30i",
   recommendedMaskType: "nasalPillow",
-  unsubscribeUrl: "https://example.test/shop/fitter-leads/unsubscribe?t=tok",
+  unsubscribeUrl:
+    "https://example.test/resupply-api/shop/fitter-leads/unsubscribe?t=tok",
 };
 
 const ALL_TOUCHES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11] as const;
@@ -175,22 +176,22 @@ describe("composeTouchpoint — re-order phase (T7-T10)", () => {
     expect(out.email.text).toContain("6 months");
   });
 
-  it("T7-T9 include the subscription auto-ship upsell", () => {
+  it("T7-T9 include the replacement-reminder upsell", () => {
     for (const i of [7, 8, 9] as const) {
       const out = composeTouchpoint({ ...BASE_OPTS, touchIndex: i });
       expect(out.email.text.toLowerCase(), `T${i} text upsell`).toContain(
-        "auto-ship",
+        "replacement reminder",
       );
       expect(out.email.html.toLowerCase(), `T${i} html upsell`).toContain(
-        "auto-ship",
+        "replacement reminder",
       );
     }
   });
 
-  it("T10 omits the subscription upsell (warm sendoff)", () => {
+  it("T10 omits the reminder upsell (warm sendoff)", () => {
     const out = composeTouchpoint({ ...BASE_OPTS, touchIndex: 10 });
-    expect(out.email.text.toLowerCase()).not.toContain("auto-ship");
-    expect(out.email.html.toLowerCase()).not.toContain("auto-ship");
+    expect(out.email.text.toLowerCase()).not.toContain("replacement reminder");
+    expect(out.email.html.toLowerCase()).not.toContain("replacement reminder");
   });
 });
 
@@ -375,16 +376,17 @@ describe("composeTouchpoint — universal invariants", () => {
     }
   });
 
-  it("re-order touches (T7-T10) all link to /shop", () => {
+  it("re-order touches (T7-T10) all link to contact or results", () => {
     for (const i of REORDER) {
       const out = composeTouchpoint({ ...BASE_OPTS, touchIndex: i });
-      // T10 links to /results (refresh fitting); T7-T9 link to /shop.
-      const linksToShop =
+      // T10 links to /results (refresh fitting); T7-T9 link to /contact.
+      const linksToLivingSurface =
         out.email.text.includes(BASE_OPTS.shopUrl) ||
         out.email.text.includes(BASE_OPTS.resumeUrl);
-      expect(linksToShop, `touch ${i} should link to /shop or /results`).toBe(
-        true,
-      );
+      expect(
+        linksToLivingSurface,
+        `touch ${i} should link to /contact or /results`,
+      ).toBe(true);
     }
   });
 
@@ -405,19 +407,21 @@ describe("composeTouchpoint — universal invariants", () => {
 });
 
 describe("composeTouchpoint — T10 refer-a-friend + T11 final call", () => {
-  it("T10 includes a refer-a-friend CTA with the $25 perk", () => {
+  it("T10 includes a refer-a-friend CTA without a cash-pay coupon", () => {
     const out = composeTouchpoint({ ...BASE_OPTS, touchIndex: 10 });
-    expect(out.email.text.toLowerCase()).toContain("$25 off");
-    expect(out.email.html.toLowerCase()).toContain("share with a friend");
-    expect(out.email.text).toContain(`${BASE_OPTS.shopUrl}/refer`);
+    expect(out.email.text.toLowerCase()).toContain("know someone who snores");
+    expect(out.email.html.toLowerCase()).toContain("referral");
+    expect(out.email.text).toContain(BASE_OPTS.shopUrl);
+    expect(out.email.text.toLowerCase()).not.toContain("$25 off");
   });
 
-  it("T11 (final call) carries a stronger 20% discount + LAST20 code", () => {
+  it("T11 (final call) prioritizes insurance finish + LAST20 code", () => {
     const out = composeTouchpoint({ ...BASE_OPTS, touchIndex: 11 });
     expect(out.email.subject.toLowerCase()).toContain("last chance");
-    expect(out.email.subject).toContain("20%");
+    expect(out.email.text.toLowerCase()).toContain("through insurance");
     expect(out.email.text).toContain("LAST20");
     expect(out.email.html).toContain("LAST20");
+    expect(out.email.text.toLowerCase()).not.toContain("20% off");
   });
 
   it("T11 sets a closing-the-loop expectation in the body", () => {
@@ -541,8 +545,10 @@ describe("composeTouchpoint — subject-line A/B variants (mig 0157)", () => {
       touchIndex: 4,
       subjectVariantKey: "A",
     });
-    // Promo-code-first format starts with "WELCOME15:" before "15%".
-    expect(out.email.subject).toMatch(/WELCOME15.*15%/);
+    // Promo-code-first format starts with "WELCOME15:" (cash-pay % off
+    // retired — code is now a priority reference for insurance finish).
+    expect(out.email.subject).toMatch(/^WELCOME15:/);
+    expect(out.email.subject.toLowerCase()).toContain("fit is waiting");
   });
 
   it("T4 variant B leads with urgency, not the promo code", () => {
@@ -551,9 +557,8 @@ describe("composeTouchpoint — subject-line A/B variants (mig 0157)", () => {
       touchIndex: 4,
       subjectVariantKey: "B",
     });
-    // Urgency-first format starts with "15% off" — no leading
-    // promo code prefix.
-    expect(out.email.subject).toContain("15% off");
+    expect(out.email.subject.toLowerCase()).toContain("still saved");
+    expect(out.email.subject).toContain("ends in 7 days");
     expect(out.email.subject).not.toMatch(/^[^,]*WELCOME15/);
   });
 

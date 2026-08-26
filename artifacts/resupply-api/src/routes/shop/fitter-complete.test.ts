@@ -696,15 +696,16 @@ describe("GET /shop/track/c — click tracking redirect", () => {
       .get("/resupply-api/shop/track/c")
       .query({ t: token });
     expect(res.status).toBe(302);
-    expect(res.headers.location).toContain("/shop");
+    expect(res.headers.location).toContain("/contact");
   });
 
   it("routes each link_key to its own allowlisted destination", async () => {
     const cases: Array<[string, string]> = [
       ["results", "/results"],
-      ["shop", "/shop"],
-      ["subscribe", "/shop/subscribe"],
-      ["refer", "/shop/refer"],
+      ["shop", "/contact"],
+      ["subscribe", "/reminders"],
+      ["refer", "/contact"],
+      ["promo", "/insurance"],
       ["consent", "/consent"],
     ];
     for (const [key, suffix] of cases) {
@@ -717,10 +718,10 @@ describe("GET /shop/track/c — click tracking redirect", () => {
     }
   });
 
-  it("falls back to /shop on a missing token (still 302, never a 4xx)", async () => {
+  it("falls back to /insurance on a missing token (still 302, never a 4xx)", async () => {
     const res = await request(makeApp()).get("/resupply-api/shop/track/c");
     expect(res.status).toBe(302);
-    expect(res.headers.location).toContain("/shop");
+    expect(res.headers.location).toContain("/insurance");
   });
 
   it("falls back on garbage token (no Supabase calls made)", async () => {
@@ -728,7 +729,7 @@ describe("GET /shop/track/c — click tracking redirect", () => {
       .get("/resupply-api/shop/track/c")
       .query({ t: "garbage" });
     expect(res.status).toBe(302);
-    expect(res.headers.location).toContain("/shop");
+    expect(res.headers.location).toContain("/insurance");
     expect(supabaseMockLegacy).not.toHaveBeenCalled();
   });
 
@@ -753,9 +754,9 @@ describe("GET /shop/track/c — click tracking redirect", () => {
     const res = await request(makeApp())
       .get("/resupply-api/shop/track/c")
       .query({ t: tamperedToken });
-    // Bad signature → falls back to /shop, NEVER 302s to "evilurl".
+    // Bad signature → falls back to /insurance, NEVER 302s to "evilurl".
     expect(res.status).toBe(302);
-    expect(res.headers.location).toContain("/shop");
+    expect(res.headers.location).toContain("/insurance");
     expect(res.headers.location).not.toContain("evilurl");
   });
 
@@ -769,7 +770,7 @@ describe("GET /shop/track/c — click tracking redirect", () => {
       .get("/resupply-api/shop/track/c")
       .query({ t: token });
     expect(res.status).toBe(302);
-    expect(res.headers.location).toContain("/shop"); // fallback
+    expect(res.headers.location).toContain("/insurance"); // fallback
   });
 
   it("rejects an open-tracking token replayed at the click endpoint", async () => {
@@ -779,7 +780,7 @@ describe("GET /shop/track/c — click tracking redirect", () => {
       .query({ t: openToken });
     expect(res.status).toBe(302);
     // Falls back since the prefix is 'o|' not 'c|'.
-    expect(res.headers.location).toContain("/shop");
+    expect(res.headers.location).toContain("/insurance");
     expect(supabaseMockLegacy).not.toHaveBeenCalled();
   });
 });

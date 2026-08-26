@@ -780,13 +780,17 @@ async function recordOpenEvent(
 // outside our own catalog.
 
 /** Closed enum of legitimate CTA destinations. The link_key in
- *  every signed click token MUST be in this map. */
+ *  every signed click token MUST be in this map.
+ *
+ *  Cash-pay /shop destinations were retired with the insurance-only
+ *  patient path — keys keep their historical names so in-flight
+ *  click tokens still verify, but they resolve to living surfaces. */
 const CTA_DESTINATIONS: Record<string, (baseUrl: string) => string> = {
   results: (b) => `${b}/results`,
-  shop: (b) => `${b}/shop`,
-  subscribe: (b) => `${b}/shop/subscribe`,
-  refer: (b) => `${b}/shop/refer`,
-  promo: (b) => `${b}/shop`,
+  shop: (b) => `${b}/contact`,
+  subscribe: (b) => `${b}/reminders`,
+  refer: (b) => `${b}/contact`,
+  promo: (b) => `${b}/insurance`,
   consent: (b) => `${b}/consent`,
 };
 
@@ -901,7 +905,7 @@ function publicBaseUrl(): string {
  *  than a redirect to the storefront), but we don't record the
  *  click. */
 function fallbackDestination(): string {
-  return `${publicBaseUrl()}/shop`;
+  return `${publicBaseUrl()}/insurance`;
 }
 
 router.get("/shop/track/c", clickTrackRateLimiter, async (req, res) => {

@@ -1489,8 +1489,10 @@ BiPAP machine, which uses a lower pressure on exhale. Both require a
 prescription update.
 
 Q: Do I need an account?
-A: No - guests can check out. A free account saves shipping address
-and order history and adds a one-tap "Reorder" button.
+A: No for browsing and fitting. Self-service checkout is off — when
+you're ready for supplies, send a request or contact us and we order
+through insurance. A free account saves your fit history and makes
+follow-ups easier.
 
 Q: Where can I sign up for replacement reminders?
 A: At /reminders - Penn Home Medical Supply will email you when each item is due on

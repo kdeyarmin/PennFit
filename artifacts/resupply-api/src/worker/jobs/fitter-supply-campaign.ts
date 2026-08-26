@@ -360,26 +360,24 @@ function maskPartVocabulary(maskType: string | null): MaskPartVocab {
   }
 }
 
-/** Subscription auto-ship upsell snippet rendered into T7-T9
+/** Replacement-reminder upsell snippet rendered into T7-T9
  *  footers. Single CTA + one-sentence value prop; T10 (the warm
  *  sendoff) deliberately omits this to keep the tone non-salesy.
  *
- *  `shopUrl` is the bare subscription URL used in the plain-text
- *  body; `wrappedSubscribeUrl` (when provided) is the click-
- *  tracked redirect URL used in the HTML CTA. Plain text keeps
- *  the bare URL so spam filters don't down-weight obvious
- *  redirect domains. */
+ *  Cash-pay Subscribe & Save is retired — patients get schedule
+ *  reminders and order through insurance. `remindersUrl` is the bare
+ *  URL used in the plain-text body; `wrappedRemindersUrl` (when
+ *  provided) is the click-tracked redirect URL used in the HTML CTA. */
 function renderSubscriptionUpsell(
-  shopUrl: string,
-  wrappedSubscribeUrl: string,
+  remindersUrl: string,
+  wrappedRemindersUrl: string,
 ): { html: string; text: string } {
-  const subscribeUrl = `${shopUrl}/subscribe`;
   return {
     html: `<div style="margin-top:18px;padding:14px 16px;background:#fef6e0;border-left:3px solid ${BRAND_GOLD};border-radius:4px;font-size:14px;line-height:1.5;">
-      <strong>Never run out:</strong> set up auto-ship and a fresh set arrives right on schedule — same price as a one-time order. Skip or cancel any month — no commitment.
-      <div style="margin-top:8px;"><a href="${wrappedSubscribeUrl}" style="color:${BRAND_NAVY};font-weight:600;text-decoration:underline;">Set up auto-ship</a></div>
+      <strong>Never run out:</strong> set a free replacement reminder and we&apos;ll nudge you when each part is due — then we ship through insurance.
+      <div style="margin-top:8px;"><a href="${wrappedRemindersUrl}" style="color:${BRAND_NAVY};font-weight:600;text-decoration:underline;">Set replacement reminders</a></div>
     </div>`,
-    text: `\n\nNever run out: set up auto-ship and a fresh set arrives right on schedule — same price as a one-time order. Skip or cancel any month — no commitment.\n${subscribeUrl}`,
+    text: `\n\nNever run out: set a free replacement reminder and we'll nudge you when each part is due — then we ship through insurance.\n${remindersUrl}`,
   };
 }
 
@@ -444,6 +442,10 @@ export function composeTouchpoint(opts: {
    *  reference directly. */
   const ctaHref = (linkKey: string, fallback: string): string =>
     wrapCta ? wrapCta(linkKey) : fallback;
+  // `shopUrl` is the patient contact/insurance CTA base the dispatcher
+  // passes (historically the cash-pay /shop root). Reminders live one
+  // path sibling when the CTA is /contact.
+  const remindersUrl = shopUrl.replace(/\/contact\/?$/, "/reminders");
   // Friendly "your AirFit P30i" snippet, fallback when the recommended
   // mask name isn't persisted yet (legacy rows or attribution races).
   const maskRef = recommendedMaskName
@@ -581,55 +583,52 @@ export function composeTouchpoint(opts: {
       };
     }
     case 3: {
-      // T3 — day 7: FSA/HSA reminder with a concrete expiry date.
-      const subject = `${nameSubjectPrefix}Use your FSA/HSA before ${fsaDeadlineLabel}`;
-      const preheader = `CPAP supplies are eligible — and we accept your FSA/HSA card at checkout.`;
+      // T3 — day 7: year-end benefits reminder (insurance path).
+      const subject = `${nameSubjectPrefix}Use your benefits before ${fsaDeadlineLabel}`;
+      const preheader = `CPAP supplies are covered by most plans — reply and we'll confirm yours.`;
       const bodyText = [
-        `Your FSA / HSA dollars expire ${fsaDeadlineLabel}. Most patients lose money sitting in their account every year because they forget.`,
+        `Many plans reset deductibles and FSA/HSA balances around ${fsaDeadlineLabel}. Patients who wait often pay more after the calendar flips.`,
         "",
-        "CPAP masks and supplies are FSA- and HSA-eligible. We accept your card directly at checkout — no receipts, no reimbursement paperwork.",
+        "CPAP masks and supplies are typically covered as DME. Reply to this email or contact us and we'll verify your benefits and schedule a shipment — no cash-pay checkout.",
         "",
-        `Browse compatible supplies: ${shopUrl}`,
+        `Contact us: ${shopUrl}`,
       ].join("\n");
       const bodyHtml = `
-        <p>Your FSA / HSA dollars expire <strong>${escapeHtml(fsaDeadlineLabel)}</strong>. Most patients lose money sitting in their account every year because they forget.</p>
-        <p>CPAP masks and supplies are FSA- and HSA-eligible. We accept your card directly at checkout — no receipts, no reimbursement paperwork.</p>
-        ${renderCtaButton("Browse compatible supplies", ctaHref("shop", shopUrl))}`;
+        <p>Many plans reset deductibles and FSA/HSA balances around <strong>${escapeHtml(fsaDeadlineLabel)}</strong>. Patients who wait often pay more after the calendar flips.</p>
+        <p>CPAP masks and supplies are typically covered as DME. Reply to this email or contact us and we&apos;ll verify your benefits and schedule a shipment — no cash-pay checkout.</p>
+        ${renderCtaButton("Contact us about coverage", ctaHref("shop", shopUrl))}`;
       return {
         email: buildEmail(subject, preheader, bodyHtml, bodyText),
         sms: "",
       };
     }
     case 4: {
-      // T4 — day 14: one-time discount with explicit 7-day deadline.
-      // Mig 0157 ships two A/B subject variants:
-      //   * A (default) — promo-code-first: leads with WELCOME15
-      //     as the curiosity hook ("what's WELCOME15?").
-      //   * B — urgency-first: leads with "15% off ends in 7 days"
-      //     to engage on scarcity/deadline framing.
-      // Body copy stays constant; only the subject varies.
+      // T4 — day 14: invite back to the fitting / insurance request.
+      // Mig 0157 ships two A/B subject variants (promo-code-era labels
+      // kept only as experiment keys — copy no longer sells a checkout
+      // discount code).
       const promo = process.env.FITTER_SUPPLY_CAMPAIGN_PROMO ?? "WELCOME15";
       const subject =
         subjectVariantKey === "B"
-          ? `${nameSubjectPrefix}15% off ${maskRef} — ends in 7 days`
-          : `${nameSubjectPrefix}${promo}: 15% off ${maskRef} — ends in 7 days`;
-      const preheader = `One-time offer. Use code ${promo} at checkout — expires automatically.`;
+          ? `${nameSubjectPrefix}${maskRef} fit is still saved — ends in 7 days`
+          : `${nameSubjectPrefix}${promo}: ${maskRef} fit is waiting`;
+      const preheader = `One follow-up. Reply and we'll finish through insurance.`;
       const bodyText = [
-        `One-time offer: code ${promo} takes 15% off your first order, mask or supplies.`,
-        "Valid 7 days from this email — your code expires automatically.",
+        `Your fitting for ${maskRef} is still on file.`,
+        "Self-service checkout is off — reply to this email or contact us and we'll confirm coverage and place the order through insurance.",
         "",
-        `Use it here: ${shopUrl}`,
+        `Contact us: ${shopUrl}`,
         "",
-        `Works on ${maskRef} or anything else in our catalog. One per patient.`,
+        `Mention ${promo} so we prioritize your request. Works for ${maskRef} or a different mask from your fit.`,
       ].join("\n");
       const bodyHtml = `
-        <p style="font-size:22px;line-height:1.3;margin:0 0 12px 0;"><strong style="color:${BRAND_NAVY};">15% off your first order</strong></p>
-        <p>One-time offer — code <code style="background:#fef3c7;padding:4px 10px;border-radius:4px;font-size:16px;font-weight:600;letter-spacing:0.5px;">${escapeHtml(promo)}</code> takes 15% off your first order, mask or supplies. <strong>Valid 7 days from this email.</strong></p>
-        ${renderCtaButton(`Shop ${maskRef}`, ctaHref("promo", shopUrl))}
-        <p style="color:${MUTED};font-size:13px;">Works on ${maskRefHtml} or anything else in our catalog. One per patient.</p>`;
+        <p style="font-size:22px;line-height:1.3;margin:0 0 12px 0;"><strong style="color:${BRAND_NAVY};">Your fit is still waiting</strong></p>
+        <p>Your fitting for <strong>${maskRefHtml}</strong> is still on file. Self-service checkout is off — reply or contact us and we&apos;ll confirm coverage and place the order through insurance.</p>
+        ${renderCtaButton(`Request ${recommendedMaskName ?? "your mask"}`, ctaHref("promo", shopUrl))}
+        <p style="color:${MUTED};font-size:13px;">Mention <code style="background:#fef3c7;padding:2px 8px;border-radius:4px;">${escapeHtml(promo)}</code> so we prioritize your request. Works for ${maskRefHtml} or a different mask from your fit.</p>`;
       return {
         email: buildEmail(subject, preheader, bodyHtml, bodyText),
-        sms: `${smsNamePrefix}${practiceName}: ${promo} = 15% off ${maskRef} for 7 days. ${shopUrl} STOP to opt out.`,
+        sms: `${smsNamePrefix}${practiceName}: ${promo} — ${maskRef} fit saved. Reply to finish. ${shopUrl} STOP to opt out.`,
       };
     }
     case 5: {
@@ -691,22 +690,22 @@ export function composeTouchpoint(opts: {
       const subject = `${nameSubjectPrefix}Time to replace your ${vocab.cushionTerm}`;
       const preheader = `30 days in — your seal is at the end of its prime life.`;
       const sub = renderSubscriptionUpsell(
-        shopUrl,
-        ctaHref("subscribe", `${shopUrl}/subscribe`),
+        remindersUrl,
+        ctaHref("subscribe", remindersUrl),
       );
       const bodyText = [
         `It's been about 30 days since your mask shipped. ${vocab.cushionNote}`,
         "",
-        `Order a replacement ${vocab.cushionTerm}: ${shopUrl}`,
+        `Contact us to reorder a replacement ${vocab.cushionTerm} through insurance: ${shopUrl}`,
         sub.text,
       ].join("\n");
       const bodyHtml = `
         <p>It&apos;s been about 30 days since your mask shipped. ${escapeHtml(vocab.cushionNote)}</p>
-        ${renderCtaButton(`Order replacement ${vocab.cushionTerm}`, ctaHref("shop", shopUrl))}
+        ${renderCtaButton(`Request replacement ${vocab.cushionTerm}`, ctaHref("shop", shopUrl))}
         ${sub.html}`;
       return {
         email: buildEmail(subject, preheader, bodyHtml, bodyText),
-        sms: `${smsNamePrefix}${practiceName}: your ${vocab.cushionTerm} are due for a swap. Reorder: ${shopUrl} STOP to opt out.`,
+        sms: `${smsNamePrefix}${practiceName}: your ${vocab.cushionTerm} are due for a swap. Reply to reorder: ${shopUrl} STOP to opt out.`,
       };
     }
     case 8: {
@@ -714,8 +713,8 @@ export function composeTouchpoint(opts: {
       const subject = `${nameSubjectPrefix}Check your filter — 60 days in`;
       const preheader = `Disposable filters expire every 30 days. You're overdue.`;
       const sub = renderSubscriptionUpsell(
-        shopUrl,
-        ctaHref("subscribe", `${shopUrl}/subscribe`),
+        remindersUrl,
+        ctaHref("subscribe", remindersUrl),
       );
       const bodyText = [
         "Quick reminder: disposable inline filters need replacing every 30 days on most CPAP machines. If you've been on your new mask for 60 days, you're already overdue for at least one filter swap.",
@@ -724,14 +723,14 @@ export function composeTouchpoint(opts: {
         "",
         vocab.filterCrossSell,
         "",
-        `Filters + accessories: ${shopUrl}`,
+        `Contact us for filters + accessories through insurance: ${shopUrl}`,
         sub.text,
       ].join("\n");
       const bodyHtml = `
         <p>Quick reminder: disposable inline filters need replacing every 30 days on most CPAP machines. If you&apos;ve been on your new mask for 60 days, you&apos;re already overdue for at least one filter swap.</p>
         <p style="color:${MUTED};font-size:14px;">Why it matters: a clogged filter forces your machine to work harder + can pull in more allergens overnight.</p>
         <p><em>${escapeHtml(vocab.filterCrossSell)}</em></p>
-        ${renderCtaButton("Filters + accessories", ctaHref("shop", shopUrl))}
+        ${renderCtaButton("Request filters + accessories", ctaHref("shop", shopUrl))}
         ${sub.html}`;
       return {
         email: buildEmail(subject, preheader, bodyHtml, bodyText),
@@ -743,18 +742,18 @@ export function composeTouchpoint(opts: {
       const subject = `${nameSubjectPrefix}Your ${vocab.headgearTerm} at 90 days`;
       const preheader = `Loose straps are the #1 cause of new leaks on a comfortable mask.`;
       const sub = renderSubscriptionUpsell(
-        shopUrl,
-        ctaHref("subscribe", `${shopUrl}/subscribe`),
+        remindersUrl,
+        ctaHref("subscribe", remindersUrl),
       );
       const bodyText = [
         `If your mask is starting to feel loose or you're cranking the straps tighter than you used to, your ${vocab.headgearTerm} have reached the end of their useful life. Manufacturer guidance puts headgear at 90-180 days; loose straps are the #1 cause of new leaks on a previously-comfortable mask.`,
         "",
-        `Replacement ${vocab.headgearTerm}: ${shopUrl}`,
+        `Contact us for replacement ${vocab.headgearTerm} through insurance: ${shopUrl}`,
         sub.text,
       ].join("\n");
       const bodyHtml = `
         <p>If your mask is starting to feel loose or you&apos;re cranking the straps tighter than you used to, your ${escapeHtml(vocab.headgearTerm)} have reached the end of their useful life. Manufacturer guidance puts headgear at 90-180 days; loose straps are the #1 cause of new leaks on a previously-comfortable mask.</p>
-        ${renderCtaButton(`Replacement ${vocab.headgearTerm}`, ctaHref("shop", shopUrl))}
+        ${renderCtaButton(`Request replacement ${vocab.headgearTerm}`, ctaHref("shop", shopUrl))}
         ${sub.html}`;
       return {
         email: buildEmail(subject, preheader, bodyHtml, bodyText),
@@ -770,8 +769,8 @@ export function composeTouchpoint(opts: {
       // Asking for a referral here lands far better than anywhere
       // else in the funnel.
       const subject = `${nameSubjectPrefix}Your 6-month mask refresh`;
-      const preheader = `Most insurance covers a new mask every 6 months. Plus a referral perk.`;
-      const referUrl = `${shopUrl}/refer`;
+      const preheader = `Most insurance covers a new mask every 6 months. Tell a friend who snores.`;
+      const referUrl = shopUrl;
       const wrappedReferUrl = ctaHref("refer", referUrl);
       const bodyText = [
         "It's been 6 months since you started with us. By now your mask has earned its retirement — manufacturers rate the silicone seal at 6-12 months before performance degrades.",
@@ -783,7 +782,7 @@ export function composeTouchpoint(opts: {
         "",
         `Start your refresh: ${resumeUrl}`,
         "",
-        "Know someone who snores? Share us — you both get $25 off:",
+        "Know someone who snores? Reply with their name and we'll reach out — no cash-pay coupon required.",
         `  ${referUrl}`,
       ].join("\n");
       const bodyHtml = `
@@ -796,8 +795,8 @@ export function composeTouchpoint(opts: {
         </ul>
         ${renderCtaButton("Start your refresh", ctaHref("results", resumeUrl))}
         <div style="margin-top:22px;padding:14px 16px;background:#eef2f7;border-left:3px solid ${BRAND_NAVY};border-radius:4px;font-size:14px;line-height:1.5;">
-          <strong>Know someone who snores?</strong> Share us — you both get $25 off your next order.
-          <div style="margin-top:8px;"><a href="${wrappedReferUrl}" style="color:${BRAND_NAVY};font-weight:600;text-decoration:underline;">Share with a friend</a></div>
+          <strong>Know someone who snores?</strong> Reply with their name and we&apos;ll reach out — no cash-pay coupon required.
+          <div style="margin-top:8px;"><a href="${wrappedReferUrl}" style="color:${BRAND_NAVY};font-weight:600;text-decoration:underline;">Contact us about a referral</a></div>
         </div>`;
       return {
         email: buildEmail(subject, preheader, bodyHtml, bodyText),
@@ -815,14 +814,12 @@ export function composeTouchpoint(opts: {
       // tool; an SMS reads as cold-spam where the email reads as
       // a courtesy.
       const promo = process.env.FITTER_FINAL_CALL_PROMO ?? "LAST20";
-      const subject = `${nameSubjectPrefix}We're closing your ${recommendedMaskName ?? "fitting"} — last chance, 20% off`;
-      const preheader = `Code ${promo} for 20% off. After this we won't email again about your fitting.`;
+      const subject = `${nameSubjectPrefix}We're closing your ${recommendedMaskName ?? "fitting"} — last chance`;
+      const preheader = `Reply this week and we'll finish through insurance. After this we won't email again about your fitting.`;
       const bodyText = [
         `It's been a few months since you ran our at-home fitting and matched to ${maskRef}. We're cleaning up our records this week.`,
         "",
-        `Before we close your fitting, here's a final offer: code ${promo} takes 20% off your first order — masks, supplies, anything in the catalog. Valid 14 days.`,
-        "",
-        `Use it here: ${shopUrl}`,
+        `Before we close your fitting: reply to this email or contact us (${shopUrl}) and we'll confirm coverage and place the order through insurance. Reference ${promo} so we prioritize your request — valid 14 days.`,
         "",
         "After this email we won't reach out about this fitting again. Your measurements stay on file for 12 months in case you change your mind, but we'll stop showing up in your inbox.",
         "",
@@ -830,9 +827,9 @@ export function composeTouchpoint(opts: {
       ].join("\n");
       const bodyHtml = `
         <p>It&apos;s been a few months since you ran our at-home fitting and matched to <strong>${maskRefHtml}</strong>. We&apos;re cleaning up our records this week.</p>
-        <p style="font-size:20px;line-height:1.3;margin:18px 0 12px 0;"><strong style="color:${BRAND_NAVY};">20% off your first order</strong></p>
-        <p>Before we close your fitting, here&apos;s a final offer: code <code style="background:#fef3c7;padding:4px 10px;border-radius:4px;font-size:16px;font-weight:600;letter-spacing:0.5px;">${escapeHtml(promo)}</code> takes 20% off your first order — masks, supplies, anything in the catalog. <strong>Valid 14 days.</strong></p>
-        ${renderCtaButton(`Shop with ${promo}`, ctaHref("promo", shopUrl))}
+        <p style="font-size:20px;line-height:1.3;margin:18px 0 12px 0;"><strong style="color:${BRAND_NAVY};">Last chance to finish through insurance</strong></p>
+        <p>Before we close your fitting: reply or contact us and we&apos;ll confirm coverage and place the order through insurance. Mention <code style="background:#fef3c7;padding:4px 10px;border-radius:4px;font-size:16px;font-weight:600;letter-spacing:0.5px;">${escapeHtml(promo)}</code> so we prioritize your request — <strong>valid 14 days</strong>.</p>
+        ${renderCtaButton("Contact us to finish", ctaHref("promo", shopUrl))}
         <p style="color:${MUTED};font-size:14px;">After this email we won&apos;t reach out about this fitting again. Your measurements stay on file for 12 months in case you change your mind, but we&apos;ll stop showing up in your inbox.</p>
         <p style="color:${MUTED};font-size:14px;">Reply to this email if you have a question — we read every reply.</p>`;
       return {
@@ -964,7 +961,11 @@ async function fitterSupplyCampaignSweepForOrg(
     (await resolveTenantBaseUrl(orgId)) ?? undefined,
   );
   const resumeUrl = `${baseUrl}/results`;
-  const shopUrl = `${baseUrl}/shop`;
+  const shopUrl = `${baseUrl}/contact`;
+  // Tracking + unsubscribe are API routes mounted under /resupply-api.
+  // Bare /shop/* hits the SPA LegacyShopRedirect and never reaches the
+  // HMAC handlers — so opens, clicks, and unsubs would silently fail.
+  const apiBase = `${baseUrl}/resupply-api`;
 
   for (const lead of candidates) {
     stats.scanned += 1;
@@ -1193,7 +1194,7 @@ async function fitterSupplyCampaignSweepForOrg(
     let wrapCta: ((linkKey: string) => string) | null;
     try {
       const unsubToken = signUnsubscribeToken(lead.id);
-      unsubscribeUrl = `${baseUrl}/shop/fitter-leads/unsubscribe?t=${encodeURIComponent(unsubToken)}`;
+      unsubscribeUrl = `${apiBase}/shop/fitter-leads/unsubscribe?t=${encodeURIComponent(unsubToken)}`;
       // Open tracking pixel — minted with the SAME HMAC key, but a
       // distinct payload prefix so the two tokens can't be
       // cross-replayed. If anything in the mint fails, we still
@@ -1201,7 +1202,7 @@ async function fitterSupplyCampaignSweepForOrg(
       // unsubscribe is mandatory.
       try {
         const openToken = signOpenTrackingToken(lead.id, nextTouchIndex);
-        trackingPixelUrl = `${baseUrl}/shop/track/o?t=${encodeURIComponent(openToken)}`;
+        trackingPixelUrl = `${apiBase}/shop/track/o?t=${encodeURIComponent(openToken)}`;
       } catch (openErr) {
         logger.warn(
           { err: openErr, leadId: lead.id },
@@ -1225,7 +1226,7 @@ async function fitterSupplyCampaignSweepForOrg(
             linkKey,
             safeVariantKey,
           );
-          return `${baseUrl}/shop/track/c?t=${encodeURIComponent(token)}`;
+          return `${apiBase}/shop/track/c?t=${encodeURIComponent(token)}`;
         } catch (err) {
           // If we can't mint a click token, fall back to the bare
           // destination — better a working CTA without tracking
@@ -1242,16 +1243,16 @@ async function fitterSupplyCampaignSweepForOrg(
             case "results":
               return `${baseUrl}/results`;
             case "shop":
-            case "promo":
-              return `${baseUrl}/shop`;
-            case "subscribe":
-              return `${baseUrl}/shop/subscribe`;
             case "refer":
-              return `${baseUrl}/shop/refer`;
+              return `${baseUrl}/contact`;
+            case "promo":
+              return `${baseUrl}/insurance`;
+            case "subscribe":
+              return `${baseUrl}/reminders`;
             case "consent":
               return `${baseUrl}/consent`;
             default:
-              return `${baseUrl}/shop`;
+              return `${baseUrl}/contact`;
           }
         }
       };
