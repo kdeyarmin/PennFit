@@ -322,7 +322,9 @@ async function deliveryFollowupSweepForOrg(
         await sendPushToCustomer(orgId, claimed.customer_id, {
           title: "How is your CPAP setup?",
           body: "Tap to share feedback or start a return if anything is off.",
-          url: "/account",
+          // Match the email CTA: /contact (no auth wall). /account would
+          // bounce unsigned-in patients to sign-in before they could ask.
+          url: "/contact",
           tag: `shop_order_delivery_followup:${claimed.id}`,
         });
       } catch (pushErr) {

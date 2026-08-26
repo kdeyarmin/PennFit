@@ -109,7 +109,9 @@ export async function sendFitterOrderConfirmationEmail(
       (await resolveTenantBaseUrl(input.orgId)) ??
       undefined,
   );
-  const accountUrl = `${base}/account`;
+  // Public track page — /account is auth-gated and would bounce
+  // unsigned-in patients to sign-in before they could look up the ref.
+  const trackUrl = `${base}/track-order`;
   const greeting = input.firstName
     ? `Hi ${escapeHtml(input.firstName)},`
     : "Hi there,";
@@ -139,7 +141,7 @@ export async function sendFitterOrderConfirmationEmail(
     "You don't need to do anything yet. If we hit a snag with insurance",
     "or the prescription, we'll reach out before charging anything.",
     "",
-    `Track or update your order anytime: ${accountUrl}`,
+    `Track your order anytime: ${trackUrl}`,
     "",
     "Reply to this email if you have any questions — a real human picks",
     "it up.",
@@ -181,7 +183,7 @@ export async function sendFitterOrderConfirmationEmail(
         "You don't need to do anything yet. If we hit a snag with insurance or the prescription, we'll reach out before charging anything.",
       ),
     ].join("\n"),
-    button: { label: "Track in my account", url: accountUrl },
+    button: { label: "Track your order", url: trackUrl },
     footerLines: [
       "Reply to this email with questions — a real human picks it up.",
       `The ${brandName} team`,

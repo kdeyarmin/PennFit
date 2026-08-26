@@ -1,7 +1,8 @@
 // CareMetric Breathe push-notification service worker (Phase C.1, feature #4).
 //
 // Purpose: receive Web Push events from the server and surface them
-// as browser notifications, plus open /account on click.
+// as browser notifications, plus open a same-origin deep link on click
+// (default: public /track-order — not the auth-gated /account).
 //
 // Why a SEPARATE worker file from any future generic service worker:
 // keeping push concerns isolated means the dispatcher can register
@@ -29,20 +30,25 @@ self.addEventListener("push", (event) => {
     try {
       payload = event.data.json();
     } catch (_err) {
-      payload = { title: "CareMetric Breathe", body: event.data.text() };
+      // Brand-neutral fallback — never hardcode the platform product name.
+      payload = { title: "New update", body: event.data.text() };
     }
   }
-  const title = payload.title || "CareMetric Breathe";
+  const title = payload.title || "New update";
   const options = {
     body: payload.body || "",
-    icon: "/icon-192.png",
-    badge: "/icon-192.png",
+    // apple-touch-icon.png ships with the SPA; a made-up /icon-*.png path
+    // would 404 on notification chrome.
+    icon: "/apple-touch-icon.png",
+    badge: "/apple-touch-icon.png",
     // `tag` lets repeated pushes for the same thing collapse rather
     // than stack (e.g. "your shipment is out for delivery" with two
     // tracking updates becomes one notification).
     tag: payload.tag || undefined,
-    // Stash url so the click handler can route correctly.
-    data: { url: payload.url || "/account" },
+    // Stash url so the click handler can route correctly. Prefer the
+    // public track page over /account (auth-gated) when the payload
+    // omits a url.
+    data: { url: payload.url || "/track-order" },
   };
   event.waitUntil(self.registration.showNotification(title, options));
 });
@@ -51,23 +57,24 @@ self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   // Defense-in-depth same-origin guard. The push payload is minted by
   // our own backend behind signed VAPID, so in normal operation
-  // data.url is always a same-origin path like "/account/orders/123".
+  // data.url is always a same-origin path like "/track-order".
   // If the VAPID private key ever leaked an attacker could craft a
   // payload that pointed at an external URL — clicking the notification
   // would open the attacker's site through clients.openWindow(), which
   // is good phishing material. We parse the URL against the SW's own
   // origin and only navigate when the resulting origin matches;
-  // anything else (cross-origin, malformed) falls back to /account.
+  // anything else (cross-origin, malformed) falls back to /track-order.
   const rawTarget =
-    (event.notification.data && event.notification.data.url) || "/account";
-  let targetUrl = "/account";
+    (event.notification.data && event.notification.data.url) ||
+    "/track-order";
+  let targetUrl = "/track-order";
   try {
     const parsed = new URL(rawTarget, self.location.origin);
     if (parsed.origin === self.location.origin) {
       targetUrl = `${parsed.pathname}${parsed.search}${parsed.hash}`;
     }
   } catch (_err) {
-    targetUrl = "/account";
+    targetUrl = "/track-order";
   }
   event.waitUntil(
     self.clients

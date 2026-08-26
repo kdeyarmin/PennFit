@@ -12,7 +12,7 @@
 //
 //   1. notificationclick — keeps the same-origin URL-validation block;
 //      the handler parses the candidate URL against self.location.origin
-//      and falls back to /account on a cross-origin / malformed payload.
+//      and falls back to /track-order on a cross-origin / malformed payload.
 //
 //   2. pushsubscriptionchange — keeps the full re-subscribe flow (DELETE
 //      old endpoint → fetch VAPID key → pushManager.subscribe → POST new
@@ -43,7 +43,7 @@ const SW_SRC = readFileSync(
 // is minted by our own backend behind signed VAPID. PR #340 review then
 // re-added the guard as defense-in-depth (CodeRabbit thread on PR #340,
 // commit 0428ac9). The current shape uses `rawTarget` as the
-// pre-validation variable and falls back to `/account` if either the
+// pre-validation variable and falls back to `/track-order` if either the
 // origin check fails or the URL is malformed.
 describe("sw-push.js notificationclick — same-origin URL handling", () => {
   it("uses rawTarget as the pre-validation variable, not rawUrl", () => {
@@ -55,8 +55,8 @@ describe("sw-push.js notificationclick — same-origin URL handling", () => {
     expect(SW_SRC).not.toContain("const rawUrl =");
   });
 
-  it("falls back to /account when event.notification.data.url is absent", () => {
-    expect(SW_SRC).toContain('|| "/account"');
+  it("falls back to /track-order when event.notification.data.url is absent", () => {
+    expect(SW_SRC).toMatch(/\|\|\s*"\/track-order"/);
   });
 
   it("parses the candidate URL against self.location.origin", () => {
@@ -67,10 +67,10 @@ describe("sw-push.js notificationclick — same-origin URL handling", () => {
     expect(SW_SRC).toContain("parsed.origin === self.location.origin");
   });
 
-  it("falls back to /account on a malformed URL (try/catch guard)", () => {
-    // The catch arm reassigns targetUrl back to /account so a crafted
+  it("falls back to /track-order on a malformed URL (try/catch guard)", () => {
+    // The catch arm reassigns targetUrl back to /track-order so a crafted
     // payload can't crash the click handler.
-    expect(SW_SRC).toMatch(/catch[\s\S]{0,80}targetUrl\s*=\s*"\/account"/);
+    expect(SW_SRC).toMatch(/catch[\s\S]{0,80}targetUrl\s*=\s*"\/track-order"/);
   });
 
   it("still uses self.clients.matchAll to re-focus an existing tab", () => {
@@ -186,15 +186,24 @@ describe("sw-push.js — install/activate/push listeners still present", () => {
     expect(SW_SRC).toContain("self.registration.showNotification(");
   });
 
-  it("push listener falls back to the platform title when event.data is missing", () => {
-    expect(SW_SRC).toContain('payload.title || "CareMetric Breathe"');
+  it("push listener uses a brand-neutral fallback title (never a hardcoded platform name)", () => {
+    expect(SW_SRC).toContain('payload.title || "New update"');
+    // Catch arm for non-JSON push bodies must use the same neutral title.
+    expect(SW_SRC).toMatch(
+      /payload\s*=\s*\{\s*title:\s*"New update",\s*body:\s*event\.data\.text\(\)/,
+    );
   });
 
   it("push listener stashes url in notification data for the click handler", () => {
-    expect(SW_SRC).toContain('data: { url: payload.url || "/account" }');
+    expect(SW_SRC).toContain(
+      'data: { url: payload.url || "/track-order" }',
+    );
   });
 
-  it("push listener uses the expected icon path", () => {
-    expect(SW_SRC).toContain('icon: "/icon-192.png"');
+  it("push listener falls back to /apple-touch-icon.png for icon and badge", () => {
+    expect(SW_SRC).toContain('icon: "/apple-touch-icon.png"');
+    expect(SW_SRC).toContain('badge: "/apple-touch-icon.png"');
+    expect(SW_SRC).not.toMatch(/icon:\s*"\/icon-192\.png"/);
+    expect(SW_SRC).not.toMatch(/badge:\s*"\/icon-192\.png"/);
   });
 });

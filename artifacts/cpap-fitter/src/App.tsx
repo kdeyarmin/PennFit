@@ -1271,11 +1271,11 @@ function PatientRouter() {
             <Route path="/track-order" component={TrackOrder} />
             <Route path="/nps" component={NpsLanding} />
             <Route path="/mask-fit" component={MaskFitLanding} />
-            {/* Push-notification deep links. The backend sends pushes
-                with url=/account/orders (shipping updates) and
-                /account/insights (smart triggers); both surfaces are
-                tabs on /account, not standalone routes, so redirect to
-                the hash form that hashToAccountTab() understands. */}
+            {/* Push-notification deep links. Shipping pushes now use
+                /track-order; smart-trigger pushes still use
+                /account/insights. Path-style aliases redirect to the
+                hash form that hashToAccountTab() understands (or to
+                public tracking for the retired Orders tab). */}
             <Route path="/account/insights">
               {() => <AccountHashRedirect hash="insights" />}
             </Route>
@@ -1283,10 +1283,13 @@ function PatientRouter() {
               {() => <AccountHashRedirect hash="messages" />}
             </Route>
             {/* Legacy deep link: the retail Orders tab retired with
-                cash-pay, but pushes/emails sent before this deploy still
-                carry the URL. Land them on track-order (lookup by ref)
-                rather than an empty account overview. */}
+                cash-pay, but older pushes/emails still carry
+                /account/orders or /account/orders/:id. Land them on
+                track-order (lookup by ref) rather than a 404. */}
             <Route path="/account/orders">
+              {() => <Redirect to="/track-order" />}
+            </Route>
+            <Route path="/account/orders/:orderId">
               {() => <Redirect to="/track-order" />}
             </Route>
             <Route path="/account" component={GuardedAccount} />

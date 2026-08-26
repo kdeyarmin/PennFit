@@ -72,6 +72,7 @@ describe("Account notification deep links", () => {
   it("registers path-style account aliases so old notification payloads avoid the 404 route", () => {
     expect(SRC).toContain('path="/account/insights"');
     expect(SRC).toContain('path="/account/orders"');
+    expect(SRC).toContain('path="/account/orders/:orderId"');
     expect(SRC).toContain('path="/account/messages"');
   });
 
