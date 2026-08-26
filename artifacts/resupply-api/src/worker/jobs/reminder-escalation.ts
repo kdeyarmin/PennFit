@@ -96,7 +96,7 @@ export const ESCALATION_DELAY_DAYS = 3;
 /** Stop escalating (and stop nagging) past this age from the FIRST touch. */
 export const ESCALATION_MAX_DAYS = 21;
 
-// Admin-tunable timing (Control Center → Resupply reminders). Read per-tick
+// Admin-tunable timing (System Configuration → Resupply reminders). Read per-tick
 // per tenant from app_config; a blank/out-of-range value falls back to the
 // defaults above and is clamped to these bounds so a typo can never break or
 // runaway the ladder.

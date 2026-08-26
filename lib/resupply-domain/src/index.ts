@@ -49,6 +49,11 @@ export {
 } from "./outreach-plan";
 
 export {
+  DEFAULT_MEDICARE_RESUPPLY_LINES,
+  type DefaultResupplyLine,
+} from "./default-resupply-lines";
+
+export {
   resolveResupplyEntitlement,
   ENTITLEMENT_STATUSES,
   type EntitlementStatus,

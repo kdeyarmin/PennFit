@@ -691,10 +691,11 @@ export const APP_CONFIG_CATALOG: readonly AppConfigSetting[] = [
     applyMode: "live",
     description: "Sender email for carrier notifications.",
   },
-  // Resupply reminder escalation cadence — tenant-tunable from Control Center.
-  // Read per-tick by reminders.escalation-scan (applyMode "live"); a blank or
-  // out-of-range value falls back to the built-in default and is clamped to a
-  // sane range on read, so a typo can never break the ladder.
+  // Resupply reminder escalation cadence — tenant-tunable from System
+  // Configuration → Resupply reminders. Read per-tick by
+  // reminders.escalation-scan (applyMode "live"); a blank or out-of-range
+  // value falls back to the built-in default and is clamped to a sane
+  // range on read, so a typo can never break the ladder.
   {
     key: "RESUPPLY_ESCALATION_DELAY_DAYS",
     label: "Days between reminder steps",
