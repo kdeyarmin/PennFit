@@ -247,11 +247,15 @@ const VALID_PROFILE = {
   minimalContactPreference: "no_preference" as const,
 };
 
-function post(body: Record<string, unknown>, token = signFitterInviteToken(INVITE_ID)) {
+function post(
+  body: Record<string, unknown>,
+  token = signFitterInviteToken(INVITE_ID),
+) {
   // Most fixtures exercise the happy path on the adult service line. Tests
   // that deliberately omit population pass `population: undefined` so the
   // helper does not inject a default.
-  const payload = "population" in body ? body : { population: "adult", ...body };
+  const payload =
+    "population" in body ? body : { population: "adult", ...body };
   return request(makeApp())
     .post("/fit/assess")
     .set("x-fitter-invite-token", token)
@@ -671,7 +675,11 @@ describe("POST /api/fit/assess — structured recommendation columns", () => {
     const res = await request(makeApp())
       .post("/fit/assess")
       .set("x-fitter-invite-token", signFitterInviteToken(INVITE_ID))
-      .send({ measurements: VALID_MEASUREMENTS, profile: {}, population: "adult" });
+      .send({
+        measurements: VALID_MEASUREMENTS,
+        profile: {},
+        population: "adult",
+      });
 
     expect(res.status).toBe(200);
     const session = db.inserts.find((i) => i.table === "fit_sessions");
@@ -737,7 +745,11 @@ describe("POST /api/fit/assess — structured recommendation columns", () => {
     const res = await request(makeApp())
       .post("/fit/assess")
       .set("x-fitter-invite-token", signFitterInviteToken(INVITE_ID))
-      .send({ measurements: VALID_MEASUREMENTS, profile: {}, population: "adult" });
+      .send({
+        measurements: VALID_MEASUREMENTS,
+        profile: {},
+        population: "adult",
+      });
 
     expect(res.status).toBe(200);
     const row = db.inserts.find((i) => i.table === "fit_sessions")!
@@ -1025,9 +1037,7 @@ describe("POST /fit/assess — population", () => {
     });
     expect(res.status).toBe(400);
     expect(res.body.details).toEqual(
-      expect.arrayContaining([
-        expect.stringMatching(/population: required/i),
-      ]),
+      expect.arrayContaining([expect.stringMatching(/population: required/i)]),
     );
   });
 
