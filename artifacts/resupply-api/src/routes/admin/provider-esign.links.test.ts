@@ -74,6 +74,18 @@ const resolveBrandingByOrgIdMock = vi.hoisted(() =>
 );
 vi.mock("../../lib/tenant-branding", () => ({
   resolveTenantBaseUrl: resolveTenantBaseUrlMock,
+  resolveTenantLinkBaseUrl: async (
+    orgId?: string,
+    platformFallback?: string,
+  ) => {
+    const tenant = await resolveTenantBaseUrlMock(orgId);
+    if (tenant) return tenant.replace(/\/$/, "");
+    // Seed org id from installSupabaseMock — only that org may fall back.
+    if (orgId === "00000000-0000-4000-8000-000000000000") {
+      return (platformFallback ?? PLATFORM_BASE_URL).replace(/\/$/, "");
+    }
+    return null;
+  },
   resolveBrandingByOrgId: resolveBrandingByOrgIdMock,
 }));
 

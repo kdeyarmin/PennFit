@@ -67,9 +67,15 @@ const resolveBrandingByOrgIdMock = vi.hoisted(() =>
 const resolveTenantBaseUrlMock = vi.hoisted(() =>
   vi.fn(async (_orgId?: string) => "https://shop.acme.example"),
 );
+const resolveTenantLinkBaseUrlMock = vi.hoisted(() =>
+  vi.fn(
+    async (_orgId?: string, _fallback?: string) => "https://shop.acme.example",
+  ),
+);
 vi.mock("../../lib/tenant-branding", () => ({
   resolveBrandingByOrgId: resolveBrandingByOrgIdMock,
   resolveTenantBaseUrl: resolveTenantBaseUrlMock,
+  resolveTenantLinkBaseUrl: resolveTenantLinkBaseUrlMock,
 }));
 
 // Keep the real exports (roleHasPermission for the auth mock) and stub
@@ -122,6 +128,8 @@ beforeEach(() => {
   emailMock.mockResolvedValue(undefined);
   vi.mocked(renderPatientPortalInviteEmail).mockClear();
   resolveBrandingByOrgIdMock.mockClear();
+  resolveTenantLinkBaseUrlMock.mockReset();
+  resolveTenantLinkBaseUrlMock.mockResolvedValue("https://shop.acme.example");
 });
 
 /** Stage the DB round-trips a fresh invite makes:

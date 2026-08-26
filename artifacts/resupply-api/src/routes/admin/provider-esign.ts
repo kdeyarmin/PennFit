@@ -21,7 +21,7 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import { z } from "zod";
 
-import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 import {
   bufferToHexBytea,
   issueToken,
@@ -43,7 +43,7 @@ import {
 } from "../../lib/provider-portal/signature-log-pdf";
 import {
   resolveBrandingByOrgId,
-  resolveTenantBaseUrl,
+  resolveTenantLinkBaseUrl,
 } from "../../lib/tenant-branding";
 import { requirePermission } from "../../middlewares/requireAdmin";
 import {
@@ -58,24 +58,14 @@ const INVITE_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 /**
  * Base URL for provider-portal invite / reminder links.
- *
- * Prefer the tenant's verified custom domain. For the seed org only,
- * fall back to the platform public URL (single-tenant / preview
- * unchanged). For any OTHER tenant, return null — a platform-host link
- * would resolve the portal queue to the seed org and show an empty
- * queue / 404, so callers must refuse rather than send a broken invite.
+ * Delegates to {@link resolveTenantLinkBaseUrl}: verified custom domain,
+ * else platform fallback for the seed org only, else null.
  */
 async function resolveProviderPortalBaseUrl(
   orgId: string,
   platformBaseUrl: string,
 ): Promise<string | null> {
-  const tenantBase = await resolveTenantBaseUrl(orgId);
-  if (tenantBase) return tenantBase.replace(/\/$/, "");
-  const seedId = await resolveSeedOrgId();
-  if (seedId && orgId === seedId) {
-    return platformBaseUrl.replace(/\/$/, "");
-  }
-  return null;
+  return resolveTenantLinkBaseUrl(orgId, platformBaseUrl);
 }
 
 /**

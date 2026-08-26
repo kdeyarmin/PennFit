@@ -46,7 +46,7 @@ import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import {
   resolveBrandingByOrgId,
-  resolveTenantBaseUrl,
+  resolveTenantLinkBaseUrl,
 } from "../../lib/tenant-branding";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
@@ -161,6 +161,16 @@ router.post(
     const orgId = req.orgId;
     if (!orgId || !orgId.trim()) {
       res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const deps = getAuthDeps();
+    const baseUrl = await resolveTenantLinkBaseUrl(orgId, deps.publicBaseUrl);
+    if (!baseUrl) {
+      res.status(422).json({
+        error: "tenant_domain_required",
+        message:
+          "Verify a custom domain for this tenant before inviting patients. Without one, the invite link would open on the platform host and land on the wrong portal.",
+      });
       return;
     }
     const supabase = getOrgScopedClient(orgId);
@@ -362,11 +372,6 @@ router.post(
       });
     if (tokenErr) throw tokenErr;
 
-    const deps = getAuthDeps();
-    const baseUrl = (
-      (await resolveTenantBaseUrl(orgId).catch(() => null)) ??
-      deps.publicBaseUrl
-    ).replace(/\/$/, "");
     const inviteLink = `${baseUrl}/reset-password?token=${encodeURIComponent(token.raw)}`;
 
     // Brand the patient-facing invite with the INVITING tenant's own
@@ -454,6 +459,16 @@ router.post(
       res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
+    const deps = getAuthDeps();
+    const baseUrl = await resolveTenantLinkBaseUrl(orgId, deps.publicBaseUrl);
+    if (!baseUrl) {
+      res.status(422).json({
+        error: "tenant_domain_required",
+        message:
+          "Verify a custom domain for this tenant before inviting patients. Without one, the invite link would open on the platform host and land on the wrong portal.",
+      });
+      return;
+    }
     const supabase = getOrgScopedClient(orgId);
     const { data: patient, error: patientErr } = await supabase
       .from("patients")
@@ -512,11 +527,6 @@ router.post(
       });
     if (tokenErr) throw tokenErr;
 
-    const deps = getAuthDeps();
-    const baseUrl = (
-      (await resolveTenantBaseUrl(orgId).catch(() => null)) ??
-      deps.publicBaseUrl
-    ).replace(/\/$/, "");
     const inviteLink = `${baseUrl}/reset-password?token=${encodeURIComponent(token.raw)}`;
 
     // Brand the resend with the inviting tenant's own identity (same

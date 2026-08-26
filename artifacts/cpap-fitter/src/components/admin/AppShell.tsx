@@ -1116,10 +1116,10 @@ export const NAV_GROUPS: ReadonlyArray<NavGroup> = [
           },
           {
             href: "/admin/fitter/analytics",
-            label: "Storefront Analytics",
+            label: "Fitter analytics",
             icon: BarChart3,
             matchPrefix: "/admin/fitter/analytics",
-            hint: "Storefront traffic & revenue",
+            hint: "Fit requests, funnel completion, and mask outcomes",
           },
         ],
       },

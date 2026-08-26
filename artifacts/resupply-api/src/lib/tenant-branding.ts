@@ -368,6 +368,29 @@ export async function resolveTenantBaseUrl(
 }
 
 /**
+ * Base URL for patient/provider invite and reminder links.
+ *
+ * Prefer the tenant's verified custom domain. For the seed org only,
+ * fall back to `platformFallback` (single-tenant / preview unchanged).
+ * For any other tenant without a verified domain, return null — a
+ * platform-host link would resolve auth/portal queues to the wrong org.
+ */
+export async function resolveTenantLinkBaseUrl(
+  orgId: string | undefined,
+  platformFallback: string,
+): Promise<string | null> {
+  const tenantBase = await resolveTenantBaseUrl(orgId);
+  if (tenantBase) return tenantBase.replace(/\/$/, "");
+  const id = orgId?.trim();
+  if (!id) return null;
+  const seedId = await resolveSeedOrgId();
+  if (seedId && id === seedId) {
+    return platformFallback.replace(/\/$/, "");
+  }
+  return null;
+}
+
+/**
  * Drop the branding cache so an admin save is visible on the next read.
  * Also drops the host→org cache: every branding/custom-domain mutation
  * invalidates this, and a domain bind/unbind changes which org a host

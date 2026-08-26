@@ -369,8 +369,8 @@ const FLAG_CATALOG: ReadonlyArray<{
   {
     key: "storefront.checkout",
     category: "Storefront",
-    description: "Accept card checkout on the storefront.",
-    on: true,
+    description: "RETIRED — patient cash-pay checkout was removed. Leave OFF.",
+    on: false,
   },
   {
     key: "storefront.pickup",
