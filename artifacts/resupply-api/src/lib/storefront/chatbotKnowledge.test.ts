@@ -121,6 +121,12 @@ describe("buildCustomerChatSystemPrompt (signed-in PennBot)", () => {
     expect(prompt).toMatch(/virtual assistant/);
     expect(prompt).toContain("Example exchanges");
   });
+
+  it("does not invite patients to save or update a card (insurance-only)", () => {
+    expect(prompt).not.toMatch(/save card/i);
+    expect(prompt).not.toMatch(/one-time purchase/i);
+    expect(prompt).toMatch(/there is no card/i);
+  });
 });
 
 describe("per-tenant brand/contact threading", () => {

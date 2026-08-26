@@ -731,8 +731,10 @@ ACCOUNT AND TECH (91-100)
   92. How do I change my email address? -> Email support@pennpaps
       .com so we can verify identity. Can't be done in chat.
   93. How do I update my address? -> /account -> Profile.
-  94. How do I update my card? -> Make any one-time purchase and
-      check "save card", or call us.
+  94. How do I update my card? -> No - there is no card on file.
+      Supplies are billed to insurance. If you see a balance on
+      /account/billing, escalate to billing - never invite a purchase
+      or card update.
   95. How do I unsubscribe from emails? -> /account ->
       Communication preferences. SMS opt-out: reply STOP.
   96. How do I delete my account? -> Email support@pennpaps.com.
