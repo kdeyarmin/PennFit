@@ -3,10 +3,13 @@ name: CI
 # Retrigger registration for PR #1330 after missed pull_request events.
 # Nudge 2026-08-26: Actions stopped firing synchronize after aafe1601e;
 # a workflow-file touch re-registers the pull_request webhook.
+# workflow_dispatch lets us kick a stuck branch when pull_request
+# synchronize events are dropped by GitHub.
 on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 # Cancel an in-flight CI run for a given branch when a new commit lands.
 # Saves runner minutes on rapid push sequences and avoids a stale "passing"
