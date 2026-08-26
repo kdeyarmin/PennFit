@@ -19,7 +19,9 @@ on:
 # Saves runner minutes on rapid push sequences and avoids a stale "passing"
 # check from a previous head sticking around.
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  # Per-SHA group: a forever-queued run on an older head must not hold a
+  # branch-wide lock and starve later pull_request synchronizes (PR 1330).
+  group: ci-${{ github.workflow }}-${{ github.ref }}-${{ github.sha }}
   cancel-in-progress: true
 
 permissions:
