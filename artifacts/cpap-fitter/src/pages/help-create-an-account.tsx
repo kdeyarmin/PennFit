@@ -84,8 +84,8 @@ const steps: HelpStep[] = [
         </p>
         <ul className="list-disc pl-5 space-y-1">
           <li>
-            <strong>Profile &amp; addresses</strong> — saved so checkout is
-            faster.
+            <strong>Profile &amp; addresses</strong> — saved so resupply and fit
+            requests are faster.
           </li>
           <li>
             <strong>Orders</strong> — full history with status and a{" "}

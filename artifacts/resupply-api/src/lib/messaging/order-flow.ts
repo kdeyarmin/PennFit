@@ -44,7 +44,6 @@
 
 import {
   getOrgScopedClient,
-  resolveSeedOrgId,
   type Json,
   type OrgScopedClient,
 } from "@workspace/resupply-db";
@@ -175,10 +174,12 @@ export type PlaceOrderResult =
 
 export interface PlaceOrderInput {
   conversationId: string;
-  /** Tenant the conversation belongs to. Defaults to the seed org
-   *  (single-tenant bridge) for the SMS/voice callers that have no
-   *  request tenant; the email-link route passes the conversation's org. */
-  orgId?: string;
+  /** Tenant the conversation belongs to. Required — callers must pass
+   *  the conversation's org (SMS/voice stamp it on the inbound session;
+   *  the email-link route reads it from the conversation). Never invent
+   *  the seed org here: that would place another tenant's order under
+   *  the seed ledger. */
+  orgId: string;
   /**
    * The beneficiary's Medicare/payer refill attestation. When provided
    * AND the `resupply.refill_affirmation_capture` flag is on, a
@@ -192,7 +193,7 @@ export interface PlaceOrderInput {
 export async function placeResupplyOrderForConversation(
   input: PlaceOrderInput,
 ): Promise<PlaceOrderResult> {
-  const orgId = input.orgId ?? (await resolveSeedOrgId());
+  const orgId = input.orgId?.trim();
   if (!orgId) return { status: "conversation_not_found" };
   const supabase = getOrgScopedClient(orgId);
 
@@ -1305,9 +1306,9 @@ async function raiseUsageReviewAlert(
  */
 export async function pausePatient(
   patientId: string,
-  orgIdInput?: string,
+  orgIdInput: string,
 ): Promise<void> {
-  const orgId = orgIdInput ?? (await resolveSeedOrgId());
+  const orgId = orgIdInput?.trim();
   if (!orgId) return;
   const supabase = getOrgScopedClient(orgId);
   const nowIso = new Date().toISOString();
@@ -1368,9 +1369,9 @@ export async function pausePatient(
  */
 export async function reactivatePatient(
   patientId: string,
-  orgIdInput?: string,
+  orgIdInput: string,
 ): Promise<void> {
-  const orgId = orgIdInput ?? (await resolveSeedOrgId());
+  const orgId = orgIdInput?.trim();
   if (!orgId) return;
   const supabase = getOrgScopedClient(orgId);
   const nowIso = new Date().toISOString();

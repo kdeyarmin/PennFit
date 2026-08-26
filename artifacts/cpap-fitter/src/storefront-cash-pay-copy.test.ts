@@ -21,6 +21,7 @@ const FORBIDDEN = [
   "Add to cart",
   "Continue shopping",
   "free shipping over",
+  "at checkout",
 ] as const;
 
 const SCAN_DIRS = [

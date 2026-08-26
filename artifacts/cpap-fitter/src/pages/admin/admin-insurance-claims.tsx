@@ -80,9 +80,12 @@ function formatMoneyCents(cents: number | null | undefined): string {
 
 const STATUS_LABEL: Record<InsuranceClaimStatus, string> = {
   draft: "Draft",
+  submitting: "Submitting",
   submitted: "Submitted",
   accepted: "Accepted",
   denied: "Denied",
+  rejected: "Rejected",
+  partially_paid: "Partially paid",
   paid: "Paid",
   appealed: "Appealed",
   closed: "Closed",
@@ -92,23 +95,31 @@ const STATUS_LABEL: Record<InsuranceClaimStatus, string> = {
 // design tokens used by the rest of the admin console.
 const STATUS_TONE: Record<InsuranceClaimStatus, string> = {
   draft: "var(--surface-2)",
+  submitting: "var(--accent-amber, #ffe2b8)",
   submitted: "var(--accent-blue, #c7d8ff)",
   accepted: "var(--accent-teal, #c6efe9)",
   denied: "var(--accent-rose, #ffd5d5)",
+  rejected: "var(--accent-rose, #ffd5d5)",
+  partially_paid: "var(--accent-amber, #ffe2b8)",
   paid: "var(--accent-green, #c8efc8)",
   appealed: "var(--accent-amber, #ffe2b8)",
   closed: "var(--surface-2)",
 };
 
+// Keep in sync with artifacts/resupply-api/.../insurance-claims.ts
+// VALID_TRANSITIONS — especially submitting → draft (stuck batch lock).
 const VALID_TRANSITIONS: Record<
   InsuranceClaimStatus,
   readonly InsuranceClaimStatus[]
 > = {
-  draft: ["submitted"],
-  submitted: ["accepted", "denied"],
-  accepted: ["paid", "denied"],
+  draft: ["submitted", "submitting"],
+  submitting: ["draft", "submitted", "accepted", "denied", "rejected"],
+  submitted: ["accepted", "denied", "rejected", "partially_paid", "paid"],
+  accepted: ["paid", "denied", "partially_paid"],
   denied: ["appealed", "closed"],
-  appealed: ["accepted", "denied"],
+  rejected: ["submitted", "closed"],
+  appealed: ["accepted", "denied", "partially_paid", "paid"],
+  partially_paid: ["paid", "denied", "appealed", "closed"],
   paid: ["closed"],
   closed: [],
 };
@@ -1195,13 +1206,17 @@ function TransitionButton({
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState("");
   if (!needsReason) {
+    const label =
+      from === "submitting" && to === "draft"
+        ? "Release to draft"
+        : `Mark ${STATUS_LABEL[to].toLowerCase()}`;
     return (
       <Button
         intent="secondary"
         onClick={() => onConfirm(null)}
         data-testid={`transition-${from}-to-${to}`}
       >
-        Mark {STATUS_LABEL[to].toLowerCase()}
+        {label}
       </Button>
     );
   }

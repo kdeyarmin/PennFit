@@ -12,16 +12,16 @@
 // can mock just this helper (alongside the SendGrid one) without
 // pulling in a real DB pool.
 
-import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "./logger";
 
 export interface RecordInsuranceLeadInput {
   /**
    * Tenant whose storefront captured the lead (host-resolved by the
-   * route). Without it a non-seed tenant's insurance lead would be filed
-   * under — and chased by — the seed tenant. Undefined → seed (platform
-   * storefront / single-tenant).
+   * route via resolveBrandOrgIdByHost). Required for the DB write —
+   * without it we skip persistence rather than inventing the seed org
+   * and filing another tenant's PHI under Penn's queue.
    */
   orgId?: string;
   fullName: string;
@@ -54,7 +54,7 @@ export async function recordInsuranceLead(
   input: RecordInsuranceLeadInput,
 ): Promise<RecordInsuranceLeadResult> {
   try {
-    const orgId = input.orgId ?? (await resolveSeedOrgId());
+    const orgId = input.orgId?.trim();
     if (!orgId) {
       return { id: null, error: "tenant context missing" };
     }
@@ -108,7 +108,7 @@ export async function stampInsuranceLeadDelivery(
 ): Promise<void> {
   if (!id) return;
   try {
-    const resolvedOrgId = orgId ?? (await resolveSeedOrgId());
+    const resolvedOrgId = orgId?.trim();
     if (!resolvedOrgId) return;
     const supabase = getOrgScopedClient(resolvedOrgId);
     const { error } = await supabase

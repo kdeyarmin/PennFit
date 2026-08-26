@@ -21,7 +21,6 @@ import { timingSafeEqual, randomUUID, randomBytes } from "node:crypto";
 
 import {
   getOrgScopedClient,
-  resolveSeedOrgId,
   type Json,
   type OrgScopedClient,
   type ResupplySupabaseClient,
@@ -204,14 +203,11 @@ export interface VoiceToolDispatcherDeps {
   supabase?: ResupplySupabaseClient;
   /**
    * The tenant (organization) this call belongs to (G7). Threaded from the
-   * pending voice session (ws-handler resolves `pending.orgId`). When set,
-   * ALL patient/shop DB access is scoped to THIS tenant; when unset — the
-   * platform-global `breathe_prospect` sales line, or legacy/test callers —
-   * it falls back to the seed org. Omitting this for a real patient call is
-   * what previously scoped every non-seed tenant's patient lookups to the
-   * seed org (broken identity verification + order placement).
+   * pending voice session (ws-handler stamps `pending.orgId`). Required —
+   * the dispatcher never invents the seed org. Sales (`breathe_prospect`)
+   * receives the platform org explicitly from the sales WS handler.
    */
-  orgId?: string;
+  orgId: string;
   /** "patient" (default) runs the full resupply flow and verifies by date
    *  of birth; "shop_customer" verifies by the last four of the card on
    *  file and is limited to reading their account or reaching a human;
@@ -274,22 +270,15 @@ class Impl implements VoiceToolDispatcher {
   }
 
   /**
-   * Resolve (once) the tenant-scoped client. Prefer the call's actual
-   * tenant (`deps.orgId`, threaded from the pending voice session); fall
-   * back to the seed org only when no tenant was provided — the
-   * platform-global sales line (`breathe_prospect`) and legacy/test callers.
-   * The constructor is sync and `resolveSeedOrgId()` is async, so we resolve
-   * lazily at first DB use. A test-injected client is wrapped with the same
-   * org-scoped facade so the query bodies are identical on both paths.
-   *
-   * Threading `deps.orgId` here is load-bearing for multi-tenant (G7):
-   * without it every patient read/write scoped to the seed org regardless
-   * of the call's tenant, so identity verification could never match a
-   * non-seed patient and order/address writes silently no-op'd.
+   * Resolve (once) the tenant-scoped client. Requires `deps.orgId`
+   * (threaded from the pending voice session). Never invent the seed
+   * org — that mis-scoped patient reads/writes under Penn. The
+   * constructor is sync so we resolve lazily at first DB use. A
+   * test-injected client is wrapped with the same org-scoped facade.
    */
   private async db(): Promise<OrgScopedClient> {
     if (this.scoped) return this.scoped;
-    const orgId = this.deps.orgId?.trim() || (await resolveSeedOrgId());
+    const orgId = this.deps.orgId?.trim();
     if (!orgId) throw new Error("tenant context missing");
     this.scoped = this.injectedClient
       ? getOrgScopedClient(orgId, this.injectedClient)

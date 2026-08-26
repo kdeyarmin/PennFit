@@ -47,7 +47,7 @@ import {
 import { requireCsrfWhenSession } from "../../middlewares/csrf.js";
 import { requestHost } from "../../lib/request-host.js";
 import {
-  resolveOrgIdByHost,
+  resolveBrandOrgIdByHost,
   resolveBrandingByOrgId,
 } from "../../lib/tenant-branding.js";
 import { attachSignedIn } from "../../middlewares/requireSignedIn.js";
@@ -177,12 +177,11 @@ router.post("/reminders", async (req, res) => {
   const items = parsed.data.items;
   const itemsWithDue = withNextDue(items);
 
-  // Public, unauthenticated route (pattern 3): no req.orgId. Resolve the tenant
-  // by HOST so a subscription on tenant B's storefront is recorded for tenant
-  // B (custom domain / subdomain → that org; apex / miss → seed). The
-  // subscription row carries org_id (migration 0378).
-  const orgId =
-    (await resolveOrgIdByHost(requestHost(req))) ?? (await resolveSeedOrgId());
+  // Public, unauthenticated route: resolve the tenant by verified
+  // custom domain / subdomain ONLY. Never invent the seed org — an
+  // unbound or platform host must not write another tenant's email
+  // into Penn's reminder_subscriptions.
+  const orgId = await resolveBrandOrgIdByHost(requestHost(req));
   if (!orgId) {
     res.json({
       success: true,
@@ -349,23 +348,25 @@ function resolveManageLookup(
 }
 
 /**
- * Resolve the tenant for a manage request the SAME way the subscribe path
- * does: by HOST (custom domain / subdomain → that org; apex / miss → seed).
+ * Tenant for manage lookups.
  *
- * The manage_token column is a global capability secret that identifies a
- * row on its own, so it needs no org filter. The session/email column does:
- * migration 0378 re-keyed reminder_subscriptions to UNIQUE(org_id, email),
- * so the same email can legitimately exist under multiple tenants, and an
- * unscoped `.eq("email", …)` would read/modify whichever tenant's row
- * PostgREST returned first. Handlers apply `.eq("org_id", orgId)` only for
- * the email column (see each `if (lookup.column === "email")` below).
+ * - Email/session path: verified custom domain / subdomain only (never
+ *   invent seed — same email can exist under multiple tenants).
+ * - Token path: manage_token is a global capability secret; we only need
+ *   *some* service-role client for `.raw()`. Prefer the brand org when
+ *   known; otherwise bootstrap via seed solely for the unscoped query
+ *   (does not invent an org_id stamp on any write).
  */
-async function resolveManageOrgId(
+async function resolveManageOrgContext(
   req: import("express").Request,
-): Promise<string | null> {
-  return (
-    (await resolveOrgIdByHost(requestHost(req))) ?? (await resolveSeedOrgId())
-  );
+  lookupColumn: "email" | "manage_token",
+): Promise<{ filterOrgId: string | null; clientOrgId: string | null }> {
+  const brandOrgId = await resolveBrandOrgIdByHost(requestHost(req));
+  if (lookupColumn === "email") {
+    return { filterOrgId: brandOrgId, clientOrgId: brandOrgId };
+  }
+  const clientOrgId = brandOrgId ?? (await resolveSeedOrgId());
+  return { filterOrgId: null, clientOrgId };
 }
 
 // ---------- GET /reminders/manage[?token=...] ----------
@@ -377,13 +378,16 @@ router.get("/reminders/manage", attachSignedIn, async (req, res) => {
     return;
   }
   // Token/session route (pattern 3): no guaranteed req.orgId. Resolve the
-  // tenant by host and scope the email path to it (see resolveManageOrgId).
-  const orgId = await resolveManageOrgId(req);
-  if (!orgId) {
+  // tenant by host and scope the email path to it (see resolveManageOrgContext).
+  const { filterOrgId, clientOrgId } = await resolveManageOrgContext(
+    req,
+    lookup.column,
+  );
+  if (!clientOrgId || (lookup.column === "email" && !filterOrgId)) {
     res.status(404).json({ error: "Subscription not found" });
     return;
   }
-  const supabase = getOrgScopedClient(orgId);
+  const supabase = getOrgScopedClient(clientOrgId);
   let query = supabase
     .raw()
     .schema("public")
@@ -392,8 +396,8 @@ router.get("/reminders/manage", attachSignedIn, async (req, res) => {
       "id, email, manage_token, status, items, last_sent_at, created_at, updated_at, org_id",
     )
     .eq(lookup.column, lookup.value);
-  if (lookup.column === "email") {
-    query = query.eq("org_id", orgId);
+  if (lookup.column === "email" && filterOrgId) {
+    query = query.eq("org_id", filterOrgId);
   }
   const { data: row, error } = await query.limit(1).maybeSingle();
   if (error) throw error;
@@ -447,12 +451,15 @@ router.patch(
 
     const itemsWithDue = withNextDue(bodyParsed.data.items);
 
-    const orgId = await resolveManageOrgId(req);
-    if (!orgId) {
+    const { filterOrgId, clientOrgId } = await resolveManageOrgContext(
+      req,
+      lookup.column,
+    );
+    if (!clientOrgId || (lookup.column === "email" && !filterOrgId)) {
       res.status(404).json({ error: "Subscription not found" });
       return;
     }
-    const supabase = getOrgScopedClient(orgId);
+    const supabase = getOrgScopedClient(clientOrgId);
     let query = supabase
       .raw()
       .schema("public")
@@ -463,8 +470,8 @@ router.patch(
         updated_at: new Date().toISOString(),
       })
       .eq(lookup.column, lookup.value);
-    if (lookup.column === "email") {
-      query = query.eq("org_id", orgId);
+    if (lookup.column === "email" && filterOrgId) {
+      query = query.eq("org_id", filterOrgId);
     }
     const { data: updated, error } = await query
       .select(
@@ -502,12 +509,15 @@ router.post(
       res.status(lookup.status).json({ error: lookup.message });
       return;
     }
-    const orgId = await resolveManageOrgId(req);
-    if (!orgId) {
+    const { filterOrgId, clientOrgId } = await resolveManageOrgContext(
+      req,
+      lookup.column,
+    );
+    if (!clientOrgId || (lookup.column === "email" && !filterOrgId)) {
       res.status(404).json({ error: "Subscription not found" });
       return;
     }
-    const supabase = getOrgScopedClient(orgId);
+    const supabase = getOrgScopedClient(clientOrgId);
     let query = supabase
       .raw()
       .schema("public")
@@ -517,8 +527,8 @@ router.post(
         updated_at: new Date().toISOString(),
       })
       .eq(lookup.column, lookup.value);
-    if (lookup.column === "email") {
-      query = query.eq("org_id", orgId);
+    if (lookup.column === "email" && filterOrgId) {
+      query = query.eq("org_id", filterOrgId);
     }
     const { data: updated, error } = await query
       .select("id, org_id")
