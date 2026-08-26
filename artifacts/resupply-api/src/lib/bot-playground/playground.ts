@@ -272,14 +272,16 @@ export const PLAYGROUND_SCENARIOS: readonly PlaygroundScenario[] = [
   {
     id: "voice-shop",
     bot: "voice",
-    label: "Storefront caller (cash-pay)",
-    description: "shop_customer kind — verifies by last-four, read-only.",
+    label: "Storefront caller (account handoff)",
+    description:
+      "shop_customer kind — name+email then human handoff (no card last-four).",
     firstUserMessage: "Hi, I wanted to check on the status of my order.",
     config: {
       voice: {
         practiceName: "CareMetric Breathe",
         callerName: "Avery",
-        callContext: "Inbound storefront (cash-pay) caller.",
+        callContext:
+          "Inbound storefront caller; cash-pay card verify retired — hand off.",
         callerKind: "shop_customer",
       },
     },

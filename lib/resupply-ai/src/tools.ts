@@ -52,9 +52,9 @@ export type ToolName = (typeof TOOL_NAMES)[number];
 // Per-caller-kind tool availability. The voice WS handler offers the model
 // only the subset for the resolved caller kind, and the dispatcher enforces
 // the same split server-side (defense in depth). A clinical patient verifies
-// by date of birth and can run the full resupply flow; a cash-pay storefront
-// caller verifies by the last four of the card on file and can only review
-// their account (read-only) or reach a human.
+// by date of birth and can run the full resupply flow; a storefront
+// (shop_customer) caller should hand off for account lookups — cash-pay
+// card last-four verification is retired (tools remain for legacy rows).
 export const PATIENT_TOOL_NAMES = [
   "verify_patient_identity",
   "lookup_resupply_inventory",
