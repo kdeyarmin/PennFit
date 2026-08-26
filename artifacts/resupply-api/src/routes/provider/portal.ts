@@ -617,50 +617,23 @@ router.post(
     }
     const ids = [...new Set(parsed.data.ids)];
 
-    const orgId = await resolveTenantOrgId(req);
-    if (!orgId) {
-      res.status(500).json({ error: "tenant_context_missing" });
-      return;
-    }
-    const supabase = getOrgScopedClient(orgId);
-    // provider_signature_requests is a BLOCKED TENANT table — raw client
-    // + MANUAL org_id filter.
-    const { data: rows, error } = await supabase
-      .raw()
-      .schema("resupply")
-      .from("provider_signature_requests")
-      .select("id, status, expires_at")
-      .eq("provider_id", account.providerId)
-      .eq("org_id", orgId)
-      .in("id", ids);
-    if (error) throw error;
-    const byId = new Map(
-      (
-        (rows ?? []) as Array<{
-          id: string;
-          status: string;
-          expires_at: string | null;
-        }>
-      ).map((r) => [r.id, r]),
-    );
-
     const capture: SignCapture = {
       signerName: parsed.data.signerName,
       signerTitle: parsed.data.signerTitle ?? null,
       signatureImage: parsed.data.signatureImage ?? null,
     };
-    const npi = await loadProviderNpi(orgId, account.providerId);
     const ip = req.ip ?? null;
     const userAgent = req.get("user-agent") ?? null;
 
     const signed: string[] = [];
     const skipped: Array<{ id: string; reason: string }> = [];
     for (const id of ids) {
-      const row = byId.get(id);
-      if (!row) {
+      const found = await loadOwnRequest(account.providerId, id);
+      if (!found) {
         skipped.push({ id, reason: "not_found" });
         continue;
       }
+      const { orgId, row } = found;
       if (row.status !== "pending") {
         skipped.push({ id, reason: "not_pending" });
         continue;
@@ -674,7 +647,7 @@ router.post(
         accountId: account.id,
         accountEmail: account.emailLower,
         requestId: id,
-        npi,
+        npi: await loadProviderNpi(orgId, account.providerId),
         capture,
         ip,
         userAgent,
