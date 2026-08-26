@@ -65,4 +65,15 @@ describe("/admin/lookup hardening", () => {
       /UUID_RE\s*=\s*\s*\/\^\[0-9a-f\]\{8\}-\[0-9a-f\]\{4\}-\[0-9a-f\]\{4\}-\[0-9a-f\]\{4\}-\[0-9a-f\]\{12\}\$\/i/,
     );
   });
+
+  it("resolves fitter order references before the shop hex-tail branch", () => {
+    expect(LOOKUP_SOURCE).toContain("normalizeOrderReference");
+    expect(LOOKUP_SOURCE).toContain('kind: "fitter_order"');
+    expect(LOOKUP_SOURCE).toContain("/admin/fitter/orders/");
+    const orderRefIdx = LOOKUP_SOURCE.indexOf("normalizeOrderReference(q)");
+    const hexIdx = LOOKUP_SOURCE.indexOf("HEX_TAIL_RE.test(q)");
+    expect(orderRefIdx).toBeGreaterThan(-1);
+    expect(hexIdx).toBeGreaterThan(-1);
+    expect(orderRefIdx).toBeLessThan(hexIdx);
+  });
 });

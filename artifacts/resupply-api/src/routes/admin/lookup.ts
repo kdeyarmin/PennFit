@@ -5,6 +5,7 @@
 //   * 10-15 digits / +E.164 → patient by direct phone_e164 equality
 //   * contains "@"           → shop customer by email_lower
 //   * UUIDv4 shape           → patient / conversation / episode / fulfillment
+//   * PENN-/PHM-/bare-6 ref  → fitter order by order_reference
 //   * starts with "cs_"      → shop order by stripe_session_id
 //   * 12+ hex chars (no @)   → shop order by stripe_session_id LIKE %tail
 //
@@ -21,6 +22,7 @@ import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
+import { normalizeOrderReference } from "../../lib/storefront/orderTracking";
 
 const router: IRouter = Router();
 
@@ -31,7 +33,8 @@ interface Hit {
     | "episode"
     | "fulfillment"
     | "shop_order"
-    | "shop_customer";
+    | "shop_customer"
+    | "fitter_order";
   id: string;
   label: string;
   href: string;
@@ -210,8 +213,42 @@ router.get(
       }
     }
 
-    // Stripe Checkout Session id (full or last-12).
-    if (STRIPE_SESSION_RE.test(q)) {
+    // Fitter / insurance order reference (PENN-…, bare 6-char tail, or
+    // legacy PHM-XXX-XXX). CSRs paste confirmation refs into the global
+    // bar; without this branch they only find Stripe cs_ sessions.
+    // Must run BEFORE the hex-tail shop_orders LIKE — PHM refs also
+    // match HEX_TAIL_RE and would otherwise search the wrong table.
+    const orderRef = normalizeOrderReference(q);
+    if (orderRef) {
+      const { data: order } = await db
+        .raw()
+        .schema("public")
+        .from("orders")
+        .select(
+          "id, order_reference, patient_first_name, patient_last_name, email_status, mask_name",
+        )
+        .eq("org_id", orgId)
+        .eq("order_reference", orderRef)
+        .limit(1)
+        .maybeSingle();
+      if (order) {
+        const name = [order.patient_first_name, order.patient_last_name]
+          .filter(Boolean)
+          .join(" ")
+          .trim();
+        hits.push({
+          kind: "fitter_order",
+          id: order.id,
+          label:
+            name ||
+            order.mask_name ||
+            order.order_reference ||
+            "(fitter order)",
+          href: `/admin/fitter/orders/${order.id}`,
+          hint: `${order.order_reference}${order.email_status ? ` · ${order.email_status}` : ""}`,
+        });
+      }
+    } else if (STRIPE_SESSION_RE.test(q)) {
       const { data: order } = await db
         .from("shop_orders")
         .select("id, stripe_session_id, status, amount_total_cents")

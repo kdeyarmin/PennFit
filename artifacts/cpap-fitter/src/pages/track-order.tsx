@@ -157,12 +157,20 @@ export function TrackOrder() {
             Order lookup
           </CardTitle>
           <CardDescription>
-            For full order history, sign in to{" "}
+            Lost the reference?{" "}
             <Link
-              href="/account"
+              href="/contact"
               className="text-primary underline-offset-4 hover:underline"
             >
-              your account
+              Contact us
+            </Link>{" "}
+            and we&apos;ll look it up. Signed-in patients can also message the
+            team from{" "}
+            <Link
+              href="/account#messages"
+              className="text-primary underline-offset-4 hover:underline"
+            >
+              Account → Messages
             </Link>
             .
           </CardDescription>

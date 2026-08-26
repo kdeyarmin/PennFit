@@ -122,7 +122,7 @@ const categories: HelpCategory[] = [
         Icon: UserCircle,
         title: "Create an account & sign in",
         blurb:
-          "Set up a free account to save addresses and reorder in one tap.",
+          "Set up a free account to save addresses, reminders, and messages.",
         keywords: "account sign in sign up register password login profile",
         tone: "gold",
       },

@@ -195,7 +195,14 @@ export function ComfortGuaranteePage() {
             {contact.phoneDisplay}
           </a>{" "}
           Monday–Friday, 8am–6pm ET. If you&apos;re signed in, you can also
-          start it directly from your order history.
+          message the team from{" "}
+          <a
+            className="font-medium text-[hsl(var(--penn-navy))] underline-offset-2 hover:underline"
+            href="/account#messages"
+          >
+            Account → Messages
+          </a>
+          .
         </p>
         <div className="flex flex-wrap gap-3">
           <a href={`mailto:${contact.email}`}>

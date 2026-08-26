@@ -89,7 +89,11 @@ const steps: HelpStep[] = [
             requests are faster.
           </li>
           <li>
-            <strong>Orders</strong> — full history with status and tracking.
+            <strong>Therapy &amp; supplies</strong> — what&apos;s due and your
+            registered equipment.
+          </li>
+          <li>
+            <strong>Messages</strong> — threaded chat with your care team.
           </li>
           <li>
             <strong>Billing</strong> — insurance statements and open balances.
@@ -108,7 +112,7 @@ const steps: HelpStep[] = [
       </>
     ),
     shot: (
-      <Screenshot caption="Your dashboard groups profile, orders, addresses, billing, and reminders into one sidebar.">
+      <Screenshot caption="Your dashboard groups profile, therapy, messages, billing, and reminders into one sidebar.">
         <AccountShot />
       </Screenshot>
     ),
@@ -122,14 +126,14 @@ export function HelpCreateAnAccount() {
       title="Create an account & sign in"
       Icon={UserCircle}
       minutes="3 min"
-      metaDescription="How to create an account, verify your email, sign in, and use your dashboard to manage profile, addresses, orders, billing, and resupply reminders."
-      intro="A free account saves your shipping details and order history and gives you one-tap reordering. Here's how to set one up and find your way around the dashboard."
+      metaDescription="How to create an account, verify your email, sign in, and use your dashboard for profile, therapy, messages, billing, and resupply reminders."
+      intro="A free account saves your shipping details, therapy schedule, and messages with our team. Here's how to set one up and find your way around the dashboard."
       summary={
         <>
           Tap the account icon → <strong>Create an account</strong>, enter your
           email and a password, click the verification link we email you, and
-          you&apos;re in. Your dashboard then keeps your profile, addresses,
-          orders, billing, and reminders together.
+          you&apos;re in. Your dashboard then keeps your profile, therapy,
+          messages, billing, and reminders together.
         </>
       }
       prerequisites={[

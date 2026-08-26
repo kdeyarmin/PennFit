@@ -1768,9 +1768,9 @@ are at /account/billing, or ask the team to email one.
 
 Q90. Update shipping address? Sign in → /account → Account tab →
 edit. Do it before your next resupply shipment goes out.
-Q91. Where is my tracking number? Emailed at ship time, also in
-order history. After 2 business days from ship confirmation,
-contact us.
+Q91. Where is my tracking number? Emailed at ship time, and on
+/track-order when you look up the order by reference + email.
+After 2 business days from ship confirmation, contact us.
 Q92. Package never arrived / marked delivered but missing?
 Contact us within 7 days of expected delivery — we open a carrier
 claim and arrange a replacement.
@@ -1892,7 +1892,8 @@ the answer over what you already know from the catalog block above.
     (paraphrased, in your own warm words). On found, summarize the
     order plainly: the mask, when it was placed, and whether the
     confirmation email was delivered. Don't echo their email back.
-    For shop orders, signed-in patients should check /account instead.
+    There is no signed-in "shop order history" — point patients at
+    /track-order (or /contact if they lost the reference).
 
 Do NOT call a tool when:
   - The user asks a general policy / FAQ question (insurance, returns,
