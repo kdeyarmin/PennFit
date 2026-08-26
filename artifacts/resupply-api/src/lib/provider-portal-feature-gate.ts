@@ -47,6 +47,17 @@ export async function providerPortalFeatureGate(
     next();
     return;
   }
+  // Pre-launch onboarding: identity + MFA enrollment must work while the
+  // flag is OFF so invited providers can sign in and set up TOTP before
+  // queue/sign/decline routes go live.
+  if (
+    req.path === "/api/provider/me" ||
+    req.path === "/api/provider/mfa" ||
+    req.path.startsWith("/api/provider/mfa/")
+  ) {
+    next();
+    return;
+  }
   const orgId = (await resolveOrgIdByHost(requestHost(req))) ?? undefined;
   if (!(await isFeatureEnabled("provider.portal_enabled", orgId))) {
     res.status(404).json({ error: "Not found" });

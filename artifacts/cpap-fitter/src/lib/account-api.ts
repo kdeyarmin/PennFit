@@ -158,11 +158,13 @@ export const closeAccount = (password: string) =>
  * surface a friendly "billing not available in this environment"
  * message instead of a generic error.
  */
-export const openBillingPortal = (returnPath = "/account") =>
-  meFetch<{ url: string }>("/shop/me/billing-portal", {
-    method: "POST",
-    body: JSON.stringify({ returnPath }),
-  });
+export async function openBillingPortal(
+  _returnPath = "/account",
+): Promise<{ url: string }> {
+  throw new Error(
+    "billing_portal_retired: patient cash-pay billing portal was removed; contact support for insurance billing questions.",
+  );
+}
 
 /**
  * Designated authorized contact (caregiver / spouse / adult child).
