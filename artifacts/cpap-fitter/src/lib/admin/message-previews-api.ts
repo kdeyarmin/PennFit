@@ -49,6 +49,8 @@ export interface SendingReadiness {
 
 export interface MessagePreviewsResponse {
   sending: SendingReadiness;
+  /** When true, email previews contain broken click links until a custom domain is verified. */
+  tenantDomainRequired: boolean;
   brand: {
     name: string;
     legalName: string;

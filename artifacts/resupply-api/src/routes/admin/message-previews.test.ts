@@ -23,6 +23,7 @@ import {
   makeRequireAdminMock,
   type MockAdminCtx,
 } from "../../test-helpers/auth-mocks";
+import { resolveTenantLinkBaseUrl } from "../../lib/tenant-branding";
 
 const { mockAdmin } = vi.hoisted(() => ({
   mockAdmin: { current: null as MockAdminCtx | null },
@@ -194,6 +195,15 @@ describe("GET /admin/message-previews", () => {
     });
   });
 
+  it("reports tenantDomainRequired when click base is unavailable", async () => {
+    vi.mocked(resolveTenantLinkBaseUrl).mockResolvedValueOnce(null);
+    const res = await request(makeApp())
+      .get("/admin/message-previews")
+      .expect(200);
+    expect(res.body.tenantDomainRequired).toBe(true);
+    expect(res.body.brand.baseUrl).toBe("");
+  });
+
   it("reports a channel as unconfigured instead of failing the page", async () => {
     emailCtl.configured = false;
     smsCtl.configured = false;
@@ -240,6 +250,16 @@ describe("POST /admin/message-previews/:id/send — email", () => {
       })
       // `.strict()` on the body schema rejects the extra keys outright.
       .expect(400);
+    expect(sendEmail).not.toHaveBeenCalled();
+  });
+
+  it("rejects email send when tenant domain is required", async () => {
+    vi.mocked(resolveTenantLinkBaseUrl).mockResolvedValueOnce(null);
+    const res = await request(makeApp())
+      .post("/admin/message-previews/resupply.reminder.initial/send")
+      .send({ channel: "email", to: "owner@riverside.example" })
+      .expect(422);
+    expect(res.body.error).toBe("tenant_domain_required");
     expect(sendEmail).not.toHaveBeenCalled();
   });
 

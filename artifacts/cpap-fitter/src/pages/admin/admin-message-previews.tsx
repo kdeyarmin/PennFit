@@ -37,6 +37,7 @@ import {
   type PreviewGroup,
   type SendTestResult,
   type SendingReadiness,
+  type MessagePreviewsResponse,
 } from "@/lib/admin/message-previews-api";
 
 const QUERY_KEY = ["admin", "message-previews"] as const;
@@ -111,15 +112,35 @@ function EmailMock({
   );
 }
 
+/** Safe From header for preview chrome when tenant sender is unset. */
+function previewFromEmail(
+  brand: MessagePreviewsResponse["brand"],
+  sending: SendingReadiness,
+): string {
+  if (sending.email.from) {
+    return `${brand.name} <${sending.email.from}>`;
+  }
+  if (brand.baseUrl) {
+    try {
+      return `${brand.name} <noreply@${new URL(brand.baseUrl).hostname}>`;
+    } catch {
+      // fall through
+    }
+  }
+  return `${brand.name} <noreply@cmbreathe.com>`;
+}
+
 /** The send-a-test form for one scenario + channel. */
 function SendTest({
   previewId,
   channel,
   readiness,
+  tenantDomainRequired,
 }: {
   previewId: string;
   channel: "email" | "sms";
   readiness: SendingReadiness;
+  tenantDomainRequired: boolean;
 }) {
   const channelReady = readiness[channel];
   const [to, setTo] = useState("");
@@ -154,6 +175,21 @@ function SendTest({
           Add your {channel === "email" ? "SendGrid" : "Twilio"} credentials
           under Global integrations, then come back and you can send this to
           yourself. Until then you can still read the message above.
+        </p>
+      </div>
+    );
+  }
+
+  if (channel === "email" && tenantDomainRequired) {
+    return (
+      <div className="mt-3 rounded-md border border-amber-300 bg-amber-50 p-3">
+        <p className="text-sm font-medium text-amber-900">
+          Email test send blocked until a custom domain is verified
+        </p>
+        <p className="mt-1 text-xs text-amber-800">
+          Preview links in this tenant&apos;s emails need a verified custom
+          domain. Bind one under Domains &amp; branding before sending a test —
+          otherwise click-through links would be broken in a real inbox.
         </p>
       </div>
     );
@@ -242,10 +278,12 @@ function PreviewCard({
   preview,
   fromEmail,
   readiness,
+  tenantDomainRequired,
 }: {
   preview: MessagePreview;
   fromEmail: string;
   readiness: SendingReadiness;
+  tenantDomainRequired: boolean;
 }) {
   const [tab, setTab] = useState<"email" | "sms">(
     preview.email ? "email" : "sms",
@@ -308,6 +346,7 @@ function PreviewCard({
             previewId={preview.id}
             channel="email"
             readiness={readiness}
+            tenantDomainRequired={tenantDomainRequired}
           />
         </div>
       ) : null}
@@ -320,6 +359,7 @@ function PreviewCard({
             previewId={preview.id}
             channel="sms"
             readiness={readiness}
+            tenantDomainRequired={tenantDomainRequired}
           />
         </div>
       ) : null}
@@ -366,12 +406,26 @@ export function AdminMessagePreviewsPage() {
 
       {data ? (
         <>
+          {data.tenantDomainRequired ? (
+            <Card>
+              <p className="text-sm font-medium text-amber-900">
+                Custom domain required for email link previews
+              </p>
+              <p className="mt-1 text-sm text-amber-800">
+                This tenant has no verified custom domain yet, so email
+                click-through links in the previews would be broken in a real
+                inbox. You can still read the copy below; email test sends stay
+                disabled until a domain is bound under Domains &amp; branding.
+              </p>
+            </Card>
+          ) : null}
+
           <Card>
             <p className="text-sm text-slate-700">
               Rendering as <strong>{data.brand.name}</strong> ·{" "}
               {data.brand.supportPhoneDisplay} · links point at{" "}
               <code className="rounded bg-slate-100 px-1 py-0.5 text-xs">
-                {data.brand.baseUrl}
+                {data.brand.baseUrl || "(pending custom domain)"}
               </code>
             </p>
             <p className="mt-1 text-xs text-slate-500">
@@ -420,7 +474,8 @@ export function AdminMessagePreviewsPage() {
                   key={preview.id}
                   preview={preview}
                   readiness={data.sending}
-                  fromEmail={`${data.brand.name} <${data.sending.email.from ?? `noreply@${new URL(data.brand.baseUrl).hostname}`}>`}
+                  tenantDomainRequired={data.tenantDomainRequired}
+                  fromEmail={previewFromEmail(data.brand, data.sending)}
                 />
               ))}
             </section>

@@ -225,6 +225,10 @@ router.post(
         res.status(400).json({ error: "no_email_variant" });
         return;
       }
+      if (brand.tenantDomainRequired) {
+        res.status(422).json({ error: "tenant_domain_required" });
+        return;
+      }
       if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)) {
         res.status(400).json({ error: "invalid_email" });
         return;
