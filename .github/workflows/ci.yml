@@ -1,5 +1,7 @@
 name: CI
 
+# Nudge 2026-08-26d: force pull_request synchronize for current HEAD.
+
 # Retrigger registration for PR #1330 after missed pull_request events.
 # Nudge 2026-08-26: Actions stopped firing synchronize after aafe1601e;
 # a workflow-file touch re-registers the pull_request webhook.
