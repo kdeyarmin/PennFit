@@ -44,8 +44,9 @@ vi.mock("../../lib/tenant-branding", () => ({
   resolveBrandingByOrgId: vi.fn(async () => ({
     storefrontName: "Riverside CPAP",
   })),
-  resolveTenantLinkBaseUrl: vi.fn(async (_orgId: string, _platform: string) =>
-    "https://shop.riverside.example",
+  resolveTenantLinkBaseUrl: vi.fn(
+    async (_orgId: string, _platform: string) =>
+      "https://shop.riverside.example",
   ),
 }));
 vi.mock("../../lib/company-info", () => ({

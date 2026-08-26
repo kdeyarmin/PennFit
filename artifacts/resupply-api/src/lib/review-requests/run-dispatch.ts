@@ -144,7 +144,10 @@ export async function runReviewRequestDispatch(opts: {
 
   const baseUrl = await resolvePatientEmailLinkBase(orgId);
   if (!baseUrl) {
-    log?.warn?.({ orgId }, "review-request dispatch skipped (no tenant domain)");
+    log?.warn?.(
+      { orgId },
+      "review-request dispatch skipped (no tenant domain)",
+    );
     return { ...ZERO, scanned: claimed.length, skippedFailed: claimed.length };
   }
 

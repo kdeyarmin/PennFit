@@ -137,7 +137,11 @@ function fireAssignmentEmail(args: {
         },
         "appointment-assigned email skipped (no tenant domain)",
       );
-      return { configured: true, delivered: false, error: "tenant_domain_required" };
+      return {
+        configured: true,
+        delivered: false,
+        error: "tenant_domain_required",
+      };
     }
     return sendAppointmentAssignedEmail({
       toEmail: args.assignee.email,
