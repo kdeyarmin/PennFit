@@ -537,14 +537,14 @@ export function composeTouchpoint(opts: {
         `Yesterday you ran our at-home fitting and we matched you to ${maskRef}.`,
         "Your measurements are saved — no need to redo them.",
         "",
-        `Pick up where you left off: ${resumeUrl}`,
+        `Continue your fitting: ${resumeUrl}`,
         "",
         "Most patients we work with notice deeper sleep in the first week.",
         "Reply to this email if you have a question — a real human reads it.",
       ].join("\n");
       const bodyHtml = `
         <p>Yesterday you ran our at-home fitting and we matched you to <strong>${maskRefHtml}</strong>. Your measurements are saved — no need to redo them.</p>
-        ${renderCtaButton("Pick up where you left off", ctaHref("results", resumeUrl))}
+        ${renderCtaButton("Continue your fitting", ctaHref("results", resumeUrl))}
         <p style="color:${MUTED};font-size:14px;">Most patients we work with notice deeper sleep in the first week. Reply to this email if you have a question — a real human reads it.</p>`;
       return {
         email: buildEmail(subject, preheader, bodyHtml, bodyText),
@@ -555,7 +555,7 @@ export function composeTouchpoint(opts: {
       // T2 — day 3: social proof, with a concrete number. "9 in 10"
       // is the strongest comprehensible fraction at glance speed.
       const subject = `${nameSubjectPrefix}9 in 10 patients with your fit choose this`;
-      const preheader = `Plus our 30-night comfort guarantee — if it doesn't fit, we swap it free.`;
+      const preheader = `Plus our 60-day comfort guarantee — if it doesn't fit, we swap it free.`;
       const bodyText = [
         `${maskRef} is the most-chosen mask for patients whose measurements line up with yours.`,
         "Patients tell us, every week:",
@@ -563,7 +563,7 @@ export function composeTouchpoint(opts: {
         "  • Comfortable for side and stomach sleepers",
         "  • Easy to clean in under a minute",
         "",
-        "Pair it with our 30-night comfort guarantee — if it doesn't feel right, we swap it for free.",
+        "Pair it with our 60-day comfort guarantee — if it doesn't feel right, we swap it for free.",
         "",
         `Take another look: ${resumeUrl}`,
       ].join("\n");
@@ -575,11 +575,11 @@ export function composeTouchpoint(opts: {
           <li>Comfortable for side and stomach sleepers</li>
           <li>Easy to clean in under a minute</li>
         </ul>
-        <p>Pair it with our <strong>30-night comfort guarantee</strong> — if it doesn&apos;t feel right, we swap it for free.</p>
+        <p>Pair it with our <strong>60-day comfort guarantee</strong> — if it doesn&apos;t feel right, we swap it for free.</p>
         ${renderCtaButton("Take another look", ctaHref("results", resumeUrl))}`;
       return {
         email: buildEmail(subject, preheader, bodyHtml, bodyText),
-        sms: `${smsNamePrefix}${practiceName}: ${maskRef} — 30-night swap-for-free guarantee. ${resumeUrl} STOP to opt out.`,
+        sms: `${smsNamePrefix}${practiceName}: ${maskRef} — 60-day swap-for-free guarantee. ${resumeUrl} STOP to opt out.`,
       };
     }
     case 3: {
@@ -604,31 +604,26 @@ export function composeTouchpoint(opts: {
     }
     case 4: {
       // T4 — day 14: invite back to the fitting / insurance request.
-      // Mig 0157 ships two A/B subject variants (promo-code-era labels
-      // kept only as experiment keys — copy no longer sells a checkout
-      // discount code).
-      const promo = process.env.FITTER_SUPPLY_CAMPAIGN_PROMO ?? "WELCOME15";
+      // Mig 0157 A/B subject variants keep historical experiment keys
+      // but patient copy must not surface discount-style promo codes.
       const subject =
         subjectVariantKey === "B"
           ? `${nameSubjectPrefix}${maskRef} fit is still saved — ends in 7 days`
-          : `${nameSubjectPrefix}${promo}: ${maskRef} fit is waiting`;
+          : `${nameSubjectPrefix}${maskRef} fit is waiting — reply to finish`;
       const preheader = `One follow-up. Reply and we'll finish through insurance.`;
       const bodyText = [
         `Your fitting for ${maskRef} is still on file.`,
         "Self-service checkout is off — reply to this email or contact us and we'll confirm coverage and place the order through insurance.",
         "",
         `Contact us: ${shopUrl}`,
-        "",
-        `Mention ${promo} so we prioritize your request. Works for ${maskRef} or a different mask from your fit.`,
       ].join("\n");
       const bodyHtml = `
         <p style="font-size:22px;line-height:1.3;margin:0 0 12px 0;"><strong style="color:${BRAND_NAVY};">Your fit is still waiting</strong></p>
         <p>Your fitting for <strong>${maskRefHtml}</strong> is still on file. Self-service checkout is off — reply or contact us and we&apos;ll confirm coverage and place the order through insurance.</p>
-        ${renderCtaButton(`Request ${recommendedMaskName ?? "your mask"}`, ctaHref("promo", shopUrl))}
-        <p style="color:${MUTED};font-size:13px;">Mention <code style="background:#fef3c7;padding:2px 8px;border-radius:4px;">${escapeHtml(promo)}</code> so we prioritize your request. Works for ${maskRefHtml} or a different mask from your fit.</p>`;
+        ${renderCtaButton(`Request ${recommendedMaskName ?? "your mask"}`, ctaHref("promo", shopUrl))}`;
       return {
         email: buildEmail(subject, preheader, bodyHtml, bodyText),
-        sms: `${smsNamePrefix}${practiceName}: ${promo} — ${maskRef} fit saved. Reply to finish. ${shopUrl} STOP to opt out.`,
+        sms: `${smsNamePrefix}${practiceName}: ${maskRef} fit saved. Reply to finish. ${shopUrl} STOP to opt out.`,
       };
     }
     case 5: {
@@ -813,13 +808,12 @@ export function composeTouchpoint(opts: {
       // fitting most patients have forgotten they ever ran the
       // tool; an SMS reads as cold-spam where the email reads as
       // a courtesy.
-      const promo = process.env.FITTER_FINAL_CALL_PROMO ?? "LAST20";
       const subject = `${nameSubjectPrefix}We're closing your ${recommendedMaskName ?? "fitting"} — last chance`;
       const preheader = `Reply this week and we'll finish through insurance. After this we won't email again about your fitting.`;
       const bodyText = [
         `It's been a few months since you ran our at-home fitting and matched to ${maskRef}. We're cleaning up our records this week.`,
         "",
-        `Before we close your fitting: reply to this email or contact us (${shopUrl}) and we'll confirm coverage and place the order through insurance. Reference ${promo} so we prioritize your request — valid 14 days.`,
+        `Before we close your fitting: reply to this email or contact us (${shopUrl}) and we'll confirm coverage and place the order through insurance — valid 14 days.`,
         "",
         "After this email we won't reach out about this fitting again. Your measurements stay on file for 12 months in case you change your mind, but we'll stop showing up in your inbox.",
         "",
@@ -828,7 +822,7 @@ export function composeTouchpoint(opts: {
       const bodyHtml = `
         <p>It&apos;s been a few months since you ran our at-home fitting and matched to <strong>${maskRefHtml}</strong>. We&apos;re cleaning up our records this week.</p>
         <p style="font-size:20px;line-height:1.3;margin:18px 0 12px 0;"><strong style="color:${BRAND_NAVY};">Last chance to finish through insurance</strong></p>
-        <p>Before we close your fitting: reply or contact us and we&apos;ll confirm coverage and place the order through insurance. Mention <code style="background:#fef3c7;padding:4px 10px;border-radius:4px;font-size:16px;font-weight:600;letter-spacing:0.5px;">${escapeHtml(promo)}</code> so we prioritize your request — <strong>valid 14 days</strong>.</p>
+        <p>Before we close your fitting: reply or contact us and we&apos;ll confirm coverage and place the order through insurance — <strong>valid 14 days</strong>.</p>
         ${renderCtaButton("Contact us to finish", ctaHref("promo", shopUrl))}
         <p style="color:${MUTED};font-size:14px;">After this email we won&apos;t reach out about this fitting again. Your measurements stay on file for 12 months in case you change your mind, but we&apos;ll stop showing up in your inbox.</p>
         <p style="color:${MUTED};font-size:14px;">Reply to this email if you have a question — we read every reply.</p>`;
@@ -960,7 +954,7 @@ async function fitterSupplyCampaignSweepForOrg(
   const baseUrl = publicBaseUrl(
     (await resolveTenantBaseUrl(orgId)) ?? undefined,
   );
-  const resumeUrl = `${baseUrl}/results`;
+  const resumeUrl = `${baseUrl}/consent`;
   const shopUrl = `${baseUrl}/contact`;
   // Tracking + unsubscribe are API routes mounted under /resupply-api.
   // Bare /shop/* hits the SPA LegacyShopRedirect and never reaches the
@@ -1241,7 +1235,9 @@ async function fitterSupplyCampaignSweepForOrg(
           // particular CTA" through.
           switch (linkKey) {
             case "results":
-              return `${baseUrl}/results`;
+              // Cold email clicks have no browser fit session — /results
+              // bounces. Land on /consent so the patient can continue.
+              return `${baseUrl}/consent`;
             case "shop":
             case "refer":
               return `${baseUrl}/contact`;

@@ -270,8 +270,8 @@ export function Home() {
                     Your account
                   </h3>
                   <p className="text-sm text-muted-foreground leading-relaxed">
-                    Track resupply shipments, update insurance details, and see
-                    past orders in one place.
+                    Track resupply, update insurance details, message your care
+                    team, and manage reminders in one place.
                   </p>
                 </div>
               </div>

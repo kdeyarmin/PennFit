@@ -786,7 +786,10 @@ async function recordOpenEvent(
  *  patient path — keys keep their historical names so in-flight
  *  click tokens still verify, but they resolve to living surfaces. */
 const CTA_DESTINATIONS: Record<string, (baseUrl: string) => string> = {
-  results: (b) => `${b}/results`,
+  // Cold campaign clicks have no browser fit session — /results
+  // bounces to consent/invite. Land on /consent so the patient can
+  // continue the live funnel.
+  results: (b) => `${b}/consent`,
   shop: (b) => `${b}/contact`,
   subscribe: (b) => `${b}/reminders`,
   refer: (b) => `${b}/contact`,

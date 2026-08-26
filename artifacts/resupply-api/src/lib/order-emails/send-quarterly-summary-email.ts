@@ -3,18 +3,16 @@
 //
 // Why
 // ---
-// /shop/me/quarterly-summary already renders the full HTML rollup —
-// nights recorded, average usage hours, Medicare-style compliance
-// percent, average AHI, average leak rate. The endpoint is pull-only:
-// the patient has to navigate to /account and click into it, which
-// almost nobody does proactively. This helper fires the rollup as
-// an email every ~90 days so it lands in the inbox at the cadence
-// payers ask for it.
+// The numbers live in this email (nights recorded, average usage,
+// Medicare-style compliance percent, average AHI, average leak). The
+// account therapy tab is pull-only — almost nobody navigates there
+// proactively — so this helper fires the rollup every ~90 days at the
+// cadence payers ask for it.
 //
 // Email body shows the headline numbers inline (so the patient can
-// see them without clicking) plus a "view the full version" CTA
-// into /shop/me/quarterly-summary for the printer-friendly HTML
-// they can save to PDF and send to their MD.
+// see them without clicking) plus a CTA to /account#therapy. Do NOT
+// deep-link the auth-gated JSON route /shop/me/quarterly-summary —
+// it returns 401 without a session cookie.
 //
 // Marketing posture
 // -----------------
@@ -117,7 +115,11 @@ export async function sendQuarterlySummaryEmail(
       (await resolveTenantBaseUrl(input.orgId)) ??
       undefined,
   );
-  const fullSummaryUrl = `${base}/resupply-api/shop/me/quarterly-summary`;
+  // Summary numbers are already in this email. The CTA opens therapy
+  // (auth-gated account tab) — do NOT link /resupply-api/shop/me/…
+  // which returns JSON 401 without a session cookie and confuses
+  // patients who click from their inbox.
+  const therapyUrl = `${base}/account#therapy`;
   const accountUrl = `${base}/account`;
   const greeting = input.firstName
     ? `Hi ${escapeHtml(input.firstName)},`
@@ -140,7 +142,7 @@ export async function sendQuarterlySummaryEmail(
     `Avg AHI:            ${fmtOptNum(f.avgAhi)}`,
     `Avg leak rate:      ${fmtOptNum(f.avgLeakLMin)} L/min`,
     "",
-    `Print-friendly version (HTML, save to PDF in your browser): ${fullSummaryUrl}`,
+    `View therapy details in your account: ${therapyUrl}`,
     `Manage these emails: ${accountUrl}#comm-prefs`,
     "",
     `—The ${brandName} team`,
@@ -172,10 +174,10 @@ export async function sendQuarterlySummaryEmail(
         { label: "Avg leak rate", value: `${fmtOptNum(f.avgLeakLMin)} L/min` },
       ]),
       textParagraph(
-        "For the printer-friendly version you can save to PDF and email to your physician:",
+        "Save this email to PDF (or screenshot the numbers) and forward it to your physician when they ask for a 90-day rollup.",
       ),
     ].join("\n"),
-    button: { label: "Open the full summary", url: fullSummaryUrl },
+    button: { label: "Open therapy in your account", url: therapyUrl },
     footerHtml: `<a href="${escapeHtml(accountUrl)}#comm-prefs" style="color:${BREATHE_COLORS.blue};text-decoration:underline;">Manage these emails</a>`,
     footerLines: [`The ${brandName} team`],
     copyrightName: brandName,

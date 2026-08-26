@@ -150,11 +150,10 @@ export function ComfortGuaranteePage() {
             </div>
             <ul className="text-sm text-muted-foreground space-y-2 list-disc pl-5">
               <li>
-                Mask systems (frame + cushion + headgear) bought from{" "}
-                {contact.name}.
+                Mask systems (frame + cushion + headgear) we supplied to you.
               </li>
-              <li>Mask cushions purchased on their own.</li>
-              <li>Headgear and frames purchased on their own.</li>
+              <li>Mask cushions dispensed on their own.</li>
+              <li>Headgear and frames dispensed on their own.</li>
               <li>One swap per order (size, style, or different family).</li>
             </ul>
           </article>
@@ -168,7 +167,7 @@ export function ComfortGuaranteePage() {
                 Disposable supplies — filters, tubing, water chambers (hygiene).
               </li>
               <li>CPAP machines (covered by the manufacturer warranty).</li>
-              <li>Returns started after 60 days from payment.</li>
+              <li>Returns started after 60 days from delivery.</li>
               <li>Items missing original parts (frame, clips, headgear).</li>
             </ul>
           </article>

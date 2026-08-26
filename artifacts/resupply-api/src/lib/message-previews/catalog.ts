@@ -259,9 +259,11 @@ function fromSeed(
 export function buildMessagePreviews(brand: PreviewBrand): MessagePreview[] {
   const { brandName, baseUrl } = brand;
   const first = SAMPLE.firstName;
-  const confirmUrl = `${baseUrl}/r/c/demo-signed-token`;
-  const editUrl = `${baseUrl}/r/e/demo-signed-token`;
-  const stopUrl = `${baseUrl}/r/s/demo-signed-token`;
+  // Live reminder emails mint HMAC tokens on /resupply-api/email/click
+  // — the short /r/c|/r/e|/r/s paths were never routed.
+  const confirmUrl = `${baseUrl}/resupply-api/email/click?t=demo-signed-token-confirm`;
+  const editUrl = `${baseUrl}/resupply-api/email/click?t=demo-signed-token-edit`;
+  const stopUrl = `${baseUrl}/resupply-api/email/click?t=demo-signed-token-stop`;
 
   const out: MessagePreview[] = [];
 
@@ -511,7 +513,7 @@ export function buildMessagePreviews(brand: PreviewBrand): MessagePreview[] {
   // (The `appointment.assigned.email` seed is deliberately NOT here — it
   // goes to a STAFF member about their own calendar, not to a patient.)
   const visitWhen = SAMPLE.appointmentAt;
-  const visitLink = `${baseUrl}/v/demo-signed-token`;
+  const visitLink = `${baseUrl}/video-visit?token=demo-signed-token`;
   out.push({
     id: "clinical.video_visit",
     group: "clinical",

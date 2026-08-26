@@ -27,7 +27,7 @@ const SRC = readFileSync(
 
 const BASE_OPTS = {
   practiceName: "Penn Home Medical Supply",
-  resumeUrl: "https://example.test/results",
+  resumeUrl: "https://example.test/consent",
   shopUrl: "https://example.test/contact",
   recommendedMaskName: "ResMed AirFit P30i",
   recommendedMaskType: "nasalPillow",
@@ -66,12 +66,14 @@ describe("composeTouchpoint — pre-purchase phase (T1-T6)", () => {
     expect(out.email.text).toContain("December");
   });
 
-  it("T4 includes the promo code in subject, body, and SMS", () => {
+  it("T4 invites insurance finish without a discount-style promo code", () => {
     const out = composeTouchpoint({ ...BASE_OPTS, touchIndex: 4 });
-    expect(out.email.subject).toContain("WELCOME15");
-    expect(out.email.text).toContain("WELCOME15");
-    expect(out.email.html).toContain("WELCOME15");
-    expect(out.sms).toContain("WELCOME15");
+    expect(out.email.subject.toLowerCase()).toContain("fit is waiting");
+    expect(out.email.text.toLowerCase()).toContain("through insurance");
+    expect(out.email.text).toContain(BASE_OPTS.shopUrl);
+    expect(out.email.text).not.toContain("WELCOME15");
+    expect(out.email.html).not.toContain("WELCOME15");
+    expect(out.sms).not.toContain("WELCOME15");
   });
 
   it("escapes HTML special characters in the practice name", () => {
@@ -376,16 +378,16 @@ describe("composeTouchpoint — universal invariants", () => {
     }
   });
 
-  it("re-order touches (T7-T10) all link to contact or results", () => {
+  it("re-order touches (T7-T10) all link to contact or consent", () => {
     for (const i of REORDER) {
       const out = composeTouchpoint({ ...BASE_OPTS, touchIndex: i });
-      // T10 links to /results (refresh fitting); T7-T9 link to /contact.
+      // T10 refresh may use resumeUrl (/consent); T7-T9 link to /contact.
       const linksToLivingSurface =
         out.email.text.includes(BASE_OPTS.shopUrl) ||
         out.email.text.includes(BASE_OPTS.resumeUrl);
       expect(
         linksToLivingSurface,
-        `touch ${i} should link to /contact or /results`,
+        `touch ${i} should link to /contact or /consent`,
       ).toBe(true);
     }
   });
@@ -415,12 +417,12 @@ describe("composeTouchpoint — T10 refer-a-friend + T11 final call", () => {
     expect(out.email.text.toLowerCase()).not.toContain("$25 off");
   });
 
-  it("T11 (final call) prioritizes insurance finish + LAST20 code", () => {
+  it("T11 (final call) prioritizes insurance finish without a promo code", () => {
     const out = composeTouchpoint({ ...BASE_OPTS, touchIndex: 11 });
     expect(out.email.subject.toLowerCase()).toContain("last chance");
     expect(out.email.text.toLowerCase()).toContain("through insurance");
-    expect(out.email.text).toContain("LAST20");
-    expect(out.email.html).toContain("LAST20");
+    expect(out.email.text).not.toContain("LAST20");
+    expect(out.email.html).not.toContain("LAST20");
     expect(out.email.text.toLowerCase()).not.toContain("20% off");
   });
 
@@ -452,7 +454,7 @@ describe("composeTouchpoint — click tracking", () => {
     expect(out.email.html).toContain("/shop/track/c?t=TOK&k=results");
     // Plain text never uses the wrapped URL — only the bare URL.
     expect(out.email.text).not.toContain("/shop/track/c");
-    expect(out.email.text).toContain("https://example.test/results");
+    expect(out.email.text).toContain("https://example.test/consent");
   });
 
   it("routes the T4 promo CTA through the promo link_key", () => {
@@ -486,7 +488,7 @@ describe("composeTouchpoint — click tracking", () => {
   it("uses bare URLs when wrapCta is not provided (test seam)", () => {
     const out = composeTouchpoint({ ...BASE_OPTS, touchIndex: 1 });
     expect(out.email.html).not.toContain("/shop/track/c");
-    expect(out.email.html).toContain("https://example.test/results");
+    expect(out.email.html).toContain("https://example.test/consent");
   });
 });
 
@@ -539,19 +541,17 @@ describe("composeTouchpoint — subject-line A/B variants (mig 0157)", () => {
     expect(out.email.subject).not.toContain("is on hold");
   });
 
-  it("T4 variant A leads with the promo code as the curiosity hook", () => {
+  it("T4 variant A leads with fit-waiting urgency (no promo code)", () => {
     const out = composeTouchpoint({
       ...BASE_OPTS,
       touchIndex: 4,
       subjectVariantKey: "A",
     });
-    // Promo-code-first format starts with "WELCOME15:" (cash-pay % off
-    // retired — code is now a priority reference for insurance finish).
-    expect(out.email.subject).toMatch(/^WELCOME15:/);
     expect(out.email.subject.toLowerCase()).toContain("fit is waiting");
+    expect(out.email.subject).not.toContain("WELCOME15");
   });
 
-  it("T4 variant B leads with urgency, not the promo code", () => {
+  it("T4 variant B leads with urgency, not a promo code", () => {
     const out = composeTouchpoint({
       ...BASE_OPTS,
       touchIndex: 4,
@@ -559,7 +559,7 @@ describe("composeTouchpoint — subject-line A/B variants (mig 0157)", () => {
     });
     expect(out.email.subject.toLowerCase()).toContain("still saved");
     expect(out.email.subject).toContain("ends in 7 days");
-    expect(out.email.subject).not.toMatch(/^[^,]*WELCOME15/);
+    expect(out.email.subject).not.toContain("WELCOME15");
   });
 
   it("body copy stays constant across variants — only the subject varies", () => {

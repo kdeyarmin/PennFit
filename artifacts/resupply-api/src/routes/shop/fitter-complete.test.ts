@@ -712,7 +712,7 @@ describe("GET /shop/track/c — click tracking redirect", () => {
 
   it("routes each link_key to its own allowlisted destination", async () => {
     const cases: Array<[string, string]> = [
-      ["results", "/results"],
+      ["results", "/consent"],
       ["shop", "/contact"],
       ["subscribe", "/reminders"],
       ["refer", "/contact"],

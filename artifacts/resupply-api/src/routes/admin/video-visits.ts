@@ -40,7 +40,10 @@ import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import { readSmsConfigOrNull } from "../../lib/messaging/messaging-config";
 import { resolveTenantSmsClientOptions } from "../../lib/messaging/tenant-telecom";
-import { resolveBrandingByOrgId } from "../../lib/tenant-branding.js";
+import {
+  resolveBrandingByOrgId,
+  resolveTenantBaseUrl,
+} from "../../lib/tenant-branding.js";
 import { resolveIceServers } from "../../lib/video/ice-servers";
 import { signVideoVisitToken } from "../../lib/video/video-visit-token";
 import {
@@ -70,11 +73,12 @@ const inviteLimiter = expressRateLimit({
   },
 });
 
-/** Public origin patient join links are built against. Mirrors the
- *  helper in patient-payment-link.ts so staff-originated links are
- *  consistent across features. */
-function publicBaseUrl(): string {
+/** Public origin patient join links are built against. Prefer the
+ *  tenant's verified custom domain so invites land on the tenant host
+ *  (e.g. pennpaps.com), not the platform Railway / cmbreathe fallback. */
+function publicBaseUrl(override?: string): string {
   return (
+    override ??
     process.env.SHOP_PUBLIC_BASE_URL ??
     process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL ??
     (process.env.RAILWAY_PUBLIC_DOMAIN
@@ -83,9 +87,14 @@ function publicBaseUrl(): string {
   ).replace(/\/$/, "");
 }
 
-function patientJoinUrl(visitId: string, linkVersion: number): string {
+async function patientJoinUrl(
+  orgId: string,
+  visitId: string,
+  linkVersion: number,
+): Promise<string> {
+  const base = publicBaseUrl((await resolveTenantBaseUrl(orgId)) ?? undefined);
   const token = signVideoVisitToken(visitId, "patient", linkVersion);
-  return `${publicBaseUrl()}/video-visit?token=${encodeURIComponent(token)}`;
+  return `${base}/video-visit?token=${encodeURIComponent(token)}`;
 }
 
 /** Twilio delivery status callback for an invite SMS. The visit id
@@ -416,7 +425,7 @@ async function createVisitAndRespond(
   if (insertErr) throw insertErr;
   const visit = created as unknown as VisitListRow;
 
-  const joinUrl = patientJoinUrl(visit.id, visit.link_version);
+  const joinUrl = await patientJoinUrl(orgId, visit.id, visit.link_version);
 
   const greetingName =
     subject.kind === "patient"
@@ -731,7 +740,7 @@ router.post(
       return;
     }
 
-    const joinUrl = patientJoinUrl(visit.id, visit.link_version);
+    const joinUrl = await patientJoinUrl(orgId, visit.id, visit.link_version);
     const delivery = await deliverInvite({
       visitId: visit.id,
       channel: body.channel,
@@ -836,7 +845,7 @@ router.post(
       staffToken,
       wsPath: VIDEO_SIGNAL_WS_PATH,
       iceServers: await resolveIceServers(),
-      patientJoinUrl: patientJoinUrl(visit.id, visit.link_version),
+      patientJoinUrl: await patientJoinUrl(orgId, visit.id, visit.link_version),
     });
   },
 );
