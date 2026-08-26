@@ -603,6 +603,7 @@ router.post(
       // customer_id.
       supabase: supabase.raw(),
       customerId,
+      orgId,
       // Non-PHI label used only by escalate_to_human to tag the
       // CSR-inbox notification — same label the admin inbox already shows.
       customerDisplayName: req.shopCustomerDisplayName ?? null,

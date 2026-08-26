@@ -296,6 +296,8 @@ const RECENT_ORDERS_DEFAULT_LIMIT = 5;
 export interface CustomerChatToolContext {
   supabase: ResupplySupabaseClient;
   customerId: string;
+  /** Owning tenant — used when filing CSR-inbox notifications. */
+  orgId: string;
   /**
    * Display name + email of the signed-in caller. Used only by
    * `escalate_to_human` to label the CSR-inbox notification (the same
@@ -636,6 +638,7 @@ async function executeEscalateToHuman(
     threadCreated: result.threadCreated,
     customerEmail: ctx.customerEmail ?? null,
     customerDisplayName: ctx.customerDisplayName ?? null,
+    orgId: ctx.orgId,
     source: "chatbot",
     assistantName,
   }).catch((err) => {

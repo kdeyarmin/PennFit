@@ -182,6 +182,7 @@ router.post("/shop/me/messages", requireSignedIn, async (req, res) => {
     threadCreated: result.threadCreated,
     customerEmail: req.shopCustomerEmail ?? null,
     customerDisplayName: req.shopCustomerDisplayName ?? null,
+    orgId,
     source: "customer",
   }).catch((err) => {
     logger.warn(

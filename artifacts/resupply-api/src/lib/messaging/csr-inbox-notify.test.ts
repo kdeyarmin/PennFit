@@ -15,13 +15,23 @@ vi.mock("@workspace/resupply-email", async () => {
   };
 });
 
+vi.mock("../tenant-branding.js", () => ({
+  resolveTenantLinkBaseUrl: vi.fn(
+    async (_orgId: string, platform: string) => `https://tenant.example`,
+  ),
+}));
+
 import { DEFAULT_STOREFRONT_ASSISTANT_NAME } from "../company-info.js";
+import { resolveTenantLinkBaseUrl } from "../tenant-branding.js";
 import { notifyCsrInboxOfCustomerMessage } from "./csr-inbox-notify.js";
 
 beforeEach(() => {
   sendEmailMock.mockClear();
   process.env["SHOP_CSR_INBOX_EMAIL"] = "csr@example.com";
   delete process.env["SHOP_PUBLIC_BASE_URL"];
+  vi.mocked(resolveTenantLinkBaseUrl).mockResolvedValue(
+    "https://tenant.example",
+  );
 });
 
 afterEach(() => {
@@ -36,6 +46,7 @@ describe("notifyCsrInboxOfCustomerMessage", () => {
       threadCreated: true,
       customerEmail: "pat@example.com",
       customerDisplayName: "Pat",
+      orgId: "org_1",
       source: "chatbot",
     });
     expect(sendEmailMock).toHaveBeenCalledTimes(1);
@@ -52,11 +63,37 @@ describe("notifyCsrInboxOfCustomerMessage", () => {
       threadCreated: false,
       customerEmail: "pat@example.com",
       customerDisplayName: "Pat",
+      orgId: "org_1",
       source: "chatbot",
       assistantName: "Acme Assistant",
     });
     const payload = sendEmailMock.mock.calls[0]![0] as { subject: string };
     expect(payload.subject).toContain("(via Acme Assistant)");
     expect(payload.subject).not.toContain(DEFAULT_STOREFRONT_ASSISTANT_NAME);
+  });
+
+  it("builds the admin deep link from the tenant-resolved base URL", async () => {
+    await notifyCsrInboxOfCustomerMessage({
+      threadId: "conv_42",
+      threadCreated: true,
+      customerEmail: "pat@example.com",
+      customerDisplayName: "Pat",
+      orgId: "org_penn",
+      source: "customer",
+    });
+    const payload = sendEmailMock.mock.calls[0]![0] as {
+      text: string;
+      html: string;
+    };
+    expect(payload.text).toContain(
+      "https://tenant.example/admin/conversations/conv_42",
+    );
+    expect(payload.html).toContain(
+      'href="https://tenant.example/admin/conversations/conv_42"',
+    );
+    expect(resolveTenantLinkBaseUrl).toHaveBeenCalledWith(
+      "org_penn",
+      expect.any(String),
+    );
   });
 });
