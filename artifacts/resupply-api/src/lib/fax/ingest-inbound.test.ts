@@ -24,7 +24,8 @@ installSupabaseMock();
 
 const { resolveOrgIdByFaxNumberMock } = vi.hoisted(() => ({
   resolveOrgIdByFaxNumberMock: vi.fn(
-    async (_to?: string) => "00000000-0000-4000-8000-000000000000",
+    async (_to?: string): Promise<string | null> =>
+      "00000000-0000-4000-8000-000000000000",
   ),
 }));
 vi.mock("../messaging/tenant-telecom", () => ({
