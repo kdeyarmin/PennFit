@@ -63,7 +63,7 @@ function readRedirect(): string {
   if (!raw || !raw.startsWith("/") || raw.startsWith("//")) return "/account";
   const pathOnly = raw.split(/[?#]/)[0];
   if (pathOnly === "/sign-in" || pathOnly === "/sign-up") return "/account";
-  // Legacy cash-pay shop deep links — insurance-only storefront now.
+  // Legacy shop deep links — insurance-only storefront now.
   if (pathOnly.startsWith("/shop/")) return "/insurance";
   return raw;
 }
