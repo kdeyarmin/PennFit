@@ -1,5 +1,5 @@
 // Tenant-aware From override for the lib/resupply-reminders email helpers
-// (G6 Phase 2).
+// (G6 Phase 2), plus patient click-link base URL (tenant custom domain).
 //
 // `sendReminderEmail` / `replyInConversation` live in lib/resupply-reminders
 // and CANNOT import @workspace/resupply-api (monorepo layering — libs must
@@ -14,13 +14,22 @@
 // place — the config's existing `sendgridFromEmail` / `sendgridFromName`
 // (which come from `SENDGRID_FROM_EMAIL` / `SENDGRID_FROM_NAME`) are
 // preserved untouched.
+//
+// When `cfg` also carries `publicBaseUrl` (confirm/edit/stop click links),
+// prefer the tenant's verified custom domain so Penn patients land on
+// pennpaps.com rather than cmbreathe.com / Railway. Do NOT apply this to
+// SMS configs — Twilio status-callback signatures must stay on the
+// platform host.
 
+import { resolveTenantBaseUrl } from "../tenant-branding";
 import { resolveTenantSender } from "./tenant-sender";
 
 /** The subset of EmailSendConfig this helper rewrites. */
 interface EmailFromConfig {
   sendgridFromEmail: string;
   sendgridFromName: string;
+  /** Optional — patient email click links only. */
+  publicBaseUrl?: string;
 }
 
 /**
@@ -29,19 +38,34 @@ interface EmailFromConfig {
  * tenant has one configured. When the tenant has no override (or on any
  * lookup error) the platform-default From already on `cfg` is preserved,
  * so single-tenant behavior is unchanged.
+ *
+ * Also rewrites `publicBaseUrl` to the tenant custom domain when present
+ * on `cfg` and `resolveTenantBaseUrl` returns one.
  */
 export async function applyTenantEmailSender<T extends EmailFromConfig>(
   orgId: string | undefined,
   cfg: T,
 ): Promise<T> {
+  let next: T = cfg;
   const sender = await resolveTenantSender(orgId);
-  if (!sender.fromEmail) return cfg;
-  return {
-    ...cfg,
-    sendgridFromEmail: sender.fromEmail,
-    // resolveTenantSender pins a (possibly empty) fromName whenever it
-    // returns an address, so a non-Penn tenant never inherits the seed
-    // tenant's "Penn Home Medical Supply" display name.
-    sendgridFromName: sender.fromName ?? "",
-  };
+  if (sender.fromEmail) {
+    next = {
+      ...next,
+      sendgridFromEmail: sender.fromEmail,
+      // resolveTenantSender pins a (possibly empty) fromName whenever it
+      // returns an address, so a non-Penn tenant never inherits the seed
+      // tenant's "Penn Home Medical Supply" display name.
+      sendgridFromName: sender.fromName ?? "",
+    };
+  }
+  if (orgId && typeof next.publicBaseUrl === "string") {
+    const tenantBase = await resolveTenantBaseUrl(orgId);
+    if (tenantBase) {
+      next = {
+        ...next,
+        publicBaseUrl: tenantBase.replace(/\/$/, ""),
+      };
+    }
+  }
+  return next;
 }

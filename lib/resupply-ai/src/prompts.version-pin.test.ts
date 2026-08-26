@@ -195,6 +195,11 @@ const PROMPT_VERSION_HASHES: Readonly<Record<string, string>> = {
   // (insurance-only). PATIENT render is byte-for-byte unchanged from v18.
   "2026-08-26.v25":
     "8d7fb4c7ff77bb8e7b7aa65a2b2db91973b2de48b3096a2c2b243170b225cff0",
+  // v26 drops patient auto-ship / paid-subscription handoff language from the
+  // PATIENT goal clause and scrubbed get_customer_chart tool copy so the
+  // voice agent never invents a cash-pay subscription path.
+  "2026-08-26.v26":
+    "23b0bc863cc0debd35a018c1a907cc217a5baf717f28f4d90178710f3a0ce38e",
 };
 
 function renderCanonicalPrompt(): string {
@@ -221,7 +226,7 @@ function hashStrippingVersionLine(prompt: string, version: string): string {
  * Update the same way: render, take the printed hash, record it here.
  */
 const SHOP_PROMPT_HASH =
-  "e6f012d1e579549c774538645e0cc451e7c686cd8ab0c542b7ff9efbf744e371";
+  "48690b40cb3f19ee5d65750cc9e4c42f6fc685c888747aa624b3d5e9f835800e";
 
 /**
  * The CareMetric Breathe sales (breathe_prospect) variant renders its own

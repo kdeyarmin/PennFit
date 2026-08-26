@@ -531,12 +531,14 @@ export function Layout({ children }: { children: React.ReactNode }) {
                     </Link>
                   </li>
                   {/*
-                    /consent is the in-flow data-use consent screen for camera /
-                    biometric processing, distinct from the Terms of Service.
+                    Camera / biometric data-use lives on the Privacy Policy.
+                    /consent is the fitter lead-capture gate — keep it off
+                    the Legal footer so a legal-nav click does not start
+                    the mask fitting flow.
                   */}
                   <li>
                     <Link
-                      href="/consent"
+                      href="/privacy"
                       className="text-muted-foreground hover:text-primary transition-colors"
                     >
                       Data Use &amp; Consent
