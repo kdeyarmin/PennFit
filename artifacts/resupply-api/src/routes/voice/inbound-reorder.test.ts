@@ -591,9 +591,9 @@ describe("POST /voice/inbound-reorder — storefront caller resolution", () => {
       "voice_reorder_sessions",
       "update",
     ) as Array<Record<string, unknown>>;
-    expect(sessionUpdates.some((u) => u.status === "transferred_to_human")).toBe(
-      true,
-    );
+    expect(
+      sessionUpdates.some((u) => u.status === "transferred_to_human"),
+    ).toBe(true);
   });
 
   it("returns a 500 hangup when caller resolution hits a DB error (no silent mis-route)", async () => {
