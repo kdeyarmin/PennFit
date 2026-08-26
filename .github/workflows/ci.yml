@@ -1,5 +1,7 @@
 name: CI
 
+# Nudge 2026-08-26e: HEAD 6549478bc+ still missing full CI (stuck queued
+# run 32984456339 + dropped synchronize). Touch workflow to re-register.
 # Nudge 2026-08-26d: force pull_request synchronize for current HEAD.
 
 # Retrigger registration for PR #1330 after missed pull_request events.
