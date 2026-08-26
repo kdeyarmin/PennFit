@@ -59,7 +59,7 @@ export async function postCustomerChatMessage(
   if (res.status === 401) {
     return {
       reply:
-        "Please sign in again so I can look up your orders and subscriptions.",
+        "Please sign in again so I can look up your therapy and supplies.",
       unauthorized: true,
     };
   }
@@ -135,7 +135,7 @@ export async function streamCustomerChatMessage(
 
   if (res.status === 401) {
     onChunk(
-      "Please sign in again so I can look up your orders and subscriptions.",
+      "Please sign in again so I can look up your therapy and supplies.",
     );
     return { unauthorized: true };
   }

@@ -171,6 +171,14 @@ describe("renderPatientPortalInviteEmail", () => {
     ).toContain("expires in 2 days");
   });
 
+  it("describes the portal without promising an in-account order list", () => {
+    const r = renderPatientPortalInviteEmail(ctx, args);
+    expect(r.html).toContain("track shipments");
+    expect(r.text).toContain("track shipments");
+    expect(r.html).not.toContain("view your orders");
+    expect(r.text).not.toContain("view your orders");
+  });
+
   it("lists the attached guide and omits the section when absent", () => {
     const r = renderPatientPortalInviteEmail(ctx, args);
     expect(r.html).toContain(

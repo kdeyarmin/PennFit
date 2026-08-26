@@ -241,14 +241,14 @@ ${files.map((f) => `  * ${f}`).join("\n")}
       preheader: `Your care team invited you to your ${ctx.productName} patient portal.`,
       button: { label: "Create your password", url: link },
       bodyHtml: `<p style="margin:0 0 16px;color:#334155;font-size:16px;line-height:1.6;">${greetingHtml}</p>
-<p style="margin:0 0 16px;color:#334155;font-size:16px;line-height:1.6;">Your care team has invited you to set up your <strong>${safeName}</strong> patient portal, where you can manage your CPAP supplies, view your orders, and upload insurance documents.</p>
+<p style="margin:0 0 16px;color:#334155;font-size:16px;line-height:1.6;">Your care team has invited you to set up your <strong>${safeName}</strong> patient portal, where you can manage your CPAP supplies, track shipments, and upload insurance documents.</p>
 <p style="margin:0 0 16px;color:#334155;font-size:16px;line-height:1.6;">This link expires in ${expiry}.</p>
 ${attachmentsHtml}<p style="margin:0 0 16px;color:#334155;font-size:16px;line-height:1.6;">If you weren't expecting this invitation, you can safely ignore this email.</p>
 ${fallbackLinkHtml(safeLink)}`,
     }),
     text: `${greetingText}
 
-Your care team has invited you to set up your ${ctx.productName} patient portal, where you can manage your CPAP supplies, view your orders, and upload insurance documents.
+Your care team has invited you to set up your ${ctx.productName} patient portal, where you can manage your CPAP supplies, track shipments, and upload insurance documents.
 
 Create your password and get started by visiting:
 ${link}

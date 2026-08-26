@@ -456,7 +456,7 @@ function CreateCsrOrderModal({
     return (
       <AdminModal
         title={`Order ${result.orderReference} sent`}
-        description="The customer received a secure link to review, sign, and pay."
+        description="The customer received a secure link to review and e-sign."
         onClose={onClose}
       >
         <div className="space-y-4">

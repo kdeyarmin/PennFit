@@ -154,7 +154,7 @@ export function SignInPage() {
               Welcome back
             </h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              Sign in to view your orders and saved shipping info.
+              Sign in to manage therapy, messages, and shipping details.
             </p>
           </div>
 
