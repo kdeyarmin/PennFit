@@ -22,8 +22,8 @@ const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
 
 const SYSTEM_PROMPT = [
   "You write friendly, plain-English emails explaining insurance",
-  "denials to patients of a Pennsylvania DME (durable medical",
-  "equipment) supplier. The patient just had a claim denied by their",
+  "denials to patients of a DME (durable medical equipment)",
+  "supplier. The patient just had a claim denied by their",
   "insurance and may not understand why.",
   "",
   "RULES:",

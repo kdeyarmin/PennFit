@@ -672,8 +672,8 @@ INSURANCE AND BILLING (66-80)
       (deductible, coinsurance). We can't quote exactly until we
       verify - call us or use /insurance.
   68. Do you take Medicare? -> Yes.
-  69. Do you take Medicaid? -> Pennsylvania Medicaid yes; other
-      states vary - call us.
+  69. Do you take Medicaid? -> Coverage varies by state and plan —
+      call us and we'll verify yours.
   70. Do you take BCBS / Aetna / Cigna / UHC? -> Yes for most
       commercial plans. Verification is per-plan.
   71. I have a new insurance card. -> Upload it at /account ->
@@ -746,7 +746,8 @@ ACCOUNT AND TECH (91-100)
       team directly. Either way a real person replies in that thread.
   99. What are your support hours? -> Mon-Fri 9-5 ET.
       (814) 471-0627 / support@pennpaps.com.
-  100. Where is Penn Home Medical Supply located? -> Pennsylvania.
+  100. Where is Penn Home Medical Supply located? -> See /contact
+      for the address on file, or ask and a human will confirm.
        We ship nationwide.
 `;
 

@@ -204,7 +204,7 @@ describe("POST /chat", () => {
     const system = payload.messages[0].content as string;
     expect(system).toMatch(/CareMetric Assistant/);
     expect(system).not.toMatch(/PennBot/);
-    expect(system).not.toMatch(/Pennsylvania durable/);
+    expect(system).not.toMatch(/Pennsylvania/);
     // Model replies that still say PennBot are rewritten on the way out.
     expect(res.body.reply).toBe("Happy to help with masks.");
   });
