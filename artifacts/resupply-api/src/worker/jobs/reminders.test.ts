@@ -552,3 +552,35 @@ describe("scanForDueReminders — quiet-period conversations read is paged + chu
     expect(quietBlock).toMatch(/\.range\(/);
   });
 });
+
+describe("scanForDueReminders — lastFulfilledAt baselines on queued dispenses", () => {
+  // Resupply confirm inserts fulfillments as status=queued and never stamps
+  // shipped_at (PacWare ships out of band). Cadence must use
+  // COALESCE(shipped_at, created_at) on non-cancelled rows — the same
+  // baseline entitlement already uses — or every confirm is invisible and
+  // the scan falls back to prescription.created_at.
+  const fulfillmentsIdx = SRC.indexOf('.from("fulfillments")');
+  const fulfillmentsBlock =
+    fulfillmentsIdx >= 0
+      ? SRC.slice(fulfillmentsIdx, fulfillmentsIdx + 700)
+      : "";
+
+  it("has a fulfillments read to assert against", () => {
+    expect(fulfillmentsIdx).toBeGreaterThanOrEqual(0);
+  });
+
+  it("selects created_at alongside shipped_at", () => {
+    expect(fulfillmentsBlock).toMatch(/shipped_at,\s*created_at/);
+  });
+
+  it("includes non-cancelled queued rows (does not require shipped_at)", () => {
+    expect(fulfillmentsBlock).toContain('.neq("status", "cancelled")');
+    expect(fulfillmentsBlock).not.toMatch(
+      /\.not\(\s*"shipped_at",\s*"is",\s*null\s*\)/,
+    );
+  });
+
+  it("prefers shipped_at then falls back to created_at", () => {
+    expect(fulfillmentsBlock).toContain("row.shipped_at ?? row.created_at");
+  });
+});
