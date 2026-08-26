@@ -33,12 +33,11 @@ import {
 } from "@workspace/resupply-email";
 
 import { createTenantSendgridClient } from "../email/tenant-sender.js";
+import { resolveBrandingByOrgId } from "../tenant-branding.js";
 import {
-  resolveBrandingByOrgId,
-  resolveTenantBaseUrl,
-} from "../tenant-branding.js";
-
-const DEFAULT_BASE_URL = "https://cmbreathe.com";
+  resolvePatientEmailLinkBase,
+  TENANT_DOMAIN_REQUIRED,
+} from "./link-base.js";
 
 export interface QuarterlyFields {
   nightsRecorded: number;
@@ -73,15 +72,6 @@ export interface SendQuarterlySummaryEmailResult {
   messageId?: string;
 }
 
-function publicBaseUrl(override?: string): string {
-  const raw =
-    override ??
-    process.env.SHOP_PUBLIC_BASE_URL ??
-    process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL ??
-    DEFAULT_BASE_URL;
-  return raw.replace(/\/$/, "");
-}
-
 function fmtOptHours(v: number | null): string {
   return v == null ? "—" : `${v} hrs`;
 }
@@ -110,11 +100,17 @@ export async function sendQuarterlySummaryEmail(
   const brand = await resolveBrandingByOrgId(input.orgId);
   const brandName = brand.storefrontName;
 
-  const base = publicBaseUrl(
-    input.baseUrlOverride ??
-      (await resolveTenantBaseUrl(input.orgId)) ??
-      undefined,
+  const base = await resolvePatientEmailLinkBase(
+    input.orgId,
+    input.baseUrlOverride,
   );
+  if (!base) {
+    return {
+      configured: true,
+      delivered: false,
+      error: TENANT_DOMAIN_REQUIRED,
+    };
+  }
   // Summary numbers are already in this email. The CTA opens therapy
   // (auth-gated account tab) — do NOT link /resupply-api/shop/me/…
   // which returns JSON 401 without a session cookie and confuses

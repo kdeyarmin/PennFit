@@ -42,12 +42,11 @@ import {
 
 import { isFeatureEnabled } from "../feature-flags";
 import { createTenantSendgridClient } from "../email/tenant-sender.js";
+import { resolveBrandingByOrgId } from "../tenant-branding.js";
 import {
-  resolveBrandingByOrgId,
-  resolveTenantBaseUrl,
-} from "../tenant-branding.js";
-
-const DEFAULT_BASE_URL = "https://cmbreathe.com";
+  resolvePatientEmailLinkBase,
+  TENANT_DOMAIN_REQUIRED,
+} from "./link-base.js";
 
 export interface SendDeliveryFollowupEmailInput {
   toEmail: string;
@@ -83,15 +82,6 @@ export interface SendDeliveryFollowupEmailResult {
   messageId?: string;
 }
 
-function publicBaseUrl(override?: string): string {
-  const raw =
-    override ??
-    process.env.SHOP_PUBLIC_BASE_URL ??
-    process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL ??
-    DEFAULT_BASE_URL;
-  return raw.replace(/\/$/, "");
-}
-
 export async function sendDeliveryFollowupEmail(
   input: SendDeliveryFollowupEmailInput,
 ): Promise<SendDeliveryFollowupEmailResult> {
@@ -115,11 +105,17 @@ export async function sendDeliveryFollowupEmail(
   const brand = await resolveBrandingByOrgId(input.orgId);
   const brandName = brand.storefrontName;
 
-  const base = publicBaseUrl(
-    input.baseUrlOverride ??
-      (await resolveTenantBaseUrl(input.orgId)) ??
-      undefined,
+  const base = await resolvePatientEmailLinkBase(
+    input.orgId,
+    input.baseUrlOverride,
   );
+  if (!base) {
+    return {
+      configured: true,
+      delivered: false,
+      error: TENANT_DOMAIN_REQUIRED,
+    };
+  }
   const orderUrl = `${base}/contact`;
   const returnsUrl = `${base}/contact`;
   const reviewUrl = `${base}/contact?utm_campaign=delivery_followup`;

@@ -24,7 +24,7 @@ import {
 import { isInDndWindow } from "../comm-prefs";
 import { isFeatureEnabled } from "../feature-flags";
 import { sendReviewRequestEmail } from "../messaging/review-request-email";
-import { resolveTenantBaseUrl } from "../tenant-branding";
+import { resolvePatientEmailLinkBase } from "../order-emails/link-base.js";
 
 const REVIEW_REQUEST_AGE_DAYS = 14;
 const SCAN_LIMIT = 100;
@@ -142,12 +142,11 @@ export async function runReviewRequestDispatch(opts: {
 
   const stats: ReviewRequestDispatchStats = { ...ZERO };
 
-  const baseUrl = (
-    (await resolveTenantBaseUrl(orgId)) ??
-    process.env.SHOP_PUBLIC_BASE_URL ??
-    process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL ??
-    "https://cmbreathe.com"
-  ).replace(/\/$/, "");
+  const baseUrl = await resolvePatientEmailLinkBase(orgId);
+  if (!baseUrl) {
+    log?.warn?.({ orgId }, "review-request dispatch skipped (no tenant domain)");
+    return { ...ZERO, scanned: claimed.length, skippedFailed: claimed.length };
+  }
 
   const unclaim = async (id: string): Promise<void> => {
     const { error: unclaimErr } = await supabase

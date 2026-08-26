@@ -31,7 +31,7 @@ import {
   resolveAssignableStaff,
 } from "../../lib/calendar/assignable-staff";
 import { logger } from "../../lib/logger";
-import { resolveTenantBaseUrl } from "../../lib/tenant-branding";
+import { resolveTenantLinkBaseUrl } from "../../lib/tenant-branding";
 import {
   adminRateLimit,
   adminReadRateLimiter,
@@ -110,11 +110,10 @@ const listQuery = z.object({
 const DAY_MS = 86_400_000;
 
 /** Absolute URL to the company calendar for the notification email. */
-async function calendarDashboardUrl(orgId: string): Promise<string> {
-  const base = (
-    (await resolveTenantBaseUrl(orgId)) ?? getAuthDeps().publicBaseUrl
-  ).replace(/\/$/, "");
-  return `${base}/admin/company-calendar`;
+async function calendarDashboardUrl(orgId: string): Promise<string | null> {
+  const platform = getAuthDeps().publicBaseUrl.replace(/\/$/, "");
+  const base = await resolveTenantLinkBaseUrl(orgId, platform);
+  return base ? `${base}/admin/company-calendar` : null;
 }
 
 /** Fire-and-forget the assignment email; never throws into the request. */
@@ -129,6 +128,17 @@ function fireAssignmentEmail(args: {
 }): void {
   void (async () => {
     const dashboardUrl = await calendarDashboardUrl(args.orgId);
+    if (!dashboardUrl) {
+      logger.warn(
+        {
+          event: "appointment_assigned_email_skipped",
+          reason: "tenant_domain_required",
+          org_id: args.orgId,
+        },
+        "appointment-assigned email skipped (no tenant domain)",
+      );
+      return;
+    }
     return sendAppointmentAssignedEmail({
       toEmail: args.assignee.email,
       assigneeName: args.assignee.displayName,
