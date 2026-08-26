@@ -36,7 +36,7 @@ export const APP_MODULES: ReadonlyArray<AppModule> = [
     key: "module.front_desk",
     label: "Front desk",
     hides:
-      "Legacy walk-in counter flag (no page). Use Patients, Conversations, or Fitter invites for walk-ins.",
+      "Legacy walk-in counter flag (no page; Control Center only). Use Patients, Conversations, or Fitter invites for walk-ins.",
     group: "Workspace",
   },
   {
