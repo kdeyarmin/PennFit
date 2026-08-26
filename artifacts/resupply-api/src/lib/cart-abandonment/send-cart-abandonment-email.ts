@@ -126,8 +126,7 @@ export async function sendCartAbandonmentEmail(
   const brand = await resolveBrandingByOrgId(input.orgId);
   const brandName = brand.storefrontName;
 
-  const itemCount = items.reduce((sum, it) => sum + it.quantity, 0);
-  const subject = `You left ${itemCount} item${itemCount === 1 ? "" : "s"} in your ${brandName} cart`;
+  const subject = `You started an order at ${brandName} — let's finish through insurance`;
 
   const base = publicBaseUrl(
     input.baseUrlOverride ??
@@ -139,14 +138,14 @@ export async function sendCartAbandonmentEmail(
 
   // Plain-text body — many corporate filters drop HTML-only mail.
   const textLines: string[] = [
-    `You still have ${itemCount} item${itemCount === 1 ? "" : "s"} waiting from your last visit to ${brandName}.`,
+    `You started an order at ${brandName} but didn't finish. Cash-pay checkout is retired — reply or call and we'll confirm coverage and ship through insurance.`,
     "",
   ];
   for (const it of items) {
     textLines.push(
       `  - ${it.quantity} x ${it.name} (${formatMoney(it.unitAmountCents, it.currency)} each)` +
         (it.mode === "subscription" && it.recurringIntervalLabel
-          ? ` -- subscribe & ship every ${it.recurringIntervalLabel}`
+          ? ` -- was recurring every ${it.recurringIntervalLabel}; we now ship on your insurance schedule`
           : ""),
     );
   }
@@ -158,7 +157,7 @@ export async function sendCartAbandonmentEmail(
   textLines.push("");
   textLines.push(
     `You're receiving this because you started an order at ${brandName}. ` +
-      "We send one of these per cart at most.",
+      "We send one of these per incomplete order at most.",
   );
   const text = textLines.join("\n");
 
@@ -166,7 +165,7 @@ export async function sendCartAbandonmentEmail(
   // design system; this builder supplies only copy + data.
   const html = renderBrandedEmail({
     brandName,
-    heading: "You left items in your cart",
+    heading: "You started an order",
     preheader: `Your list at ${brandName} is still saved — reply and we'll finish through insurance.`,
     contentHtml: [
       textParagraph(
@@ -177,7 +176,7 @@ export async function sendCartAbandonmentEmail(
           name: it.name,
           detail:
             it.mode === "subscription" && it.recurringIntervalLabel
-              ? `Subscribe & ship every ${it.recurringIntervalLabel}`
+              ? `Was recurring every ${it.recurringIntervalLabel} — we now ship on your insurance schedule`
               : undefined,
           amount: `${it.quantity} × ${formatMoney(it.unitAmountCents, it.currency)}`,
         })),
@@ -193,7 +192,7 @@ export async function sendCartAbandonmentEmail(
     button: { label: "Contact us to finish", url: cartUrl },
     footerHtml: `<a href="${escapeHtml(browseUrl)}" style="color:${BREATHE_COLORS.blue};text-decoration:underline;">How insurance ordering works</a>`,
     footerLines: [
-      `You're receiving this because you started an order at ${brandName}. We send one of these per cart at most.`,
+      `You're receiving this because you started an order at ${brandName}. We send one of these per incomplete order at most.`,
     ],
     copyrightName: brandName,
   });
