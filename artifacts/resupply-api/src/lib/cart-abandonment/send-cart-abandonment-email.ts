@@ -17,15 +17,11 @@
 //     leak. The subject line mentions item count only.
 //
 // Template:
-//   - Subject:   "You left {N} items in your Penn Home Medical Supply cart"
+//   - Subject:   "You left {N} items in your {brand} cart"
 //   - HTML body: brand banner, item list (qty × name @ unit price),
-//                subtotal, primary CTA "Return to your cart" linking
-//                to ${SHOP_PUBLIC_BASE_URL}/shop/cart?resume=1, footer
-//                "You're receiving this because you started a checkout
-//                at Penn Home Medical Supply. Reply STOP if you don't want to hear
-//                about your cart again." (the STOP wording is for
-//                customer reassurance — there's no opt-out wiring in
-//                v1; one nudge per cart-event is the entire policy).
+//                subtotal, primary CTA "Contact us to finish" linking
+//                to /contact (cash-pay cart is retired), footer
+//                explaining the one-nudge-per-cart policy.
 
 import {
   BREATHE_COLORS,
@@ -138,12 +134,12 @@ export async function sendCartAbandonmentEmail(
       (await resolveTenantBaseUrl(input.orgId)) ??
       undefined,
   );
-  const cartUrl = `${base}/shop/cart?resume=1`;
-  const browseUrl = `${base}/shop`;
+  const cartUrl = `${base}/contact`;
+  const browseUrl = `${base}/insurance`;
 
   // Plain-text body — many corporate filters drop HTML-only mail.
   const textLines: string[] = [
-    `You still have ${itemCount} item${itemCount === 1 ? "" : "s"} waiting in your cart at ${brandName}.`,
+    `You still have ${itemCount} item${itemCount === 1 ? "" : "s"} waiting from your last visit to ${brandName}.`,
     "",
   ];
   for (const it of items) {
@@ -157,11 +153,11 @@ export async function sendCartAbandonmentEmail(
   textLines.push("");
   textLines.push(`Subtotal: ${formatMoney(subtotalCents, currency)}`);
   textLines.push("");
-  textLines.push(`Return to your cart: ${cartUrl}`);
-  textLines.push(`Browse the shop: ${browseUrl}`);
+  textLines.push(`Contact us to finish through insurance: ${cartUrl}`);
+  textLines.push(`How insurance ordering works: ${browseUrl}`);
   textLines.push("");
   textLines.push(
-    `You're receiving this because you started a checkout at ${brandName}. ` +
+    `You're receiving this because you started an order at ${brandName}. ` +
       "We send one of these per cart at most.",
   );
   const text = textLines.join("\n");
@@ -171,10 +167,10 @@ export async function sendCartAbandonmentEmail(
   const html = renderBrandedEmail({
     brandName,
     heading: "You left items in your cart",
-    preheader: `Your cart at ${brandName} is still saved — pick up where you left off.`,
+    preheader: `Your list at ${brandName} is still saved — reply and we'll finish through insurance.`,
     contentHtml: [
       textParagraph(
-        `You started a checkout at ${brandName} but didn't finish. Your cart is still saved — pick up right where you left off.`,
+        `You started an order at ${brandName} but didn't finish. Cash-pay checkout is retired — reply or call and we'll confirm coverage and ship through insurance.`,
       ),
       lineItemsTable(
         items.map((it) => ({
@@ -194,10 +190,10 @@ export async function sendCartAbandonmentEmail(
         },
       ]),
     ].join("\n"),
-    button: { label: "Return to your cart", url: cartUrl },
-    footerHtml: `<a href="${escapeHtml(browseUrl)}" style="color:${BREATHE_COLORS.blue};text-decoration:underline;">Browse the shop</a>`,
+    button: { label: "Contact us to finish", url: cartUrl },
+    footerHtml: `<a href="${escapeHtml(browseUrl)}" style="color:${BREATHE_COLORS.blue};text-decoration:underline;">How insurance ordering works</a>`,
     footerLines: [
-      `You're receiving this because you started a checkout at ${brandName}. We send one of these per cart at most.`,
+      `You're receiving this because you started an order at ${brandName}. We send one of these per cart at most.`,
     ],
     copyrightName: brandName,
   });

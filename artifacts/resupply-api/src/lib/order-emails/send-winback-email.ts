@@ -97,7 +97,8 @@ export async function sendWinbackEmail(
       (await resolveTenantBaseUrl(input.orgId)) ??
       undefined,
   );
-  const shopUrl = `${base}/shop`;
+  const contactUrl = `${base}/contact`;
+  const insuranceUrl = `${base}/insurance`;
   const accountUrl = `${base}/account`;
   const prefsUrl = `${base}/account#comm-prefs`;
   const greeting = input.firstName
@@ -115,10 +116,11 @@ export async function sendWinbackEmail(
     "",
     "If you've stopped CPAP therapy, no judgment — we'd just love to know.",
     "If you've moved to a different supplier, also fine. If you've stayed on",
-    "therapy but your supplies are due, your saved address and (often) card",
-    "are still on file:",
+    "therapy but your supplies are due, reply or call and we'll confirm",
+    "coverage and schedule a shipment through insurance:",
     "",
-    `Reorder: ${shopUrl}`,
+    `Contact us: ${contactUrl}`,
+    `How insurance works: ${insuranceUrl}`,
     `Account: ${accountUrl}`,
     "",
     `—The ${brandName} team`,
@@ -138,11 +140,11 @@ export async function sendWinbackEmail(
         `It&#39;s been about <strong>${input.monthsSinceLastOrder} months</strong> since we last shipped to you, and we wanted to check in. CPAP supplies have replacement cadences for a reason — cushions stiffen, filters clog, hoses develop holes — and skipping replacement is the single biggest reason therapy slips.`,
       ),
       paragraph(
-        "If you&#39;ve stopped CPAP therapy, no judgment. If you&#39;ve moved to a different supplier, also fine. If you&#39;ve stayed on therapy but your supplies are due, your saved address and (often) card are still on file.",
+        "If you&#39;ve stopped CPAP therapy, no judgment. If you&#39;ve moved to a different supplier, also fine. If you&#39;ve stayed on therapy but your supplies are due, reply or call and we&#39;ll confirm coverage and schedule a shipment through insurance.",
       ),
     ].join("\n"),
-    button: { label: "Reorder supplies", url: shopUrl },
-    postButtonHtml: secondaryLink("Account settings", accountUrl),
+    button: { label: "Contact us to resupply", url: contactUrl },
+    postButtonHtml: secondaryLink("How insurance works", insuranceUrl),
     footerHtml: `<a href="${escapeHtml(prefsUrl)}" style="color:${BREATHE_COLORS.blue};text-decoration:underline;">Unsubscribe from re-engagement emails</a>`,
     footerLines: [`The ${brandName} team`],
     copyrightName: brandName,

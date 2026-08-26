@@ -497,25 +497,12 @@ describe("App.tsx — legacy /shop/* redirects", () => {
     expect(SRC).toContain("/account/orders");
   });
 
-  it("defaults other legacy shop paths to /insurance", () => {
-    expect(SRC).toContain(': "/insurance"');
-  });
-});
-
-describe("App.tsx — legacy /shop/* redirects", () => {
-  it("defines LegacyShopRedirect and mounts /shop plus /shop/* routes", () => {
-    expect(SRC).toContain("function LegacyShopRedirect");
-    expect(SRC).toContain('path="/shop"');
-    expect(SRC).toContain('path="/shop/*"');
-    expect(SRC).toContain("<LegacyShopRedirect");
-  });
-
-  it("forwards order history to /account/orders", () => {
-    expect(SRC).toContain('normalized === "orders"');
-    expect(SRC).toContain("/account/orders");
+  it("forwards cart/checkout receipts to /track-order", () => {
+    expect(SRC).toContain('normalized === "cart"');
+    expect(SRC).toContain('path = "/track-order"');
   });
 
   it("defaults other legacy shop paths to /insurance", () => {
-    expect(SRC).toContain(': "/insurance"');
+    expect(SRC).toContain('let path = "/insurance"');
   });
 });

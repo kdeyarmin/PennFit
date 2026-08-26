@@ -28,7 +28,7 @@ export type ReviewRequestEmailResult =
 export interface ReviewRequestEmailInput {
   to: string;
   productName: string;
-  /** Absolute URL to /shop/p/:id with ?review=1 anchor. */
+  /** Absolute URL for the review CTA (contact / living surface — cash-pay product pages are gone). */
   productUrl: string;
   /**
    * Tenant the order belongs to. When set, the email is sent under the

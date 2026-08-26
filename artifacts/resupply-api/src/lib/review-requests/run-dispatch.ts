@@ -181,7 +181,9 @@ export async function runReviewRequestDispatch(opts: {
       continue;
     }
 
-    const productUrl = `${baseUrl}/shop/p/${encodeURIComponent(productId)}?utm_source=email&utm_medium=transactional&utm_campaign=review_request`;
+    // Cash-pay product pages are gone; send patients to contact so they
+    // can leave feedback with a human rather than a 404/redirect loop.
+    const productUrl = `${baseUrl}/contact?utm_source=email&utm_medium=transactional&utm_campaign=review_request`;
     const result = await sendReviewRequestEmail({
       to: email,
       productName: "your last order",

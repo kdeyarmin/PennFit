@@ -90,7 +90,7 @@ export async function sendDeductibleResetEmail(
       (await resolveTenantBaseUrl(input.orgId)) ??
       undefined,
   );
-  const shopUrl = `${base}/shop`;
+  const contactUrl = `${base}/contact`;
   const prefsUrl = `${base}/account#comm-prefs`;
   const greeting = input.firstName
     ? `Hi ${escapeHtml(input.firstName)},`
@@ -110,8 +110,8 @@ export async function sendDeductibleResetEmail(
     "  • Hose (annual replacement under most plans)",
     "  • Filters (every 1-3 months)",
     "",
-    "Bookmark a reorder while it's covered:",
-    shopUrl,
+    "Reply or call and we'll confirm coverage before the year flips:",
+    contactUrl,
     "",
     `—The ${brandName} team`,
     "",
@@ -137,7 +137,7 @@ export async function sendDeductibleResetEmail(
         ]),
       }),
     ].join("\n"),
-    button: { label: "Bookmark your reorder", url: shopUrl },
+    button: { label: "Contact us to stock up", url: contactUrl },
     footerHtml: `<a href="${escapeHtml(prefsUrl)}" style="color:${BREATHE_COLORS.blue};text-decoration:underline;">Unsubscribe from year-end reminders</a>`,
     footerLines: [`The ${brandName} team`],
     copyrightName: brandName,

@@ -830,8 +830,11 @@ function LegacyResupplyRedirect({ rest }: { rest: string }) {
  * The cash-pay storefront (/shop, cart, checkout, product pages) was
  * retired when the patient path went insurance-only. Bookmarks, email
  * links, and in-app CTAs still point at /shop/*, so forward them to
- * the insurance explainer (or account orders for order history) while
- * preserving query strings and hashes.
+ * living insurance-era surfaces while preserving query strings and
+ * hashes:
+ *   - order history → /account/orders
+ *   - cart / checkout / success receipts → /track-order (or /contact)
+ *   - everything else (product pages, generic /shop) → /insurance
  */
 function LegacyShopRedirect({ rest }: { rest: string }) {
   const [, setLocation] = useLocation();
@@ -839,10 +842,24 @@ function LegacyShopRedirect({ rest }: { rest: string }) {
     const search = typeof window !== "undefined" ? window.location.search : "";
     const hash = typeof window !== "undefined" ? window.location.hash : "";
     const normalized = rest.replace(/^\/+/, "").toLowerCase();
-    const path =
-      normalized === "orders" || normalized.startsWith("orders/")
-        ? `/account/orders${normalized.slice("orders".length)}`
-        : "/insurance";
+    let path = "/insurance";
+    if (normalized === "orders" || normalized.startsWith("orders/")) {
+      path = `/account/orders${normalized.slice("orders".length)}`;
+    } else if (
+      normalized === "cart" ||
+      normalized.startsWith("cart/") ||
+      normalized === "checkout" ||
+      normalized.startsWith("checkout") ||
+      normalized === "checkout-success" ||
+      normalized.startsWith("checkout-success")
+    ) {
+      // Abandoned-cart / receipt emails used to deep-link here. Track
+      // status is the closest living patient action; contact is a
+      // fallback when they have no reference yet.
+      path = "/track-order";
+    } else if (normalized === "nps" || normalized.startsWith("orders/nps")) {
+      path = "/nps";
+    }
     setLocation(`${path}${search}${hash}`, { replace: true });
   }, [rest, setLocation]);
   return null;
