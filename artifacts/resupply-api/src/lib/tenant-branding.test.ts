@@ -19,6 +19,7 @@ import {
   isVerifiedCustomDomainOrigin,
   refreshVerifiedCustomDomains,
   resolveBrandingByHost,
+  resolveTenantLinkBaseUrl,
 } from "./tenant-branding";
 
 const SEED_ROW = {
@@ -95,6 +96,22 @@ describe("resolveBrandingByHost", () => {
     // response". The cached hit returns the same value.
     const second = await resolveBrandingByHost("pennpaps.com");
     expect(second).toEqual(first);
+  });
+});
+
+describe("resolveTenantLinkBaseUrl", () => {
+  it("synthesizes a slug subdomain URL for non-seed tenants without a verified domain (G10)", async () => {
+    stageSupabaseResponse("organizations", "select", {
+      data: { custom_domain: null, custom_domain_status: null },
+    });
+    stageSupabaseResponse("organizations", "select", {
+      data: { slug: "acme" },
+    });
+    const base = await resolveTenantLinkBaseUrl(
+      "00000000-0000-4000-8000-000000000099",
+      "https://cmbreathe.com",
+    );
+    expect(base).toBe("https://acme.cmbreathe.com");
   });
 });
 

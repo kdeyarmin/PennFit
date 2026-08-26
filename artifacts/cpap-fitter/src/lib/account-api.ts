@@ -365,12 +365,13 @@ export const changeShopSubscriptionCadence = (id: string, priceId: string) =>
     { method: "POST", body: JSON.stringify({ priceId }) },
   );
 
-export const startQuickCheckout = (input: QuickCheckoutInput) =>
-  meFetch<{ url: string; sessionId: string }>("/shop/me/quick-checkout", {
-    method: "POST",
-    headers: { "Idempotency-Key": crypto.randomUUID() },
-    body: JSON.stringify(input),
-  });
+export async function startQuickCheckout(
+  _input: QuickCheckoutInput,
+): Promise<{ url: string; sessionId: string }> {
+  throw new Error(
+    "quick_checkout_retired: patient cash-pay express checkout was removed; use insurance ordering.",
+  );
+}
 
 /**
  * Aggregated status digest powering the signed-in home banner.

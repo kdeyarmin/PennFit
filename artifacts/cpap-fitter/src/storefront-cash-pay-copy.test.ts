@@ -53,6 +53,7 @@ const FORBIDDEN_ACCOUNT = [
   "Express checkout",
   "Card details stay with Stripe",
   "openBillingPortal",
+  "startQuickCheckout",
 ] as const;
 
 describe("storefront — no patient-facing cash-pay shopping copy", () => {

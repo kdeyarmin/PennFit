@@ -24,6 +24,7 @@ import { logger } from "./logger";
 import {
   extractTenantSubdomainLabel,
   normalizeCustomDomain,
+  platformSubdomainBases,
 } from "./tenant-domain";
 
 export interface StorefrontBranding {
@@ -368,12 +369,49 @@ export async function resolveTenantBaseUrl(
 }
 
 /**
+ * Public origin for a slug-only tenant on the platform subdomain (G10),
+ * e.g. `https://acme.cmbreathe.com`. Returns null when the org has no
+ * slug or the lookup fails.
+ */
+async function resolveTenantSlugSubdomainUrl(
+  orgId: string,
+): Promise<string | null> {
+  try {
+    const seedOrgId = await resolveSeedOrgId();
+    if (!seedOrgId) return null;
+    const supabase = getOrgScopedClient(seedOrgId);
+    const { data, error } = await withTimeout(
+      supabase
+        .raw()
+        .schema("resupply")
+        .from("organizations")
+        .select("slug")
+        .eq("id", orgId)
+        .eq("status", "active")
+        .limit(1)
+        .maybeSingle(),
+    );
+    if (error) return null;
+    const slug = trimmed(
+      (data as { slug?: string | null } | null)?.slug ?? null,
+    );
+    if (!slug) return null;
+    const base = platformSubdomainBases()[0];
+    if (!base) return null;
+    return `https://${slug}.${base}`;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Base URL for patient/provider invite and reminder links.
  *
  * Prefer the tenant's verified custom domain. For the seed org only,
  * fall back to `platformFallback` (single-tenant / preview unchanged).
- * For any other tenant without a verified domain, return null — a
- * platform-host link would resolve auth/portal queues to the wrong org.
+ * When the tenant has no verified domain but does have a platform slug,
+ * synthesize `https://<slug>.<platform-base>` (G10). Otherwise return
+ * null — a bare platform-host link would resolve queues to the wrong org.
  */
 export async function resolveTenantLinkBaseUrl(
   orgId: string | undefined,
@@ -387,6 +425,8 @@ export async function resolveTenantLinkBaseUrl(
   if (seedId && id === seedId) {
     return platformFallback.replace(/\/$/, "");
   }
+  const slugBase = await resolveTenantSlugSubdomainUrl(id);
+  if (slugBase) return slugBase;
   return null;
 }
 

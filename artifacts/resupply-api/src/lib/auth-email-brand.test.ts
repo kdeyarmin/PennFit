@@ -127,4 +127,23 @@ describe("storefrontAuthBrandResolver", () => {
     expect(resolveOrgIdByHostMock).not.toHaveBeenCalled();
     expect(resolveBrandingByOrgIdMock).not.toHaveBeenCalled();
   });
+
+  it("uses the slug subdomain host for auth links when no verified custom domain exists (G10)", async () => {
+    resolveBrandingByHostMock.mockResolvedValue({
+      storefrontName: "Acme Sleep",
+      legalName: "Acme Home Medical LLC",
+      tagline: "t",
+      logoUrl: null,
+    });
+    resolveBrandOrgIdByHostMock.mockResolvedValue("org-acme");
+    resolveTenantBaseUrlMock.mockResolvedValue(null);
+
+    await expect(
+      storefrontAuthBrandResolver(reqForHost("acme.cmbreathe.com")),
+    ).resolves.toEqual({
+      productName: "Acme Sleep",
+      signatureName: "Acme Home Medical LLC",
+      publicBaseUrl: "https://acme.cmbreathe.com",
+    });
+  });
 });
