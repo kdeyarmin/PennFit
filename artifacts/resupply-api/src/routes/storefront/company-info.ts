@@ -26,8 +26,7 @@ router.get("/company-info", async (req, res) => {
   // domains; that leaked the seed tenant's phone/email/name onto
   // cmbreathe.com. Auth email already avoids this via
   // resolveBrandingByHost; company-info must match that contract.
-  const orgId =
-    (await resolveBrandOrgIdByHost(requestHost(req))) ?? undefined;
+  const orgId = (await resolveBrandOrgIdByHost(requestHost(req))) ?? undefined;
   const info = orgId ? await getCompanyInfo(orgId) : getPlatformIdentity();
   const assistantNames = orgId
     ? await resolveAssistantNamesForOrg(orgId)

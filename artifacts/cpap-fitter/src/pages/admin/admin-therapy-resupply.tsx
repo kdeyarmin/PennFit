@@ -694,8 +694,7 @@ function ApproveDraftModal({
           <>
             <p className="text-sm" style={{ color: "hsl(var(--ink-3))" }}>
               Confirm the line item and where to send the signature link. The
-              patient e-signs paperwork; the order is billed to their
-              insurance.
+              patient e-signs paperwork; the order is billed to their insurance.
             </p>
             <Field label="Customer name">
               <input

@@ -191,8 +191,8 @@ function SignedOutAccountPrompt() {
           Sign in to your account
         </h1>
         <p className="text-sm md:text-base text-muted-foreground max-w-md mx-auto mb-6">
-          Your profile, shipping address, and message history live here. Sign
-          in or create an account to continue.
+          Your profile, shipping address, and message history live here. Sign in
+          or create an account to continue.
         </p>
         <div className="flex flex-col sm:flex-row gap-3 justify-center">
           <Link href="/sign-in?redirect=/account">

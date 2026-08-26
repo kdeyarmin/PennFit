@@ -216,8 +216,8 @@ export function CsrOrderRequestsPanel() {
                         colSpan={7}
                         className="py-10 text-center text-muted-foreground"
                       >
-                        No signature orders yet. Create one to send a
-                        customer a secure signature link.
+                        No signature orders yet. Create one to send a customer a
+                        secure signature link.
                       </td>
                     </tr>
                   )}

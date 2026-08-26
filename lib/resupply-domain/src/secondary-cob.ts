@@ -19,7 +19,7 @@
 //
 // Slice 1 handles the canonical case: the primary reached an adjudicated
 // paid state (`paid` or `partially_paid`) and left a patient-responsibility
- // balance. Denied-primary COB (full balance forwarded) is a follow-up.
+// balance. Denied-primary COB (full balance forwarded) is a follow-up.
 //
 // Why it lives in @workspace/resupply-domain
 // -------------------------------------------
