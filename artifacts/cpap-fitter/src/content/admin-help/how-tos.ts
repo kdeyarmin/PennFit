@@ -1540,6 +1540,10 @@ export const HOW_TO_GUIDES: readonly HowToGuide[] = [
         },
       },
       {
+        title: "Start resupply lines after the roster lands",
+        body: 'Importing demographics does not start reminder outreach. After a successful import, use Start resupply lines on the same page to add four standard consumable prescriptions (filter, cushion, mask, tubing) with Medicare LCD cadences for each PacWare patient who has no active prescriptions yet. That opens outreach episodes so the SMS → email ladder can run.',
+      },
+      {
         title: "Always use the verify step on an export",
         body: "The exports — patient roster and the resupply-due worklist — show a preview with a row count and a sample before you download. Read it. A count that is wildly off means your filter is wrong, and you would otherwise find out inside PacWare.",
       },

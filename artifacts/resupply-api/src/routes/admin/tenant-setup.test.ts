@@ -132,6 +132,7 @@ describe("buildTenantSetupItems", () => {
     expect(byId(items, "resupply-prescriptions").detail).toContain(
       "no active prescriptions",
     );
+    expect(byId(items, "resupply-prescriptions").href).toBe("/admin/pacware");
   });
 
   it("gives every item a configuration href", () => {

@@ -217,15 +217,15 @@ export function buildTenantSetupItems(
       group: "Resupply automation",
       title: "Add prescriptions for active patients",
       description:
-        "Reminders run per supply line — each active prescription opens an outreach episode when that item is due. Importing a patient roster alone does not start reminders; add a prescription (or confirm a resupply order) for each item you replace.",
+        "Reminders run per supply line — each active prescription opens an outreach episode when that item is due. Importing a patient roster alone does not start reminders; add prescriptions from each patient chart, or use Start resupply lines on PacWare after a roster import.",
       status: s.activePrescriptionCount > 0 ? "complete" : "action",
       detail:
         s.activePrescriptionCount > 0
           ? `${s.activePrescriptionCount} active prescription${s.activePrescriptionCount === 1 ? "" : "s"} on file.`
           : s.patientCount > 0
-            ? "Patients are on file but no active prescriptions yet — add one from each patient's chart."
+            ? "Patients are on file but no active prescriptions yet — bootstrap standard lines from PacWare or add Rx from each chart."
             : "Add patients first, then record what each person is entitled to resupply.",
-      href: "/admin/patients",
+      href: s.patientCount > 0 ? "/admin/pacware" : "/admin/patients",
       required: false,
     },
 

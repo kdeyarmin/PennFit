@@ -41,6 +41,7 @@ import {
   importPacwarePatients,
   previewPacwarePatientHeaders,
   setPacwareAutoSync,
+  bootstrapResupplyPrescriptions,
   type PacwareHeaderPreview,
   type PacwareImportCommit,
   type PacwareImportPreview,
@@ -48,6 +49,8 @@ import {
   type PacwareStatus,
   type PacwareSyncTarget,
   type PatientColumnMapping,
+  type BootstrapPrescriptionsPreview,
+  type BootstrapPrescriptionsCommit,
 } from "@/lib/admin/pacware-api";
 import { todayAppDateIso } from "@/lib/utils";
 
@@ -277,7 +280,10 @@ function ImportCard() {
         export it to CSV. Upload it here — patients are matched on the PacWare
         account number: new patients are created, and for existing patients only{" "}
         <strong>blank</strong> fields are filled in — a value already in
-        CareMetric Breathe is never overwritten.
+        CareMetric Breathe is never overwritten. Importing demographics alone
+        does not start resupply reminders — use{" "}
+        <strong>Start resupply lines</strong> after import (or add prescriptions
+        from each patient chart).
       </p>
 
       <label
@@ -369,7 +375,14 @@ function ImportCard() {
         <PreviewPanel preview={preview} onCommit={onCommit} busy={busy} />
       )}
 
-      {commit && <CommitPanel commit={commit} />}
+      {commit && (
+        <>
+          <CommitPanel commit={commit} />
+          {(commit.created > 0 || commit.updated > 0) && (
+            <BootstrapResupplyPanel />
+          )}
+        </>
+      )}
     </Card>
   );
 }
@@ -566,6 +579,104 @@ function CommitPanel({ commit }: { commit: PacwareImportCommit }) {
             <li key={i}>{b}</li>
           ))}
         </ul>
+      )}
+    </div>
+  );
+}
+
+function BootstrapResupplyPanel() {
+  const [preview, setPreview] = useState<BootstrapPrescriptionsPreview | null>(
+    null,
+  );
+  const [commit, setCommit] = useState<BootstrapPrescriptionsCommit | null>(
+    null,
+  );
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function onPreview() {
+    setBusy(true);
+    setErr(null);
+    setCommit(null);
+    try {
+      const res = (await bootstrapResupplyPrescriptions(
+        "preview",
+        true,
+      )) as BootstrapPrescriptionsPreview;
+      setPreview(res);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Could not preview bootstrap.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onCommit() {
+    setBusy(true);
+    setErr(null);
+    try {
+      const res = (await bootstrapResupplyPrescriptions(
+        "commit",
+        true,
+      )) as BootstrapPrescriptionsCommit;
+      setCommit(res);
+      setPreview(null);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Bootstrap failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div
+      className="mt-4 rounded-lg border px-3 py-3 text-sm space-y-2"
+      style={{
+        borderColor: "hsl(var(--line-1))",
+        backgroundColor: "hsl(var(--surface-2))",
+      }}
+      data-testid="pacware-bootstrap-resupply"
+    >
+      <div className="font-semibold">Start resupply lines for imported patients</div>
+      <p className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
+        Adds four standard consumable prescriptions (disposable filter, cushion,
+        mask, tubing) with Medicare LCD cadences for each{" "}
+        <strong>active patient with a PacWare id and no active prescriptions</strong>.
+        Outreach episodes open automatically so reminders can run.
+      </p>
+      <div className="flex flex-wrap gap-2">
+        <Button onClick={() => void onPreview()} disabled={busy}>
+          Preview eligible patients
+        </Button>
+        {preview && preview.eligiblePatients > 0 && (
+          <Button onClick={() => void onCommit()} disabled={busy}>
+            Add lines for {preview.eligiblePatients} patient
+            {preview.eligiblePatients === 1 ? "" : "s"}
+          </Button>
+        )}
+      </div>
+      {busy && <Spinner label="Working…" />}
+      {err && (
+        <p className="text-xs" style={{ color: "hsl(0,84%,45%)" }}>
+          {err}
+        </p>
+      )}
+      {preview && (
+        <p className="text-xs" style={{ color: "hsl(var(--ink-2))" }}>
+          {preview.eligiblePatients === 0
+            ? "No PacWare patients without active prescriptions — you're already set."
+            : `${preview.eligiblePatients} patient${preview.eligiblePatients === 1 ? "" : "s"} × ${preview.linesPerPatient} lines = ${preview.prescriptionsToCreate} prescriptions (${preview.lineSkus.join(", ")}).`}
+        </p>
+      )}
+      {commit && (
+        <p className="text-xs font-medium" style={{ color: "hsl(142,72%,29%)" }}>
+          Added {commit.prescriptionsCreated} prescriptions and opened{" "}
+          {commit.episodesOpened} outreach episode
+          {commit.episodesOpened === 1 ? "" : "s"} for {commit.patientsBootstrapped}{" "}
+          patient{commit.patientsBootstrapped === 1 ? "" : "s"}.
+          {commit.episodeOpenFailures > 0 &&
+            ` ${commit.episodeOpenFailures} episode(s) could not be opened — check logs.`}
+        </p>
       )}
     </div>
   );
