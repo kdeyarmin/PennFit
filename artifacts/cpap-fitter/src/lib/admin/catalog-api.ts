@@ -43,6 +43,26 @@ export interface StockLedgerEntry {
   createdAt: string;
 }
 
+/**
+ * Canonical admin catalog categories. Must stay in lockstep with
+ * `SUPPLY_CATEGORIES` in `artifacts/resupply-api/src/lib/catalog/categories.ts`
+ * — the live list endpoint returns that array, and the Add SKU form
+ * offers whatever this GET puts in `categories`.
+ */
+export const SUPPLY_CATEGORIES = [
+  "mask",
+  "cushion",
+  "headgear",
+  "filter",
+  "tubing",
+  "humidifier",
+  "machine",
+  "accessory",
+  "other",
+] as const;
+
+export type SupplyCategory = (typeof SUPPLY_CATEGORIES)[number];
+
 export interface CatalogListResult {
   products: CatalogProduct[];
   total: number;

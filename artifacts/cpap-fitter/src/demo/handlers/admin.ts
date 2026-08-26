@@ -22,12 +22,19 @@ import {
   demoCustomerDetail,
   demoFitterLeads,
   demoFitRequests,
+  demoPatchFitRequest,
   demoBillingDirectorSummary,
   demoAdminOrders,
   demoAdminOrderDetail,
   demoSystemInfo,
 } from "../fixtures/admin";
-import { demoAdminCatalog, findDemoProduct } from "../fixtures/products";
+import {
+  demoAdminCatalog,
+  demoAdjustCatalogStock,
+  demoUpsertCatalogProduct,
+  findDemoProduct,
+  SUPPLY_CATEGORIES,
+} from "../fixtures/products";
 import {
   demoSelectableAddons,
   demoSelectablePlans,
@@ -197,16 +204,21 @@ export const adminHandlers: DemoHandler[] = [
         csrNote?: string | null;
         closedOutcome?: string | null;
       }>() ?? {};
-    const now = new Date().toISOString();
+    const row = demoPatchFitRequest(id, body);
+    if (!row) return json({ error: "not_found" }, 404);
+    const fulfilled =
+      row.status === "closed" && row.closedOutcome === "fulfilled";
     return json({
-      id,
-      status: body.status ?? "contacted",
-      csrNote: body.csrNote ?? null,
-      contactedAt: now,
-      contactedBy: "demo.admin@caremetric.example",
-      closedAt: body.status === "closed" ? now : null,
-      closedOutcome: body.closedOutcome ?? null,
-      updatedAt: now,
+      id: row.id,
+      status: row.status,
+      csrNote: row.csrNote,
+      contactedAt: row.contactedAt,
+      contactedBy: row.contactedBy,
+      closedAt: row.closedAt,
+      closedOutcome: row.closedOutcome,
+      updatedAt: row.updatedAt,
+      dispenseStamped: Boolean(fulfilled && row.fitSessionId),
+      dispenseCleared: false,
     });
   }),
   route("GET", "/resupply-api/admin/catalog/low-stock", () =>
@@ -224,6 +236,54 @@ export const adminHandlers: DemoHandler[] = [
         offset: intParam(req, "offset", 0),
       }),
     ),
+  ),
+  route("POST", "/resupply-api/admin/catalog/products", (req) => {
+    const result = demoUpsertCatalogProduct(
+      req.json<{
+        sku?: string;
+        name?: string;
+        description?: string | null;
+        category?: string | null;
+        manufacturer?: string | null;
+        modelNumber?: string | null;
+        unitOfMeasure?: string;
+        lowStockThreshold?: number | null;
+        active?: boolean;
+        openingStock?: number | null;
+      }>() ?? {},
+    );
+    if (!result.ok) {
+      if (result.error === "invalid_category") {
+        return json(
+          { error: "invalid_category", allowed: SUPPLY_CATEGORIES },
+          400,
+        );
+      }
+      return json({ error: "invalid_body" }, 400);
+    }
+    return json({ product: result.product }, result.created ? 201 : 200);
+  }),
+  route(
+    "POST",
+    "/resupply-api/admin/catalog/products/:sku/stock",
+    (req, { sku }) => {
+      const body =
+        req.json<{
+          delta?: number;
+          reason?: string;
+        }>() ?? {};
+      const result = demoAdjustCatalogStock(sku, body);
+      if (!result.ok) {
+        if (result.error === "not_found") {
+          return json({ error: "not_found" }, 404);
+        }
+        if (result.error === "insufficient_stock") {
+          return json({ error: "insufficient_stock" }, 409);
+        }
+        return json({ error: "invalid_body" }, 400);
+      }
+      return json({ sku: result.sku, stockCount: result.stockCount });
+    },
   ),
   route("GET", "/resupply-api/admin/billing/director-summary", () =>
     json(demoBillingDirectorSummary()),

@@ -732,46 +732,62 @@ type FitRequestClosedOutcome =
   | "unreachable"
   | "duplicate";
 
+export type DemoFitRequest = {
+  id: string;
+  requestType: FitRequestType;
+  status: FitRequestStatus;
+  fullName: string;
+  email: string;
+  phone: string | null;
+  preferredContactMethod: "phone" | "email" | "text";
+  preferredContactTime: string | null;
+  dateOfBirth: string | null;
+  insuranceCarrier: string | null;
+  memberId: string | null;
+  groupNumber: string | null;
+  prescribingPhysician: string | null;
+  notes: string | null;
+  population: "adult" | "pediatric";
+  fitterLeadId: string | null;
+  fitSessionId: string | null;
+  recommendedMaskId: string | null;
+  recommendedMaskName: string | null;
+  recommendedMaskType: string | null;
+  recommendedMaskSize: string | null;
+  csrNote: string | null;
+  contactedAt: string | null;
+  contactedBy: string | null;
+  closedAt: string | null;
+  closedOutcome: FitRequestClosedOutcome | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+const FIT_REQUEST_STATUSES: readonly FitRequestStatus[] = [
+  "new",
+  "contacted",
+  "in_progress",
+  "closed",
+];
+const FIT_REQUEST_OUTCOMES: readonly FitRequestClosedOutcome[] = [
+  "fulfilled",
+  "not_proceeding",
+  "unreachable",
+  "duplicate",
+];
+
 /**
  * GET /admin/fitter-requests — the queue a mask fitting now ends in.
  * Seeded so the user-manual screenshot (and a demo explorer) show a
  * real worklist rather than the empty-state fallback. Default filter
  * on the page is `new`, so most rows are new.
+ *
+ * Writes live in a reload-scoped store: the page invalidates and
+ * refetches after every PATCH, so returning a patched body without
+ * updating this list made the row, counts, and note snap back.
  */
-export function demoFitRequests(
-  status: string | null = null,
-  requestType: string | null = null,
-) {
-  const rows: Array<{
-    id: string;
-    requestType: FitRequestType;
-    status: FitRequestStatus;
-    fullName: string;
-    email: string;
-    phone: string | null;
-    preferredContactMethod: "phone" | "email" | "text";
-    preferredContactTime: string | null;
-    dateOfBirth: string | null;
-    insuranceCarrier: string | null;
-    memberId: string | null;
-    groupNumber: string | null;
-    prescribingPhysician: string | null;
-    notes: string | null;
-    population: "adult" | "pediatric";
-    fitterLeadId: string | null;
-    fitSessionId: string | null;
-    recommendedMaskId: string | null;
-    recommendedMaskName: string | null;
-    recommendedMaskType: string | null;
-    recommendedMaskSize: string | null;
-    csrNote: string | null;
-    contactedAt: string | null;
-    contactedBy: string | null;
-    closedAt: string | null;
-    closedOutcome: FitRequestClosedOutcome | null;
-    createdAt: string;
-    updatedAt: string;
-  }> = [
+function seedFitRequests(): DemoFitRequest[] {
+  return [
     {
       id: "demo-fitreq-4",
       requestType: "full_details",
@@ -1013,7 +1029,20 @@ export function demoFitRequests(
       updatedAt: daysAgo(3),
     },
   ];
+}
 
+let fitRequestRows: DemoFitRequest[] | null = null;
+
+function getFitRequestRows(): DemoFitRequest[] {
+  if (!fitRequestRows) fitRequestRows = seedFitRequests();
+  return fitRequestRows;
+}
+
+export function demoFitRequests(
+  status: string | null = null,
+  requestType: string | null = null,
+) {
+  const rows = [...getFitRequestRows()];
   const counts: Record<FitRequestStatus, number> = {
     new: 0,
     contacted: 0,
@@ -1036,6 +1065,66 @@ export function demoFitRequests(
     filtered = filtered.filter((r) => r.requestType === requestType);
   }
   return { rows: filtered, counts };
+}
+
+export function demoPatchFitRequest(
+  id: string,
+  patch: {
+    status?: string;
+    csrNote?: string | null;
+    closedOutcome?: string | null;
+  },
+): DemoFitRequest | null {
+  const row = getFitRequestRows().find((r) => r.id === id);
+  if (!row) return null;
+  const now = new Date().toISOString();
+
+  if (
+    patch.status !== undefined &&
+    FIT_REQUEST_STATUSES.includes(patch.status as FitRequestStatus)
+  ) {
+    row.status = patch.status as FitRequestStatus;
+    if (row.status === "contacted" || row.status === "in_progress") {
+      // First contact is claimed once — re-opening must not rewrite it.
+      if (!row.contactedAt) {
+        row.contactedAt = now;
+        row.contactedBy = DEMO_ADMIN_AUTH.email;
+      }
+    }
+    if (row.status === "closed") {
+      row.closedAt = now;
+      if (
+        patch.closedOutcome !== undefined &&
+        patch.closedOutcome !== null &&
+        FIT_REQUEST_OUTCOMES.includes(
+          patch.closedOutcome as FitRequestClosedOutcome,
+        )
+      ) {
+        row.closedOutcome = patch.closedOutcome as FitRequestClosedOutcome;
+      }
+    } else {
+      row.closedAt = null;
+      row.closedOutcome = null;
+    }
+  } else if (
+    patch.closedOutcome !== undefined &&
+    patch.closedOutcome !== null &&
+    row.status === "closed" &&
+    FIT_REQUEST_OUTCOMES.includes(
+      patch.closedOutcome as FitRequestClosedOutcome,
+    )
+  ) {
+    row.closedOutcome = patch.closedOutcome as FitRequestClosedOutcome;
+  }
+
+  if (patch.csrNote !== undefined) row.csrNote = patch.csrNote;
+  row.updatedAt = now;
+  return row;
+}
+
+/** Test-only reset. */
+export function resetDemoFitRequests(): void {
+  fitRequestRows = null;
 }
 
 export function demoBillingDirectorSummary() {
