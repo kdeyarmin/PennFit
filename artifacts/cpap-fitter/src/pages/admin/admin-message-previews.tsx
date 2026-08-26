@@ -127,7 +127,7 @@ function previewFromEmail(
       // fall through
     }
   }
-  return `${brand.name} <noreply@cmbreathe.com>`;
+  return `${brand.name} (sender not configured)`;
 }
 
 /** The send-a-test form for one scenario + channel. */

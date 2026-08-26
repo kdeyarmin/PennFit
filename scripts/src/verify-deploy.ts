@@ -30,6 +30,10 @@
 //         storefront route the SPA calls on first paint; it proves
 //         /api/* is mounted (the cash-pay /shop/products catalog was
 //         retired with the insurance-only storefront).
+//   * GET /api/storefront-company-info  (Accept: application/json)
+//       → 200, JSON, body.name is a non-empty string.  Host-keyed
+//         identity the SPA prefers so tenant branding cannot be pinned
+//         by a stale /company-info edge cache.
 //   * GET /  (Accept: text/html)
 //       → 200, HTML.  Confirms the SPA shell is served (informational;
 //         a non-200 here is a warning, not a hard failure, since the
@@ -281,6 +285,12 @@ async function main(): Promise<number> {
   // we assert; the tenant name can be the platform fallback on an
   // unbound host.
   await checkApiJson(base, "/api/company-info", (json) =>
+    typeof json["name"] === "string" && json["name"].length > 0
+      ? null
+      : "body had no non-empty `name` string",
+  );
+
+  await checkApiJson(base, "/api/storefront-company-info", (json) =>
     typeof json["name"] === "string" && json["name"].length > 0
       ? null
       : "body had no non-empty `name` string",

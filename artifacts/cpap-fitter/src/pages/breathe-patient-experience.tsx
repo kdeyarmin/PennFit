@@ -237,7 +237,7 @@ function Retention() {
 export function BreathePatientExperience() {
   useDocumentTitle(
     "Patient experience — Breathe by CareMetric.ai",
-    "What your patients get with Breathe: a branded storefront and virtual mask fitter, a self-serve portal for orders, statements, and tracking, an always-on assistant, an AI sleep coach, and easy ways to pay — the experience that keeps patients on therapy and reordering.",
+    "What your patients get with Breathe: a branded storefront and virtual mask fitter, a self-serve portal for orders, insurance statements, and tracking, an always-on assistant, and an AI sleep coach — insurance-only resupply with no patient card checkout.",
     { schema: "Article" },
   );
   return (
