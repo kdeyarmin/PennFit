@@ -22,6 +22,15 @@ import {
 
 installSupabaseMock();
 
+const { resolveOrgIdByFaxNumberMock } = vi.hoisted(() => ({
+  resolveOrgIdByFaxNumberMock: vi.fn(
+    async (_to?: string) => "00000000-0000-4000-8000-000000000000",
+  ),
+}));
+vi.mock("../messaging/tenant-telecom", () => ({
+  resolveOrgIdByFaxNumber: resolveOrgIdByFaxNumberMock,
+}));
+
 // Stub the ObjectStorageService — the ingest helper builds one
 // internally when no impl is passed, but we ALWAYS pass one in the
 // tests so we can simulate object-storage PUT outcomes deterministically.
@@ -59,6 +68,10 @@ beforeEach(() => {
   objectStorageStub.getObjectEntityUploadURL.mockClear();
   objectStorageStub.trySetObjectEntityAclPolicy.mockClear();
   loggerStub.warn.mockClear();
+  resolveOrgIdByFaxNumberMock.mockReset();
+  resolveOrgIdByFaxNumberMock.mockResolvedValue(
+    "00000000-0000-4000-8000-000000000000",
+  );
 });
 
 function stageInsertSuccess(id: string) {
@@ -144,6 +157,23 @@ describe("ingestInboundFax — insert behavior", () => {
       objectStorageStub as never,
     );
     expect(result.kind).toBe("errored");
+  });
+
+  it("returns errored when the To number matches no tenant (no seed write)", async () => {
+    resolveOrgIdByFaxNumberMock.mockResolvedValue(null);
+    const result = await ingestInboundFax(
+      baseInput,
+      loggerStub as unknown as Logger,
+      objectStorageStub as never,
+    );
+    expect(result).toEqual({ kind: "errored" });
+    expect(loggerStub.warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        fax_id_first8: "fx-12345",
+        to_e164_present: true,
+      }),
+      "fax_inbound_tenant_unmatched",
+    );
   });
 });
 

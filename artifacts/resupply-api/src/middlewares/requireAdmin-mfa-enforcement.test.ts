@@ -36,8 +36,18 @@ vi.mock("../lib/auth-deps", () => ({
   },
 }));
 
-// admin_users lookup: a normal active admin, seed org (so the agreements gate
-// is skipped — resolveSeedOrgId returns null below).
+// admin_users lookup: active admin with a real org_id (requireAdmin fails
+// closed without one). Agreements return fully-signed so the G16 gate does
+// not mask the MFA assertions under test. Versions must match
+// REQUIRED_AGREEMENTS in lib/agreements.
+const { MFA_TEST_ORG, MFA_SIGNED_AGREEMENTS } = vi.hoisted(() => ({
+  MFA_TEST_ORG: "org-mfa-test",
+  MFA_SIGNED_AGREEMENTS: [
+    { agreement_type: "platform_terms", version: "2026-06-24" },
+    { agreement_type: "baa", version: "2026-06-24" },
+  ],
+}));
+
 vi.mock("@workspace/resupply-db", () => ({
   getSupabaseServiceRoleClient: () => ({
     schema: () => ({
@@ -46,7 +56,11 @@ vi.mock("@workspace/resupply-db", () => ({
           eq: () => ({
             limit: () => ({
               maybeSingle: async () => ({
-                data: { role: "admin", location_id: null, org_id: null },
+                data: {
+                  role: "admin",
+                  location_id: null,
+                  org_id: MFA_TEST_ORG,
+                },
                 error: null,
               }),
             }),
@@ -56,9 +70,10 @@ vi.mock("@workspace/resupply-db", () => ({
     }),
   }),
   getOrgScopedClient: () => ({
-    from: () => ({ select: async () => ({ data: [], error: null }) }),
+    from: () => ({
+      select: async () => ({ data: MFA_SIGNED_AGREEMENTS, error: null }),
+    }),
   }),
-  resolveSeedOrgId: async () => null,
 }));
 
 // `findActiveSecret` toggles per test: null = unenrolled, object = enrolled.

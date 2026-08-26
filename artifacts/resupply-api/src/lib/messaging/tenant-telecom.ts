@@ -274,10 +274,10 @@ export async function resolveTenantFaxFrom(
 
 /**
  * Reverse lookup for an inbound FAX webhook: the `org_id` that owns the
- * called fax number, or `null` when no tenant is bound to it (caller falls
- * back to the seed org). The unique partial index on `fax_from_number`
- * guarantees at most one match. Fails soft to `null` so a DB blip never
- * misroutes an inbound fax — it just lands in the seed tenant's queue.
+ * called fax number, or `null` when no tenant is bound to it. The unique
+ * partial index on `fax_from_number` guarantees at most one match. Fails
+ * soft to `null` on a DB blip so the caller can refuse the write (ingest
+ * fail-closes — it must not park PHI in another tenant's inbox).
  */
 export async function resolveOrgIdByFaxNumber(
   toNumber: string | undefined,

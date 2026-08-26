@@ -34,10 +34,7 @@ import {
   roleHasPermission,
 } from "@workspace/resupply-auth";
 import type { AdminRole } from "@workspace/resupply-db";
-import {
-  getSupabaseServiceRoleClient,
-  resolveSeedOrgId,
-} from "@workspace/resupply-db";
+import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { getAuthDeps } from "../lib/auth-deps";
 import { hasPendingAgreements } from "../lib/agreements/status";
@@ -354,23 +351,25 @@ export async function requireAdmin(
     req.impersonation = true;
     req.impersonatorUserId = admin.impersonatorUserId ?? null;
   }
-  // Multi-tenant Phase 0: attach the tenant context. Prefer the
-  // per-user admin_users.org_id (backfilled in migration 0330); fall
-  // back to the seed org for legacy rows not yet backfilled so
-  // single-tenant behavior is unchanged. Resolved best-effort and
-  // logged — NOT fail-closed — because nothing enforces org_id yet, so
-  // a resolution hiccup must not take down the entire admin surface.
-  // Enforcement (fail-closed) arrives with the scoped-wrapper cutover
-  // (Phase 0 workstream C).
-  const orgId = admin.orgId ?? (await resolveSeedOrgId());
-  if (orgId) {
-    req.orgId = orgId;
-  } else {
+  // Multi-tenant: attach the tenant context from admin_users.org_id
+  // (backfilled in migration 0330; bootstrap always writes it). Fail
+  // closed when missing — inventing the seed org here would scope a
+  // misconfigured / orphaned staff session onto another tenant's PHI.
+  // Impersonation sessions carry the target on session.impersonatedOrgId
+  // (already on admin.orgId). Ops fix: re-link admin_users.org_id.
+  const orgId = admin.orgId;
+  if (!orgId) {
     logger.warn(
-      { event: "resupply_admin_org_resolve_failed", adminUserId: admin.userId },
-      "requireAdmin: could not resolve tenant org_id (attached none)",
+      {
+        event: "resupply_admin_tenant_context_missing",
+        adminUserId: admin.userId,
+      },
+      "requireAdmin: admin_users.org_id missing; refusing request",
     );
+    res.status(403).json({ error: "tenant_context_missing" });
+    return;
   }
+  req.orgId = orgId;
 
   // Onboarding agreements gate (G16). A tenant that hasn't signed the
   // required agreements (BAA + platform terms) is blocked from the admin
@@ -379,10 +378,8 @@ export async function requireAdmin(
   // endpoints needed to SEE and COMPLETE signing are allowlisted, and
   // platform-admin act-as-tenant sessions are exempt (support staff must
   // reach an unsigned tenant to help them). Fail-closed on a lookup error,
-  // matching the /me `pendingAgreements` posture. Skipped entirely when no
-  // org could be resolved (single-tenant boot before the seed is cached) —
-  // there's nothing to gate on.
-  if (req.orgId && req.impersonation !== true) {
+  // matching the /me `pendingAgreements` posture.
+  if (req.impersonation !== true) {
     const path = req.originalUrl.split("?")[0] ?? "";
     const isAgreementsEndpoint = path.includes("/admin/agreements");
     const isIdentityEndpoint = path.endsWith("/me");
