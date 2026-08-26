@@ -434,6 +434,7 @@ router.post(
       await import("../../lib/provider-portal-token");
     const token = signProviderPortalToken(idParse.data, undefined, {
       portalLinkVersion: existing.portal_link_version,
+      orgId,
     });
     res.json({
       token,

@@ -48,11 +48,11 @@ router.get(
       res.status(401).json({ error: "invalid_or_expired_token" });
       return;
     }
-    // Provider-token route — no req.orgId. Resolve the tenant by host (the
-    // physician visits the minting tenant's domain) so the caseload query
-    // is scoped to THAT tenant's prescriptions, not the seed org's. Apex /
-    // platform host / miss → seed org (single-tenant posture unchanged).
+    // Prefer the minting tenant embedded in the token (post-fix tokens).
+    // Legacy tokens without `orgId` fall back to host resolution so
+    // outstanding links keep working until they expire.
     const orgId =
+      v.orgId ??
       (await resolveOrgIdByHost(requestHost(req))) ??
       (await resolveSeedOrgId());
     if (!orgId) {
