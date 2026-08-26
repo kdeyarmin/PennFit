@@ -1,5 +1,7 @@
 name: CI
 
+# Nudge 2026-08-26h: HEAD 528f96ad6 missing full CI after provider-ui
+# test fix; touch workflow to re-register pull_request synchronize.
 # Nudge 2026-08-26g: HEAD 32cab5f97 still missing full CI; forever-queued
 # run 32984456339 + dropped synchronize. Fresh concurrency prefix civ3.
 # Nudge 2026-08-26f: forever-queued run 32984456339 still blocks full CI
