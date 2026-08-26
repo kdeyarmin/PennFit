@@ -19,7 +19,8 @@
 //
 // Slice 1 handles the canonical case: the primary reached an adjudicated
 // paid state (`paid` or `partially_paid`) and left a patient-responsibility
-// balance. Denied-primary COB (full balance forwarded) is a follow-up.
+// balance. Denied-primary COB forwards the residual balance (PR if set,
+// else billed − paid) so secondary can pick up after a primary denial.
 //
 // Why it lives in @workspace/resupply-domain
 // -------------------------------------------
@@ -65,10 +66,10 @@ export type CobDerivation =
 
 /**
  * Pure: derive the COB amounts a secondary claim needs from the primary's
- * adjudicated totals. Slice 1 handles the canonical case — the primary
- * PAID part of the claim and left a patient-responsibility balance the
- * secondary may cover. Denied-primary COB (full balance forwarded) is a
- * follow-up. No I/O — unit-tested directly.
+ * adjudicated totals. Handles:
+ *   * paid / partially_paid — patient-responsibility balance to secondary
+ *   * denied — residual balance forwarded (PR if set, else billed − paid)
+ * No I/O — unit-tested directly.
  */
 export function deriveSecondaryCob(p: PrimaryClaimTotals): CobDerivation {
   if ((p.payer_sequence ?? "primary") !== "primary") {
@@ -77,6 +78,34 @@ export function deriveSecondaryCob(p: PrimaryClaimTotals): CobDerivation {
   if (!p.secondary_coverage_id) {
     return { eligible: false, reason: "no_secondary_coverage" };
   }
+
+  const contractualCents = Math.max(
+    0,
+    p.total_billed_cents - p.total_allowed_cents,
+  );
+  const primaryPaidCents = Math.max(0, p.total_paid_cents);
+  const patientRespCents = Math.max(0, p.patient_responsibility_cents);
+
+  // Denied primary: forward the residual. Prefer the payer-reported PR
+  // when present; otherwise bill the secondary for billed − paid (usually
+  // the full billed amount when paid is zero on a hard denial).
+  if (p.status === "denied") {
+    const residual = Math.max(0, p.total_billed_cents - primaryPaidCents);
+    const billable = patientRespCents > 0 ? patientRespCents : residual;
+    if (billable <= 0) {
+      return { eligible: false, reason: "no_balance" };
+    }
+    return {
+      eligible: true,
+      cob: {
+        primaryPaidCents,
+        contractualCents,
+        patientRespCents: billable,
+        billableToSecondaryCents: billable,
+      },
+    };
+  }
+
   // ERA outcomes after migration 0430 are often `partially_paid` (paid <
   // allowed / PR balance remaining). The secondary worklist and auto-
   // workflow already select both statuses — reject only when the primary
@@ -84,11 +113,6 @@ export function deriveSecondaryCob(p: PrimaryClaimTotals): CobDerivation {
   if (p.status !== "paid" && p.status !== "partially_paid") {
     return { eligible: false, reason: "primary_not_paid" };
   }
-  const contractualCents = Math.max(
-    0,
-    p.total_billed_cents - p.total_allowed_cents,
-  );
-  const patientRespCents = Math.max(0, p.patient_responsibility_cents);
   if (patientRespCents <= 0) {
     return { eligible: false, reason: "no_balance" };
   }
@@ -97,7 +121,7 @@ export function deriveSecondaryCob(p: PrimaryClaimTotals): CobDerivation {
     cob: {
       // Clamp like every other cents field: a stray negative paid amount
       // upstream must not emit a negative COB value.
-      primaryPaidCents: Math.max(0, p.total_paid_cents),
+      primaryPaidCents,
       contractualCents,
       patientRespCents,
       billableToSecondaryCents: patientRespCents,

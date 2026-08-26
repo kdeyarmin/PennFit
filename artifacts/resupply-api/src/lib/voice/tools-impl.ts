@@ -916,9 +916,25 @@ class Impl implements VoiceToolDispatcher {
               "placing the order now.",
           },
         };
+      case "guard_lookup_error":
+        return {
+          callId: call.callId,
+          name: call.name,
+          result: {
+            ok: false,
+            order_id: "",
+            accepted_skus: [],
+            reason:
+              "A teammate needs to finish a coverage check before this " +
+              "order can ship. Warmly offer to have a teammate follow " +
+              "up — do not invent a coverage answer.",
+          },
+        };
       default:
         // conversation_not_found / episode_not_found /
-        // no_active_prescription — all "we can't place this by phone".
+        // no_active_prescription / address_change_pending — all "we
+        // can't place this by phone" (address_change_pending is also
+        // handled upstream in some paths).
         return {
           callId: call.callId,
           name: call.name,

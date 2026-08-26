@@ -59,7 +59,7 @@ router.get(
       .from("insurance_claims")
       .select(CLAIM_SELECT)
       .eq("payer_sequence", "primary")
-      .in("status", ["paid", "partially_paid"])
+      .in("status", ["paid", "partially_paid", "denied"])
       .not("secondary_coverage_id", "is", null)
       .order("patient_responsibility_cents", { ascending: false })
       .limit(500);

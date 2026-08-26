@@ -1,4 +1,4 @@
-// CSR "sign & pay" orders — admin endpoints (the Orders page).
+// CSR signature orders — admin endpoints (the Orders page).
 //
 //   GET  /admin/csr-order-requests              — recent requests (paged)
 //   POST /admin/csr-order-requests              — create + send to the customer
@@ -11,6 +11,12 @@
 // catalog, and the customer receives a signed HMAC link to review and
 // e-sign. Nothing is charged to the patient — the order is billed to their
 // insurance through the claims pipeline.
+//
+// Draft-backed orders (a resupply_order_drafts row pointing at the request
+// via csr_order_request_id) auto-queue fulfillments on sign. Ad-hoc
+// (hand-built) orders stop at `signed` for staff to attach a patient +
+// SKU — the list response surfaces `hasLinkedDraft` so that dead-end is
+// visible in the admin UI.
 //
 // Permission posture: `returns.manage` — the operational CSR tier that
 // already owns shop-order fulfillment actions. The signing link is an
@@ -103,7 +109,10 @@ interface OrderRequestRow {
 const LIST_COLUMNS =
   "id, order_reference, status, customer_name, customer_email, customer_phone, items, amount_total_cents, currency, note_to_customer, documents, link_version, expires_at, sent_at, first_viewed_at, signed_at, signer_name, canceled_at, created_by_email, created_at";
 
-function projectRequest(row: OrderRequestRow) {
+function projectRequest(
+  row: OrderRequestRow,
+  opts: { hasLinkedDraft: boolean } = { hasLinkedDraft: false },
+) {
   const documents = parseOrderDocuments(row.documents);
   return {
     id: row.id,
@@ -113,6 +122,7 @@ function projectRequest(row: OrderRequestRow) {
     customerEmail: row.customer_email,
     customerPhone: row.customer_phone,
     items: parseOrderItems(row.items),
+    amountTotalCents: row.amount_total_cents,
     currency: row.currency,
     noteToCustomer: row.note_to_customer,
     documents: documents.map((d) => ({
@@ -128,7 +138,38 @@ function projectRequest(row: OrderRequestRow) {
     canceledAt: row.canceled_at,
     createdByEmail: row.created_by_email,
     createdAt: row.created_at,
+    // True when a resupply_order_drafts row points at this request —
+    // those auto-queue fulfillments on sign. False for ad-hoc (hand-
+    // built) orders that stay Signed for staff follow-up.
+    hasLinkedDraft: opts.hasLinkedDraft,
   };
+}
+
+/**
+ * Batch-resolve which csr_order_request ids have a linked resupply draft.
+ * Fail-soft: a draft lookup error returns an empty set (UI falls back to
+ * treating every row as ad-hoc — safer than hiding the follow-up cue).
+ */
+async function loadLinkedDraftIds(
+  orgId: string,
+  requestIds: string[],
+): Promise<Set<string>> {
+  if (requestIds.length === 0) return new Set();
+  const supabase = getOrgScopedClient(orgId);
+  const { data, error } = await supabase
+    .from("resupply_order_drafts")
+    .select("csr_order_request_id")
+    .in("csr_order_request_id", requestIds)
+    .not("csr_order_request_id", "is", null)
+    .limit(requestIds.length);
+  if (error) return new Set();
+  const out = new Set<string>();
+  for (const row of data ?? []) {
+    const id = (row as { csr_order_request_id: string | null })
+      .csr_order_request_id;
+    if (id) out.add(id);
+  }
+  return out;
 }
 
 async function loadRequest(
@@ -182,8 +223,14 @@ router.get(
     if (error) throw error;
 
     const rows = (data ?? []) as OrderRequestRow[];
+    const linked = await loadLinkedDraftIds(
+      orgId,
+      rows.map((r) => r.id),
+    );
     res.json({
-      requests: rows.map((r) => projectRequest(r)),
+      requests: rows.map((r) =>
+        projectRequest(r, { hasLinkedDraft: linked.has(r.id) }),
+      ),
       total: count ?? 0,
       page,
       pageSize,
@@ -365,8 +412,9 @@ router.get(
       res.status(404).json({ error: "not_found" });
       return;
     }
+    const linked = await loadLinkedDraftIds(orgId, [row.id]);
     res.json({
-      request: projectRequest(row),
+      request: projectRequest(row, { hasLinkedDraft: linked.has(row.id) }),
       // A copyable link for the CURRENT version — only while open.
       signingLink:
         row.status === "canceled"

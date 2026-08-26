@@ -1654,7 +1654,13 @@ export interface Database {
             | "prior_auth_expiring"
             | "prior_auth_expired"
             | "pa_mco_sla_at_risk"
-            | "pa_mco_sla_missed";
+            | "pa_mco_sla_missed"
+            | "resupply_too_soon"
+            | "resupply_coverage_blocked"
+            | "resupply_usage_review"
+            | "resupply_refill_too_early"
+            | "address_change_pending"
+            | "resupply_guard_lookup_error";
           severity: "info" | "warning" | "critical";
           summary: string;
           metric_snapshot: Record<string, unknown> | null;

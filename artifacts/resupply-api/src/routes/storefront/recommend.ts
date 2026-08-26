@@ -200,7 +200,9 @@ router.post(
  * is a merchandising preference, not an access control.
  */
 router.get("/masks", async (req, res) => {
-  const orgId = await resolveBrandOrgIdByHost(requestHost(req)).catch(() => null);
+  const orgId = await resolveBrandOrgIdByHost(requestHost(req)).catch(
+    () => null,
+  );
   const visibility = await loadCatalogVisibility(orgId);
   const masks = visibility.hiddenSlugs.size
     ? maskCatalog.filter((m) => !visibility.hiddenSlugs.has(m.id))
