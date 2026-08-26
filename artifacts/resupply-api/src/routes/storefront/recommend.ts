@@ -27,7 +27,7 @@ import {
 import { loadCatalogVisibility } from "../../lib/fitting/catalog-store.js";
 import { resolveOrgIdForSignedRecord } from "../../lib/storefront/signed-link-org.js";
 import { requestHost } from "../../lib/request-host.js";
-import { resolveOrgIdByHost } from "../../lib/tenant-branding.js";
+import { resolveBrandOrgIdByHost } from "../../lib/tenant-branding.js";
 import { storefrontRecommendLimiter } from "../../middlewares/storefront-rate-limit.js";
 
 const router = Router();
@@ -102,9 +102,7 @@ router.post(
       return;
     }
 
-    const { measurements, answers } = parseResult.data;
-    // Omitted means adult — see the field's note on GetRecommendationBody.
-    const population = parseResult.data.population ?? "adult";
+    const { measurements, answers, population } = parseResult.data;
 
     // Plausibility guard: defense-in-depth for direct API callers. The
     // browser rejects out-of-window measurements before sending
@@ -197,11 +195,12 @@ router.post(
  *
  * Tenant resolves by HOST — there is no token on this route — so a request
  * that lands on the platform domain, or on a host with no tenant behind it,
- * gets the unfiltered catalog. Fail-open is the right default for a public
- * listing: this is a merchandising preference, not an access control.
+ * gets the unfiltered catalog (brand resolver returns null — never invent
+ * the seed org). Fail-open is the right default for a public listing: this
+ * is a merchandising preference, not an access control.
  */
 router.get("/masks", async (req, res) => {
-  const orgId = await resolveOrgIdByHost(requestHost(req)).catch(() => null);
+  const orgId = await resolveBrandOrgIdByHost(requestHost(req)).catch(() => null);
   const visibility = await loadCatalogVisibility(orgId);
   const masks = visibility.hiddenSlugs.size
     ? maskCatalog.filter((m) => !visibility.hiddenSlugs.has(m.id))

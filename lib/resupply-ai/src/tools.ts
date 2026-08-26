@@ -52,8 +52,8 @@ export type ToolName = (typeof TOOL_NAMES)[number];
 // Per-caller-kind tool availability. The voice WS handler offers the model
 // only the subset for the resolved caller kind, and the dispatcher enforces
 // the same split server-side (defense in depth). A clinical patient verifies
-// by date of birth and can run the full resupply flow; a cash-pay storefront
-// caller verifies by the last four of the card on file and can only review
+// by date of birth and can run the full resupply flow; a legacy storefront
+// caller verifies by the email on file and can only review
 // their account (read-only) or reach a human.
 export const PATIENT_TOOL_NAMES = [
   "verify_patient_identity",
@@ -105,10 +105,12 @@ export const verifyPatientIdentityArgs = z
 
 export const verifyShopCustomerIdentityArgs = z
   .object({
-    last_four: z
+    // Insurance-only storefront: no card is collected. Email is the
+    // second factor after caller-ID match on shop_customers.phone_e164.
+    email: z
       .string()
       .trim()
-      .regex(/^\d{4}$/, "Expected the last four digits of the card on file."),
+      .email("Expected the email address on the storefront account."),
   })
   .strict();
 
@@ -464,17 +466,17 @@ export const OPENAI_TOOL_DESCRIPTORS: readonly OpenAiToolDescriptor[] = [
     type: "function",
     name: "verify_shop_customer_identity",
     description:
-      "Verify a storefront (cash-pay) caller's identity by matching the last four digits of the card on file. MUST be called and succeed before any other tool for a storefront caller. If no card is on file, or it fails three times, hand off to a human.",
+      "Verify a legacy storefront caller's identity by matching the email on file. MUST be called and succeed before any other tool for a storefront caller. If no email is on file, or it fails three times, hand off to a human. Patients are insurance-only — never ask for a card.",
     parameters: {
       type: "object",
       properties: {
-        last_four: {
+        email: {
           type: "string",
           description:
-            "The last four digits of the caller's payment card (exactly four digits, e.g. 4242).",
+            "The email address on the caller's storefront account (e.g. jane@example.com).",
         },
       },
-      required: ["last_four"],
+      required: ["email"],
       additionalProperties: false,
     },
   },
@@ -803,7 +805,7 @@ export function summarizeToolArgsForAudit(
     case "verify_patient_identity":
       return { name, has_dob: typeof a.date_of_birth === "string" };
     case "verify_shop_customer_identity":
-      return { name, has_last_four: typeof a.last_four === "string" };
+      return { name, has_email: typeof a.email === "string" };
     case "lookup_resupply_inventory":
     case "get_shipping_address":
     case "get_customer_chart":

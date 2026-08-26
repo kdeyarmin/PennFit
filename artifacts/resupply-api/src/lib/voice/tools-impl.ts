@@ -209,10 +209,11 @@ export interface VoiceToolDispatcherDeps {
    */
   orgId: string;
   /** "patient" (default) runs the full resupply flow and verifies by date
-   *  of birth; "shop_customer" verifies by the last four of the card on
-   *  file and is limited to reading their account or reaching a human;
-   *  "breathe_prospect" is the CareMetric Breathe B2B platform sales agent
-   *  (no patient identity, no conversations row — its own tool set). */
+   *  of birth; "shop_customer" verifies by the email on file and is
+   *  limited to reading their account or reaching a human (insurance-only
+   *  — never card last-four); "breathe_prospect" is the CareMetric Breathe
+   *  B2B platform sales agent (no patient identity, no conversations row
+   *  — its own tool set). */
   callerKind?: "patient" | "shop_customer" | "breathe_prospect";
   /** Set for patient callers — the bound clinical patient. */
   patientId?: string;
@@ -463,26 +464,25 @@ class Impl implements VoiceToolDispatcher {
   private async verifyShopCustomerIdentity(
     call: DispatchToolCall<"verify_shop_customer_identity">,
   ): Promise<DispatchToolResult<"verify_shop_customer_identity">> {
-    // Storefront callers have no DOB on file; we verify against the last
-    // four of the card on file — a low-sensitivity factor gating only the
-    // deliberately low-sensitivity shop chart. Read it FIRST so a customer
-    // with no saved card doesn't burn an attempt (the prompt then hands
-    // off). Compared in Node with timingSafeEqual.
+    // Storefront callers have no DOB on file. Cash-pay card last-four is
+    // gone (insurance-only); verify against email_lower instead. Read it
+    // FIRST so a customer with no email doesn't burn an attempt (the
+    // prompt then hands off). Compared in Node with timingSafeEqual on
+    // the normalized lowercase form.
     const supabase = await this.db();
     const { data: row, error } = await supabase
       .from("shop_customers")
-      .select("default_payment_method_last4, display_name")
+      .select("email_lower, display_name")
       .eq("customer_id", this.requireShopCustomerId())
       .limit(1)
       .maybeSingle();
     if (error) throw error;
 
-    const last4OnFile = row?.default_payment_method_last4 ?? null;
-    if (!last4OnFile) {
-      // No card on file → verification can NEVER succeed. Signal a terminal
-      // state (attempts_remaining: 0) so the model stops asking for digits
-      // and hands off, per the prompt's "no card on file" rule. We don't
-      // increment the counter — there was nothing to compare.
+    const emailOnFile = row?.email_lower ?? null;
+    if (!emailOnFile) {
+      // No email on file → verification can NEVER succeed. Signal a
+      // terminal state (attempts_remaining: 0) so the model stops asking
+      // and hands off. We don't increment the counter — nothing to compare.
       return {
         callId: call.callId,
         name: call.name,
@@ -496,7 +496,8 @@ class Impl implements VoiceToolDispatcher {
       MAX_VERIFY_ATTEMPTS - this.verifyAttempts,
     );
 
-    const matched = constantTimeStringEquals(call.args.last_four, last4OnFile);
+    const provided = call.args.email.trim().toLowerCase();
+    const matched = constantTimeStringEquals(provided, emailOnFile);
     if (matched) {
       this.verified = true;
       return {
@@ -963,6 +964,26 @@ class Impl implements VoiceToolDispatcher {
     // Twilio stop, or network drop). Returning `ok: true` lets the
     // model reply with its closing line; the bridge's
     // `session.closed` handler will then finalise the row.
+    //
+    // Decline is special: mirror SMS inbound. Conversation-only close
+    // left the episode in outreach_pending / awaiting_response and
+    // re-pinged after the quiet period. Mark the bound episode declined
+    // so the ladder stops (re-confirm is still allowed by order-flow).
+    if (
+      call.args.outcome === "patient_declined" &&
+      this.deps.episodeId &&
+      this.deps.patientId
+    ) {
+      const nowIso = new Date().toISOString();
+      const supabase = await this.db();
+      const { error: epErr } = await supabase
+        .from("episodes")
+        .update({ status: "declined", updated_at: nowIso })
+        .eq("id", this.deps.episodeId)
+        .eq("patient_id", this.deps.patientId)
+        .in("status", ["outreach_pending", "awaiting_response"]);
+      if (epErr) throw epErr;
+    }
     return {
       callId: call.callId,
       name: call.name,

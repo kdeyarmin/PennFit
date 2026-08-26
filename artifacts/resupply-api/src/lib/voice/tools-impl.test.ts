@@ -31,6 +31,7 @@ function buildStubSupabase(row: StubRow | null) {
     select: () => builder,
     update: () => builder,
     eq: () => builder,
+    in: () => builder,
     limit: () => builder,
     maybeSingle: () => Promise.resolve({ data: row, error: null }),
     single: () => Promise.resolve({ data: row, error: null }),
@@ -843,13 +844,13 @@ describe("VoiceToolDispatcher — lookup_resupply_inventory", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Storefront (shop_customer) flow — card-last-4 verify, shop chart, and
+// Storefront (shop_customer) flow — email verify, shop chart, and
 // per-caller-kind tool gating. Same per-table-builder stub style as the
 // chart tests so Promise.all reads resolve against the right table.
 // ---------------------------------------------------------------------------
 
 interface ShopStubOpts {
-  last4: string | null;
+  emailLower: string | null;
   displayName: string | null;
   lastOrder: { paid_at: string | null; created_at: string } | null;
   activeSubs: Array<{ status: string }>;
@@ -862,7 +863,7 @@ function buildShopStub(opts: ShopStubOpts) {
       case "shop_customers":
         return {
           data: {
-            default_payment_method_last4: opts.last4,
+            email_lower: opts.emailLower,
             display_name: opts.displayName,
           },
           error: null,
@@ -911,7 +912,7 @@ function shopDispatcher(opts: ShopStubOpts) {
 
 describe("VoiceToolDispatcher — shop_customer flow", () => {
   const RICH_SHOP: ShopStubOpts = {
-    last4: "4242",
+    emailLower: "jane@example.com",
     displayName: "Jane Doe",
     lastOrder: {
       paid_at: "2026-05-02T00:00:00.000Z",
@@ -921,12 +922,12 @@ describe("VoiceToolDispatcher — shop_customer flow", () => {
     openFollowups: [{ id: "f1" }],
   };
 
-  it("verifies a storefront caller by the last four of the card on file", async () => {
+  it("verifies a storefront caller by the email on file", async () => {
     const dispatcher = shopDispatcher(RICH_SHOP);
     const r = await dispatcher.dispatch({
       callId: "v",
       name: "verify_shop_customer_identity",
-      args: { last_four: "4242" },
+      args: { email: "Jane@Example.com" },
     });
     expect(r.result).toEqual({
       matched: true,
@@ -936,30 +937,28 @@ describe("VoiceToolDispatcher — shop_customer flow", () => {
     expect(dispatcher.isIdentityVerified()).toBe(true);
   });
 
-  it("counts down on a wrong last-four and does not verify", async () => {
+  it("counts down on a wrong email and does not verify", async () => {
     const dispatcher = shopDispatcher(RICH_SHOP);
     const r = await dispatcher.dispatch({
       callId: "v",
       name: "verify_shop_customer_identity",
-      args: { last_four: "0000" },
+      args: { email: "wrong@example.com" },
     });
     expect(r.result).toEqual({ matched: false, attempts_remaining: 2 });
     expect(dispatcher.isIdentityVerified()).toBe(false);
   });
 
-  it("signals terminal (attempts_remaining 0) when there is no card on file", async () => {
-    // No card on file → verification can never succeed; the result must tell
-    // the model to hand off rather than loop asking for digits.
-    const dispatcher = shopDispatcher({ ...RICH_SHOP, last4: null });
+  it("signals terminal (attempts_remaining 0) when there is no email on file", async () => {
+    const dispatcher = shopDispatcher({ ...RICH_SHOP, emailLower: null });
     const r1 = await dispatcher.dispatch({
       callId: "v1",
       name: "verify_shop_customer_identity",
-      args: { last_four: "4242" },
+      args: { email: "jane@example.com" },
     });
     const r2 = await dispatcher.dispatch({
       callId: "v2",
       name: "verify_shop_customer_identity",
-      args: { last_four: "4242" },
+      args: { email: "jane@example.com" },
     });
     expect(r1.result).toEqual({ matched: false, attempts_remaining: 0 });
     expect(r2.result).toEqual({ matched: false, attempts_remaining: 0 });
@@ -984,7 +983,7 @@ describe("VoiceToolDispatcher — shop_customer flow", () => {
     await dispatcher.dispatch({
       callId: "v",
       name: "verify_shop_customer_identity",
-      args: { last_four: "4242" },
+      args: { email: "jane@example.com" },
     });
     const r = await dispatcher.dispatch({
       callId: "g",
@@ -1034,9 +1033,93 @@ describe("VoiceToolDispatcher — shop_customer flow", () => {
     const r = await dispatcher.dispatch({
       callId: "v",
       name: "verify_shop_customer_identity",
-      args: { last_four: "4242" },
+      args: { email: "jane@example.com" },
     });
     expect(r.result).toEqual({ matched: false, attempts_remaining: 0 });
     expect(dispatcher.isIdentityVerified()).toBe(false);
+  });
+});
+
+describe("VoiceToolDispatcher — end_call patient_declined", () => {
+  it("marks the bound in-progress episode declined", async () => {
+    const updates: Array<{ table: string; patch: Record<string, unknown> }> =
+      [];
+    const makeBuilder = (table: string): Record<string, unknown> => {
+      const b: Record<string, unknown> = {
+        select: () => b,
+        update: (patch: Record<string, unknown>) => {
+          updates.push({ table, patch });
+          return b;
+        },
+        eq: () => b,
+        in: () => b,
+        limit: () => b,
+        maybeSingle: () => Promise.resolve({ data: null, error: null }),
+        then: (
+          onfulfilled: (v: unknown) => unknown,
+          onrejected?: (e: unknown) => unknown,
+        ) =>
+          Promise.resolve({ data: null, error: null }).then(
+            onfulfilled,
+            onrejected,
+          ),
+      };
+      return b;
+    };
+    const dispatcher = createVoiceToolDispatcher({
+      ...baseDeps,
+      supabase: {
+        schema: () => ({ from: (table: string) => makeBuilder(table) }),
+      } as unknown as never,
+    });
+    const r = await dispatcher.dispatch({
+      callId: "e",
+      name: "end_call",
+      args: { outcome: "patient_declined" },
+    });
+    expect(r.result).toEqual({ ok: true });
+    expect(updates).toEqual([
+      {
+        table: "episodes",
+        patch: expect.objectContaining({ status: "declined" }),
+      },
+    ]);
+  });
+
+  it("does not touch episodes on a non-decline hangup", async () => {
+    const updates: Array<{ table: string }> = [];
+    const makeBuilder = (table: string): Record<string, unknown> => {
+      const b: Record<string, unknown> = {
+        select: () => b,
+        update: () => {
+          updates.push({ table });
+          return b;
+        },
+        eq: () => b,
+        in: () => b,
+        limit: () => b,
+        then: (
+          onfulfilled: (v: unknown) => unknown,
+          onrejected?: (e: unknown) => unknown,
+        ) =>
+          Promise.resolve({ data: null, error: null }).then(
+            onfulfilled,
+            onrejected,
+          ),
+      };
+      return b;
+    };
+    const dispatcher = createVoiceToolDispatcher({
+      ...baseDeps,
+      supabase: {
+        schema: () => ({ from: (table: string) => makeBuilder(table) }),
+      } as unknown as never,
+    });
+    await dispatcher.dispatch({
+      callId: "e",
+      name: "end_call",
+      args: { outcome: "completed" },
+    });
+    expect(updates).toEqual([]);
   });
 });

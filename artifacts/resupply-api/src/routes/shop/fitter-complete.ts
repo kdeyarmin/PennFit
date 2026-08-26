@@ -35,7 +35,7 @@ import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import { requestHost } from "../../lib/request-host";
-import { resolveOrgIdByHost } from "../../lib/tenant-branding";
+import { resolveBrandOrgIdByHost } from "../../lib/tenant-branding";
 import { resolveOrgIdForSignedRecord } from "../../lib/storefront/signed-link-org";
 
 type FitterLeadsUpdate =
@@ -288,10 +288,10 @@ router.post("/shop/fitter-complete", async (req, res) => {
 
   try {
     // Email-based enrollment from the /results page — no token record id
-    // to derive the tenant from, so resolve it from the request HOST (the
-    // tenant whose storefront the patient is on). Fails soft to the seed
-    // org for the platform host / single-tenant.
-    const orgId = await resolveOrgIdByHost(requestHost(req));
+    // to derive the tenant from, so resolve by verified custom domain /
+    // subdomain ONLY. Platform host / unbound → null → not enrolled
+    // (never invent the seed org).
+    const orgId = await resolveBrandOrgIdByHost(requestHost(req));
     if (!orgId) {
       // No tenant context — mirror the best-effort posture: never 5xx
       // the /results page, just report "not enrolled".

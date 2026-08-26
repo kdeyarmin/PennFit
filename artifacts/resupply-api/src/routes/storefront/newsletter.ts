@@ -21,7 +21,7 @@ import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger.js";
 import { requestHost } from "../../lib/request-host.js";
-import { resolveOrgIdByHost } from "../../lib/tenant-branding.js";
+import { resolveBrandOrgIdByHost } from "../../lib/tenant-branding.js";
 
 const router: IRouter = Router();
 
@@ -50,7 +50,7 @@ router.post("/newsletter/subscribe", async (req, res) => {
 
   // This route is mounted before attachSignedIn, so guest requests may
   // not have req.orgId yet; resolve by host as a fallback.
-  const orgId = req.orgId ?? (await resolveOrgIdByHost(requestHost(req)));
+  const orgId = req.orgId ?? (await resolveBrandOrgIdByHost(requestHost(req)));
   if (!orgId) {
     res.status(500).json({ error: "tenant_context_missing" });
     return;
