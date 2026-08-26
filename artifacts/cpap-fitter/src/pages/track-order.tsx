@@ -1,4 +1,4 @@
-// /track-order — public order-status lookup for guest checkouts.
+// /track-order — public order-status lookup (no login).
 //
 // What this is
 // ------------
@@ -7,9 +7,8 @@
 // Captures the single largest "where's my order?" inbound CSR
 // contact deflectable with a simple self-service surface.
 //
-// The full /shop/orders page (signed-in only) stays the canonical
-// detailed view; this page is for the guest patient who didn't
-// create an account and just wants to confirm we got their order.
+// Accepts mint `PENN-XXXXXX` (or bare 6) plus legacy `PHM-XXX-XXX`
+// still in flight. Signed-in account history remains on /account.
 
 import React, { useState } from "react";
 import { Link } from "wouter";

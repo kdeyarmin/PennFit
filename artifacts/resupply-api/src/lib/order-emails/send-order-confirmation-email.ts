@@ -200,7 +200,9 @@ export async function sendOrderConfirmationEmail(
       undefined,
   );
   const orderUrl = `${base}/track-order`;
-  const browseUrl = `${base}/shop`;
+  // Cash-pay /shop is retired — send patients to insurance coverage
+  // rather than a LegacyShopRedirect hop off /shop.
+  const coverageUrl = `${base}/insurance`;
 
   // ---------- text body ----------
   const textLines: string[] = [
@@ -226,7 +228,7 @@ export async function sendOrderConfirmationEmail(
     textLines.push("");
   }
   textLines.push(`View your order: ${orderUrl}`);
-  textLines.push(`Browse the shop:  ${browseUrl}`);
+  textLines.push(`Insurance coverage: ${coverageUrl}`);
   textLines.push("");
   textLines.push(
     "We'll send another email with tracking info once your order ships. " +
@@ -279,7 +281,7 @@ export async function sendOrderConfirmationEmail(
       .filter(Boolean)
       .join("\n"),
     button: { label: "View order", url: orderUrl },
-    footerHtml: `<a href="${escapeHtml(browseUrl)}" style="color:${BREATHE_COLORS.blue};text-decoration:underline;">Browse the shop</a>`,
+    footerHtml: `<a href="${escapeHtml(coverageUrl)}" style="color:${BREATHE_COLORS.blue};text-decoration:underline;">Insurance coverage</a>`,
     footerLines: [
       "We'll send another email with tracking info once your order ships.",
       "Reply to this message if you need to make a change — we read every reply.",

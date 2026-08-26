@@ -237,5 +237,8 @@ describe("sendOrderConfirmationEmail", () => {
     // Plain-text body still includes total + view-order link.
     expect(arg.text).toContain("Total: $0.00");
     expect(arg.text).toContain("/track-order");
+    expect(arg.text).toContain("/insurance");
+    expect(arg.html).toContain("Insurance coverage");
+    expect(arg.html).not.toContain("Browse the shop");
   });
 });
