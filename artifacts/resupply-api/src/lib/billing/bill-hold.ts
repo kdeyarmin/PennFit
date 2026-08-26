@@ -565,38 +565,45 @@ async function resolveOnFile(
 /**
  * Best-effort auto-match of an inbound fax to an outstanding requirement.
  * Called fire-and-forget from the inbound-fax ingest. Matches by the
- * `expected_return_fax_e164` we recorded when the paperwork was sent out;
- * auto-satisfies ONLY when exactly one outstanding requirement expects a
+ * `expected_return_fax_e164` we recorded when the paperwork was sent out,
+ * scoped to the fax's `orgId` (required — no seed / cross-tenant match).
+ * Auto-satisfies ONLY when exactly one outstanding requirement expects a
  * return from this number (never guesses between several). Never throws —
  * a failure just leaves the fax for manual linking in the triage queue.
  */
 export async function autoMatchInboundFaxToPaperwork(
   faxId: string,
   fromE164: string | null,
-  injected?: SupabaseClient,
-  orgId?: string | null,
+  injected: SupabaseClient | undefined,
+  orgId: string | null | undefined,
 ): Promise<{ matched: boolean; requirementId: string | null }> {
   try {
     if (!fromE164) return { matched: false, requirementId: null };
     const normalized = fromE164.trim();
     if (!normalized) return { matched: false, requirementId: null };
 
-    const supabase = injected ?? (await resolveDefaultClient());
-    if (!supabase) return { matched: false, requirementId: null };
+    // Fail closed without a tenant: matching on expected_return_fax_e164
+    // alone could satisfy another tenant's outstanding paperwork (shared
+    // provider fax numbers are common). Callers (inbound ingest) always
+    // know the fax's org.
+    const tenantOrgId = orgId?.trim();
+    if (!tenantOrgId) {
+      logger.warn(
+        { event: "bill_hold.fax_match_tenant_missing" },
+        "bill-hold: inbound fax auto-match skipped (no orgId)",
+      );
+      return { matched: false, requirementId: null };
+    }
 
-    let query = supabase
+    const supabase = injected ?? getOrgScopedClient(tenantOrgId).raw();
+
+    const { data, error } = await supabase
       .schema("resupply")
       .from("claim_paperwork_requirements")
       .select(REQUIREMENT_COLUMNS)
       .eq("expected_return_fax_e164", normalized)
-      .eq("status", "outstanding");
-    // Scope to the fax's tenant when known — a shared provider return fax
-    // must not satisfy another tenant's outstanding paperwork (cross-
-    // tenant bill-hold release).
-    if (orgId) {
-      query = query.eq("org_id", orgId);
-    }
-    const { data, error } = await query;
+      .eq("status", "outstanding")
+      .eq("org_id", tenantOrgId);
     if (error) throw error;
     const candidates = (data ?? []) as PaperworkRequirementRow[];
     const { matched, ambiguous } = pickFaxMatch(candidates);

@@ -54,7 +54,7 @@
 import type { Logger } from "pino";
 import { Readable } from "node:stream";
 
-import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { ObjectStorageService } from "../object-storage/objectStorage";
 
@@ -698,11 +698,11 @@ export async function persistInboundAttachment(
     input.twilioMediaSid ?? null,
   );
 
-  const orgId = input.orgId ?? (await resolveSeedOrgId());
+  const orgId = input.orgId?.trim();
   if (!orgId) {
-    // No seed tenant resolvable — the GCS bytes we just uploaded become
-    // an orphan the attachment sweep reaps. Count as a transient error
-    // (same outcome as a failed DB insert below).
+    // Fail closed — never park PHI attachments under the seed org when the
+    // caller forgot a tenant. The GCS bytes we just uploaded become an
+    // orphan the attachment sweep reaps.
     logger.warn(
       { source: input.source ?? "unknown" },
       "attachment_ingest_tenant_context_missing",
