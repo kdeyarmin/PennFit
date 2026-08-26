@@ -31,7 +31,7 @@ import {
   sendQuizResultsEmail,
   type QuizRiskBand,
 } from "../../lib/order-emails/send-quiz-results-email";
-import { resolveOrgIdByHost } from "../../lib/tenant-branding";
+import { resolveBrandOrgIdByHost } from "../../lib/tenant-branding";
 import { requestHost } from "../../lib/request-host";
 
 const router: IRouter = Router();
@@ -134,11 +134,11 @@ router.post("/shop/quiz-leads", async (req, res) => {
   // Compute the authoritative band server-side from the score.
   const computedBand = computeBand(data.score);
 
-  // Public route (no auth middleware populates req.orgId): resolve the
-  // tenant from the request host so the lead is filed under — and the
-  // results email sends under — the storefront's own tenant. Custom domain
-  // → that org; platform host / miss → seed org (single-tenant unchanged).
-  const orgId = (await resolveOrgIdByHost(requestHost(req))) ?? undefined;
+  // Public route — resolve by verified custom domain / subdomain ONLY.
+  // Platform host and unbound domains return null (resolveBrandOrgIdByHost)
+  // so we never invent the seed org and file another tenant's lead under
+  // Penn's queue. Mirrors insurance-lead / company-info.
+  const orgId = (await resolveBrandOrgIdByHost(requestHost(req))) ?? undefined;
 
   // Persist the row first so the lead is durable even if SendGrid
   // is unconfigured / down.

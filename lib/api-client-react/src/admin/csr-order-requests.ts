@@ -1,4 +1,4 @@
-// Hand-authored React Query hooks for the CSR "sign & pay" order
+// Hand-authored React Query hooks for the CSR signature-order
 // admin endpoints (no OpenAPI/orval pipeline — see CLAUDE.md). Mirrors
 // the patient-packets hooks but stays compact.
 
@@ -41,6 +41,12 @@ export interface CsrOrderRequestSummary {
   canceledAt: string | null;
   createdByEmail: string | null;
   createdAt: string;
+  /** True when a resupply draft produced this request. */
+  hasLinkedDraft: boolean;
+  /** True when signing queued at least one fulfillment for the linked
+   *  draft. False for ad-hoc orders and for drafts whose dispense
+   *  failed soft — staff must follow up before insurance work starts. */
+  hasQueuedFulfillment: boolean;
 }
 
 export interface CsrOrderRequestListResponse {

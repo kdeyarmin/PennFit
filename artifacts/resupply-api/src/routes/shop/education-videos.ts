@@ -14,18 +14,17 @@ import {
 import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import { requestHost } from "../../lib/request-host";
-import { resolveOrgIdByHost } from "../../lib/tenant-branding";
+import { resolveBrandOrgIdByHost } from "../../lib/tenant-branding";
 
 const router: IRouter = Router();
 
 router.get("/shop/education-videos", async (req, res) => {
   try {
     // education_videos is per-tenant (migration 0358): each tenant curates
-    // its own /learn library. Resolve the tenant by request host (a verified
-    // custom domain → its org; the platform host / any miss → the seed org,
-    // so single-tenant behavior is unchanged), then read its OWN videos via
-    // the org-scoped facade. Fail-soft: any miss renders an empty library.
-    const orgId = await resolveOrgIdByHost(requestHost(req));
+    // its own /learn library. Resolve by verified custom domain / subdomain
+    // ONLY (resolveBrandOrgIdByHost) — platform host / unbound → null and an
+    // empty library, never the seed tenant's videos. Fail-soft on miss.
+    const orgId = await resolveBrandOrgIdByHost(requestHost(req));
     if (!orgId) {
       res.json({ groups: [] });
       return;

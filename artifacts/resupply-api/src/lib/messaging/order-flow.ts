@@ -168,6 +168,18 @@ export type PlaceOrderResult =
       patientId: string;
       episodeId: string;
     }
+  | {
+      /**
+       * An enforcement flag is ON but the underlying lookup threw /
+       * returned a DB error. Distinct from a true denial (not_eligible /
+       * coverage_blocked / …): we do not invent a payer answer, but we
+       * also do not ship. Episode stays pending for CSR.
+       */
+      status: "guard_lookup_error";
+      patientId: string;
+      episodeId: string;
+      guard: "entitlement" | "coverage" | "usage" | "refill_window";
+    }
   | { status: "conversation_not_found" }
   | { status: "episode_not_found" }
   | { status: "no_active_prescription" };
@@ -270,13 +282,13 @@ export async function placeResupplyOrderForConversation(
   // isn't yet payable under the replacement schedule — too soon since
   // the last dispense, or over the per-period quantity cap — so we
   // don't ship a claim that denies and leaves the patient with the
-  // bill. FAIL OPEN: an unmapped SKU (resolveSkuEntitlement → null) or
-  // ANY lookup error allows the confirmation through. We never strand
-  // a legitimate reorder on our own eligibility bug. The guard runs
-  // before the atomic claim so a blocked episode is left untouched
-  // (stays pending) for the CSR to work. The resolved entitlement is
-  // captured for reuse by the refill-window guard (3e) and the
-  // refill_confirmations stamp below.
+  // bill. FAIL OPEN by omission: an unmapped SKU (resolveSkuEntitlement
+  // → null) allows the confirmation through. FAIL CLOSED on lookup
+  // errors when this flag is ON — we never invent a payable answer
+  // from a broken check. The guard runs before the atomic claim so a
+  // blocked episode is left untouched (stays pending) for the CSR.
+  // The resolved entitlement is captured for reuse by the refill-
+  // window guard (3e) and the refill_confirmations stamp below.
   let resolvedEntitlement: SkuEntitlement | null = null;
   if (await isFeatureEnabled("resupply.entitlement_enforcement", orgId)) {
     try {
@@ -307,8 +319,15 @@ export async function placeResupplyOrderForConversation(
           episodeId: episode.id,
           errName: err instanceof Error ? err.name : "unknown",
         },
-        "resupply: entitlement check failed; allowing confirmation (fail open)",
+        "resupply: entitlement check failed; holding confirmation (fail closed)",
       );
+      await raiseGuardLookupAlert(supabase, episode.patient_id, "entitlement");
+      return {
+        status: "guard_lookup_error",
+        patientId: episode.patient_id,
+        episodeId: episode.id,
+        guard: "entitlement",
+      };
     }
   }
 
@@ -316,12 +335,11 @@ export async function placeResupplyOrderForConversation(
   // most recent parsed 270/271 for the patient's PRIMARY coverage. An
   // explicitly inactive plan or a prior-auth-required flag means the
   // claim would deny and leave the patient with the bill, so we hold
-  // the confirmation for a CSR instead of auto-shipping. FAIL OPEN: no
-  // coverage on file, no/stale parsed result, or ANY lookup error
-  // allows the confirmation through — we never strand a legitimate
-  // reorder on our own eligibility plumbing. Runs before the atomic
-  // claim so a blocked episode is left untouched (stays pending) for
-  // the CSR to work, exactly like the entitlement guard above.
+  // the confirmation for a CSR instead of auto-shipping. FAIL OPEN by
+  // omission: no coverage on file, no/stale parsed result → proceed.
+  // FAIL CLOSED on lookup errors when this flag is ON. Runs before the
+  // atomic claim so a blocked episode is left untouched (stays pending)
+  // for the CSR, exactly like the entitlement guard above.
   if (await isFeatureEnabled("resupply.eligibility_enforcement", orgId)) {
     try {
       const block = await consultCoverageEligibility(
@@ -344,8 +362,15 @@ export async function placeResupplyOrderForConversation(
           episodeId: episode.id,
           errName: err instanceof Error ? err.name : "unknown",
         },
-        "resupply: coverage check failed; allowing confirmation (fail open)",
+        "resupply: coverage check failed; holding confirmation (fail closed)",
       );
+      await raiseGuardLookupAlert(supabase, episode.patient_id, "coverage");
+      return {
+        status: "guard_lookup_error",
+        patientId: episode.patient_id,
+        episodeId: episode.id,
+        guard: "coverage",
+      };
     }
   }
 
@@ -355,11 +380,11 @@ export async function placeResupplyOrderForConversation(
   // therapy-cloud data over the last 30 days affirmatively shows the
   // device is effectively unused, hold the confirmation for a CSR
   // check-in instead of auto-shipping a claim that risks denial /
-  // claw-back. FAIL OPEN: no therapy data on file (most patients —
-  // cloud integrations are optional), a sparse window, or ANY lookup
-  // error allows the confirmation through. Runs before the atomic
-  // claim so a held episode stays pending for the CSR, exactly like
-  // the two guards above.
+  // claw-back. FAIL OPEN by omission: no therapy data on file (most
+  // patients — cloud integrations are optional) or a sparse window →
+  // proceed. FAIL CLOSED on lookup errors when this flag is ON. Runs
+  // before the atomic claim so a held episode stays pending for the
+  // CSR, exactly like the two guards above.
   if (await isFeatureEnabled("resupply.usage_compliance_check", orgId)) {
     try {
       const usage = await consultRecentTherapyUsage(
@@ -382,8 +407,15 @@ export async function placeResupplyOrderForConversation(
           episodeId: episode.id,
           errName: err instanceof Error ? err.name : "unknown",
         },
-        "resupply: continued-use check failed; allowing confirmation (fail open)",
+        "resupply: continued-use check failed; holding confirmation (fail closed)",
       );
+      await raiseGuardLookupAlert(supabase, episode.patient_id, "usage");
+      return {
+        status: "guard_lookup_error",
+        patientId: episode.patient_id,
+        episodeId: episode.id,
+        guard: "usage",
+      };
     }
   }
 
@@ -395,9 +427,10 @@ export async function placeResupplyOrderForConversation(
   // entitlement block already returned; this guard is what enforces the
   // CMS ship-window floor when entitlement enforcement is off. Reuses the
   // entitlement resolved in 3b when available, else resolves once here.
-  // FAIL OPEN: a first fill, an unmapped SKU, or ANY lookup error allows
-  // the confirmation through. Runs before the atomic claim so a blocked
-  // episode is left untouched (stays pending) for the CSR.
+  // FAIL OPEN by omission: a first fill or an unmapped SKU → proceed.
+  // FAIL CLOSED on lookup errors when this flag is ON. Runs before the
+  // atomic claim so a blocked episode is left untouched (stays pending)
+  // for the CSR.
   if (await isFeatureEnabled("resupply.refill_window_enforcement", orgId)) {
     try {
       const entitlement =
@@ -438,8 +471,19 @@ export async function placeResupplyOrderForConversation(
           episodeId: episode.id,
           errName: err instanceof Error ? err.name : "unknown",
         },
-        "resupply: refill-window check failed; allowing confirmation (fail open)",
+        "resupply: refill-window check failed; holding confirmation (fail closed)",
       );
+      await raiseGuardLookupAlert(
+        supabase,
+        episode.patient_id,
+        "refill_window",
+      );
+      return {
+        status: "guard_lookup_error",
+        patientId: episode.patient_id,
+        episodeId: episode.id,
+        guard: "refill_window",
+      };
     }
   }
 
@@ -947,6 +991,68 @@ export async function releaseAddressChangeHold(args: {
 }
 
 /**
+ * Best-effort CSR alert when an enforcement-flagged guard cannot
+ * complete its lookup (DB/network error). NEVER throws into the caller
+ * — a failed alert must not turn a clean "guard_lookup_error" return
+ * into a 500 on the patient's confirm. De-dupes against the existing
+ * open alert via `(patient_id, alert_type) WHERE status='open'`.
+ */
+async function raiseGuardLookupAlert(
+  supabase: OrgScopedClient,
+  patientId: string,
+  guard: "entitlement" | "coverage" | "usage" | "refill_window",
+): Promise<void> {
+  try {
+    const { data: existing } = await supabase
+      .from("csr_compliance_alerts")
+      .select("id")
+      .eq("patient_id", patientId)
+      .eq("alert_type", "resupply_guard_lookup_error")
+      .eq("status", "open")
+      .limit(1)
+      .maybeSingle();
+    if (existing) return;
+    const label =
+      guard === "entitlement"
+        ? "entitlement (replacement schedule)"
+        : guard === "coverage"
+          ? "insurance eligibility"
+          : guard === "usage"
+            ? "continued-use therapy data"
+            : "refill ship window";
+    const { error: insertAlertErr } = await supabase
+      .from("csr_compliance_alerts")
+      .insert({
+        patient_id: patientId,
+        alert_type: "resupply_guard_lookup_error",
+        severity: "warning",
+        summary: `Reorder held — could not complete the ${label} check. Verify before shipping.`,
+        metric_snapshot: { guard } as unknown as Json,
+      });
+    if (insertAlertErr) {
+      logger.warn(
+        {
+          event: "resupply.guard_lookup.alert_failed",
+          err: insertAlertErr.message,
+          patientId,
+          guard,
+        },
+        "resupply: failed to raise guard-lookup CSR alert (non-fatal)",
+      );
+    }
+  } catch (err) {
+    logger.warn(
+      {
+        event: "resupply.guard_lookup.alert_failed",
+        errName: err instanceof Error ? err.name : "unknown",
+        guard,
+      },
+      "resupply: failed to raise guard-lookup CSR alert",
+    );
+  }
+}
+
+/**
  * Best-effort CSR alert when the entitlement guard blocks a reorder.
  * Centralized here so every caller of placeResupplyOrderForConversation
  * gets the same work-queue row without duplicating the logic. NEVER
@@ -1083,7 +1189,8 @@ async function raiseRefillWindowAlert(
  *
  * FAIL OPEN by omission: a patient with no coverage on file (cash-pay),
  * no/stale parsed result returns null → the order proceeds. A thrown DB
- * error propagates to the caller's fail-open catch.
+ * error propagates to the caller's fail-closed catch when the
+ * eligibility_enforcement flag is ON.
  */
 async function consultCoverageEligibility(
   supabase: OrgScopedClient,
@@ -1182,7 +1289,7 @@ const USAGE_MIN_COMPLIANT_RATIO = 0.5;
  * the data AFFIRMATIVELY shows non-use. Returns a `UsageReviewBlock`
  * when the reorder should be held for CSR review, else null (no
  * opinion — proceed). A thrown DB error propagates to the caller's
- * fail-open catch.
+ * fail-closed catch when the usage_compliance_check flag is ON.
  */
 async function consultRecentTherapyUsage(
   supabase: OrgScopedClient,

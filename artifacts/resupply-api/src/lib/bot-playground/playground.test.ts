@@ -37,7 +37,8 @@ describe("buildPlaygroundSystemPrompt", () => {
       voice: { callerKind: "shop_customer" },
     });
     expect(patient).toContain("date of birth");
-    expect(shop).toContain("card on file");
+    expect(shop).toContain("email address on their account");
+    expect(shop).not.toMatch(/card on file/i);
     expect(patient).not.toEqual(shop);
   });
 });

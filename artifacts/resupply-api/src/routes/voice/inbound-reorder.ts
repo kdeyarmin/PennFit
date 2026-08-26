@@ -74,9 +74,10 @@ const INBOUND_GREETING =
 
 const INBOUND_SHOP_CALL_CONTEXT =
   "Inbound call: a storefront customer phoned to check on their account. " +
-  "Verify identity with verify_shop_customer_identity({last_four}) — the " +
-  "tool compares against their saved payment-method last four — then " +
-  "review their recent order status. For any change, hand off to a human.";
+  "Verify identity with verify_shop_customer_identity({email}) — the " +
+  "tool compares against the email on their account — then review their " +
+  "recent order status. Never ask for a card. For any change, hand off " +
+  "to a human.";
 
 const INBOUND_SHOP_GREETING =
   "Hi there, thanks for calling Penn Home Medical Supply! I can help you check on your " +

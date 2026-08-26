@@ -625,6 +625,45 @@ router.post("/email/click", emailClickLimiter, async (req, res) => {
             );
           return;
         }
+        if (result.status === "guard_lookup_error") {
+          // Enforcement flag ON but the check itself failed. Hold for
+          // CSR — same review page as the other blocks.
+          const { error: lookupErr } = await supabase
+            .from("conversations")
+            .update({
+              status: "awaiting_admin",
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", conversationId);
+          if (lookupErr) throw lookupErr;
+          await safeAudit({
+            action: "messaging.order.blocked_guard_lookup",
+            adminEmail: null,
+            adminUserId: null,
+            targetTable: "episodes",
+            targetId: result.episodeId,
+            metadata: {
+              channel: "email",
+              conversation_id: conversationId,
+              patient_id: result.patientId,
+              episode_id: result.episodeId,
+              guard: result.guard,
+              via: "email_link",
+            },
+            ip: req.ip ?? null,
+            userAgent: req.get("user-agent") ?? null,
+          });
+          res
+            .status(200)
+            .type("text/html")
+            .send(
+              renderClickConfirmation({
+                practiceName: practiceName,
+                action: "review",
+              }),
+            );
+          return;
+        }
         res
           .status(400)
           .type("text/html")

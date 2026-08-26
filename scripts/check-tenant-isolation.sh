@@ -102,8 +102,11 @@ EXCLUDES=(
   # note in routes/storefront/newsletter.ts). It is the platform's list, not
   # any tenant's, so there is no org to scope to — the same global-table
   # rationale as the platform-outreach entries above. The drip is a worker
-  # tick (no req.orgId) and the unsubscribe route is public/anonymous.
+  # tick (no req.orgId); the subscribe and unsubscribe routes are
+  # public/anonymous and must work on the platform host where
+  # resolveBrandOrgIdByHost returns null.
   --glob '!**/worker/jobs/demo-drip.ts'
+  --glob '!**/routes/storefront/newsletter.ts'
   --glob '!**/routes/storefront/newsletter-unsubscribe.ts'
   # The voice pending-session store (migration 0418) is a platform-GLOBAL,
   # short-lived cross-replica handoff table keyed by an opaque conversationId

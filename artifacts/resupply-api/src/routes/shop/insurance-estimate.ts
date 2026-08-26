@@ -32,7 +32,7 @@ import {
 } from "../../lib/insurance-estimates/data";
 import { recordFitterLead } from "../../lib/fitter-lead-record";
 import { sendInsuranceEstimateEmail } from "../../lib/order-emails/send-insurance-estimate-email";
-import { resolveOrgIdByHost } from "../../lib/tenant-branding";
+import { resolveBrandOrgIdByHost } from "../../lib/tenant-branding";
 import { requestHost } from "../../lib/request-host";
 
 const router: IRouter = Router();
@@ -176,12 +176,9 @@ router.post("/shop/insurance-estimates", async (req, res) => {
 
   const estimate = findPayerEstimate(data.payerSlug);
 
-  // Public route (no auth middleware populates req.orgId): resolve the
-  // tenant from the request host so the lead is filed under — and the
-  // estimate email sends under, and the learned-stats read pulls — the
-  // storefront's own tenant (migration 0382). Custom domain → that org;
-  // platform host / miss → seed org (single-tenant unchanged).
-  const hostOrgId = await resolveOrgIdByHost(requestHost(req));
+  // Public route — resolve by verified custom domain / subdomain ONLY.
+  // Platform host / unbound → null (never invent the seed org).
+  const hostOrgId = await resolveBrandOrgIdByHost(requestHost(req));
   const orgId = hostOrgId ?? undefined;
 
   // Persist the lead first so a SendGrid outage doesn't lose the

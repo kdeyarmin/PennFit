@@ -1,7 +1,7 @@
-// Hand-authored React Query hooks for the public CSR-order "sign &
-// pay" flow (token-gated, no login). Used by the cpap-fitter
-// /order-pay page. See lib/api-client-react/src/admin/
-// csr-order-requests.ts for the admin-side hooks.
+// Hand-authored React Query hooks for the public CSR signature-order
+// flow (token-gated, no login). Used by the cpap-fitter /order-sign
+// page. See lib/api-client-react/src/admin/csr-order-requests.ts for
+// the admin-side hooks.
 
 import {
   useMutation,

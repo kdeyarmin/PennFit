@@ -510,15 +510,12 @@ export const GetRecommendationBody = zod.object({
   // other consumer of the 11-answer shape (the chatbot, the invite
   // completion payload, `fromLegacyAnswers`) speaks that shape verbatim.
   //
-  // Optional for back-compat: a client that predates the question sends
-  // nothing and the route reads "adult", which is what it has always
-  // assumed and is the only default that fails safe against this
-  // catalog's adult-only size bands.
+  // Required: population is asked, never assumed. Omitting used to
+  // silently size children against adult bands.
   population: zod
     .enum(["adult", "pediatric"])
-    .optional()
     .describe(
-      "Service line the fitting runs on. Omitted means adult. A pediatric session ranks nothing against this adult-only catalog and is referred to the DME.",
+      "Service line the fitting runs on. Required — a pediatric session ranks nothing against this adult-only catalog and is referred to the DME.",
     ),
 }).strict();
 

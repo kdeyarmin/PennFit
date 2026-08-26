@@ -311,10 +311,10 @@ async function findReportedBadFits(
 /**
  * Patients whose CURRENT mask is discontinued.
  *
- * Note this branch is inert until `fit_sessions.ordered_mask_model_id` and
- * `dispensed_at` are actually written — nothing populates them today, so
- * it finds nothing rather than finding the wrong people. It is written to
- * be correct when those writes land.
+ * Reads `fit_sessions.ordered_mask_model_id` / `dispensed_at`, which
+ * `markFitSessionDispensedById` stamps when staff close a fit request
+ * as `fulfilled` (migration 0519). Sessions never dispensed simply
+ * have NULL columns and are skipped — they are not false positives.
  */
 async function findDiscontinuedMasks(
   supabase: OrgScopedClient,
