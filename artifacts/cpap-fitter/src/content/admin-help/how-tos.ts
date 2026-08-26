@@ -171,7 +171,7 @@ export const HOW_TO_GUIDES: readonly HowToGuide[] = [
     title: "Find your way around the console",
     category: "getting-started",
     summary:
-      "The sidebar is grouped by the shape of the work — Workspace, Patients & Clinical, Orders & Shop, Billing, Analytics & Reports, System. Use the global lookup in the header to jump straight to a patient, and the in-app assistant when you cannot find a page.",
+      "The sidebar is grouped by the shape of the work — Workspace, Patients & Clinical, Orders & fulfillment, Billing, Analytics & Reports, System. Use the global lookup in the header to jump straight to a patient, and the in-app assistant when you cannot find a page.",
     audience: "Everyone",
     timeEstimate: "About 10 minutes",
     primaryPath: "/admin",
@@ -187,7 +187,7 @@ export const HOW_TO_GUIDES: readonly HowToGuide[] = [
         substeps: [
           "Workspace — the day-to-day desk: front desk, conversations, cases, schedule, outreach.",
           "Patients & Clinical — the patient roster, paperwork and e-sign, therapy monitoring, and clinical work.",
-          "Orders & Shop — orders, fulfillment, subscriptions, returns, inventory, and storefront leads.",
+          "Orders & fulfillment — insurance orders, fulfillment, signature paperwork, inventory, and storefront leads.",
           "Billing — the revenue cycle, front to back, as worklists.",
           "Analytics & Reports — dashboards, the report catalog, goals, and team performance.",
           "System — support, automation, operations, and settings.",

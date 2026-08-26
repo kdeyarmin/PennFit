@@ -196,7 +196,7 @@ function demoRevenueBySource(days: number) {
   const bySource = [
     {
       source: "storefront" as const,
-      label: "Storefront (cash-pay)",
+      label: "Historical storefront (retired)",
       orders: 241,
       units: null,
       paidOrders: 187,
@@ -1077,7 +1077,8 @@ function demoBusinessTargets(period?: string) {
       period: thisMonth,
       targetValue: 3_000_000,
       unit: "cents",
-      notes: "Storefront cash-pay revenue goal.",
+      notes:
+        "Historical retail revenue goal (demo only — patients are insurance-only).",
       createdByEmail: "owner.demo@demo.example",
       createdAt: daysAgo(20),
       updatedAt: daysAgo(2),

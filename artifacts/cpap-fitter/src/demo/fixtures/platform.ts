@@ -2491,12 +2491,14 @@ export function demoAccountSetup() {
         "stripe",
         "optional",
         "Payments",
-        "Storefront payments (Stripe)",
-        "Card checkout on tenant storefronts.",
-        on("STRIPE_SECRET_KEY") ? "ok" : "missing",
-        on("STRIPE_SECRET_KEY")
-          ? "Test-mode key detected."
-          : "STRIPE_SECRET_KEY is unset — checkout falls back to the catalog-only preview.",
+        "Platform Stripe (SaaS)",
+        "Tenant CareMetric Breathe subscription billing — not patient checkout.",
+        on("STRIPE_SECRET_KEY") || on("STRIPE_PLATFORM_SECRET_KEY")
+          ? "ok"
+          : "missing",
+        on("STRIPE_SECRET_KEY") || on("STRIPE_PLATFORM_SECRET_KEY")
+          ? "Platform billing key detected."
+          : "Stripe platform key unset — tenant SaaS checkout degrades.",
       ),
       item(
         "platform-billing",
