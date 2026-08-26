@@ -44,7 +44,7 @@ import { logger } from "../../lib/logger";
 import { resolveTenantSmsClientOptions } from "../../lib/messaging/tenant-telecom";
 import {
   resolveBrandingByOrgId,
-  resolveTenantBaseUrl,
+  resolveTenantLinkBaseUrl,
 } from "../../lib/tenant-branding.js";
 import {
   FITTER_INVITE_IN_OFFICE_TTL_MS,
@@ -117,12 +117,17 @@ async function tryCreateTwilioSms(
 }
 
 /** Build the patient-facing link on the tenant's own verified custom
- *  domain when it has one, falling back to the platform host. Without
- *  this, a tenant's SMS says "Acme Sleep" while the link lands the
- *  patient on the platform-branded storefront. */
-const inviteLinkFor = async (orgId: string, token: string): Promise<string> => {
-  const base =
-    (await resolveTenantBaseUrl(orgId).catch(() => null)) ?? publicBaseUrl();
+ *  domain when it has one. Seed org alone may fall back to the platform
+ *  host; any other tenant without a verified domain returns null so we
+ *  refuse to mint a wrong-org platform link. */
+const inviteLinkFor = async (
+  orgId: string,
+  token: string,
+): Promise<string | null> => {
+  const base = await resolveTenantLinkBaseUrl(orgId, publicBaseUrl()).catch(
+    () => null,
+  );
+  if (!base) return null;
   return `${base}/fitter-invite?t=${encodeURIComponent(token)}`;
 };
 
@@ -334,6 +339,19 @@ router.post(
       return;
     }
 
+    const platformBase = publicBaseUrl();
+    const linkBase = await resolveTenantLinkBaseUrl(orgId, platformBase).catch(
+      () => null,
+    );
+    if (!linkBase) {
+      res.status(422).json({
+        error: "tenant_domain_required",
+        message:
+          "Verify a custom domain for this tenant before sending fitter invites. Without one, the invite link would open on the platform host and land on the wrong storefront.",
+      });
+      return;
+    }
+
     const inOffice = body.channel === "in_office";
     // A QR on a staff screen sits in a semi-public space, so it expires
     // with the visit rather than in a month — see the constant's comment.
@@ -365,7 +383,7 @@ router.post(
     if (!row) throw new Error("fitter_invites insert returned no rows");
 
     const token = signFitterInviteToken(row.id, new Date(), ttlMs);
-    const link = await inviteLinkFor(orgId, token);
+    const link = `${linkBase}/fitter-invite?t=${encodeURIComponent(token)}`;
     // Nothing is sent for an in-office invite: the patient is here, and
     // the handover IS the delivery. Reported as delivered so the caller's
     // success check stays uniform, without claiming a message went out.
@@ -882,6 +900,14 @@ router.post(
       : FITTER_INVITE_TTL_MS;
     const token = signFitterInviteToken(invite.id, new Date(), ttlMs);
     const link = await inviteLinkFor(orgId, token);
+    if (!link) {
+      res.status(422).json({
+        error: "tenant_domain_required",
+        message:
+          "Verify a custom domain for this tenant before resending fitter invites. Without one, the invite link would open on the platform host and land on the wrong storefront.",
+      });
+      return;
+    }
     // "Resend" on an in-office invite means "show the QR again" — there
     // is no address to send to, and the row may have none. Re-minting
     // still does the useful half: a fresh, un-expired link.

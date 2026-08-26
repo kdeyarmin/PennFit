@@ -41,7 +41,7 @@ import { applyTenantEmailSender } from "../../lib/email/apply-tenant-email-sende
 import { createTenantSendgridClient } from "../../lib/email/tenant-sender";
 import {
   resolveBrandingByOrgId,
-  resolveTenantBaseUrl,
+  resolveTenantLinkBaseUrl,
 } from "../../lib/tenant-branding";
 import { applyTenantSmsFrom } from "../../lib/messaging/tenant-telecom";
 import { recordOutboundMessageUsage } from "../../lib/metering/usage";
@@ -463,8 +463,13 @@ async function tryNotifyCustomerOfReply(input: {
   const brand = await resolveBrandingByOrgId(orgId);
   const brandName = brand.storefrontName;
   const legalName = brand.legalName || brandName;
-  const baseUrl =
-    (await resolveTenantBaseUrl(orgId)) ?? "https://cmbreathe.com";
+  // Prefer the tenant's verified domain; seed may fall back to platform.
+  // Non-seed without a domain: still push (relative URL), but skip the
+  // email so we never send a cmbreathe.com account link for the wrong org.
+  const baseUrl = await resolveTenantLinkBaseUrl(
+    orgId,
+    "https://cmbreathe.com",
+  ).catch(() => null);
 
   // Push fan-out runs independently of the email opt-in — push is
   // its own channel that the customer enables explicitly via the
@@ -502,6 +507,14 @@ async function tryNotifyCustomerOfReply(input: {
     ...((row.prefs ?? {}) as Partial<CommunicationPreferences>),
   };
   if (!prefs.emailInAppReplyNotifications) {
+    return;
+  }
+
+  if (!baseUrl) {
+    logger.info(
+      { conversation_id: input.conversationId, org_id: orgId },
+      "in_app_reply_notification: skipped email (no tenant domain)",
+    );
     return;
   }
 

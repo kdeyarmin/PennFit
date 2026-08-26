@@ -111,7 +111,10 @@ vi.mock("../../lib/tenant-branding", () => ({
     tagline: "",
     logoUrl: null,
   })),
-  resolveTenantBaseUrl: vi.fn(async () => null),
+  resolveTenantBaseUrl: vi.fn(async () => "https://pennpaps.com"),
+  resolveTenantLinkBaseUrl: vi.fn(
+    async (_orgId?: string, _fallback?: string) => "https://pennpaps.com",
+  ),
 }));
 
 import replyRouter from "./reply";

@@ -60,16 +60,20 @@ vi.mock("@workspace/resupply-telecom", async () => {
   };
 });
 
-// Tenant branding: null base URL = no verified custom domain (platform
-// fallback); tests flip it to assert the tenant-domain link path.
+// Tenant branding: verified custom domain for happy-path link minting.
+// Tests that assert the domain gate set tenantBranding.baseUrl = null.
 const tenantBranding = vi.hoisted(() => ({
-  baseUrl: null as string | null,
+  baseUrl: "https://pennpaps.example.com" as string | null,
 }));
 vi.mock("../../lib/tenant-branding.js", () => ({
   resolveBrandingByOrgId: vi.fn(async () => ({
     storefrontName: "Acme Sleep",
   })),
   resolveTenantBaseUrl: vi.fn(async () => tenantBranding.baseUrl),
+  resolveTenantLinkBaseUrl: vi.fn(
+    async (_orgId?: string, _platformFallback?: string) =>
+      tenantBranding.baseUrl ? tenantBranding.baseUrl.replace(/\/$/, "") : null,
+  ),
 }));
 
 import fitterInvitesRouter from "./fitter-invites";
@@ -93,7 +97,7 @@ beforeEach(() => {
   };
   process.env.RESUPPLY_LINK_HMAC_KEY = "test-link-hmac-key-value-1234567890";
   process.env.SHOP_PUBLIC_BASE_URL = "https://pennpaps.example.com";
-  tenantBranding.baseUrl = null;
+  tenantBranding.baseUrl = "https://pennpaps.example.com";
 });
 
 describe("POST /admin/fitter-invites", () => {
@@ -136,6 +140,18 @@ describe("POST /admin/fitter-invites", () => {
     expect(res.status).toBe(201);
     expect(res.body.inviteLink).toContain(
       "https://acmesleep.example.com/fitter-invite?t=",
+    );
+  });
+
+  it("422s when the tenant has no verified custom domain", async () => {
+    tenantBranding.baseUrl = null;
+    const res = await request(makeApp())
+      .post("/resupply-api/admin/fitter-invites")
+      .send({ email: "prospect@example.com", channel: "email" });
+    expect(res.status).toBe(422);
+    expect(res.body.error).toBe("tenant_domain_required");
+    expect(getSupabaseWritePayloads("fitter_invites", "insert")).toHaveLength(
+      0,
     );
   });
 

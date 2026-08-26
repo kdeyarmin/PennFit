@@ -43,6 +43,24 @@ vi.mock("../../lib/auth-deps", () => ({
   }),
 }));
 
+// Invite/remind links require a tenant link base URL (verified domain,
+// or seed-org platform fallback). This suite uses MOCK_ORG_ID (non-seed)
+// and does not exercise the domain gate — pin a base URL so the route
+// proceeds to the auth/account guards under test. Domain-gate coverage
+// lives in provider-esign.links.test.ts.
+vi.mock("../../lib/tenant-branding", () => ({
+  resolveTenantBaseUrl: vi.fn(async () => "https://cmbreathe.com"),
+  resolveTenantLinkBaseUrl: vi.fn(
+    async (_orgId?: string, _fallback?: string) => "https://cmbreathe.com",
+  ),
+  resolveBrandingByOrgId: vi.fn(async () => ({
+    storefrontName: "CareMetric Breathe",
+    legalName: "CareMetric Breathe",
+    tagline: "",
+    logoUrl: null,
+  })),
+}));
+
 // Keep the real exports (notably `roleHasPermission`, used by the
 // requirePermission auth mock) and only stub the token-mint / email
 // renderer the invite path calls.
