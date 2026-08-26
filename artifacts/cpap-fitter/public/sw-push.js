@@ -65,8 +65,7 @@ self.addEventListener("notificationclick", (event) => {
   // origin and only navigate when the resulting origin matches;
   // anything else (cross-origin, malformed) falls back to /track-order.
   const rawTarget =
-    (event.notification.data && event.notification.data.url) ||
-    "/track-order";
+    (event.notification.data && event.notification.data.url) || "/track-order";
   let targetUrl = "/track-order";
   try {
     const parsed = new URL(rawTarget, self.location.origin);

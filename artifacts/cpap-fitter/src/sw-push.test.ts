@@ -195,9 +195,7 @@ describe("sw-push.js — install/activate/push listeners still present", () => {
   });
 
   it("push listener stashes url in notification data for the click handler", () => {
-    expect(SW_SRC).toContain(
-      'data: { url: payload.url || "/track-order" }',
-    );
+    expect(SW_SRC).toContain('data: { url: payload.url || "/track-order" }');
   });
 
   it("push listener falls back to /apple-touch-icon.png for icon and badge", () => {
