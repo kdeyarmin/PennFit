@@ -352,6 +352,35 @@ describe("demo router", () => {
     expect(body.order.payload).not.toBeNull();
   });
 
+  it("seeds the fit-request queue the user-manual screenshot captures", async () => {
+    const res = await get("/resupply-api/admin/fitter-requests?status=new");
+    expect(res).not.toBeNull();
+    const body = (await res!.json()) as {
+      rows: Array<{ status: string; email: string }>;
+      counts: Record<string, number>;
+    };
+    expect(body.rows.length).toBeGreaterThan(0);
+    expect(body.rows.every((r) => r.status === "new")).toBe(true);
+    expect(body.counts.new).toBeGreaterThan(0);
+    expect(body.rows[0]!.email).toMatch(/@caremetric\.example$/);
+  });
+
+  it("seeds the product catalog the user-manual screenshot captures", async () => {
+    const res = await get("/resupply-api/admin/catalog/products");
+    expect(res).not.toBeNull();
+    const body = (await res!.json()) as {
+      products: Array<{ sku: string; stockCount: number | null }>;
+      total: number;
+      categories: string[];
+    };
+    expect(body.products.length).toBeGreaterThan(0);
+    expect(body.total).toBe(body.products.length);
+    expect(body.categories.length).toBeGreaterThan(0);
+    // NULL stock is untracked, not zero — at least one seeded SKU
+    // keeps that distinction visible.
+    expect(body.products.some((p) => p.stockCount === null)).toBe(true);
+  });
+
   it("falls back to an empty-collections shape for unmatched API GETs", async () => {
     // Systemic guard for the whole bug class: a broadly-permissioned demo
     // explorer can navigate to admin list pages whose endpoints aren't

@@ -21,12 +21,13 @@ import {
   demoShopCustomers,
   demoCustomerDetail,
   demoFitterLeads,
+  demoFitRequests,
   demoBillingDirectorSummary,
   demoAdminOrders,
   demoAdminOrderDetail,
   demoSystemInfo,
 } from "../fixtures/admin";
-import { findDemoProduct } from "../fixtures/products";
+import { demoAdminCatalog, findDemoProduct } from "../fixtures/products";
 import {
   demoSelectableAddons,
   demoSelectablePlans,
@@ -178,6 +179,51 @@ export const adminHandlers: DemoHandler[] = [
   // ── leads + billing + orders ─────────────────────────────────────
   route("GET", "/resupply-api/admin/fitter-leads", () =>
     json(demoFitterLeads()),
+  ),
+  // Fit-request queue + product catalog: these are the three pages the
+  // user-manual capture retargeted after Front Desk / cash-pay shop
+  // were removed. Without fixtures they fall through to empty counts
+  // and "No SKUs yet", which is a worse screenshot than the retired
+  // pages they replaced.
+  route("GET", "/resupply-api/admin/fitter-requests", (req) =>
+    json(
+      demoFitRequests(req.query.get("status"), req.query.get("requestType")),
+    ),
+  ),
+  route("PATCH", "/resupply-api/admin/fitter-requests/:id", (req, { id }) => {
+    const body =
+      req.json<{
+        status?: string;
+        csrNote?: string | null;
+        closedOutcome?: string | null;
+      }>() ?? {};
+    const now = new Date().toISOString();
+    return json({
+      id,
+      status: body.status ?? "contacted",
+      csrNote: body.csrNote ?? null,
+      contactedAt: now,
+      contactedBy: "demo.admin@caremetric.example",
+      closedAt: body.status === "closed" ? now : null,
+      closedOutcome: body.closedOutcome ?? null,
+      updatedAt: now,
+    });
+  }),
+  route("GET", "/resupply-api/admin/catalog/low-stock", () =>
+    json({ products: demoAdminCatalog({ lowStockOnly: true }).products }),
+  ),
+  route("GET", "/resupply-api/admin/catalog/products", (req) =>
+    json(
+      demoAdminCatalog({
+        q: req.query.get("q"),
+        category: req.query.get("category"),
+        lowStockOnly:
+          req.query.get("lowStockOnly") === "1" ||
+          req.query.get("lowStockOnly") === "true",
+        limit: intParam(req, "limit", 200),
+        offset: intParam(req, "offset", 0),
+      }),
+    ),
   ),
   route("GET", "/resupply-api/admin/billing/director-summary", () =>
     json(demoBillingDirectorSummary()),

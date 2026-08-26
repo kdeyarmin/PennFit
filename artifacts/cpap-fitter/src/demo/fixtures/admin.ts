@@ -724,6 +724,320 @@ export function demoFitterLeads() {
   };
 }
 
+type FitRequestStatus = "new" | "contacted" | "in_progress" | "closed";
+type FitRequestType = "full_details" | "callback";
+type FitRequestClosedOutcome =
+  | "fulfilled"
+  | "not_proceeding"
+  | "unreachable"
+  | "duplicate";
+
+/**
+ * GET /admin/fitter-requests — the queue a mask fitting now ends in.
+ * Seeded so the user-manual screenshot (and a demo explorer) show a
+ * real worklist rather than the empty-state fallback. Default filter
+ * on the page is `new`, so most rows are new.
+ */
+export function demoFitRequests(
+  status: string | null = null,
+  requestType: string | null = null,
+) {
+  const rows: Array<{
+    id: string;
+    requestType: FitRequestType;
+    status: FitRequestStatus;
+    fullName: string;
+    email: string;
+    phone: string | null;
+    preferredContactMethod: "phone" | "email" | "text";
+    preferredContactTime: string | null;
+    dateOfBirth: string | null;
+    insuranceCarrier: string | null;
+    memberId: string | null;
+    groupNumber: string | null;
+    prescribingPhysician: string | null;
+    notes: string | null;
+    population: "adult" | "pediatric";
+    fitterLeadId: string | null;
+    fitSessionId: string | null;
+    recommendedMaskId: string | null;
+    recommendedMaskName: string | null;
+    recommendedMaskType: string | null;
+    recommendedMaskSize: string | null;
+    csrNote: string | null;
+    contactedAt: string | null;
+    contactedBy: string | null;
+    closedAt: string | null;
+    closedOutcome: FitRequestClosedOutcome | null;
+    createdAt: string;
+    updatedAt: string;
+  }> = [
+    {
+      id: "demo-fitreq-4",
+      requestType: "full_details",
+      status: "new",
+      fullName: "Riley Tester",
+      email: "riley.tester@caremetric.example",
+      phone: "+12155550113",
+      preferredContactMethod: "email",
+      preferredContactTime: null,
+      dateOfBirth: "1964-11-30",
+      insuranceCarrier: "Medicare",
+      memberId: "1EG4-TE5-MK72",
+      groupNumber: null,
+      prescribingPhysician: "Dr. Alex Rivera",
+      notes: null,
+      population: "adult",
+      fitterLeadId: "demo-lead-4",
+      fitSessionId: "demo-fit-4",
+      recommendedMaskId: "demo-mask-f30i",
+      recommendedMaskName: "ResMed AirFit F30i",
+      recommendedMaskType: "full_face",
+      recommendedMaskSize: "M",
+      csrNote: null,
+      contactedAt: null,
+      contactedBy: null,
+      closedAt: null,
+      closedOutcome: null,
+      createdAt: hoursAgo(14),
+      updatedAt: hoursAgo(14),
+    },
+    {
+      id: "demo-fitreq-2",
+      requestType: "callback",
+      status: "new",
+      fullName: "Casey Demo",
+      email: "casey.demo@caremetric.example",
+      phone: "+12155550111",
+      preferredContactMethod: "phone",
+      preferredContactTime: "Morning",
+      dateOfBirth: null,
+      insuranceCarrier: null,
+      memberId: null,
+      groupNumber: null,
+      prescribingPhysician: null,
+      notes: null,
+      population: "adult",
+      fitterLeadId: "demo-lead-2",
+      fitSessionId: "demo-fit-2",
+      recommendedMaskId: "demo-mask-p10",
+      recommendedMaskName: "ResMed AirFit P10",
+      recommendedMaskType: "nasal_pillow",
+      recommendedMaskSize: "S",
+      csrNote: null,
+      contactedAt: null,
+      contactedBy: null,
+      closedAt: null,
+      closedOutcome: null,
+      createdAt: hoursAgo(5),
+      updatedAt: hoursAgo(5),
+    },
+    {
+      id: "demo-fitreq-3",
+      requestType: "full_details",
+      status: "new",
+      fullName: "Morgan Example",
+      email: "morgan.example@caremetric.example",
+      phone: "+12155550112",
+      preferredContactMethod: "text",
+      preferredContactTime: "Evening",
+      dateOfBirth: "2018-06-02",
+      insuranceCarrier: "Highmark",
+      memberId: "HMK-441920",
+      groupNumber: "HM-88",
+      prescribingPhysician: "Dr. Sam Patel",
+      notes: "Fitting was for a child — pediatric service line.",
+      population: "pediatric",
+      fitterLeadId: "demo-lead-3",
+      fitSessionId: "demo-fit-3",
+      recommendedMaskId: "demo-mask-pixi",
+      recommendedMaskName: "ResMed Pixi Pediatric",
+      recommendedMaskType: "nasal",
+      recommendedMaskSize: "one-size",
+      csrNote: null,
+      contactedAt: null,
+      contactedBy: null,
+      closedAt: null,
+      closedOutcome: null,
+      createdAt: hoursAgo(8),
+      updatedAt: hoursAgo(8),
+    },
+    {
+      id: "demo-fitreq-1",
+      requestType: "full_details",
+      status: "new",
+      fullName: "Jordan Sample",
+      email: "jordan.sample@caremetric.example",
+      phone: "+12155550110",
+      preferredContactMethod: "phone",
+      preferredContactTime: "Afternoon",
+      dateOfBirth: "1978-04-12",
+      insuranceCarrier: "Aetna",
+      memberId: "W2840173355",
+      groupNumber: "PA-00271",
+      prescribingPhysician: "Dr. Alex Rivera",
+      notes: "Sleeps on their side; asked about a quieter vent.",
+      population: "adult",
+      fitterLeadId: "demo-lead-1",
+      fitSessionId: "demo-fit-1",
+      recommendedMaskId: "demo-mask-n20",
+      recommendedMaskName: "ResMed AirFit N20",
+      recommendedMaskType: "nasal",
+      recommendedMaskSize: "M",
+      csrNote: null,
+      contactedAt: null,
+      contactedBy: null,
+      closedAt: null,
+      closedOutcome: null,
+      createdAt: hoursAgo(2),
+      updatedAt: hoursAgo(2),
+    },
+    {
+      id: "demo-fitreq-5",
+      requestType: "full_details",
+      status: "contacted",
+      fullName: "Avery Placeholder",
+      email: "avery.placeholder@caremetric.example",
+      phone: "+12155550114",
+      preferredContactMethod: "phone",
+      preferredContactTime: "Afternoon",
+      dateOfBirth: "1989-02-18",
+      insuranceCarrier: "Cigna",
+      memberId: "U987654321",
+      groupNumber: "CG-441",
+      prescribingPhysician: "Dr. Jordan Lee",
+      notes: null,
+      population: "adult",
+      fitterLeadId: "demo-lead-5",
+      fitSessionId: "demo-fit-5",
+      recommendedMaskId: "demo-mask-n20",
+      recommendedMaskName: "ResMed AirFit N20",
+      recommendedMaskType: "nasal",
+      recommendedMaskSize: "L",
+      csrNote: "Left a voicemail; waiting on the Rx.",
+      contactedAt: hoursAgo(6),
+      contactedBy: "casey.csr@caremetric.example",
+      closedAt: null,
+      closedOutcome: null,
+      createdAt: daysAgo(1),
+      updatedAt: hoursAgo(6),
+    },
+    {
+      id: "demo-fitreq-6",
+      requestType: "callback",
+      status: "contacted",
+      fullName: "Quinn Fictional",
+      email: "quinn.fictional@caremetric.example",
+      phone: "+12155550115",
+      preferredContactMethod: "phone",
+      preferredContactTime: "Morning",
+      dateOfBirth: null,
+      insuranceCarrier: null,
+      memberId: null,
+      groupNumber: null,
+      prescribingPhysician: null,
+      notes: null,
+      population: "adult",
+      fitterLeadId: "demo-lead-6",
+      fitSessionId: "demo-fit-6",
+      recommendedMaskId: null,
+      recommendedMaskName: null,
+      recommendedMaskType: null,
+      recommendedMaskSize: null,
+      csrNote: "Reached; they will send insurance details.",
+      contactedAt: hoursAgo(20),
+      contactedBy: "casey.csr@caremetric.example",
+      closedAt: null,
+      closedOutcome: null,
+      createdAt: daysAgo(2),
+      updatedAt: hoursAgo(20),
+    },
+    {
+      id: "demo-fitreq-7",
+      requestType: "full_details",
+      status: "in_progress",
+      fullName: "Harper Mockford",
+      email: "harper.mockford@caremetric.example",
+      phone: "+12155550116",
+      preferredContactMethod: "text",
+      preferredContactTime: null,
+      dateOfBirth: "1992-08-09",
+      insuranceCarrier: "Aetna",
+      memberId: "W5510298841",
+      groupNumber: "PA-00914",
+      prescribingPhysician: "Dr. Sam Patel",
+      notes: null,
+      population: "adult",
+      fitterLeadId: "demo-lead-7",
+      fitSessionId: "demo-fit-7",
+      recommendedMaskId: "demo-mask-n30",
+      recommendedMaskName: "ResMed AirFit N30i",
+      recommendedMaskType: "nasal",
+      recommendedMaskSize: "M",
+      csrNote: "Eligibility clear; building the order.",
+      contactedAt: daysAgo(1),
+      contactedBy: "casey.csr@caremetric.example",
+      closedAt: null,
+      closedOutcome: null,
+      createdAt: daysAgo(2),
+      updatedAt: hoursAgo(3),
+    },
+    {
+      id: "demo-fitreq-8",
+      requestType: "full_details",
+      status: "closed",
+      fullName: "Rowan Sandbox",
+      email: "rowan.sandbox@caremetric.example",
+      phone: "+12155550117",
+      preferredContactMethod: "email",
+      preferredContactTime: null,
+      dateOfBirth: "1956-01-22",
+      insuranceCarrier: "Highmark",
+      memberId: "HMK-220184",
+      groupNumber: "HM-12",
+      prescribingPhysician: "Dr. Alex Rivera",
+      notes: null,
+      population: "adult",
+      fitterLeadId: "demo-lead-8",
+      fitSessionId: "demo-fit-8",
+      recommendedMaskId: "demo-mask-n20",
+      recommendedMaskName: "ResMed AirFit N20",
+      recommendedMaskType: "nasal",
+      recommendedMaskSize: "M",
+      csrNote: "Fulfilled — patient has their mask.",
+      contactedAt: daysAgo(4),
+      contactedBy: "casey.csr@caremetric.example",
+      closedAt: daysAgo(3),
+      closedOutcome: "fulfilled",
+      createdAt: daysAgo(5),
+      updatedAt: daysAgo(3),
+    },
+  ];
+
+  const counts: Record<FitRequestStatus, number> = {
+    new: 0,
+    contacted: 0,
+    in_progress: 0,
+    closed: 0,
+  };
+  for (const r of rows) counts[r.status] += 1;
+
+  // Oldest first — the live queue is SLA-ordered that way (the
+  // confirmation email promises a reply within one business day).
+  rows.sort(
+    (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+  );
+
+  let filtered = rows;
+  if (status && status !== "all") {
+    filtered = filtered.filter((r) => r.status === status);
+  }
+  if (requestType && requestType !== "all") {
+    filtered = filtered.filter((r) => r.requestType === requestType);
+  }
+  return { rows: filtered, counts };
+}
+
 export function demoBillingDirectorSummary() {
   return {
     counts: {
@@ -845,13 +1159,13 @@ function demoAdminOrderRow(i: number) {
     shippingCity: "Philadelphia",
     shippingState: "PA",
     shippingZip: "19107",
-    emailStatus: (i % 5 === 0 ? "failed" : "sent") as
+    emailStatus: (i % 5 === 4 ? "failed" : "sent") as
       | "pending"
       | "sent"
       | "failed"
       | "skipped",
-    emailDeliveredAt: i % 5 === 0 ? null : daysAgo(i),
-    emailError: i % 5 === 0 ? "550 mailbox unavailable" : null,
+    emailDeliveredAt: i % 5 === 4 ? null : daysAgo(i),
+    emailError: i % 5 === 4 ? "550 mailbox unavailable" : null,
     createdAt: daysAgo(i),
   };
 }

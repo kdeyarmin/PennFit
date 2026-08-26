@@ -329,3 +329,67 @@ export function demoProductsResponse() {
 export function findDemoProduct(id: string): ShopProductView | undefined {
   return DEMO_PRODUCTS.find((p) => p.id === id);
 }
+
+/**
+ * GET /admin/catalog/products — warehouse SKU list. Mapped from the
+ * storefront demo catalog so the admin Catalog page (and its user-manual
+ * screenshot) shows real rows. NULL stock stays untracked, not zero.
+ */
+export function demoAdminCatalog(
+  opts: {
+    q?: string | null;
+    category?: string | null;
+    lowStockOnly?: boolean;
+    limit?: number;
+    offset?: number;
+  } = {},
+) {
+  const products = DEMO_PRODUCTS.map((p, i) => {
+    const stockCount = p.stockCount;
+    const lowStockThreshold = p.lowStockThreshold;
+    const lowStock =
+      stockCount != null &&
+      lowStockThreshold != null &&
+      stockCount <= lowStockThreshold;
+    return {
+      sku: p.modelNumber ?? p.id,
+      name: p.name,
+      description: p.description,
+      category: p.category,
+      manufacturer: p.manufacturer,
+      modelNumber: p.modelNumber,
+      unitOfMeasure: "each",
+      stockCount,
+      lowStockThreshold,
+      lowStock,
+      active: true,
+      updatedAt: new Date(Date.now() - i * 3600_000).toISOString(),
+    };
+  });
+  let filtered = products;
+  const q = opts.q?.trim().toLowerCase();
+  if (q) {
+    filtered = filtered.filter(
+      (p) =>
+        p.sku.toLowerCase().includes(q) ||
+        p.name.toLowerCase().includes(q) ||
+        (p.manufacturer ?? "").toLowerCase().includes(q),
+    );
+  }
+  if (opts.category) {
+    filtered = filtered.filter((p) => p.category === opts.category);
+  }
+  if (opts.lowStockOnly) {
+    filtered = filtered.filter((p) => p.lowStock);
+  }
+  const offset = opts.offset ?? 0;
+  const limit = opts.limit ?? 200;
+  const categories = [
+    ...new Set(products.map((p) => p.category).filter(Boolean)),
+  ] as string[];
+  return {
+    products: filtered.slice(offset, offset + limit),
+    total: filtered.length,
+    categories,
+  };
+}
