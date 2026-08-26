@@ -30,6 +30,7 @@ import {
 } from "@/lib/admin/fitter-requests-api";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { PageHeader } from "@/components/admin/PageHeader";
+import { useToast } from "@/hooks/use-toast";
 import { formatAppDate } from "@/lib/utils";
 
 const STATUS_STYLE: Record<
@@ -101,11 +102,37 @@ export function AdminFitterRequestsPage() {
   // Only the row being mutated is disabled, rather than graying the
   // whole table while one PATCH is in flight.
   const [pendingId, setPendingId] = useState<string | null>(null);
+  const { toast } = useToast();
 
   const updateMut = useMutation({
     mutationFn: (args: { id: string; patch: UpdateFitRequestInput }) =>
       updateFitRequest(args.id, args.patch),
     onMutate: (args) => setPendingId(args.id),
+    onSuccess: (res, vars) => {
+      if (
+        vars.patch.status === "closed" &&
+        vars.patch.closedOutcome === "fulfilled" &&
+        res.dispenseStamped === false
+      ) {
+        toast({
+          title: "Closed, but dispense was not recorded",
+          description:
+            "The request is closed as fulfilled, but the linked fitting could not be stamped as dispensed. Try closing again, or check that a fit session is linked.",
+          variant: "destructive",
+        });
+      } else if (res.dispenseStamped) {
+        toast({
+          title: "Marked fulfilled",
+          description: "The fitting was stamped as dispensed.",
+        });
+      } else if (res.dispenseCleared) {
+        toast({
+          title: "Dispense stamp withdrawn",
+          description:
+            "An earlier fulfilled stamp was cleared to match this outcome.",
+        });
+      }
+    },
     onSettled: () => {
       setPendingId(null);
       // The common mutation ("new" → "contacted") moves a row across

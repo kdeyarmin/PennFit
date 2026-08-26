@@ -29,6 +29,7 @@ import type PgBoss from "pg-boss";
 import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger.js";
+import { markEpisodeAwaitingResponse } from "../../lib/episodes/mark-awaiting-response.js";
 import { recordTenantUsage } from "../../lib/metering/usage.js";
 import { placeOutboundReorderCall } from "../../lib/voice/place-outbound-call.js";
 import { readVoiceConfigOrNull } from "../../lib/voice/voice-config.js";
@@ -190,6 +191,7 @@ export async function registerReminderVoiceJob(boss: PgBoss): Promise<void> {
         metricKey: "aiVoiceEvents",
         source: "reminders.voice",
       });
+      await markEpisodeAwaitingResponse(supabase, j.data.episodeId);
     }
   });
 

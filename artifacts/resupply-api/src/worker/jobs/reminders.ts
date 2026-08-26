@@ -89,6 +89,7 @@ import {
 import { hasLinkHmacKey } from "@workspace/resupply-secrets";
 
 import { getCompanyInfo } from "../../lib/company-info.js";
+import { markEpisodeAwaitingResponse } from "../../lib/episodes/mark-awaiting-response.js";
 import { logger } from "../../lib/logger.js";
 import { applyTenantEmailSender } from "../../lib/email/apply-tenant-email-sender.js";
 import { applyTenantSmsFrom } from "../../lib/messaging/tenant-telecom.js";
@@ -1097,6 +1098,7 @@ export async function registerReminderJobs(boss: PgBoss): Promise<void> {
         channel: "sms",
         source: "reminders.sms",
       });
+      await markEpisodeAwaitingResponse(supabase, j.data.episodeId);
     }
   });
 
@@ -1193,6 +1195,7 @@ export async function registerReminderJobs(boss: PgBoss): Promise<void> {
         channel: "email",
         source: "reminders.email",
       });
+      await markEpisodeAwaitingResponse(supabase, j.data.episodeId);
     }
   });
 

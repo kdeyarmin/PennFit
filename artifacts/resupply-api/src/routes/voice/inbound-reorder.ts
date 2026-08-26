@@ -50,13 +50,14 @@ import {
   readVoicePublicBaseUrlOrNull,
 } from "../../lib/voice/voice-config";
 
-// Episode statuses a caller can still act on by phone (pre-confirm). A
-// confirmed/fulfilled/cancelled episode has nothing left to reorder, so
-// we don't route those to the agent.
+// Episode statuses a caller can still act on by phone (pre-confirm).
+// Match the reminder ladder's in-progress set — a declined episode is
+// done for this cycle (patient said no); rebinding it to the AI agent
+// would restart outreach they already refused. Confirmed / fulfilled /
+// cancelled likewise have nothing left to reorder.
 const ACTIONABLE_EPISODE_STATUSES = [
   "outreach_pending",
   "awaiting_response",
-  "declined",
 ] as const;
 
 const INBOUND_CALL_CONTEXT =
@@ -70,8 +71,8 @@ const INBOUND_GREETING =
 
 const INBOUND_SHOP_CALL_CONTEXT =
   "Inbound call: a storefront customer phoned to check on their account. " +
-  "Verify by the last four digits of the card on file, then review their " +
-  "recent order and subscription status. For any change, hand off to a human.";
+  "Verify by date of birth, then review their recent order status. For any " +
+  "change, hand off to a human.";
 
 const INBOUND_SHOP_GREETING =
   "Hi there, thanks for calling Penn Home Medical Supply! I can help you check on your " +

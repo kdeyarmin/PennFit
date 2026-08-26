@@ -17,6 +17,7 @@ import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "./logger";
 import { redactDbErr } from "./redact-db-err";
+import { createLegacyFitSessionForRequest } from "./fitting/legacy-fit-session";
 
 export interface RecordFitRequestInput {
   /** Tenant the fitting belonged to, resolved from the invite. */
@@ -358,6 +359,12 @@ export async function recordFitRequest(
         if (id && fitterLeadId) {
           await stampContactRequested(input.orgId, fitterLeadId, nowIso);
         }
+        // Legacy `/api/recommend` never writes a fit_sessions row. Attach
+        // one after the request lands so a later fulfilled close can stamp
+        // dispense. Clinical assess already supplies fitSessionId.
+        if (id && !input.fitSessionId) {
+          await attachLegacyFitSession(input.orgId, id, input);
+        }
         return { id };
       }
 
@@ -393,6 +400,45 @@ export async function recordFitRequest(
       "fit-request-record: insert failed",
     );
     return { id: null, error: describeError(err) };
+  }
+}
+
+/**
+ * Backfill a fit_sessions link for a request filed without one (legacy
+ * recommend path). Fail-soft — the request row already exists.
+ */
+async function attachLegacyFitSession(
+  orgId: string,
+  requestId: string,
+  input: RecordFitRequestInput,
+): Promise<void> {
+  const sessionId = await createLegacyFitSessionForRequest({
+    orgId,
+    population: input.population,
+    recommendedMaskId: input.recommendedMaskId,
+    recommendedMaskName: input.recommendedMaskName,
+    recommendedMaskType: input.recommendedMaskType,
+    recommendedMaskSize: input.recommendedMaskSize,
+  });
+  if (!sessionId) return;
+  try {
+    const supabase = getOrgScopedClient(orgId);
+    const { error } = await supabase
+      .from("fitter_fit_requests")
+      .update({ fit_session_id: sessionId })
+      .eq("id", requestId)
+      .is("fit_session_id", null);
+    if (error) {
+      logger.warn(
+        { err: redactDbErr(error), requestId },
+        "fit-request-record: could not attach legacy fit session",
+      );
+    }
+  } catch (err) {
+    logger.warn(
+      { err: redactDbErr(err), requestId },
+      "fit-request-record: could not attach legacy fit session",
+    );
   }
 }
 
