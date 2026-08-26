@@ -391,11 +391,14 @@ describe("tools-impl — prescriptions query filters by status='active' (PR chan
 // guards + queued fulfillments).
 
 describe("tools-impl — place_resupply_order delegates to the shared order flow", () => {
-  it("calls placeResupplyOrderForConversation instead of writing episodes directly", () => {
+  it("calls placeResupplyOrderForConversation instead of writing episodes on confirm", () => {
     expect(TOOLS_SRC).toContain("placeResupplyOrderForConversation");
-    // The broken voice-only episode write must be gone.
+    // The broken voice-only confirm write (status "pending") must stay gone.
     expect(TOOLS_SRC).not.toContain('.eq("status", "pending")');
-    expect(TOOLS_SRC).not.toContain('.from("episodes")');
+    // Decline is allowed to write episodes.status = declined (mirrors SMS);
+    // confirm still goes through the shared order-flow path above.
+    expect(TOOLS_SRC).toContain('status: "declined"');
+    expect(TOOLS_SRC).toContain('outcome === "patient_declined"');
   });
 });
 
