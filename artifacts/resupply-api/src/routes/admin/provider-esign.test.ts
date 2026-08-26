@@ -239,7 +239,7 @@ describe("POST /admin/provider-portal/accounts/invite", () => {
       email: "doc@example.com",
       emailSent: true,
     });
-    expect(res.body.inviteLink).toContain("/reset-password?token=");
+    expect(res.body.inviteLink).toContain("/provider/reset-password?token=");
     expect(emailMock).toHaveBeenCalledTimes(1);
     const acct = getSupabaseWritePayloads(
       "provider_portal_accounts",

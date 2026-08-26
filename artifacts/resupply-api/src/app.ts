@@ -441,8 +441,8 @@ logger.info(
 // including the UNIFIED MFA probe (lib/auth-deps.ts), so an enrolled
 // provider is challenged for a TOTP code here exactly as on the other
 // mounts. allowSignUp stays false (providers are invited by staff);
-// password-reset / verify-email links land on the storefront pages
-// (uiPathPrefix unset) which work for any auth.users row. Mounted
+// invite set-password links land on /provider/reset-password (provider
+// SPA chrome → /provider/sign-in). Mounted
 // BEFORE the provider data router below so /api/provider/auth/* resolves
 // to the auth handlers.
 const providerAuthDeps: AuthDeps = { ...authDeps, allowSignUp: false };

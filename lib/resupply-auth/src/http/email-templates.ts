@@ -516,7 +516,8 @@ export function renderProviderPortalInviteEmail(
   const link = makeLink(
     ctx.publicBaseUrl,
     ctx.uiPathPrefix,
-    "/reset-password",
+    // Provider portal chrome (not the patient storefront reset page).
+    "/provider/reset-password",
     args.rawToken,
   );
   const safeLink = escapeHtml(link);

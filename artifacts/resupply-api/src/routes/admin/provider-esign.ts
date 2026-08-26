@@ -236,7 +236,7 @@ async function inviteProviderUser(
   const baseUrl = (
     (await resolveTenantBaseUrl(orgId)) ?? deps.publicBaseUrl
   ).replace(/\/$/, "");
-  const inviteLink = `${baseUrl}/reset-password?token=${encodeURIComponent(token.raw)}`;
+  const inviteLink = `${baseUrl}/provider/reset-password?token=${encodeURIComponent(token.raw)}`;
 
   // Brand the external clinician's invite with the inviting tenant's own
   // identity (resolveBrandingByOrgId → the seed tenant's "Penn Home Medical Supply"/"Penn

@@ -121,8 +121,8 @@ vi.mock("@workspace/resupply-auth", async (importOriginal) => {
     ) => ({
       subject: "Welcome",
       // Echo the base URL the route handed the renderer so we can assert it.
-      html: `<a href="${cfg.publicBaseUrl}/reset-password?token=${args.rawToken}">set password</a>`,
-      text: `${cfg.publicBaseUrl}/reset-password?token=${args.rawToken}`,
+      html: `<a href="${cfg.publicBaseUrl}/provider/reset-password?token=${args.rawToken}">set password</a>`,
+      text: `${cfg.publicBaseUrl}/provider/reset-password?token=${args.rawToken}`,
     }),
   };
 });
@@ -189,11 +189,13 @@ describe("provider invite email link — tenant base URL", () => {
     expect(res.body.emailSent).toBe(true);
     // The link returned to the admin uses the tenant host.
     expect(res.body.inviteLink).toBe(
-      `${TENANT_BASE_URL}/reset-password?token=raw-token-123`,
+      `${TENANT_BASE_URL}/provider/reset-password?token=raw-token-123`,
     );
     // The emailed copy uses the tenant host too (renderer got tenant base URL).
     expect(sentEmails).toHaveLength(1);
-    expect(sentEmails[0].html).toContain(`${TENANT_BASE_URL}/reset-password`);
+    expect(sentEmails[0].html).toContain(
+      `${TENANT_BASE_URL}/provider/reset-password`,
+    );
     expect(sentEmails[0].html).not.toContain(PLATFORM_BASE_URL);
     // Resolver was asked for the inviting tenant's org.
     expect(resolveTenantBaseUrlMock).toHaveBeenCalledWith(MOCK_ORG_ID);
@@ -209,9 +211,11 @@ describe("provider invite email link — tenant base URL", () => {
 
     expect(res.status).toBe(200);
     expect(res.body.inviteLink).toBe(
-      `${PLATFORM_BASE_URL}/reset-password?token=raw-token-123`,
+      `${PLATFORM_BASE_URL}/provider/reset-password?token=raw-token-123`,
     );
-    expect(sentEmails[0].html).toContain(`${PLATFORM_BASE_URL}/reset-password`);
+    expect(sentEmails[0].html).toContain(
+      `${PLATFORM_BASE_URL}/provider/reset-password`,
+    );
   });
 });
 

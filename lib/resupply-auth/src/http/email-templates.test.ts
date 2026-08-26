@@ -444,7 +444,7 @@ describe("renderProviderPortalInviteEmail", () => {
   it("links set-password with TTL-derived expiry and the portal sign-in", () => {
     const r = renderProviderPortalInviteEmail(ctx, args);
     expect(r.html).toContain(
-      "https://shop.example.com/reset-password?token=tok123",
+      "https://shop.example.com/provider/reset-password?token=tok123",
     );
     expect(r.text).toContain("expires in 7 days");
     expect(r.html).toContain("https://shop.example.com/provider");
