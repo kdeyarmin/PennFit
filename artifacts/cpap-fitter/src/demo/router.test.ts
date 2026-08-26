@@ -374,11 +374,24 @@ describe("demo router", () => {
       categories: string[];
     };
     expect(body.products.length).toBeGreaterThan(0);
-    expect(body.total).toBe(body.products.length);
+    expect(body.total).toBeGreaterThanOrEqual(body.products.length);
     expect(body.categories.length).toBeGreaterThan(0);
     // NULL stock is untracked, not zero — at least one seeded SKU
     // keeps that distinction visible.
     expect(body.products.some((p) => p.stockCount === null)).toBe(true);
+
+    // `total` is the unpaginated match count. Pin that contract with an
+    // explicit page size so a later catalog growth past the default
+    // limit=200 cannot make `total === products.length` fail a still-
+    // correct handler.
+    const pagedRes = await get("/resupply-api/admin/catalog/products?limit=2");
+    const paged = (await pagedRes!.json()) as {
+      products: unknown[];
+      total: number;
+    };
+    expect(paged.products).toHaveLength(2);
+    expect(paged.total).toBe(body.total);
+    expect(paged.total).toBeGreaterThan(2);
   });
 
   it("falls back to an empty-collections shape for unmatched API GETs", async () => {
