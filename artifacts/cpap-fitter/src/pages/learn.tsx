@@ -897,7 +897,7 @@ export function Learn() {
               href: "/learn/insurance-guide",
               Icon: ShieldCheck,
               title: "The insurance & coverage guide",
-              body: "Medicare, Medicaid, commercial, HSA/FSA, cash-pay. What's covered, what's required, what's cheaper.",
+              body: "Medicare, Medicaid, commercial, HSA/FSA. What's covered, what's required, and how to estimate your cost.",
               testid: "learn-link-deep-insurance",
               tone: "icon-halo-navy",
             },

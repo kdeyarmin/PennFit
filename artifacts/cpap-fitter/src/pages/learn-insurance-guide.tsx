@@ -70,13 +70,13 @@ const payers: Payer[] = [
       "Some plans rent-to-own; some purchase outright",
     ],
     watchOut:
-      "Plans with high deductibles may make cash-pay competitive in the early months of the year. Run benefits before assuming insurance is the cheaper path.",
+      "High deductibles can mean a higher out-of-pocket early in the year. We run benefits before shipping so you know the number first.",
   },
   {
     Icon: Wallet,
     name: "HSA / FSA",
     oneLiner: "Yes, eligible. Don't sleep on this.",
-    body: "Health Savings Accounts and Flexible Spending Accounts cover every CPAP-related expense — machines, masks, cushions, filters, tubing, distilled water, cleaning supplies. You can use your HSA/FSA card directly at checkout, or pay out of pocket and submit for reimbursement.",
+    body: "Health Savings Accounts and Flexible Spending Accounts cover CPAP-related expenses — machines, masks, cushions, filters, tubing, distilled water, cleaning supplies. Use them for any out-of-pocket share after insurance (copays, deductibles, or uncovered accessories).",
     covered: [
       "All CPAP equipment and accessories",
       "Distilled water and cleaning supplies",
@@ -88,25 +88,24 @@ const payers: Payer[] = [
   },
   {
     Icon: CreditCard,
-    name: "Cash-pay",
-    oneLiner:
-      "Transparent pricing. Sometimes cheaper than insurance after the math.",
-    body: "Direct purchase without going through insurance. Useful when (a) your deductible is high and unmet, (b) you want a brand insurance won't cover, (c) the prior-auth paperwork is delaying urgent equipment, or (d) you don't have insurance. Every machine and supply we list is available cash-pay with transparent pricing.",
+    name: "No insurance / between plans",
+    oneLiner: "Talk to us — we still help you get equipment.",
+    body: "We are an insurance-first DME: patients receive equipment through their plan, not a self-serve cash checkout. If you are uninsured, between plans, or waiting on prior auth, our care team can review options, coordinate with your provider, and get you on the right path.",
     covered: [
-      "Everything we stock, no prior-auth required",
-      "HSA/FSA card accepted at checkout",
-      "Same-day fulfillment on in-stock items",
-      "Returns under our 30-day comfort guarantee",
+      "Benefit check and prior-auth help when a plan exists",
+      "Coordination with your sleep lab or physician",
+      "Temporary supply guidance while coverage is pending",
+      "Comfort-guarantee exchanges once you are an established patient",
     ],
     watchOut:
-      "Cash-pay forgoes insurance billing — we can't retroactively bill insurance after a cash sale. If you're unsure, call us to run benefits first; the comparison takes one minute.",
+      "Don't guess at coverage. Call or message us before you need equipment urgently — a one-minute benefits review usually clarifies the next step.",
   },
 ];
 
 export function LearnInsuranceGuide() {
   useDocumentTitle(
     "CPAP insurance & coverage guide",
-    "How insurance works for CPAP — Medicare, Medicaid, commercial plans, HSA/FSA, and cash-pay. What's covered, what's required, and how to figure out which path is cheaper.",
+    "How insurance works for CPAP — Medicare, Medicaid, commercial plans, HSA/FSA, and what to do if you are between plans. What's covered, what's required, and how to estimate your out-of-pocket cost.",
   );
   const [, navigate] = useLocation();
 
@@ -134,9 +133,10 @@ export function LearnInsuranceGuide() {
         </h1>
         <p className="text-lg text-muted-foreground leading-relaxed">
           CPAP coverage isn&apos;t mysterious — but it&apos;s also not uniform.
-          Five different paths exist, the cheapest one depends on your specific
-          plan + deductible state, and most DMEs won&apos;t do the math with
-          you. Here&apos;s how it actually works.
+          Four coverage paths (plus what to do between plans) exist, your
+          out-of-pocket depends on your specific plan + deductible state, and
+          most DMEs won&apos;t do the math with you. Here&apos;s how it actually
+          works.
         </p>
       </header>
 
@@ -348,7 +348,7 @@ export function LearnInsuranceGuide() {
         <ShareArticle
           path="/learn/insurance-guide"
           title="The honest CPAP insurance & coverage guide"
-          blurb="Five payment paths for CPAP — Medicare, Medicaid, commercial, HSA/FSA, cash-pay. What's covered, what's required, and which is cheaper depending on where your deductible sits."
+          blurb="CPAP coverage paths — Medicare, Medicaid, commercial, HSA/FSA, and what to do if you are between plans. What's covered, what's required, and how to estimate your cost."
           testIdPrefix="share-insurance"
         />
       </div>

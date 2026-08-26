@@ -38,7 +38,7 @@ const modes: TherapyMode[] = [
       "Straightforward moderate OSA",
       "Stable pressure requirements",
       "Patients who don't want auto-adjust complexity",
-      "Tightest cash-pay budgets",
+      "Straightforward coverage under most plans",
     ],
     examples: "ResMed AirSense 11 CPAP · React Health Luna G3 CPAP",
   },

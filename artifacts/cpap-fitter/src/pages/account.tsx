@@ -551,7 +551,7 @@ function DataExportSection() {
 /**
  * Render the "Saved card" section on the Account page and provide a control to open Stripe's billing portal.
  *
- * Displays card brand, masked number, and expiry when `card` is present; otherwise shows a prompt to browse the shop.
+ * Displays card brand, masked number, and expiry when `card` is present; otherwise shows a prompt to order through insurance.
  *
  * @param card - The saved payment card information, or `null` when no card is on file
  * @returns A React element representing the saved card section with update and fallback UI

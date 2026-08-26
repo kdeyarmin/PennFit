@@ -29,7 +29,7 @@ import {
 } from "lucide-react";
 
 export type HelpStep = {
-  /** Short imperative title, e.g. "Open the shop". */
+  /** Short imperative title, e.g. "Open the Virtual Mask Fitter". */
   title: string;
   /** The instruction prose. */
   body: React.ReactNode;

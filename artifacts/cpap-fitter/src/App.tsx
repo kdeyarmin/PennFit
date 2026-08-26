@@ -151,10 +151,10 @@ const VerifyEmailPage = lazyWithRetry(() =>
 // Help Center — task-oriented, "how do I use this feature" documentation.
 // Distinct from /learn (medical patient education) and /faq (quick clinical
 // Q&A): a category hub at /help plus step-by-step, screenshot-illustrated
-// how-to guides under /help/* for the fitter, ordering, the shop, tracking,
-// accounts, resupply reminders, insurance estimates, and returns. Lazy-loaded
-// because they're support content, not part of the fitter/checkout flow, so
-// they shouldn't bloat the initial patient-shop bundle.
+// how-to guides under /help/* for the fitter, insurance ordering, tracking,
+// accounts, resupply reminders, insurance estimates, and the comfort
+// guarantee. Lazy-loaded because they're support content, not part of the
+// fitter flow, so they shouldn't bloat the initial patient bundle.
 const Help = lazyWithRetry(() =>
   import("@/pages/help").then((m) => ({ default: m.Help })),
 );

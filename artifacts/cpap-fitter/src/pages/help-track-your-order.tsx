@@ -113,7 +113,7 @@ const steps: HelpStep[] = [
 export function HelpTrackYourOrder() {
   return (
     <HelpArticleShell
-      eyebrow="Shopping & Orders"
+      eyebrow="Orders & Delivery"
       title="Track your order"
       Icon={Truck}
       minutes="2 min"
