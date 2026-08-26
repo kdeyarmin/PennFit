@@ -1,5 +1,7 @@
 name: CI
 
+# Nudge 2026-08-26f: forever-queued run 32984456339 still blocks full CI
+# from scheduling on later SHAs; rename concurrency group namespace.
 # Nudge 2026-08-26e: HEAD 6549478bc+ still missing full CI (stuck queued
 # run 32984456339 + dropped synchronize). Touch workflow to re-register.
 # Nudge 2026-08-26d: force pull_request synchronize for current HEAD.
@@ -21,9 +23,9 @@ on:
 # Saves runner minutes on rapid push sequences and avoids a stale "passing"
 # check from a previous head sticking around.
 concurrency:
-  # Per-SHA group: a forever-queued run on an older head must not hold a
-  # branch-wide lock and starve later pull_request synchronizes (PR 1330).
-  group: ci-${{ github.workflow }}-${{ github.ref }}-${{ github.sha }}
+  # Per-SHA group under a fresh prefix so a forever-queued legacy run
+  # cannot starve later synchronizes (PR 1330 / run 32984456339).
+  group: civ2-${{ github.workflow }}-${{ github.ref }}-${{ github.sha }}
   cancel-in-progress: true
 
 permissions:
