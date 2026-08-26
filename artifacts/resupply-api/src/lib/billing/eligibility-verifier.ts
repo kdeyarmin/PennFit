@@ -28,7 +28,6 @@ import {
   type Database,
   getOrgScopedClient,
   type OrgScopedClient,
-  resolveSeedOrgId,
 } from "@workspace/resupply-db";
 import {
   allocateControlNumbers,
@@ -71,10 +70,10 @@ export interface VerifyEligibilityInput {
   /** Optional HCPCS scope; defaults to general health (STC 30). */
   hcpcsCode?: string | null;
   requestedByEmail: string;
-  /** Tenant for the org-scoped reads/writes. Defaults to the seed org
-   *  (single-tenant bridge). dme_organization + the ISA13 counter are
-   *  global and read via the unscoped client. */
-  orgId?: string;
+  /** Tenant for the org-scoped reads/writes. Required — callers that
+   *  know their tenant (batch submit, reverify cron, admin Run-now)
+   *  must pass it so a 270 never lands in the wrong org. */
+  orgId: string;
 }
 
 export class CoverageNotForPatientError extends Error {
@@ -120,7 +119,7 @@ export interface VerifyEligibilityResult {
 export async function verifyEligibility(
   input: VerifyEligibilityInput,
 ): Promise<VerifyEligibilityResult> {
-  const orgId = input.orgId ?? (await resolveSeedOrgId());
+  const orgId = input.orgId?.trim();
   if (!orgId) throw new Error("eligibility-verifier: no tenant resolved");
   const supabase = getOrgScopedClient(orgId);
 
@@ -366,14 +365,15 @@ export async function verifyEligibility(
 /**
  * Look up the most recent successful eligibility check for a coverage
  * row, within a freshness window (default 24h). Returns null when no
- * suitable row exists — callers can then fire a fresh 270.
+ * suitable row exists — callers can then fire a fresh 270. `orgId` is
+ * required so a cache hit never reads another tenant's 271.
  */
 export async function getCachedEligibility(
   insuranceCoverageId: string,
+  orgId: string,
   freshnessMs = 24 * 3600 * 1000,
-  orgId?: string,
 ): Promise<Database["resupply"]["Tables"]["eligibility_checks"]["Row"] | null> {
-  const resolvedOrg = orgId ?? (await resolveSeedOrgId());
+  const resolvedOrg = orgId?.trim();
   if (!resolvedOrg) return null;
   const supabase = getOrgScopedClient(resolvedOrg);
   const cutoff = new Date(Date.now() - freshnessMs).toISOString();

@@ -36,7 +36,6 @@
 import {
   type Json,
   getOrgScopedClient,
-  resolveSeedOrgId,
   type OrgScopedClient,
 } from "@workspace/resupply-db";
 
@@ -78,14 +77,15 @@ export interface AutoWorkflowStats {
 }
 
 /**
- * Run one auto-workflow pass for a single tenant. `orgId` defaults to the
- * seed org when omitted (back-compat for direct callers / tests); the worker
- * fans out per active tenant. Every pass scopes its reads/writes — and its
- * per-pass feature-flag checks — to this org via the scoped client's
- * `.orgId`, so one tenant's run never touches another tenant's claims.
+ * Run one auto-workflow pass for a single tenant. `orgId` is required —
+ * the worker fans out per active tenant and always passes one. Every pass
+ * scopes its reads/writes — and its per-pass feature-flag checks — to this
+ * org via the scoped client's `.orgId`, so one tenant's run never touches
+ * another tenant's claims. A blank orgId returns the zeroed stats envelope
+ * (fail closed) rather than inventing the seed.
  */
 export async function runAutoWorkflowPass(
-  orgId?: string,
+  orgId: string,
 ): Promise<AutoWorkflowStats> {
   const stats: AutoWorkflowStats = {
     scrubsTriggered: 0,
@@ -94,7 +94,7 @@ export async function runAutoWorkflowPass(
     secondaryClaimsDrafted: 0,
     errors: 0,
   };
-  const resolvedOrgId = orgId?.trim() || (await resolveSeedOrgId());
+  const resolvedOrgId = orgId?.trim();
   if (!resolvedOrgId) {
     return stats;
   }

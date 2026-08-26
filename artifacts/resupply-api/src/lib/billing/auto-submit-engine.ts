@@ -30,7 +30,6 @@
 
 import {
   getOrgScopedClient,
-  resolveSeedOrgId,
   type OrgScopedClient,
 } from "@workspace/resupply-db";
 
@@ -187,10 +186,10 @@ export interface SelectReadyOpts {
   /** Cap the number of ready claims returned (preflight is run up to this). */
   maxClaims?: number;
   /**
-   * Tenant whose draft claims to scan. Defaults to the seed org (the cron
-   * path, until the worker fans out per tenant); request handlers pass the
-   * caller's `req.orgId` so claims are selected from the RIGHT tenant.
-   * Ignored when an explicit `supabase` client is injected (tests).
+   * Tenant whose draft claims to scan. Required when no `supabase` client
+   * is injected — request handlers pass `req.orgId`, the cron passes the
+   * fan-out org. A missing/blank orgId fail-closes to an empty readiness
+   * envelope rather than inventing the seed.
    */
   orgId?: string;
   /** Cap the draft-claim scan window. */
@@ -237,13 +236,9 @@ export async function selectSubmissionReadyClaims(
   if (opts.supabase) {
     supabase = opts.supabase;
   } else {
-    // Distinguish "no orgId supplied" (the cron path → seed org) from
-    // "orgId supplied but blank" (an upstream bug → fail closed, NOT a
-    // silent seed fallback that could leak cross-tenant). Only an
-    // UNDEFINED orgId defaults to seed.
-    const trimmedOrgId = opts.orgId?.trim();
-    const orgId =
-      opts.orgId === undefined ? await resolveSeedOrgId() : trimmedOrgId;
+    // Fail closed: never invent the seed when orgId is missing/blank.
+    // An injected `supabase` (tests) already carries its own scope.
+    const orgId = opts.orgId?.trim();
     if (!orgId) {
       return {
         groups: [],
@@ -503,12 +498,13 @@ export interface RunAutoSubmitOpts {
   ip?: string | null;
   userAgent?: string | null;
   /**
-   * Tenant to select + submit claims for. Defaults to the seed org (the
-   * cron path); the operator route passes `req.orgId`. Threaded into both
-   * the claim selection and the 837P batch submit so a tenant admin's run
-   * never touches another tenant's claims or clearinghouse.
+   * Tenant to select + submit claims for. Required — the operator route
+   * passes `req.orgId`, the cron passes the fan-out org. Threaded into
+   * both the claim selection and the 837P batch submit so a tenant
+   * admin's run never touches another tenant's claims or clearinghouse.
+   * A missing/blank orgId fail-closes via selectSubmissionReadyClaims.
    */
-  orgId?: string;
+  orgId: string;
 }
 
 export interface AutoSubmitRunResult {
@@ -562,9 +558,10 @@ export async function runAutoSubmitBatch(
   // Operator-approval path: evaluate EXACTLY the approved claims (scoped
   // by id) so a claim the operator picked is never silently dropped by
   // the per-run cap that bounds the unattended "submit all" scan.
-  // Only include `orgId` when it's actually set, so the cron path's opts
-  // shape stays `{ claimIds, maxClaims }` (no `orgId: undefined` key).
-  const orgIdOpt = opts.orgId ? { orgId: opts.orgId } : {};
+  // Only include `orgId` when it's actually set, so a blank/missing
+  // value fails closed inside select (empty readiness) rather than
+  // selecting against an invented seed.
+  const orgIdOpt = opts.orgId?.trim() ? { orgId: opts.orgId.trim() } : {};
   const readiness = await select(
     approvedClaimIds
       ? {

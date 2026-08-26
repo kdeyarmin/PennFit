@@ -29,7 +29,11 @@ export async function runDenialAnalysis(
   eraFileId: string,
 ): Promise<void> {
   try {
-    const output = await analyzeDenial({ claimId, eraFileId });
+    const output = await analyzeDenial({
+      claimId,
+      eraFileId,
+      orgId: supabase.orgId,
+    });
     const { data: row, error } = await supabase
       .from("claim_denial_analyses")
       .insert({

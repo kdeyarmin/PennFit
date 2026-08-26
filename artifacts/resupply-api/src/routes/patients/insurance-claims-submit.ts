@@ -109,6 +109,7 @@ router.post(
       adminUserId: req.adminUserId ?? null,
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
+      orgId,
     });
 
     if (!result.ok) {

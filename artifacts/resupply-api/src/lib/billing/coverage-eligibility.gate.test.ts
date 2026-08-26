@@ -17,6 +17,8 @@ vi.mock("./eligibility-verifier", () => ({
 
 import { gateCoverageEligibility } from "./coverage-eligibility";
 
+const ORG_ID = "00000000-0000-4000-8000-000000000001";
+
 beforeEach(() => {
   getCachedEligibilityMock.mockReset();
   verifyEligibilityMock.mockReset();
@@ -30,6 +32,7 @@ describe("gateCoverageEligibility", () => {
       requires_prior_auth: false,
     });
     const res = await gateCoverageEligibility("cov-1", "pat-1", "Aetna", {
+      orgId: ORG_ID,
       refreshIfStale: true,
       requestedByEmail: "ops@x.com",
     });
@@ -45,6 +48,7 @@ describe("gateCoverageEligibility", () => {
   it("does not refresh when refreshIfStale is false (fail open on no cache)", async () => {
     getCachedEligibilityMock.mockResolvedValueOnce(null);
     const res = await gateCoverageEligibility("cov-1", "pat-1", "Aetna", {
+      orgId: ORG_ID,
       refreshIfStale: false,
       requestedByEmail: "ops@x.com",
     });
@@ -66,6 +70,7 @@ describe("gateCoverageEligibility", () => {
       realtime: true,
     });
     const res = await gateCoverageEligibility("cov-2", "pat-2", "UHC", {
+      orgId: ORG_ID,
       refreshIfStale: true,
       requestedByEmail: "ops@x.com",
     });
@@ -73,6 +78,7 @@ describe("gateCoverageEligibility", () => {
       insuranceCoverageId: "cov-2",
       patientId: "pat-2",
       requestedByEmail: "ops@x.com",
+      orgId: ORG_ID,
     });
     expect(res.refreshed).toBe(true);
     expect(res.block?.reason).toBe("inactive");
@@ -87,6 +93,7 @@ describe("gateCoverageEligibility", () => {
       realtime: false,
     });
     const res = await gateCoverageEligibility("cov-3", "pat-3", "BCBS", {
+      orgId: ORG_ID,
       refreshIfStale: true,
       requestedByEmail: "ops@x.com",
     });

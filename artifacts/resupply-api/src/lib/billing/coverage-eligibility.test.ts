@@ -16,6 +16,8 @@ import {
   decideCoverageBlock,
 } from "./coverage-eligibility";
 
+const ORG_ID = "00000000-0000-4000-8000-000000000001";
+
 beforeEach(() => supabaseMock.reset());
 
 describe("decideCoverageBlock", () => {
@@ -88,7 +90,11 @@ describe("consultCoverageEligibilityForCoverage", () => {
         responded_at: new Date().toISOString(),
       },
     });
-    const block = await consultCoverageEligibilityForCoverage("cov-1", "Aetna");
+    const block = await consultCoverageEligibilityForCoverage(
+      "cov-1",
+      "Aetna",
+      ORG_ID,
+    );
     expect(block).toEqual({
       reason: "inactive",
       payerName: "Aetna",
@@ -99,7 +105,7 @@ describe("consultCoverageEligibilityForCoverage", () => {
   it("returns null when there is no recent parsed result (fail open)", async () => {
     stageSupabaseResponse("eligibility_checks", "select", { data: null });
     expect(
-      await consultCoverageEligibilityForCoverage("cov-1", "Aetna"),
+      await consultCoverageEligibilityForCoverage("cov-1", "Aetna", ORG_ID),
     ).toBeNull();
   });
 
@@ -114,7 +120,7 @@ describe("consultCoverageEligibilityForCoverage", () => {
       },
     });
     expect(
-      await consultCoverageEligibilityForCoverage("cov-1", "Aetna"),
+      await consultCoverageEligibilityForCoverage("cov-1", "Aetna", ORG_ID),
     ).toBeNull();
   });
 });

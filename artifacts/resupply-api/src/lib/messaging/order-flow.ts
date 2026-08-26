@@ -1102,6 +1102,7 @@ async function consultCoverageEligibility(
   return consultCoverageEligibilityForCoverage(
     coverage.id,
     coverage.payer_name,
+    supabase.orgId,
   );
 }
 

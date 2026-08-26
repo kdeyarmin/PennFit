@@ -36,17 +36,25 @@ export interface LowUsageCheckinTriggerInput {
    */
   nightsUsed: number;
   /**
-   * The tenant the patient belongs to (the scan's org). Threaded into
-   * dispatchAlert so the check-in carries that tenant's From/brand; omit /
-   * undefined falls back to the seed org (single-tenant behavior unchanged).
+   * The tenant the patient belongs to (the scan's org). Required —
+   * threaded into dispatchAlert so the check-in carries that tenant's
+   * From/brand. A missing/blank orgId skips the send (fail closed).
    */
-  orgId?: string;
+  orgId: string;
 }
 
 export async function maybeDispatchLowUsageCheckinAlert(
   input: LowUsageCheckinTriggerInput,
 ): Promise<void> {
-  const { patientId, nightsUsed, orgId } = input;
+  const { patientId, nightsUsed } = input;
+  const orgId = input.orgId?.trim();
+  if (!orgId) {
+    logger.info(
+      { event: "low_usage_checkin_skipped", reason: "no_tenant" },
+      "alerts: low_usage_checkin trigger — orgId missing; skipping",
+    );
+    return;
+  }
   try {
     // Fail-closed flag gate — inert until an operator turns it on. Read the
     // flag for the RECIPIENT tenant (the scan's org), not the seed: otherwise

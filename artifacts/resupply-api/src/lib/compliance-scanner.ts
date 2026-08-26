@@ -222,12 +222,15 @@ export async function scanCompliance(
       // Net-new low-usage alert → fire the optional patient-facing
       // check-in (flag-gated, fire-and-forget). Only on first open, so
       // a patient who stays below target isn't messaged every day —
-      // the daily refreshes hit the `wasUpdated` branch above.
-      void maybeDispatchLowUsageCheckinAlert({
-        patientId: j.patientId,
-        nightsUsed: goodNights,
-        orgId: resolvedOrgId,
-      });
+      // the daily refreshes hit the `wasUpdated` branch above. Skip
+      // when tenant context is missing (injected-client test seam).
+      if (resolvedOrgId?.trim()) {
+        void maybeDispatchLowUsageCheckinAlert({
+          patientId: j.patientId,
+          nightsUsed: goodNights,
+          orgId: resolvedOrgId.trim(),
+        });
+      }
     }
   }
 

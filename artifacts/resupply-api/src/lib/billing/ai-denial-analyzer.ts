@@ -25,7 +25,6 @@
 
 import {
   getOrgScopedClient,
-  resolveSeedOrgId,
   type OrgScopedClient,
 } from "@workspace/resupply-db";
 
@@ -106,11 +105,11 @@ const SYSTEM_PROMPT = [
 export interface DenialAnalysisInput {
   claimId: string;
   /**
-   * Tenant the claim belongs to. The auto-workflow fan-out passes the org
-   * the claim was selected from so the analysis reads/writes the RIGHT
-   * tenant's claim; omitted → seed org (single-tenant callers unchanged).
+   * Tenant the claim belongs to. Required — the auto-workflow fan-out
+   * and ERA denial runner pass the org the claim was selected from so
+   * the analysis never reads/writes another tenant's claim.
    */
-  orgId?: string;
+  orgId: string;
   /** Optional pointer to the ERA file this denial came from. */
   eraFileId?: string | null;
   model?: string;
@@ -163,7 +162,7 @@ export async function analyzeDenial(
     return errored("OPENAI_API_KEY not configured");
   }
 
-  const orgId = input.orgId?.trim() || (await resolveSeedOrgId());
+  const orgId = input.orgId?.trim();
   if (!orgId) {
     return errored("tenant context missing");
   }

@@ -488,6 +488,7 @@ export async function preflightClaim(
     try {
       const elig = await getCachedEligibility(
         claim.insurance_coverage_id,
+        orgId,
         ELIGIBILITY_FRESHNESS_MS,
       );
       if (!elig) {

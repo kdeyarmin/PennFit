@@ -22,7 +22,6 @@ import { randomUUID } from "node:crypto";
 import { normalizeE164 } from "@workspace/resupply-domain";
 import {
   getOrgScopedClient,
-  resolveSeedOrgId,
   type ResupplySupabaseClient,
 } from "@workspace/resupply-db";
 import { EmailApiError, EmailConfigError } from "@workspace/resupply-email";
@@ -146,15 +145,14 @@ export interface DispatchAlertInput {
    */
   variables?: Readonly<Record<string, string>>;
   /**
-   * The tenant the patient belongs to. All lookups (alert/message/patient),
-   * the email From identity, the SMS/voice From number, and the rendered
-   * `practice_name` are scoped to this tenant. Omit / undefined falls back to
-   * the seed org, so single-tenant (Penn) behavior is unchanged. A caller
-   * that knows its tenant (admin route, a Stripe-trigger that matched a
-   * patient row) MUST pass it so a non-seed tenant's patient is never
-   * messaged under the seed's brand / From.
+   * The tenant the patient belongs to. Required — all lookups
+   * (alert/message/patient), the email From identity, the SMS/voice From
+   * number, and the rendered `practice_name` are scoped to this tenant.
+   * A caller that knows its tenant (admin route, Stripe trigger that
+   * matched a patient row) MUST pass it so a non-seed tenant's patient
+   * is never messaged under the wrong brand / From.
    */
-  orgId?: string;
+  orgId: string;
   /** Test seam — defaults to the shared service-role client. */
   supabase?: ResupplySupabaseClient;
 }
@@ -175,13 +173,12 @@ function isMissingRelationError(error: unknown): boolean {
 export async function dispatchAlert(
   input: DispatchAlertInput,
 ): Promise<DispatchAlertOutcome> {
-  // Resolve the recipient's tenant. A caller that knows its tenant passes
-  // `input.orgId`; otherwise fall back to the seed org (single-tenant
-  // behavior unchanged). When a caller injects a client (test seam), bind
-  // the scoped facade to it so the body uniformly uses `.from()`. A missing
-  // org degrades to `alert_not_found` (the same fail-closed "nothing to
-  // dispatch" outcome the route already maps to a 404).
-  const orgId = input.orgId?.trim() || (await resolveSeedOrgId());
+  // Resolve the recipient's tenant. Required — a missing org degrades to
+  // `alert_not_found` (the same fail-closed "nothing to dispatch" outcome
+  // the route already maps to a 404) rather than inventing the seed. When
+  // a caller injects a client (test seam), bind the scoped facade to it
+  // so the body uniformly uses `.from()`.
+  const orgId = input.orgId?.trim();
   if (!orgId) return { status: "alert_not_found" };
   const supabase = getOrgScopedClient(orgId, input.supabase);
   const { alertKey, channel, patientId } = input;

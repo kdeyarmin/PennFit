@@ -72,6 +72,8 @@ const supabaseMock = installSupabaseMock();
 
 import { dispatchAlert } from "./dispatch";
 
+const ORG_ID = "00000000-0000-4000-8000-000000000000";
+
 const DEF = {
   key: "order_shipped",
   channels: ["email", "sms", "voice"],
@@ -124,6 +126,7 @@ describe("dispatchAlert — vendor payload (email)", () => {
     });
 
     const outcome = await dispatchAlert({
+      orgId: ORG_ID,
       alertKey: "order_shipped",
       channel: "email",
       patientId: "p_1",
@@ -158,6 +161,7 @@ describe("dispatchAlert — vendor payload (email)", () => {
     });
 
     const outcome = await dispatchAlert({
+      orgId: ORG_ID,
       alertKey: "order_shipped",
       channel: "email",
       patientId: "p_1",
@@ -179,6 +183,7 @@ describe("dispatchAlert — vendor payload (email)", () => {
     });
 
     const outcome = await dispatchAlert({
+      orgId: ORG_ID,
       alertKey: "order_shipped",
       channel: "email",
       patientId: "p_1",
@@ -200,6 +205,7 @@ describe("dispatchAlert — vendor payload (sms)", () => {
     });
 
     const outcome = await dispatchAlert({
+      orgId: ORG_ID,
       alertKey: "order_shipped",
       channel: "sms",
       patientId: "p_1",

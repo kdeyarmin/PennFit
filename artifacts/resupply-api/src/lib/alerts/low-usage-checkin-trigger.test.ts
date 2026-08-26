@@ -20,6 +20,8 @@ const supabaseMock = installSupabaseMock();
 import { invalidateFeatureFlagCache } from "../feature-flags";
 import { maybeDispatchLowUsageCheckinAlert } from "./low-usage-checkin-trigger";
 
+const ORG_ID = "00000000-0000-4000-8000-000000000001";
+
 const ORIGINAL_COACH_PHONE = process.env.RESUPPLY_COACH_PHONE;
 
 beforeEach(() => {
@@ -45,6 +47,7 @@ describe("maybeDispatchLowUsageCheckinAlert", () => {
     process.env.RESUPPLY_COACH_PHONE = "+18005551212";
 
     await maybeDispatchLowUsageCheckinAlert({
+      orgId: ORG_ID,
       patientId: "p_1",
       nightsUsed: 12,
     });
@@ -59,6 +62,7 @@ describe("maybeDispatchLowUsageCheckinAlert", () => {
     });
     // No coach phone env.
     await maybeDispatchLowUsageCheckinAlert({
+      orgId: ORG_ID,
       patientId: "p_1",
       nightsUsed: 12,
     });
@@ -75,6 +79,7 @@ describe("maybeDispatchLowUsageCheckinAlert", () => {
     stageSupabaseResponse("alert_definitions", "select", { data: null });
 
     await maybeDispatchLowUsageCheckinAlert({
+      orgId: ORG_ID,
       patientId: "p_1",
       nightsUsed: 12,
     });
@@ -87,7 +92,11 @@ describe("maybeDispatchLowUsageCheckinAlert", () => {
     });
     process.env.RESUPPLY_COACH_PHONE = "+18005551212";
     await expect(
-      maybeDispatchLowUsageCheckinAlert({ patientId: "p_1", nightsUsed: 12 }),
+      maybeDispatchLowUsageCheckinAlert({
+        orgId: ORG_ID,
+        patientId: "p_1",
+        nightsUsed: 12,
+      }),
     ).resolves.toBeUndefined();
   });
 });

@@ -26,7 +26,6 @@ import { logAudit } from "@workspace/resupply-audit";
 import {
   getOrgScopedClient,
   ONBOARDING_DAYS,
-  resolveSeedOrgId,
   type CheckinAttemptChannel,
   type Database,
   type OnboardingDayLabel,
@@ -81,14 +80,13 @@ export interface DispatchOptions {
   /** Optional override for the public base URL the voice TwiML lives on. */
   publicBaseUrl?: string;
   /**
-   * Tenant to sweep. The daily cron fans out across every active tenant
-   * (worker/jobs/onboarding-checkins.ts) and ALWAYS passes an explicit
-   * orgId. Left optional only for the admin "Run now" route, which has no
-   * tenant context and falls back to the seed org for back-compat. Also
-   * keys the single-flight guard so two different tenants never collapse
-   * into one in-flight run.
+   * Tenant to sweep. Required — the daily cron fans out across every
+   * active tenant and ALWAYS passes an explicit orgId; the admin "Run
+   * now" route passes `req.orgId`. Also keys the single-flight guard so
+   * two different tenants never collapse into one in-flight run. A
+   * missing/blank orgId fail-closes to the zeroed envelope.
    */
-  orgId?: string;
+  orgId: string;
 }
 
 export interface DispatchSummary {
@@ -146,15 +144,14 @@ const ALL_CHANNELS: CheckinAttemptChannel[] = ["email", "sms", "voice"];
 // tracked as a follow-up (a claim-before-send reorder).
 // Keyed by tenant so a multi-tenant fan-out (one in-flight run per org)
 // doesn't collapse into a single shared promise — org-B's call must not
-// receive org-A's result. Callers with no orgId (admin "Run now" pre-
-// fan-out) share the "__seed__" key, preserving the original single-flight
-// behaviour for that path.
+// receive org-A's result. Blank/missing orgId shares a fail-closed key
+// so concurrent no-tenant calls still coalesce (and both return zeroed).
 const inFlightDispatch = new Map<string, Promise<DispatchSummary>>();
 
 export function dispatchDueCheckins(
   opts: DispatchOptions,
 ): Promise<DispatchSummary> {
-  const key = opts.orgId ?? "__seed__";
+  const key = opts.orgId?.trim() || "__missing_org__";
   const existing = inFlightDispatch.get(key);
   if (existing) return existing;
   const run = runDueCheckins(opts).finally(() => {
@@ -165,13 +162,13 @@ export function dispatchDueCheckins(
 }
 
 async function runDueCheckins(opts: DispatchOptions): Promise<DispatchSummary> {
-  // Resolve the tenant for the file-local worker pattern. The cron passes
-  // an explicit orgId (multi-tenant fan-out); the admin "Run now" route
-  // passes none and falls back to the seed org. An injected client (test
-  // seam) is bound to the scoped facade so the body uniformly uses `.from()`.
-  // A missing org degrades to the same zeroed envelope the feature-gate-off
-  // branch returns ("nothing to do").
-  const orgId = opts.orgId ?? (await resolveSeedOrgId());
+  // Resolve the tenant for the file-local worker pattern. The cron and
+  // admin "Run now" route both pass an explicit orgId. An injected client
+  // (test seam) is bound to the scoped facade so the body uniformly uses
+  // `.from()`. A missing/blank org fail-closes to the same zeroed envelope
+  // the feature-gate-off branch returns ("nothing to do") — never invent
+  // the seed.
+  const orgId = opts.orgId?.trim();
   if (!orgId) {
     return {
       attempted: 0,

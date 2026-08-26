@@ -62,14 +62,15 @@ export function decideCoverageBlock(
  * Consult the most recent parsed 270/271 for a SPECIFIC coverage and
  * decide whether it blocks. Returns null (no opinion) when there's no
  * fresh parsed result. A thrown DB error propagates to the caller's
- * fail-open catch.
+ * fail-open catch. `orgId` scopes the cache read to the caller's tenant.
  */
 export async function consultCoverageEligibilityForCoverage(
   coverageId: string,
   payerName: string,
+  orgId: string,
   freshnessMs: number = COVERAGE_FRESHNESS_MS,
 ): Promise<CoverageBlock | null> {
-  const elig = await getCachedEligibility(coverageId, freshnessMs);
+  const elig = await getCachedEligibility(coverageId, orgId, freshnessMs);
   return decideCoverageBlock(elig, payerName);
 }
 
@@ -95,22 +96,24 @@ export async function gateCoverageEligibility(
   patientId: string,
   payerName: string,
   opts: {
+    orgId: string;
     refreshIfStale: boolean;
     requestedByEmail: string;
     freshnessMs?: number;
   },
 ): Promise<CoverageGateResult> {
   const freshnessMs = opts.freshnessMs ?? COVERAGE_FRESHNESS_MS;
-  let cached = await getCachedEligibility(coverageId, freshnessMs);
+  let cached = await getCachedEligibility(coverageId, opts.orgId, freshnessMs);
   let refreshed = false;
   if (!cached && opts.refreshIfStale) {
     await verifyEligibility({
       insuranceCoverageId: coverageId,
       patientId,
       requestedByEmail: opts.requestedByEmail,
+      orgId: opts.orgId,
     });
     refreshed = true;
-    cached = await getCachedEligibility(coverageId, freshnessMs);
+    cached = await getCachedEligibility(coverageId, opts.orgId, freshnessMs);
   }
   return { block: decideCoverageBlock(cached, payerName), refreshed };
 }

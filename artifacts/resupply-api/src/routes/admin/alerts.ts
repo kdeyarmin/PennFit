@@ -428,6 +428,12 @@ router.post(
     const alertKey = keyCheck.data;
     const channel = parsed.data.channel as AlertChannel;
 
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+
     let outcome: DispatchAlertOutcome;
     try {
       outcome = await dispatchAlert({
@@ -435,8 +441,8 @@ router.post(
         channel,
         patientId: parsed.data.patientId,
         // Scope the send to the acting admin's tenant so an alert is never
-        // dispatched against the seed org's patients / under the seed brand.
-        orgId: req.orgId,
+        // dispatched against another org's patients / under the wrong brand.
+        orgId,
         variables: parsed.data.variables,
       });
     } catch (err) {

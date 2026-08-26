@@ -21,6 +21,8 @@ import {
   type ReadyClaim,
   type SubmissionReadiness,
 } from "./auto-submit-engine";
+
+const ORG_ID = "00000000-0000-4000-8000-000000000001";
 import type { BatchSubmitResult } from "./office-ally-batch";
 
 beforeEach(() => {
@@ -239,7 +241,11 @@ describe("selectSubmissionReadyClaims (gate end-to-end)", () => {
         ? { readyToSubmit: true, errorCount: 0 }
         : { readyToSubmit: false, errorCount: 2 };
 
-    const result = await selectSubmissionReadyClaims({ preflight, nowMs: NOW });
+    const result = await selectSubmissionReadyClaims({
+      preflight,
+      nowMs: NOW,
+      orgId: "00000000-0000-4000-8000-000000000000",
+    });
 
     expect(result.readyClaimCount).toBe(1);
     expect(result.groups).toHaveLength(1);
@@ -299,7 +305,11 @@ describe("runAutoSubmitBatch (orchestration)", () => {
     ];
     const submitCalls: string[][] = [];
     const result = await runAutoSubmitBatch(
-      { submittedByEmail: "ops@example.com", triggeredBy: "cron" },
+      {
+        orgId: ORG_ID,
+        submittedByEmail: "ops@example.com",
+        triggeredBy: "cron",
+      },
       {
         select: async () => readiness(claims),
         submit: async (input) => {
@@ -348,6 +358,7 @@ describe("runAutoSubmitBatch (orchestration)", () => {
     const submitCalls: string[][] = [];
     const result = await runAutoSubmitBatch(
       {
+        orgId: ORG_ID,
         submittedByEmail: "ops@example.com",
         triggeredBy: "operator",
         approvedClaimIds: ["a", "ghost"],
@@ -374,6 +385,7 @@ describe("runAutoSubmitBatch (orchestration)", () => {
     const submitCalls: string[][] = [];
     const result = await runAutoSubmitBatch(
       {
+        orgId: ORG_ID,
         submittedByEmail: "ops@example.com",
         triggeredBy: "operator",
         approvedClaimIds: ["a", "a", "b"], // duplicate "a"
@@ -390,7 +402,11 @@ describe("runAutoSubmitBatch (orchestration)", () => {
       },
     );
     // selection is scoped to the deduped approved ids (not a full scan)
-    expect(selectOpts).toEqual({ claimIds: ["a", "b"], maxClaims: 2 });
+    expect(selectOpts).toEqual({
+      claimIds: ["a", "b"],
+      maxClaims: 2,
+      orgId: ORG_ID,
+    });
     // "a" is sent once, not twice, despite the duplicate in the input
     expect(submitCalls).toEqual([["a", "b"]]);
     expect(result.claimsSubmitted).toBe(2);
@@ -403,7 +419,11 @@ describe("runAutoSubmitBatch (orchestration)", () => {
       readyClaim({ claimId: "c", payerProfileId: "P2" }),
     ];
     const result = await runAutoSubmitBatch(
-      { submittedByEmail: "ops@example.com", triggeredBy: "cron" },
+      {
+        orgId: ORG_ID,
+        submittedByEmail: "ops@example.com",
+        triggeredBy: "cron",
+      },
       {
         select: async () => readiness(claims),
         submit: async (input) =>

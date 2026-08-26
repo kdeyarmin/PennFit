@@ -232,6 +232,7 @@ export async function runEligibilityReverificationBatch(
         insuranceCoverageId: coverageId,
         patientId,
         requestedByEmail,
+        orgId: opts.orgId,
       });
       result.fired += 1;
       if (r.uploadOk) result.uploadOk += 1;
