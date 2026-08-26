@@ -384,7 +384,8 @@ export function HowItWorks() {
                 When to Call {contact.name} Directly
               </h3>
               <p className="text-sm text-muted-foreground leading-relaxed">
-                Our online fitter and shop are convenient, but they're not a
+                Our online fitter and insurance ordering are convenient, but
+                they're not a
                 substitute for clinical advice. If you have severe pressure
                 sores, an open facial wound, a recent facial injury, or you're a
                 pediatric patient, please contact our team directly so a
@@ -432,8 +433,8 @@ export function HowItWorks() {
         </h2>
         <p className="text-muted-foreground max-w-xl mx-auto">
           New mask? The fitter takes about 3 minutes and your camera image never
-          leaves your device. Already know what you need? Skip straight to the
-          shop.
+          leaves your device. Already know what you need? Order through
+          insurance.
         </p>
         <div className="flex flex-col sm:flex-row gap-3 justify-center pt-2">
           <Link href="/consent">

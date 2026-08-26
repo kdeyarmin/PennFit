@@ -21,8 +21,9 @@ const steps: HelpStep[] = [
         <Link href="/sign-up" className="text-primary hover:underline">
           Create an account
         </Link>
-        . An account is free and optional — you can always order as a guest —
-        but it saves your details and order history for next time.
+        . An account is free and optional — you can request a fit or ask our
+        team to contact you without one — but it saves your details, order
+        history, and reminder preferences for next time.
       </p>
     ),
   },
@@ -88,11 +89,10 @@ const steps: HelpStep[] = [
             requests are faster.
           </li>
           <li>
-            <strong>Orders</strong> — full history with status and a{" "}
-            <strong>Reorder</strong> button.
+            <strong>Orders</strong> — full history with status and tracking.
           </li>
           <li>
-            <strong>Billing</strong> — your payment and statement details.
+            <strong>Billing</strong> — insurance statements and open balances.
           </li>
           <li>
             <strong>Reminders</strong> — your{" "}

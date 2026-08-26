@@ -36,9 +36,10 @@ const steps: HelpStep[] = [
     ),
     substeps: [
       <>
-        Type your <strong>order reference number</strong> — it starts with{" "}
-        <code className="text-xs bg-muted px-1 py-0.5 rounded">PEN-</code> and
-        is on your confirmation screen and email.
+        Type your <strong>order reference number</strong> — it looks like{" "}
+        <code className="text-xs bg-muted px-1 py-0.5 rounded">PENN-AB1234</code>{" "}
+        (or a legacy <code className="text-xs bg-muted px-1 py-0.5 rounded">PHM-…</code>{" "}
+        reference) and is on your confirmation screen and email.
       </>,
       <>
         Enter the <strong>email address</strong> you used on the order.
@@ -98,12 +99,11 @@ const steps: HelpStep[] = [
           account
         </Link>
         , every order is saved under <strong>Orders</strong> — no reference
-        number needed. Open one to see its status, and use{" "}
-        <strong>Reorder</strong> to buy the same items again in one tap.
+        number needed. Open one to see its status and tracking details.
       </p>
     ),
     shot: (
-      <Screenshot caption="Signed-in customers see every order, its status, and a one-tap Reorder button.">
+      <Screenshot caption="Signed-in customers see every order and its status.">
         <AccountShot />
       </Screenshot>
     ),
@@ -122,14 +122,16 @@ export function HelpTrackYourOrder() {
       summary={
         <>
           Open <strong>Track an order</strong>, enter your{" "}
-          <code className="text-xs bg-muted px-1 py-0.5 rounded">PEN-</code>{" "}
-          reference number and the email on the order, and read the status
-          timeline. Signed-in customers can skip the lookup and see every order
-          under <strong>Orders</strong>.
+          <code className="text-xs bg-muted px-1 py-0.5 rounded">PENN-…</code>{" "}
+          reference number (or a legacy{" "}
+          <code className="text-xs bg-muted px-1 py-0.5 rounded">PHM-…</code>)
+          and the email on the order, and read the status timeline. Signed-in
+          customers can skip the lookup and see every order under{" "}
+          <strong>Orders</strong>.
         </>
       }
       prerequisites={[
-        "Your order reference number (starts with PEN-), from your confirmation email…",
+        "Your order reference number (PENN-… or legacy PHM-…), from your confirmation email…",
         "…and the email address you used on the order — or just sign in.",
       ]}
       steps={steps}

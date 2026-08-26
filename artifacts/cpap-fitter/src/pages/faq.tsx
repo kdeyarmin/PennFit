@@ -251,17 +251,17 @@ const sections: FaqSection[] = [
         q: "Do I need an account to place an order?",
         a: (
           <>
-            No — you can check out as a guest. Creating a free{" "}
+            No — you can request a fit or ask a representative to contact you
+            without signing in. Creating a free{" "}
             <Link
               href="/account"
               className="text-primary underline-offset-4 hover:underline"
             >
               account
             </Link>{" "}
-            simply saves your shipping address and order history so future
-            orders are quicker, and gives you a "Reorder" button on past
-            purchases. Your account info is used only to fulfill your orders,
-            never sold to third parties.
+            saves your shipping address, lets you track insurance orders, and
+            manage resupply reminders. Your account info is used only to fulfill
+            your orders, never sold to third parties.
           </>
         ),
       },
