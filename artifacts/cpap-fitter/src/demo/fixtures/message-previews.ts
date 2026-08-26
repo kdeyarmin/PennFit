@@ -463,7 +463,7 @@ function buildPreviews(): DemoPreview[] {
     source: "artifacts/resupply-api/src/lib/billing/statement-send.ts",
     email: {
       subject: `Your ${BRAND.name} billing statement`,
-      text: `Hi ${FIRST},\n\nYour statement is ready. Balance due: $42.15.\n\nPay online: ${BRAND.baseUrl}/account/billing\n\nIf something looks wrong, reply to this email or call ${BRAND.supportPhoneDisplay} — we would rather fix it than have you pay it.`,
+      text: `Hi ${FIRST},\n\nYour statement is ready. Balance due: $42.15.\n\nView your statement: ${BRAND.baseUrl}/account/billing\n\nIf something looks wrong, reply to this email or call ${BRAND.supportPhoneDisplay} — we would rather fix it than have you pay it.`,
       html: shell(
         [
           para(`Hi ${FIRST},`),
@@ -471,7 +471,7 @@ function buildPreviews(): DemoPreview[] {
             "Your statement is ready. Balance due: <strong>$42.15</strong>.",
           ),
           para(
-            `<a href="${BRAND.baseUrl}/account/billing" style="display:inline-block;padding:10px 18px;background:#0a1f44;color:#ffffff;border-radius:6px;text-decoration:none;font-size:14px;">View and pay</a>`,
+            `<a href="${BRAND.baseUrl}/account/billing" style="display:inline-block;padding:10px 18px;background:#0a1f44;color:#ffffff;border-radius:6px;text-decoration:none;font-size:14px;">View your statement</a>`,
           ),
           para(
             `If something looks wrong, reply to this email or call ${BRAND.supportPhoneDisplay} &mdash; we would rather fix it than have you pay it.`,

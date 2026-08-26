@@ -567,7 +567,7 @@ export function buildMessagePreviews(brand: PreviewBrand): MessagePreview[] {
         "",
         `Your statement is ready. Balance due: ${money(SAMPLE.balanceCents)}.`,
         "",
-        `Pay online: ${baseUrl}/account/billing`,
+        `View your statement: ${baseUrl}/account/billing`,
         "",
         `If something looks wrong, reply to this email or call ${brand.supportPhoneDisplay} — we would rather fix it than have you pay it.`,
       ].join("\n"),
@@ -579,7 +579,7 @@ export function buildMessagePreviews(brand: PreviewBrand): MessagePreview[] {
             `Your statement is ready. Balance due: <strong>${money(SAMPLE.balanceCents)}</strong>.`,
           ),
           p(
-            `<a href="${escapeHtml(baseUrl)}/account/billing" style="display:inline-block;padding:10px 18px;background:#0a1f44;color:#ffffff;border-radius:6px;text-decoration:none;font-size:14px;">View and pay</a>`,
+            `<a href="${escapeHtml(baseUrl)}/account/billing" style="display:inline-block;padding:10px 18px;background:#0a1f44;color:#ffffff;border-radius:6px;text-decoration:none;font-size:14px;">View your statement</a>`,
           ),
           p(
             `If something looks wrong, reply to this email or call ${escapeHtml(brand.supportPhoneDisplay)} &mdash; we would rather fix it than have you pay it.`,

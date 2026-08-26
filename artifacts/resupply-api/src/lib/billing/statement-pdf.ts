@@ -257,7 +257,7 @@ function drawStatement(doc: PDFKit.PDFDocument, input: StatementInput): void {
   doc.moveDown(2);
 
   if (input.paymentUrl) {
-    doc.fontSize(10).text(`Pay online: ${input.paymentUrl}`);
+    doc.fontSize(10).text(`View your statement: ${input.paymentUrl}`);
   }
   doc.moveDown(1);
   doc

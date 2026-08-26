@@ -244,10 +244,10 @@ function EligibilityBanner({
     const sample = eligibleNow[0]?.firstItemName;
     const headline =
       eligibleNow.length === 1
-        ? `Your ${sample ?? "next supply"} is ready to reorder.`
-        : `${eligibleNow.length} items are ready to reorder.`;
+        ? `Your ${sample ?? "next supply"} is due for resupply.`
+        : `${eligibleNow.length} items are due for resupply.`;
     return (
-      <Link href="/account#autoship">
+      <Link href="/reminders">
         <div
           className="rounded-xl border border-[hsl(var(--penn-gold))] bg-[hsl(var(--penn-gold)/0.10)] p-4 hover:bg-[hsl(var(--penn-gold)/0.16)] transition-colors cursor-pointer"
           data-testid="home-eligibility-banner-now"
@@ -261,7 +261,8 @@ function EligibilityBanner({
                 {headline}
               </p>
               <p className="text-xs text-muted-foreground">
-                Insurance covers most patients in full. Tap to review and ship.
+                Insurance covers most patients in full. Tap to set reminders or
+                ask us to ship.
               </p>
             </div>
             <ArrowRight className="w-4 h-4 text-[hsl(var(--penn-navy))] mt-2 shrink-0" />
