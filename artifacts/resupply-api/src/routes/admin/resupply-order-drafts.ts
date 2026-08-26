@@ -85,7 +85,7 @@ const dismissBody = z
   .object({ reason: z.string().max(280).optional() })
   .strict();
 
-// Approve = convert the proposal into a CSR sign-&-pay order request. The
+// Approve = convert the proposal into a CSR signature order request. The
 // CSR finalises the priced line items (the SPA pre-fills one from the
 // draft's suggested SKU) + the recipient at review time, since the draft
 // itself carries no price.

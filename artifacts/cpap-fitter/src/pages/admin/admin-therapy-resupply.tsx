@@ -623,9 +623,9 @@ function ApproveDraftModal({
     },
   });
 
-  // Mirror the server's $0.50 Stripe minimum on the TOTAL (unit × qty) so
-  // the modal can't submit an order the API will reject with
-  // amount_below_minimum.
+  // Mirror the server's $0.50 billed-amount floor on the TOTAL (unit × qty)
+  // so the modal can't submit a blank/zero estimate the API rejects with
+  // amount_below_minimum (insurance-billed, not card checkout).
   const totalCents = Math.round(Number(priceDollars) * 100) * quantity;
   const totalValid = Number.isFinite(totalCents) && totalCents >= 50;
   const recipientValid =
@@ -740,7 +740,7 @@ function ApproveDraftModal({
                   }
                 />
               </Field>
-              <Field label="Unit price (USD)">
+              <Field label="Estimated billed amount (USD per unit)">
                 <input
                   className={inputCls}
                   type="number"
@@ -765,7 +765,7 @@ function ApproveDraftModal({
             )}
             {priceDollars.trim() !== "" && !totalValid && (
               <p className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
-                Order total must be at least $0.50.
+                Enter a billed amount (minimum $0.50 catches blank entries).
               </p>
             )}
             {approve.isError && (

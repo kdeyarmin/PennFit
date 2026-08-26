@@ -409,7 +409,9 @@ function CreateCsrOrderModal({
       });
     }
     if (totalCents < 50) {
-      setFormError("Order total must be at least $0.50.");
+      setFormError(
+        "Enter a billed amount (minimum $0.50 catches blank entries).",
+      );
       return;
     }
 

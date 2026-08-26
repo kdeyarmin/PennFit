@@ -1,6 +1,6 @@
-// HMAC-signed token for the public CSR-order "sign & pay" URL.
+// HMAC-signed token for the public CSR-order signature URL.
 //
-// The customer receives a link like /order-pay?token=<token>. The
+// The customer receives a link like /order-sign?token=<token>. The
 // token carries the csr_order_requests row id, a link-version (for
 // revocation — bumping csr_order_requests.link_version invalidates
 // outstanding links), an expiry, and a kind discriminator so a token
