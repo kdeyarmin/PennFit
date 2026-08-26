@@ -5,10 +5,7 @@ import {
   HelpArticleShell,
   type HelpStep,
 } from "@/components/help/help-article-shell";
-import {
-  Screenshot,
-  TrackOrderShot,
-} from "@/components/help/help-screens";
+import { Screenshot, TrackOrderShot } from "@/components/help/help-screens";
 import { BrandName } from "@/components/company-contact";
 
 const steps: HelpStep[] = [
@@ -67,8 +64,8 @@ const steps: HelpStep[] = [
     body: (
       <>
         <p>
-          A successful lookup shows the mask you requested, when we received
-          the order, and a short status label:
+          A successful lookup shows the mask you requested, when we received the
+          order, and a short status label:
         </p>
         <ul className="list-disc pl-5 space-y-1">
           <li>
@@ -97,10 +94,7 @@ const steps: HelpStep[] = [
           Contact us
         </Link>{" "}
         or, if you&apos;re signed in, message your care team from{" "}
-        <Link
-          href="/account#messages"
-          className="text-primary hover:underline"
-        >
+        <Link href="/account#messages" className="text-primary hover:underline">
           Account → Messages
         </Link>
         . There is no in-account order history list —{" "}

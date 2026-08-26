@@ -982,7 +982,9 @@ export function SignInShot() {
 export function AccountShot() {
   return (
     <svg viewBox="0 0 800 440" role="img" {...svgProps}>
-      <title>Your account dashboard with therapy, messages, and reminders</title>
+      <title>
+        Your account dashboard with therapy, messages, and reminders
+      </title>
       <rect width="800" height="440" fill={C.bg} />
       <AppHeader />
       <text x="40" y="82" fontSize="16" fontWeight="800" fill={C.navy}>
