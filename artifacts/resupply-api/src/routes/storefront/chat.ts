@@ -64,7 +64,7 @@ import { z } from "zod";
 import { isFeatureEnabled } from "../../lib/feature-flags.js";
 import {
   applyCompanyIdentityToText,
-  applyPlatformBrandingForOrg,
+  applyPlatformBranding,
   brandToolDescriptors,
   getCompanyInfo,
   getCompanyInfoSync,
@@ -186,6 +186,24 @@ function offlineFallbackReplyFor(info: CompanyInfo): string {
     ? `${phone} ${info.supportHours}, or ${info.supportEmail} any time`
     : `${info.supportEmail} any time`;
   return `Sorry — chat is offline at the moment. The fastest way to reach us is ${reach}. Our /faq and /insurance pages also cover most questions if you want to take a look.`;
+}
+
+/**
+ * Brand patient-facing chat text with the ALREADY-RESOLVED host identity.
+ *
+ * Do NOT call `applyPlatformBrandingForOrg(text, orgId)` here when `orgId`
+ * is the data-plane seed fallback: on the platform host (cmbreathe.com)
+ * `resolveBrandOrgIdByHost` is null and `resolveOrgIdByHost` still returns
+ * the seed org, which would fold PennBot / Penn contact into the system
+ * prompt. `companyInfo` is computed from the brand-host resolver (or
+ * `getPlatformIdentity()`) and is the single source of truth for this
+ * request.
+ */
+function brandChatText(text: string, info: CompanyInfo): string {
+  return applyPlatformBranding(
+    applyCompanyIdentityToText(text, info),
+    info,
+  );
 }
 
 const chatMessageSchema = z.object({
@@ -522,23 +540,21 @@ router.post("/chat", chatRateLimit, async (req, res) => {
       },
       "chat: neither ANTHROPIC_API_KEY nor OPENAI_API_KEY set, returning offline fallback",
     );
+    const offlineReply = brandChatText(
+      offlineFallbackReplyFor(companyInfo),
+      companyInfo,
+    );
     if (streaming) {
       startSseHeaders(res);
       writeSseEvent(res, {
         type: "chunk",
-        text: await applyPlatformBrandingForOrg(
-          offlineFallbackReplyFor(companyInfo),
-          orgId,
-        ),
+        text: offlineReply,
       });
       writeSseEvent(res, { type: "done", offline: true });
       res.end();
     } else {
       res.json({
-        reply: await applyPlatformBrandingForOrg(
-          offlineFallbackReplyFor(companyInfo),
-          orgId,
-        ),
+        reply: offlineReply,
         offline: true,
       });
     }
@@ -567,27 +583,20 @@ router.post("/chat", chatRateLimit, async (req, res) => {
     return;
   }
 
-  // Brand the cached (un-branded) base prompt for THIS tenant: first
-  // rewrite the historical brand/contact strings to the host tenant's
-  // saved Company-information identity (phone, email, brand name), then
-  // swap the assistant-name tokens (PennBot → the storefront-assistant
-  // name configured for orgId). Both fall back to the seed/default when
-  // the host didn't resolve to a tenant, so single-tenant is unchanged.
-  // Masks this tenant hid (formulary `exclude`, migration 0516). Resolved
-  // once, past the offline/feature gates so a tenant with the assistant
-  // switched off never pays for it, and applied in BOTH directions: the
-  // catalog section of the system prompt, and every catalog tool via
-  // `toolCtx` below. Filtering only one of the two is worse than filtering
-  // neither — the model would describe a mask its own tools then refuse to
-  // look up.
+  // Brand the cached (un-branded) base prompt with the host's resolved
+  // companyInfo (brand-host org, or platform identity on cmbreathe.com) —
+  // never the data-plane seed fallback. Masks this tenant hid (formulary
+  // `exclude`, migration 0516). Resolved once, past the offline/feature
+  // gates so a tenant with the assistant switched off never pays for it,
+  // and applied in BOTH directions: the catalog section of the system
+  // prompt, and every catalog tool via `toolCtx` below. Filtering only
+  // one of the two is worse than filtering neither — the model would
+  // describe a mask its own tools then refuse to look up.
   const visibility = await loadCatalogVisibility(orgId);
 
-  const systemPrompt = await applyPlatformBrandingForOrg(
-    applyCompanyIdentityToText(
-      getSystemPrompt(visibility.hiddenSlugs),
-      companyInfo,
-    ),
-    brandOrgId,
+  const systemPrompt = brandChatText(
+    getSystemPrompt(visibility.hiddenSlugs),
+    companyInfo,
   );
 
   // Past every offline/feature/budget gate — this turn WILL hit a model,
@@ -647,6 +656,7 @@ router.post("/chat", chatRateLimit, async (req, res) => {
             toolCtx,
             degradedReply,
             orgId,
+            companyInfo,
           )
         : handleAnthropicJson(
             res,
@@ -656,28 +666,27 @@ router.post("/chat", chatRateLimit, async (req, res) => {
             toolCtx,
             degradedReply,
             orgId,
+            companyInfo,
           );
     }
   }
 
   if (!apiKey || apiKey.trim() === "") {
+    const offlineReply = brandChatText(
+      offlineFallbackReplyFor(companyInfo),
+      companyInfo,
+    );
     if (streaming) {
       startSseHeaders(res);
       writeSseEvent(res, {
         type: "chunk",
-        text: await applyPlatformBrandingForOrg(
-          offlineFallbackReplyFor(companyInfo),
-          orgId,
-        ),
+        text: offlineReply,
       });
       writeSseEvent(res, { type: "done", offline: true });
       res.end();
     } else {
       res.json({
-        reply: await applyPlatformBrandingForOrg(
-          offlineFallbackReplyFor(companyInfo),
-          orgId,
-        ),
+        reply: offlineReply,
         offline: true,
       });
     }
@@ -692,6 +701,7 @@ router.post("/chat", chatRateLimit, async (req, res) => {
         toolCtx,
         degradedReply,
         orgId,
+        companyInfo,
       )
     : handleJson(
         res,
@@ -701,6 +711,7 @@ router.post("/chat", chatRateLimit, async (req, res) => {
         toolCtx,
         degradedReply,
         orgId,
+        companyInfo,
       );
 });
 
@@ -712,6 +723,7 @@ async function handleJson(
   toolCtx: ChatToolContext,
   degradedReply: string,
   orgId: string | undefined,
+  companyInfo: CompanyInfo,
 ): Promise<void> {
   // Circuit breaker: during a SUSTAINED OpenAI outage, skip the upstream
   // entirely and degrade instantly rather than making every request wait
@@ -823,7 +835,10 @@ async function handleJson(
         continue;
       }
 
-      const reply = (message?.content ?? "").trim();
+      const reply = brandChatText(
+        (message?.content ?? "").trim(),
+        companyInfo,
+      );
       if (reply.length === 0) {
         logger.warn(
           { event: "chat_empty_reply", round },
@@ -1064,6 +1079,7 @@ async function handleStreaming(
   toolCtx: ChatToolContext,
   degradedReply: string,
   orgId: string | undefined,
+  _companyInfo: CompanyInfo,
 ): Promise<void> {
   startSseHeaders(res);
 
@@ -1354,6 +1370,7 @@ async function handleAnthropicJson(
   toolCtx: ChatToolContext,
   degradedReply: string,
   orgId: string | undefined,
+  companyInfo: CompanyInfo,
 ): Promise<void> {
   let messages = initialMessages;
   try {
@@ -1418,12 +1435,13 @@ async function handleAnthropicJson(
         res.json({ reply: degradedReply, degraded: true });
         return;
       }
+      const reply = brandChatText(text, companyInfo);
       logger.info(
         {
           event: "chat_ok",
           vendor: "anthropic",
           turns,
-          replyChars: text.length,
+          replyChars: reply.length,
           rounds: round,
           inputTokens: result.response.usage.input_tokens,
           cachedInputTokens: result.response.usage.cache_read_input_tokens ?? 0,
@@ -1431,7 +1449,7 @@ async function handleAnthropicJson(
         },
         "chat: anthropic replied",
       );
-      res.json({ reply: text });
+      res.json({ reply: reply });
       return;
     }
     logger.warn(
@@ -1460,6 +1478,7 @@ async function handleAnthropicStreaming(
   toolCtx: ChatToolContext,
   degradedReply: string,
   orgId: string | undefined,
+  _companyInfo: CompanyInfo,
 ): Promise<void> {
   startSseHeaders(res);
 

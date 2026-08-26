@@ -33,6 +33,8 @@ describe("POST /chat", () => {
     if (originalKey === undefined) delete process.env.OPENAI_API_KEY;
     else process.env.OPENAI_API_KEY = originalKey;
     delete process.env.RESUPPLY_CHAT_GLOBAL_TURNS_PER_MINUTE;
+    delete process.env.RESUPPLY_ASSISTANT_STOREFRONT_NAME;
+    delete process.env.RESUPPLY_ASSISTANT_ADMIN_NAME;
     __setChatFetchForTests(undefined);
     vi.restoreAllMocks();
   });
@@ -170,6 +172,72 @@ describe("POST /chat", () => {
       role: "user",
       content: "What mask styles do you carry?",
     });
+  });
+
+  it("brands the system prompt with platform identity on an unbound host even when seed env says PennBot", async () => {
+    // Regression: cmbreathe.com resolves brandOrgId=null but data-plane
+    // orgId falls back to the seed. Branding via applyPlatformBrandingForOrg
+    // (seed) or applyPlatformBranding() (sync cache / env) left "PennBot"
+    // and Penn geography in the prompt. The route must brand with
+    // getPlatformIdentity() / host companyInfo instead.
+    process.env.RESUPPLY_ASSISTANT_STOREFRONT_NAME = "PennBot";
+    process.env.RESUPPLY_ASSISTANT_ADMIN_NAME = "PennPilot";
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        choices: [{ message: { content: "Happy to help with masks." } }],
+      }),
+      text: async () => "",
+    });
+    __setChatFetchForTests(fetchMock as unknown as typeof fetch);
+
+    const res = await request(makeApp())
+      .post("/chat")
+      .send({
+        messages: [{ role: "user", content: "Who are you?" }],
+      });
+    expect(res.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    const payload = JSON.parse(init.body as string);
+    const system = payload.messages[0].content as string;
+    expect(system).toMatch(/CareMetric Assistant/);
+    expect(system).not.toMatch(/PennBot/);
+    expect(system).not.toMatch(/Pennsylvania durable/);
+    // Model replies that still say PennBot are rewritten on the way out.
+    expect(res.body.reply).toBe("Happy to help with masks.");
+  });
+
+  it("rewrites PennBot in the model reply using the host company identity", async () => {
+    process.env.RESUPPLY_ASSISTANT_STOREFRONT_NAME = "PennBot";
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        choices: [
+          {
+            message: {
+              content:
+                "I'm PennBot, the virtual assistant for Penn Home Medical Supply.",
+            },
+          },
+        ],
+      }),
+      text: async () => "",
+    });
+    __setChatFetchForTests(fetchMock as unknown as typeof fetch);
+
+    const res = await request(makeApp())
+      .post("/chat")
+      .send({
+        messages: [{ role: "user", content: "Who are you?" }],
+      });
+    expect(res.status).toBe(200);
+    expect(res.body.reply).toContain("CareMetric Assistant");
+    expect(res.body.reply).toContain("CareMetric Breathe");
+    expect(res.body.reply).not.toContain("PennBot");
+    expect(res.body.reply).not.toContain("Penn Home Medical Supply");
   });
 
   it("retries a transient 500 once and then returns the reply", async () => {
