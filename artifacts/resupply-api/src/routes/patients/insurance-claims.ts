@@ -68,6 +68,7 @@ const idClaimAndLineParam = z.object({
 
 const STATUS_VALUES = [
   "draft",
+  "submitting",
   "submitted",
   "accepted",
   "denied",
@@ -87,8 +88,15 @@ const STATUS_VALUES = [
 // can be re-worked back to `submitted` (fix data + resubmit) or abandoned
 // to `closed`. It is NOT a payer `denied` adjudication, so it does not go
 // to `appealed`.
+//
+// `submitting` is the transient lock used by Office Ally batch submit
+// (migration 0298). A crash mid-upload can leave claims stuck here —
+// admin may release back to `draft`; 277CA/ERA may advance to submitted
+// outcomes. Never invent a paid path from submitting without a clearinghouse
+// signal.
 const VALID_TRANSITIONS: Record<ClaimStatus, readonly ClaimStatus[]> = {
-  draft: ["submitted"],
+  draft: ["submitted", "submitting"],
+  submitting: ["draft", "submitted", "accepted", "denied", "rejected"],
   submitted: ["accepted", "denied", "rejected", "partially_paid", "paid"],
   accepted: ["paid", "denied", "partially_paid"],
   denied: ["appealed", "closed"],

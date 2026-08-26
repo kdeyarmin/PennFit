@@ -17,9 +17,9 @@
 //   * filterSecondaryEligible — rank a list of candidate primaries to those
 //                            eligible AND not already carrying a secondary.
 //
-// Slice 1 handles the canonical case: the primary PAID part of the claim and
-// left a patient-responsibility balance. Denied-primary COB (full balance
-// forwarded) is a follow-up.
+// Slice 1 handles the canonical case: the primary reached an adjudicated
+// paid state (`paid` or `partially_paid`) and left a patient-responsibility
+ // balance. Denied-primary COB (full balance forwarded) is a follow-up.
 //
 // Why it lives in @workspace/resupply-domain
 // -------------------------------------------
@@ -77,7 +77,11 @@ export function deriveSecondaryCob(p: PrimaryClaimTotals): CobDerivation {
   if (!p.secondary_coverage_id) {
     return { eligible: false, reason: "no_secondary_coverage" };
   }
-  if (p.status !== "paid") {
+  // ERA outcomes after migration 0430 are often `partially_paid` (paid <
+  // allowed / PR balance remaining). The secondary worklist and auto-
+  // workflow already select both statuses — reject only when the primary
+  // has not reached an adjudicated paid state at all.
+  if (p.status !== "paid" && p.status !== "partially_paid") {
     return { eligible: false, reason: "primary_not_paid" };
   }
   const contractualCents = Math.max(

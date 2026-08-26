@@ -537,7 +537,18 @@ function allowedTransition(
   // tolerate "submitted -> paid" because an OA round-trip can resolve
   // a claim before we observe the 277CA "accepted" intermediate.
   const VALID: Record<ClaimRow["status"], readonly ClaimRow["status"][]> = {
-    draft: ["submitted"],
+    draft: ["submitted", "submitting"],
+    // Crash mid-upload escape: release to draft, or accept clearinghouse
+    // outcomes that arrived while the claim was locked.
+    submitting: [
+      "draft",
+      "submitted",
+      "accepted",
+      "denied",
+      "rejected",
+      "paid",
+      "partially_paid",
+    ],
     submitted: ["accepted", "denied", "paid", "partially_paid", "rejected"],
     accepted: ["paid", "denied", "partially_paid"],
     denied: ["appealed", "closed"],
