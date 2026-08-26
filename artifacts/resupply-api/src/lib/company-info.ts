@@ -35,6 +35,7 @@ import {
   resolveBrandingByOrgId,
   resolveTenantBaseUrl,
 } from "./tenant-branding.js";
+import { resolveTenantSender } from "./email/tenant-sender.js";
 
 /**
  * The platform/parent-company brand. PennFit is the codename of this
@@ -277,19 +278,29 @@ export function getPlatformIdentity(): CompanyInfo {
  */
 async function orgDirectoryFallbackInfo(orgId: string): Promise<CompanyInfo> {
   const base = platformFallbackInfo();
-  const [branding, tenantBaseUrl] = await Promise.all([
+  const [branding, tenantBaseUrl, sender] = await Promise.all([
     resolveBrandingByOrgId(orgId),
     resolveTenantBaseUrl(orgId),
+    resolveTenantSender(orgId),
   ]);
   const legalName = branding.legalName.trim() || base.legalName;
+  // Prefer the tenant's verified From address as the public contact mailbox
+  // when Company Information is empty — Penn seeds info@pennpaps.com on
+  // organizations.from_email (migration 0377), which is what patients
+  // should see instead of support@cmbreathe.com.
+  const tenantEmail = trimmed(sender.fromEmail) || null;
   return {
     ...base,
     name: branding.storefrontName.trim() || legalName,
     legalName,
-    // A verified custom domain is the tenant's own site; otherwise the
-    // platform's, so `identityReplacements()` still rewrites the historical
-    // "pennpaps.com" placeholder to a host that actually resolves.
     websiteUrl: tenantBaseUrl || base.websiteUrl,
+    ...(tenantEmail
+      ? {
+          supportEmail: tenantEmail,
+          generalEmail: tenantEmail,
+          billingEmail: tenantEmail,
+        }
+      : {}),
   };
 }
 
@@ -423,8 +434,10 @@ export async function getCompanyInfo(orgId?: string): Promise<CompanyInfo> {
       //     whose Company Information page is empty shows the platform
       //     DEFAULTS ("CareMetric Breathe") in the footer while the logo
       //     still reads the organizations.storefront_name ("Penn Home
-      //     Medical Supply"). An operator-set RESUPPLY_PRACTICE_NAME still
-      //     wins over the directory for that explicit path.
+      //     Medical Supply"). RESUPPLY_PRACTICE_NAME is intentionally NOT
+      //     preferred here — after the platform rebrand that env often
+      //     holds "CareMetric Breathe", which would reintroduce the
+      //     footer/chat mismatch with storefront-branding.
       //   * Implicit / no-orgId callers (boot hydration, getCompanyInfoSync
       //     warm path) keep envFallbackInfo() — they must NOT read the
       //     migration-seeded organizations row, or a fresh unrelated
@@ -451,11 +464,68 @@ export async function getCompanyInfo(orgId?: string): Promise<CompanyInfo> {
           );
         }
         if (fromDb) {
-          info = fromDb;
+          // Guard (host-resolved / explicit only): if Company Information was
+          // left at the platform default name and/or mailbox but the
+          // organizations directory carries the tenant brand / from_email,
+          // prefer directory values so storefronts stay consistent with
+          // storefront-branding. Skip on the implicit warm path — that must
+          // not read the migration-seeded org row.
+          const needsNameOverlay =
+            !!explicitOrgId && fromDb.name === DEFAULTS.name;
+          const needsEmailOverlay =
+            !!explicitOrgId &&
+            fromDb.supportEmail === DEFAULTS.supportEmail;
+          if (needsNameOverlay || needsEmailOverlay) {
+            const dir = await orgDirectoryFallbackInfo(explicitOrgId!);
+            const useName =
+              needsNameOverlay && dir.name !== DEFAULTS.name;
+            const useEmail =
+              needsEmailOverlay &&
+              dir.supportEmail !== DEFAULTS.supportEmail;
+            if (useName || useEmail) {
+              info = {
+                ...fromDb,
+                name: useName ? dir.name : fromDb.name,
+                legalName: useName ? dir.legalName : fromDb.legalName,
+                websiteUrl: useName
+                  ? dir.websiteUrl || fromDb.websiteUrl
+                  : fromDb.websiteUrl,
+                supportEmail: useEmail
+                  ? dir.supportEmail
+                  : fromDb.supportEmail,
+                generalEmail: useEmail
+                  ? dir.generalEmail
+                  : fromDb.generalEmail,
+                billingEmail: useEmail
+                  ? dir.billingEmail
+                  : fromDb.billingEmail,
+              };
+            } else {
+              info = fromDb;
+            }
+          } else {
+            info = fromDb;
+          }
         } else if (explicitOrgId) {
-          info = trimmed(process.env.RESUPPLY_PRACTICE_NAME)
-            ? envFallbackInfo()
-            : await orgDirectoryFallbackInfo(explicitOrgId);
+          // Prefer the organizations directory when it names a real tenant.
+          // Production often sets RESUPPLY_PRACTICE_NAME to the platform
+          // identity after the CareMetric rebrand; that must not keep a
+          // host-resolved seed storefront (pennpaps.com) saying
+          // "CareMetric Breathe" in the footer/chat while
+          // storefront-branding correctly reads Penn from organizations.
+          //
+          // If the directory cannot name the tenant (still platform
+          // DEFAULTS — empty mock, unbound org), fall back to an
+          // operator-set RESUPPLY_PRACTICE_NAME so unit tests and
+          // env-only single-tenant deploys keep working. Never prefer
+          // env when the directory already has a non-platform name.
+          const fromOrg = await orgDirectoryFallbackInfo(explicitOrgId);
+          info =
+            fromOrg.name !== DEFAULTS.name
+              ? fromOrg
+              : trimmed(process.env.RESUPPLY_PRACTICE_NAME)
+                ? envFallbackInfo()
+                : fromOrg;
         } else {
           info = envFallbackInfo();
         }

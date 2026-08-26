@@ -43,9 +43,15 @@ const resolveBrandingByOrgIdMock = vi.hoisted(() =>
 const resolveTenantBaseUrlMock = vi.hoisted(() =>
   vi.fn(async (_orgId: string): Promise<string | null> => null),
 );
+const resolveTenantSenderMock = vi.hoisted(() =>
+  vi.fn(async (_orgId: string | undefined) => ({}) as { fromEmail?: string; fromName?: string }),
+);
 vi.mock("./tenant-branding.js", () => ({
   resolveBrandingByOrgId: resolveBrandingByOrgIdMock,
   resolveTenantBaseUrl: resolveTenantBaseUrlMock,
+}));
+vi.mock("./email/tenant-sender.js", () => ({
+  resolveTenantSender: resolveTenantSenderMock,
 }));
 
 import {
@@ -97,6 +103,8 @@ beforeEach(() => {
   });
   resolveTenantBaseUrlMock.mockReset();
   resolveTenantBaseUrlMock.mockResolvedValue(null);
+  resolveTenantSenderMock.mockReset();
+  resolveTenantSenderMock.mockResolvedValue({});
 });
 
 afterEach(() => {
@@ -397,22 +405,79 @@ describe("getCompanyInfo", () => {
       logoUrl: "/penn/pennpaps-logo.jpeg",
     });
     resolveTenantBaseUrlMock.mockResolvedValue("https://pennpaps.com");
+    resolveTenantSenderMock.mockResolvedValue({
+      fromEmail: "info@pennpaps.com",
+      fromName: "Penn Home Medical Supply",
+    });
     const info = await getCompanyInfo(seedOrgId);
     expect(resolveBrandingByOrgIdMock).toHaveBeenCalledWith(seedOrgId);
     expect(info.name).toBe("Penn Home Medical Supply");
     expect(info.legalName).toBe("Penn Home Medical Supply");
     expect(info.websiteUrl).toBe("https://pennpaps.com");
+    expect(info.supportEmail).toBe("info@pennpaps.com");
+    expect(info.generalEmail).toBe("info@pennpaps.com");
     expect(info.source).toBe("fallback");
   });
 
-  it("honors RESUPPLY_PRACTICE_NAME over the org directory for an explicit seed org", async () => {
+  it("prefers the org directory over RESUPPLY_PRACTICE_NAME for an explicit seed org", async () => {
+    // Production often sets RESUPPLY_PRACTICE_NAME to the platform identity
+    // after the CareMetric rebrand. That must not keep pennpaps.com's
+    // company-info on "CareMetric Breathe" while storefront-branding
+    // correctly reads Penn from organizations.
     const seedOrgId = "00000000-0000-4000-8000-000000000000";
-    process.env.RESUPPLY_PRACTICE_NAME = "Env Practice Name";
+    process.env.RESUPPLY_PRACTICE_NAME = "CareMetric Breathe";
     stageSupabaseResponse("dme_organization", "select", { data: null });
+    resolveBrandingByOrgIdMock.mockResolvedValue({
+      storefrontName: "Penn Home Medical Supply",
+      legalName: "Penn Home Medical Supply",
+      tagline: "Your CPAP, made simple.",
+      logoUrl: "/penn/pennpaps-logo.jpeg",
+    });
+    resolveTenantBaseUrlMock.mockResolvedValue("https://pennpaps.com");
+    resolveTenantSenderMock.mockResolvedValue({
+      fromEmail: "info@pennpaps.com",
+    });
     const info = await getCompanyInfo(seedOrgId);
-    expect(info.name).toBe("Env Practice Name");
-    expect(resolveBrandingByOrgIdMock).not.toHaveBeenCalled();
+    expect(info.name).toBe("Penn Home Medical Supply");
+    expect(info.supportEmail).toBe("info@pennpaps.com");
+    expect(resolveBrandingByOrgIdMock).toHaveBeenCalledWith(seedOrgId);
     delete process.env.RESUPPLY_PRACTICE_NAME;
+  });
+
+  it("overlays tenant from_email when dme_organization still has the platform mailbox", async () => {
+    // Name may already be correct on the dme row while support_email is still
+    // the platform default left after rebrand — patients must see the tenant
+    // sender (organizations.from_email), not support@cmbreathe.com.
+    const seedOrgId = "00000000-0000-4000-8000-000000000000";
+    stageSupabaseResponse("dme_organization", "select", {
+      data: {
+        ...ORG_ROW,
+        legal_name: "Penn Home Medical Supply",
+        dba_name: null,
+        support_email: "support@cmbreathe.com",
+        general_email: "support@cmbreathe.com",
+        billing_email: "support@cmbreathe.com",
+        phone_e164: "",
+        website_url: null,
+      },
+    });
+    resolveBrandingByOrgIdMock.mockResolvedValue({
+      storefrontName: "Penn Home Medical Supply",
+      legalName: "Penn Home Medical Supply",
+      tagline: "Your CPAP, made simple.",
+      logoUrl: "/penn/pennpaps-logo.jpeg",
+    });
+    resolveTenantBaseUrlMock.mockResolvedValue("https://pennpaps.com");
+    resolveTenantSenderMock.mockResolvedValue({
+      fromEmail: "info@pennpaps.com",
+      fromName: "Penn Home Medical Supply",
+    });
+    const info = await getCompanyInfo(seedOrgId);
+    expect(info.name).toBe("Penn Home Medical Supply");
+    expect(info.source).toBe("database");
+    expect(info.supportEmail).toBe("info@pennpaps.com");
+    expect(info.generalEmail).toBe("info@pennpaps.com");
+    expect(info.billingEmail).toBe("info@pennpaps.com");
   });
 });
 
