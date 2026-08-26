@@ -22,11 +22,15 @@ import { timingSafeEqual } from "node:crypto";
 import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 /**
- * Reference is "PENN-" + 6 alphanumerics; allow either the full thing
- * or just the 6-char tail. 6 alphanumerics is ~36^6 ≈ 2B — combined
- * with the rate limit + the email guard, that's the deterrent we want.
+ * Reference shapes accepted by track:
+ *   - "PENN-" + 6 alphanumerics (current mint), or just the 6-char tail
+ *   - legacy "PHM-XXX-XXX" (hyphenated) from an earlier mint format
+ *
+ * 6 alphanumerics is ~36^6 ≈ 2B — combined with the rate limit + the
+ * email guard, that's the deterrent we want.
  */
-export const ORDER_REFERENCE_PATTERN = /^(PENN-)?[A-Z0-9]{6}$/;
+export const ORDER_REFERENCE_PATTERN =
+  /^(?:(?:PENN-)?[A-Z0-9]{6}|PHM-[A-Z0-9]{3}-[A-Z0-9]{3})$/;
 
 const RATE_WINDOW_MS = 15 * 60 * 1000;
 const RATE_MAX = 10;
@@ -70,12 +74,15 @@ export function _resetTrackOrderRateBucketForTests(): void {
 }
 
 /**
- * Uppercase, validate, and PENN- prefix a user-supplied reference.
- * Returns null when the input can't be a Penn Home Medical Supply reference.
+ * Uppercase and validate a user-supplied reference. PENN- prefixes the
+ * 6-char tail when missing; legacy PHM-XXX-XXX refs are kept as-is so
+ * already-emailed confirmations still look up.
+ * Returns null when the input can't be a known order reference.
  */
 export function normalizeOrderReference(raw: string): string | null {
   const candidate = raw.trim().toUpperCase();
   if (!ORDER_REFERENCE_PATTERN.test(candidate)) return null;
+  if (candidate.startsWith("PHM-")) return candidate;
   return candidate.startsWith("PENN-") ? candidate : `PENN-${candidate}`;
 }
 

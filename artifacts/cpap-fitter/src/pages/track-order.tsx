@@ -29,7 +29,9 @@ import { useCompanyContact } from "@/lib/contact";
 import { formatAppDate } from "@/lib/utils";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const REF_RE = /^(PENN-)?[A-Za-z0-9]{4,12}$/;
+/** Matches mint (`PENN-`+6 / bare 6) plus legacy `PHM-XXX-XXX` still in flight. */
+const REF_RE =
+  /^(?:(?:PENN-)?[A-Za-z0-9]{6}|PHM-[A-Za-z0-9]{3}-[A-Za-z0-9]{3})$/i;
 
 interface TrackResult {
   orderReference: string;

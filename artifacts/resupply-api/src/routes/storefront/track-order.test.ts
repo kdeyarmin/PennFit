@@ -118,6 +118,26 @@ describe("POST /orders/track — orderReference validation (PR change: {6} only)
     expect(res.status).not.toBe(400);
   });
 
+  it("accepts legacy PHM-XXX-XXX mint still present in older confirmation emails", async () => {
+    stageSupabaseResponse("orders", "select", { data: null });
+
+    const res = await request(makeApp())
+      .post("/resupply-api/orders/track")
+      .send({ orderReference: "PHM-7K3-N9X", email: "a@a.com" });
+
+    expect(res.status).not.toBe(400);
+  });
+
+  it("accepts lowercase legacy PHM refs", async () => {
+    stageSupabaseResponse("orders", "select", { data: null });
+
+    const res = await request(makeApp())
+      .post("/resupply-api/orders/track")
+      .send({ orderReference: "phm-7k3-n9x", email: "a@a.com" });
+
+    expect(res.status).not.toBe(400);
+  });
+
   // -----------------------------------------------------------------------
   // Inputs that MUST be REJECTED by the new regex
   // -----------------------------------------------------------------------

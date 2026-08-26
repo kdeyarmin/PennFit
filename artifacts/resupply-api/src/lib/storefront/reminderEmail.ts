@@ -284,7 +284,7 @@ export async function sendReminderDue(opts: {
   lines.push(formatItemsList(opts.dueItems));
   lines.push("");
   lines.push(
-    `Need a refill? Visit the ${brand.storefrontName} shop to order — or give us a call.`,
+    `Need a refill? Reply to this email or give us a call — we'll confirm your insurance coverage and schedule a shipment.`,
   );
   lines.push("");
   lines.push(

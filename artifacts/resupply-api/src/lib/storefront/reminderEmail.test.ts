@@ -165,7 +165,7 @@ describe("reminderEmail senders", () => {
 
       const arg = sendEmailMock.mock.calls[0]![0];
       expect(arg.text).toContain(
-        "Visit the Penn Home Medical Supply shop to order — or give us a call.",
+        "Need a refill? Reply to this email or give us a call — we'll confirm your insurance coverage and schedule a shipment.",
       );
       expect(arg.text).toContain("— Penn Home Medical Supply");
       expect(arg.text).not.toContain("Supply by Penn");
@@ -184,7 +184,7 @@ describe("reminderEmail senders", () => {
 
       const arg = sendEmailMock.mock.calls[0]![0];
       expect(arg.text).toContain(
-        "Visit the Acme CPAP shop to order — or give us a call.",
+        "Need a refill? Reply to this email or give us a call — we'll confirm your insurance coverage and schedule a shipment.",
       );
       // Two genuinely different names → both are printed.
       expect(arg.text).toContain("— Acme CPAP by Acme Medical LLC");
