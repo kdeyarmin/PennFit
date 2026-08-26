@@ -5,6 +5,8 @@ name: CI
 # a workflow-file touch re-registers the pull_request webhook.
 # workflow_dispatch lets us kick a stuck branch when pull_request
 # synchronize events are dropped by GitHub.
+# Nudge 2: HEAD b02b17b9a still missing a full CI run (stuck queued
+# legacy SHAs + startup_failure on 25c821923).
 on:
   push:
     branches: [main]
