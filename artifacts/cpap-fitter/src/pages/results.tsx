@@ -323,12 +323,10 @@ export function Results() {
       // migration 0500 (clinical + magnet screening ON for every
       // tenant) whenever /api/fit/assess was briefly unreachable.
       if (result.kind === "not_enabled") {
-        // The legacy engine records no fit session, so there is nothing
-        // for a later fit request to link to. Clear it explicitly rather
-        // than letting a value persisted by an earlier clinical fitting
-        // in this tab ride along — a request pointing at a fitting it did
-        // not come from is worse than one pointing at nothing.
-        setFitSessionId(null);
+        // Legacy recommend records no fit session in the browser store, but
+        // a clinical assess in this tab may already have written one — keep
+        // it so the fit request (and fulfilled close dispense stamp) stay
+        // linked to the fitting that actually ran.
         setClinicalState("legacy");
         return;
       }
@@ -383,7 +381,6 @@ export function Results() {
     // error handling say so rather than duplicating the message here.
     if (!inviteToken) {
       hasProbedClinical.current = true;
-      setFitSessionId(null);
       setClinicalState("legacy");
       return;
     }
