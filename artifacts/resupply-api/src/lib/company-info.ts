@@ -304,6 +304,39 @@ async function orgDirectoryFallbackInfo(orgId: string): Promise<CompanyInfo> {
   };
 }
 
+/**
+ * When a `dme_organization` row still carries the platform default name
+ * and/or mailbox (rebrand leftover, empty admin form saved as CareMetric),
+ * overlay the organizations-directory brand so company-info matches
+ * storefront-branding. Used for every explicit orgId — seed and non-seed.
+ */
+async function overlayPlatformDefaultsFromDirectory(
+  fromDb: CompanyInfo,
+  orgId: string,
+): Promise<CompanyInfo> {
+  const needsNameOverlay = fromDb.name === DEFAULTS.name;
+  const needsEmailOverlay = fromDb.supportEmail === DEFAULTS.supportEmail;
+  if (!needsNameOverlay && !needsEmailOverlay) return fromDb;
+
+  const dir = await orgDirectoryFallbackInfo(orgId);
+  const useName = needsNameOverlay && dir.name !== DEFAULTS.name;
+  const useEmail =
+    needsEmailOverlay && dir.supportEmail !== DEFAULTS.supportEmail;
+  if (!useName && !useEmail) return fromDb;
+
+  return {
+    ...fromDb,
+    name: useName ? dir.name : fromDb.name,
+    legalName: useName ? dir.legalName : fromDb.legalName,
+    websiteUrl: useName
+      ? dir.websiteUrl || fromDb.websiteUrl
+      : fromDb.websiteUrl,
+    supportEmail: useEmail ? dir.supportEmail : fromDb.supportEmail,
+    generalEmail: useEmail ? dir.generalEmail : fromDb.generalEmail,
+    billingEmail: useEmail ? dir.billingEmail : fromDb.billingEmail,
+  };
+}
+
 class CompanyInfoLookupTimeout extends Error {
   constructor() {
     super("company_info_lookup_timeout");
@@ -423,7 +456,9 @@ export async function getCompanyInfo(orgId?: string): Promise<CompanyInfo> {
           "company info: dme_organization read failed; falling back to the org directory",
         );
       }
-      info = fromDb ?? (await orgDirectoryFallbackInfo(explicitOrgId));
+      info = fromDb
+        ? await overlayPlatformDefaultsFromDirectory(fromDb, explicitOrgId)
+        : await orgDirectoryFallbackInfo(explicitOrgId);
     } else {
       // The seed tenant (explicit or default). Its dme_organization row
       // wins when present. When it is missing:
@@ -464,39 +499,12 @@ export async function getCompanyInfo(orgId?: string): Promise<CompanyInfo> {
           );
         }
         if (fromDb) {
-          // Guard (host-resolved / explicit only): if Company Information was
-          // left at the platform default name and/or mailbox but the
-          // organizations directory carries the tenant brand / from_email,
-          // prefer directory values so storefronts stay consistent with
-          // storefront-branding. Skip on the implicit warm path — that must
-          // not read the migration-seeded org row.
-          const needsNameOverlay =
-            !!explicitOrgId && fromDb.name === DEFAULTS.name;
-          const needsEmailOverlay =
-            !!explicitOrgId && fromDb.supportEmail === DEFAULTS.supportEmail;
-          if (needsNameOverlay || needsEmailOverlay) {
-            const dir = await orgDirectoryFallbackInfo(explicitOrgId!);
-            const useName = needsNameOverlay && dir.name !== DEFAULTS.name;
-            const useEmail =
-              needsEmailOverlay && dir.supportEmail !== DEFAULTS.supportEmail;
-            if (useName || useEmail) {
-              info = {
-                ...fromDb,
-                name: useName ? dir.name : fromDb.name,
-                legalName: useName ? dir.legalName : fromDb.legalName,
-                websiteUrl: useName
-                  ? dir.websiteUrl || fromDb.websiteUrl
-                  : fromDb.websiteUrl,
-                supportEmail: useEmail ? dir.supportEmail : fromDb.supportEmail,
-                generalEmail: useEmail ? dir.generalEmail : fromDb.generalEmail,
-                billingEmail: useEmail ? dir.billingEmail : fromDb.billingEmail,
-              };
-            } else {
-              info = fromDb;
-            }
-          } else {
-            info = fromDb;
-          }
+          // Host-resolved / explicit only: overlay platform defaults from
+          // the organizations directory. Skip on the implicit warm path —
+          // that must not read the migration-seeded org row.
+          info = explicitOrgId
+            ? await overlayPlatformDefaultsFromDirectory(fromDb, explicitOrgId)
+            : fromDb;
         } else if (explicitOrgId) {
           // Prefer the organizations directory when it names a real tenant.
           // Production often sets RESUPPLY_PRACTICE_NAME to the platform

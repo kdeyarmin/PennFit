@@ -257,7 +257,19 @@ export async function resolveBrandingByOrgId(
       { event: "tenant_branding_load_failed", err: normalized },
       "tenant branding load by org failed; falling back to default brand",
     );
-    branding = DEFAULT_BRANDING;
+    // Do NOT cache the platform default on failure — a transient miss
+    // (boot race, blip) would pin CareMetric over a real tenant brand for
+    // the full TTL and leave company-info disagreeing with host branding.
+    return DEFAULT_BRANDING;
+  }
+  // Same posture for an empty/missing organizations row: retry next call
+  // rather than caching the platform identity as if it were the tenant.
+  if (
+    branding.storefrontName === DEFAULT_BRANDING.storefrontName &&
+    branding.legalName === DEFAULT_BRANDING.legalName &&
+    branding.logoUrl === null
+  ) {
+    return branding;
   }
   orgBrandingCache.set(key, { branding, expiresAt: now + CACHE_TTL_MS });
   return branding;

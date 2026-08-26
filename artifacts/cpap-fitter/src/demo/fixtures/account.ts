@@ -246,7 +246,7 @@ export function demoInsights(): CustomerInsight[] {
       notified: false,
       headline: "Time to refresh your cushion 🌬️",
       body: "Your nasal cushion is about 30 days old — replacing it now keeps the seal tight and your therapy comfortable.",
-      cta: { label: "Reorder cushion", url: "/shop" },
+      cta: { label: "Reorder cushion", url: "/insurance" },
     },
   ];
 }

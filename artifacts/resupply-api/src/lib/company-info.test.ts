@@ -482,6 +482,73 @@ describe("getCompanyInfo", () => {
     expect(info.generalEmail).toBe("info@pennpaps.com");
     expect(info.billingEmail).toBe("info@pennpaps.com");
   });
+
+  it("overlays directory brand when dme_organization still has the platform name", async () => {
+    // Live pennpaps.com: Company Information was left at CareMetric defaults
+    // while organizations.storefront_name correctly reads Penn. Without the
+    // overlay, the footer/chat say CareMetric while the logo says Penn.
+    const seedOrgId = "00000000-0000-4000-8000-000000000000";
+    stageSupabaseResponse("dme_organization", "select", {
+      data: {
+        ...ORG_ROW,
+        legal_name: "CareMetric Breathe",
+        dba_name: null,
+        support_email: "support@cmbreathe.com",
+        general_email: "support@cmbreathe.com",
+        billing_email: "support@cmbreathe.com",
+        phone_e164: "",
+        website_url: "https://cmbreathe.com",
+      },
+    });
+    resolveBrandingByOrgIdMock.mockResolvedValue({
+      storefrontName: "Penn Home Medical Supply",
+      legalName: "Penn Home Medical Supply",
+      tagline: "Your CPAP, made simple. Fit. Order. Resupply.",
+      logoUrl: "/penn/pennpaps-logo.jpeg",
+    });
+    resolveTenantBaseUrlMock.mockResolvedValue("https://pennpaps.com");
+    resolveTenantSenderMock.mockResolvedValue({
+      fromEmail: "info@pennpaps.com",
+      fromName: "Penn Home Medical Supply",
+    });
+    const info = await getCompanyInfo(seedOrgId);
+    expect(info.name).toBe("Penn Home Medical Supply");
+    expect(info.legalName).toBe("Penn Home Medical Supply");
+    expect(info.websiteUrl).toBe("https://pennpaps.com");
+    expect(info.supportEmail).toBe("info@pennpaps.com");
+    expect(info.source).toBe("database");
+  });
+
+  it("overlays platform defaults for a non-seed tenant with a CareMetric dme row", async () => {
+    const otherOrgId = "00000000-0000-4000-8000-000000000099";
+    stageSupabaseResponse("dme_organization", "select", {
+      data: {
+        ...ORG_ROW,
+        legal_name: "CareMetric Breathe",
+        dba_name: null,
+        support_email: "support@cmbreathe.com",
+        general_email: "support@cmbreathe.com",
+        billing_email: "support@cmbreathe.com",
+        phone_e164: "",
+        website_url: "https://cmbreathe.com",
+      },
+    });
+    resolveBrandingByOrgIdMock.mockResolvedValue({
+      storefrontName: "Riverside Home Medical",
+      legalName: "Riverside Home Medical LLC",
+      tagline: "Sleep well.",
+      logoUrl: null,
+    });
+    resolveTenantBaseUrlMock.mockResolvedValue("https://riverside.example");
+    resolveTenantSenderMock.mockResolvedValue({
+      fromEmail: "hello@riverside.example",
+    });
+    const info = await getCompanyInfo(otherOrgId);
+    expect(info.name).toBe("Riverside Home Medical");
+    expect(info.legalName).toBe("Riverside Home Medical LLC");
+    expect(info.websiteUrl).toBe("https://riverside.example");
+    expect(info.supportEmail).toBe("hello@riverside.example");
+  });
 });
 
 describe("hydrateCompanyInfoCache", () => {

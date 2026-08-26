@@ -13,10 +13,18 @@ import { Router, type IRouter } from "express";
 import {
   getCompanyInfo,
   getPlatformIdentity,
+  PLATFORM_NAME,
   resolveAssistantNamesForOrg,
 } from "../../lib/company-info";
-import { resolveBrandOrgIdByHost } from "../../lib/tenant-branding.js";
+import {
+  resolveBrandOrgIdByHost,
+  resolveBrandingByHost,
+  resolveTenantBaseUrl,
+} from "../../lib/tenant-branding.js";
+import { resolveTenantSender } from "../../lib/email/tenant-sender.js";
 import { requestHost } from "../../lib/request-host.js";
+
+const PLATFORM_SUPPORT_EMAIL = "support@cmbreathe.com";
 
 const router: IRouter = Router();
 
@@ -26,8 +34,46 @@ router.get("/company-info", async (req, res) => {
   // domains; that leaked the seed tenant's phone/email/name onto
   // cmbreathe.com. Auth email already avoids this via
   // resolveBrandingByHost; company-info must match that contract.
-  const orgId = (await resolveBrandOrgIdByHost(requestHost(req))) ?? undefined;
-  const info = orgId ? await getCompanyInfo(orgId) : getPlatformIdentity();
+  const host = requestHost(req);
+  const orgId = (await resolveBrandOrgIdByHost(host)) ?? undefined;
+  let info = orgId ? await getCompanyInfo(orgId) : getPlatformIdentity();
+
+  // Defense in depth: storefront-branding resolves the tenant name via
+  // the host → organizations directory path, which is what patients see
+  // in the header/logo. When Company Information still carries the
+  // platform default name (rebrand leftover / empty admin save), prefer
+  // that same host branding so the footer cannot say "CareMetric Breathe"
+  // while the logo says the tenant. getCompanyInfo already overlays via
+  // resolveBrandingByOrgId; this catches the case where the org-id
+  // branding cache was poisoned with the platform default on a transient
+  // miss while the host cache stayed correct.
+  if (orgId && info.name === PLATFORM_NAME) {
+    const branding = await resolveBrandingByHost(host);
+    if (branding.storefrontName.trim() !== PLATFORM_NAME) {
+      const [tenantBase, sender] = await Promise.all([
+        resolveTenantBaseUrl(orgId),
+        resolveTenantSender(orgId),
+      ]);
+      const tenantEmail = sender.fromEmail?.trim() || null;
+      const useEmail =
+        !!tenantEmail && info.supportEmail === PLATFORM_SUPPORT_EMAIL;
+      info = {
+        ...info,
+        name: branding.storefrontName.trim(),
+        legalName:
+          branding.legalName.trim() || branding.storefrontName.trim(),
+        websiteUrl: tenantBase || info.websiteUrl,
+        ...(useEmail
+          ? {
+              supportEmail: tenantEmail,
+              generalEmail: tenantEmail,
+              billingEmail: tenantEmail,
+            }
+          : {}),
+      };
+    }
+  }
+
   const assistantNames = orgId
     ? await resolveAssistantNamesForOrg(orgId)
     : {
