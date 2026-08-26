@@ -16,7 +16,6 @@
 
 import {
   getOrgScopedClient,
-  resolveSeedOrgId,
   tryUpsertPatientLatestMessageSb,
   type Json,
   type ResupplySupabaseClient,
@@ -41,14 +40,11 @@ import type { EmailSendConfig, SendActor, SendReminderOutcome } from "./types";
 export interface SendReminderEmailInput {
   supabase: ResupplySupabaseClient;
   /**
-   * Tenant the send happens in. Every tenant-scoped read/write goes
-   * through `getOrgScopedClient(orgId, supabase)` so a reminder can
-   * only ever touch the caller's tenant. Optional with a seed-org
-   * bridge: when omitted the original operating company is resolved,
-   * so callers that don't yet thread orgId (the worker jobs) keep
-   * working without an atomic all-callers change (Phase 0 cutover).
+   * Tenant the send happens in. Required — never invent the seed org.
+   * Every tenant-scoped read/write goes through
+   * `getOrgScopedClient(orgId, supabase)`.
    */
-  orgId?: string;
+  orgId: string;
   cfg: EmailSendConfig;
   patientId: string;
   episodeId?: string;
@@ -110,14 +106,9 @@ export async function sendReminderEmail(
   input: SendReminderEmailInput,
 ): Promise<SendReminderOutcome> {
   const { supabase, cfg, patientId, actor } = input;
-  // Tenant isolation chokepoint: scope every read/write to orgId. The
-  // seed-org bridge resolves the original operating company when a
-  // caller hasn't threaded orgId yet (see input doc).
-  const rawOrgId = input.orgId;
-  const orgId =
-    rawOrgId === undefined
-      ? ((await resolveSeedOrgId()) ?? "")
-      : rawOrgId.trim();
+  // Tenant isolation chokepoint: scope every read/write to orgId.
+  // Never invent the seed org when the caller forgot to thread it.
+  const orgId = input.orgId?.trim() ?? "";
   if (!orgId) return { status: "tenant_not_resolved" };
   const db = getOrgScopedClient(orgId, supabase);
 
@@ -375,7 +366,7 @@ export async function sendReminderEmail(
     body: rendered.text,
     direction: "outbound",
     messageAt: sentAt,
-    orgId: orgId || undefined,
+    orgId,
   });
 
   await safeAuditFromActor({

@@ -85,9 +85,9 @@ export interface BatchSubmitInput {
   adminUserId: string | null;
   ip?: string | null;
   userAgent?: string | null;
-  /** Tenant for the org-scoped reads/writes. Defaults to the seed org
-   *  (single-tenant bridge) for worker / non-request callers. */
-  orgId?: string;
+  /** Tenant for the org-scoped reads/writes. Required — worker / admin
+   *  callers pass the fan-out or `req.orgId`. A missing orgId fail-closes. */
+  orgId: string;
 }
 
 export type BatchSubmitResult =
@@ -272,7 +272,7 @@ async function findEligibilityBlocksForSubmit(input: {
   for (const [coverageId, claimsForCoverage] of coverageToClaims) {
     let latest: Awaited<ReturnType<typeof getCachedEligibility>> | null;
     try {
-      latest = await getCachedEligibility(coverageId, freshnessMs);
+      latest = await getCachedEligibility(coverageId, input.orgId, freshnessMs);
       if (
         !latest &&
         realtimeAvailable &&
@@ -282,9 +282,14 @@ async function findEligibilityBlocksForSubmit(input: {
           insuranceCoverageId: coverageId,
           patientId: claimsForCoverage[0]!.patient_id,
           requestedByEmail: input.adminEmail ?? "system:eligibility-precheck",
+          orgId: input.orgId,
         });
         freshChecks += 1;
-        latest = await getCachedEligibility(coverageId, freshnessMs);
+        latest = await getCachedEligibility(
+          coverageId,
+          input.orgId,
+          freshnessMs,
+        );
       }
     } catch (err) {
       logger.warn(
@@ -422,7 +427,7 @@ async function resolveBatchBillingLocation(args: {
 export async function executeOfficeAllyBatchSubmit(
   input: BatchSubmitInput,
 ): Promise<BatchSubmitResult> {
-  const orgId = input.orgId ?? (await resolveSeedOrgId());
+  const orgId = input.orgId?.trim();
   if (!orgId) {
     return { ok: false, kind: "no_claims_matched", detail: {} };
   }
@@ -615,6 +620,7 @@ export async function executeOfficeAllyBatchSubmit(
           patientId,
           payer.payer_legal_name,
           {
+            orgId,
             refreshIfStale: allowRefresh,
             requestedByEmail: input.adminEmail ?? "system:eligibility-precheck",
           },

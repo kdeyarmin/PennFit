@@ -14,6 +14,8 @@ import {
   EARLY_WINDOW_MIN_DAYS,
   EARLY_WINDOW_MAX_DAYS,
 } from "./coaching-auto-enroll";
+
+const ORG_ID = "00000000-0000-4000-8000-000000000001";
 import type { AdherenceScore } from "./adherence-predictor";
 
 function score(over: Partial<AdherenceScore> = {}): AdherenceScore {
@@ -110,7 +112,7 @@ describe("runCoachingAutoEnrollSweep", () => {
     // 4. The plan insert succeeds.
     stageSupabaseResponse("patient_coaching_plans", "insert", { data: [{}] });
 
-    const stats = await runCoachingAutoEnrollSweep();
+    const stats = await runCoachingAutoEnrollSweep(ORG_ID);
     expect(stats.candidates).toBe(2);
     expect(stats.skippedExistingPlan).toBe(1); // B
     expect(stats.scored).toBe(1); // A
@@ -119,7 +121,7 @@ describe("runCoachingAutoEnrollSweep", () => {
 
   it("returns early with zero candidates when no recent nights exist", async () => {
     stageSupabaseResponse("patient_therapy_nights", "select", { data: [] });
-    const stats = await runCoachingAutoEnrollSweep();
+    const stats = await runCoachingAutoEnrollSweep(ORG_ID);
     expect(stats).toEqual({
       candidates: 0,
       scored: 0,
@@ -141,7 +143,7 @@ describe("runCoachingAutoEnrollSweep", () => {
         night_date: isoDaysAgo(10 - i),
       })),
     });
-    const stats = await runCoachingAutoEnrollSweep();
+    const stats = await runCoachingAutoEnrollSweep(ORG_ID);
     expect(stats.scored).toBe(1);
     expect(stats.enrolled).toBe(0);
   });

@@ -15,6 +15,8 @@ const supabaseMock = installSupabaseMock();
 
 import { scrubClaim } from "./ai-claim-scrubber";
 
+const ORG_ID = "00000000-0000-4000-8000-000000000001";
+
 const CLAIM_ID = "11111111-1111-4111-8111-111111111111";
 
 function stageHappyContext(): void {
@@ -142,7 +144,10 @@ describe("scrubClaim", () => {
   });
 
   it("returns errored verdict when OPENAI_API_KEY is missing", async () => {
-    const r = await scrubClaim({ claimId: CLAIM_ID });
+    const r = await scrubClaim({
+      orgId: ORG_ID,
+      claimId: CLAIM_ID,
+    });
     expect(r.verdict).toBe("errored");
     expect(r.errorMessage).toMatch(/OPENAI_API_KEY/);
   });
@@ -151,6 +156,7 @@ describe("scrubClaim", () => {
     stageSupabaseResponse("insurance_claims", "select", { data: null });
     const fetchImpl = vi.fn();
     const r = await scrubClaim({
+      orgId: ORG_ID,
       claimId: CLAIM_ID,
       apiKey: "sk-test",
       fetchImpl: fetchImpl as unknown as typeof fetch,
@@ -192,6 +198,7 @@ describe("scrubClaim", () => {
       }),
     });
     const r = await scrubClaim({
+      orgId: ORG_ID,
       claimId: CLAIM_ID,
       apiKey: "sk-test",
       fetchImpl: fetchImpl as unknown as typeof fetch,
@@ -236,6 +243,7 @@ describe("scrubClaim", () => {
         };
       });
     await scrubClaim({
+      orgId: ORG_ID,
       claimId: CLAIM_ID,
       apiKey: "sk-test",
       fetchImpl: fetchImpl as unknown as typeof fetch,
@@ -264,6 +272,7 @@ describe("scrubClaim", () => {
       }),
     });
     const r = await scrubClaim({
+      orgId: ORG_ID,
       claimId: CLAIM_ID,
       apiKey: "sk-test",
       fetchImpl: fetchImpl as unknown as typeof fetch,
@@ -279,6 +288,7 @@ describe("scrubClaim", () => {
       text: async () => "service unavailable",
     });
     const r = await scrubClaim({
+      orgId: ORG_ID,
       claimId: CLAIM_ID,
       apiKey: "sk-test",
       fetchImpl: fetchImpl as unknown as typeof fetch,
@@ -312,6 +322,7 @@ describe("scrubClaim", () => {
       }),
     });
     const r = await scrubClaim({
+      orgId: ORG_ID,
       claimId: CLAIM_ID,
       apiKey: "sk-test",
       fetchImpl: fetchImpl as unknown as typeof fetch,

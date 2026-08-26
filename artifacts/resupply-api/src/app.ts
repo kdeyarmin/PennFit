@@ -18,7 +18,7 @@ import { getAuthDeps } from "./lib/auth-deps";
 import {
   PLATFORM_NAME,
   getCompanyInfo,
-  getCompanyInfoSync,
+  getPlatformIdentity,
 } from "./lib/company-info";
 import { isDeployedRuntime } from "./lib/deployed-runtime";
 import { logger } from "./lib/logger";
@@ -30,7 +30,7 @@ import { requestHost } from "./lib/request-host";
 import { storefrontRecommendLimiter } from "./middlewares/storefront-rate-limit";
 import {
   isVerifiedCustomDomainOrigin,
-  resolveOrgIdByHost,
+  resolveBrandOrgIdByHost,
   warmVerifiedCustomDomains,
 } from "./lib/tenant-branding";
 import { isPlatformSubdomainOrigin } from "./lib/tenant-domain";
@@ -525,11 +525,10 @@ const storefrontChatLimiter = expressRateLimit({
   keyGenerator: (req: Request) => ipKeyGenerator(req.ip ?? "0.0.0.0"),
   // Build the 429 copy from the host-resolved tenant's own support contact,
   // not a hardcoded seed (Penn) number. /api/chat is public (no auth sets
-  // req.orgId), so resolve the org by host exactly as routes/storefront/chat.ts
-  // does, then build the phone clause DIRECTLY from CompanyInfo fields —
-  // applyCompanyIdentityToText would be a no-op for an unconfigured non-seed
-  // tenant and leak the literal Penn number. Omit the clause when the tenant
-  // has no support phone; degrade to the warm seed identity on any miss.
+  // req.orgId), so resolve the brand org by host the same way
+  // routes/storefront/chat.ts does (NOT resolveOrgIdByHost, which falls
+  // back to seed on platform hosts). Use getPlatformIdentity when the host
+  // is unclaimed so CareMetric — not Penn — is the support number.
   //
   // Synchronous handler + `void`-ed async IIFE: express-rate-limit types
   // `handler` as returning void and never awaits it, so an `async handler`
@@ -542,9 +541,11 @@ const storefrontChatLimiter = expressRateLimit({
       try {
         const orgId =
           req.orgId ??
-          (await resolveOrgIdByHost(requestHost(req))) ??
+          (await resolveBrandOrgIdByHost(requestHost(req))) ??
           undefined;
-        const info = orgId ? await getCompanyInfo(orgId) : getCompanyInfoSync();
+        const info = orgId
+          ? await getCompanyInfo(orgId)
+          : getPlatformIdentity();
         phone = info.supportPhoneDisplay?.trim() ?? "";
       } catch {
         // Host/company resolution hiccup — fall back to no phone clause rather

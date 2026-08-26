@@ -149,6 +149,7 @@ describe("executeOfficeAllyBatchSubmit — eligibility precheck", () => {
     });
 
     const result = await executeOfficeAllyBatchSubmit({
+      orgId: MOCK_ORG_ID,
       claimIds: ["claim-1"],
       adminEmail: "ops@example.com",
       adminUserId: "u-1",
@@ -195,6 +196,7 @@ describe("executeOfficeAllyBatchSubmit — eligibility precheck", () => {
     });
 
     const result = await executeOfficeAllyBatchSubmit({
+      orgId: MOCK_ORG_ID,
       claimIds: ["claim-1"],
       adminEmail: "ops@example.com",
       adminUserId: "u-1",
@@ -241,6 +243,7 @@ describe("executeOfficeAllyBatchSubmit — bill hold", () => {
       });
 
       const result = await executeOfficeAllyBatchSubmit({
+        orgId: MOCK_ORG_ID,
         claimIds: ["claim-held-1"],
         adminEmail: "ops@example.com",
         adminUserId: "u-1",
@@ -321,6 +324,7 @@ describe("executeOfficeAllyBatchSubmit — bill hold", () => {
       });
 
       const result = await executeOfficeAllyBatchSubmit({
+        orgId: MOCK_ORG_ID,
         claimIds: ["claim-clear-1"],
         adminEmail: "ops@example.com",
         adminUserId: "u-1",
@@ -438,6 +442,7 @@ describe("executeOfficeAllyBatchSubmit — atomic batch claim (double-transmissi
     });
 
     const result = await executeOfficeAllyBatchSubmit({
+      orgId: MOCK_ORG_ID,
       claimIds: ["claim-1", "claim-2"],
       adminEmail: "ops@example.com",
       adminUserId: "u-1",

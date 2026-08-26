@@ -32,8 +32,10 @@ vi.stubGlobal("fetch", fetchMock);
 import { autoFileSignedFax } from "./auto-file-signed";
 import type { TrackingScanResult } from "../inbound-fax/tracking-scan";
 import type { Logger } from "pino";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 const PDF = Buffer.from([0x25, 0x50, 0x44, 0x46]); // "%PDF"
+const TEST_ORG = "00000000-0000-4000-8000-000000000000";
 
 /** A signature_tracking DB row as PostgREST returns it. */
 function trackingDbRow(overrides: Record<string, unknown> = {}) {
@@ -82,6 +84,7 @@ function deps(
   decode: ReturnType<typeof decodeReturning> = decodeReturning(null),
 ) {
   return {
+    supabase: getOrgScopedClient(TEST_ORG),
     logger: loggerStub as unknown as Logger,
     decode: decode as never,
     scan: scan as never,

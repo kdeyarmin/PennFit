@@ -175,7 +175,7 @@ router.post(
       actorEmail: `system:era_ingest:${req.adminEmail ?? "unknown"}`,
       fileName,
       checkOrEftNumber: parsedEra.checkOrEftNumber,
-      orgId: req.orgId,
+      orgId,
     });
 
     // Update with the parser+reconciler counts and promote status.

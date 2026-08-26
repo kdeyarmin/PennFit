@@ -476,7 +476,7 @@ function DraftsReviewCard({
   return (
     <Card
       title="Draft review queue"
-      subtitle="Proposals staged from opportunities (manually or by the daily auto-draft job). Review, then approve into a sign-&-pay checkout link the patient pays — nothing is charged until they do."
+      subtitle="Proposals staged from opportunities (manually or by the daily auto-draft job). Review, then approve into a signature link the patient reviews and e-signs — the order is billed to their insurance, not charged on a card."
     >
       {isPending ? (
         <Spinner />
@@ -654,7 +654,7 @@ function ApproveDraftModal({
       >
         <div className="flex items-start justify-between">
           <h2 className="text-lg font-semibold flex items-center gap-2">
-            <ClipboardList className="h-5 w-5" /> Approve & send checkout
+            <ClipboardList className="h-5 w-5" /> Approve & send signature link
           </h2>
           <button
             type="button"
@@ -670,7 +670,7 @@ function ApproveDraftModal({
           <div className="space-y-3">
             <p className="text-sm">
               Order <strong>{approve.data.orderReference}</strong> created and
-              the checkout link was {approve.data.emailSent ? "emailed" : ""}
+              the signature link was {approve.data.emailSent ? "emailed" : ""}
               {approve.data.emailSent && approve.data.smsSent ? " and " : ""}
               {approve.data.smsSent ? "texted" : ""}
               {!approve.data.emailSent && !approve.data.smsSent
@@ -693,8 +693,8 @@ function ApproveDraftModal({
         ) : (
           <>
             <p className="text-sm" style={{ color: "hsl(var(--ink-3))" }}>
-              Confirm the line item and where to send the sign-&-pay link. The
-              patient is charged only when they complete checkout.
+              Confirm the line item and where to send the signature link. The
+              patient e-signs paperwork; the order is billed to their insurance.
             </p>
             <Field label="Customer name">
               <input

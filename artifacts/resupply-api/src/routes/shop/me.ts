@@ -48,8 +48,14 @@ router.get("/shop/me", attachSignedIn, async (req, res) => {
   // to null on lookup failure rather than blowing up /shop/me.
   const { email, displayName } = await readCustomerProfile(req);
 
+  const orgId = req.orgId;
+  if (!orgId) {
+    res.status(500).json({ error: "tenant_context_missing" });
+    return;
+  }
+
   const row = await ensureShopCustomerRow({
-    orgId: req.orgId,
+    orgId,
     customerId: req.userCustomerId,
     email,
     displayName,
@@ -58,11 +64,6 @@ router.get("/shop/me", attachSignedIn, async (req, res) => {
   // Recent orders summary (last 5). We DON'T expose price/line items
   // here — that's behind /shop/me/orders so the account header stays
   // light. Just enough to render "3 past orders, latest Apr 22".
-  const orgId = req.orgId;
-  if (!orgId) {
-    res.status(500).json({ error: "tenant_context_missing" });
-    return;
-  }
   const supabase = getOrgScopedClient(orgId);
   const { data: recent, error: recentErr } = await supabase
     .from("shop_orders")
@@ -149,9 +150,15 @@ router.put("/shop/me", requireSignedIn, async (req, res) => {
   }
   const { displayName, shippingAddress } = parsed.data;
 
+  const orgId = req.orgId;
+  if (!orgId) {
+    res.status(500).json({ error: "tenant_context_missing" });
+    return;
+  }
+
   // Make sure the row exists (first-time PUT before any GET).
   await ensureShopCustomerRow({
-    orgId: req.orgId,
+    orgId,
     customerId: req.userCustomerId!,
     email: null,
   });
@@ -166,11 +173,6 @@ router.put("/shop/me", requireSignedIn, async (req, res) => {
       : null) as unknown as Json;
   }
 
-  const orgId = req.orgId;
-  if (!orgId) {
-    res.status(500).json({ error: "tenant_context_missing" });
-    return;
-  }
   const supabase = getOrgScopedClient(orgId);
   const { data: row, error } = await supabase
     .from("shop_customers")

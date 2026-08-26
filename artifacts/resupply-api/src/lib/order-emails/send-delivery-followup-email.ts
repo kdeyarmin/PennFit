@@ -133,7 +133,7 @@ export async function sendDeliveryFollowupEmail(
   // the NPS rating block entirely; the delivery-followup email still
   // sends with the review-request + returns links so the customer-
   // facing copy doesn't lose anything else when only NPS is paused.
-  const npsEnabled = await isFeatureEnabled("storefront.nps");
+  const npsEnabled = await isFeatureEnabled("storefront.nps", input.orgId);
   let npsRow: { html: string; text: string[] } | null = null;
   if (orderId && npsEnabled) {
     try {

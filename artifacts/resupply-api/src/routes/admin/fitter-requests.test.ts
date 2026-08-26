@@ -150,7 +150,7 @@ describe("PATCH /admin/fitter-requests/:id — lifecycle stamps", () => {
   it("does not attempt a claim on a transition that is not a first contact", async () => {
     await request(makeApp())
       .patch(`/admin/fitter-requests/${ID}`)
-      .send({ status: "closed" });
+      .send({ status: "closed", closedOutcome: "not_proceeding" });
     expect(db.updates).toHaveLength(1);
     expect(db.updates[0]).not.toHaveProperty("contacted_at");
   });
@@ -158,7 +158,7 @@ describe("PATCH /admin/fitter-requests/:id — lifecycle stamps", () => {
   it("stamps closed_at on close and clears it on re-open", async () => {
     await request(makeApp())
       .patch(`/admin/fitter-requests/${ID}`)
-      .send({ status: "closed" });
+      .send({ status: "closed", closedOutcome: "not_proceeding" });
     expect(db.updates.at(-1)!.closed_at).toBeTruthy();
 
     db.updates = [];
@@ -171,7 +171,7 @@ describe("PATCH /admin/fitter-requests/:id — lifecycle stamps", () => {
   it("rejects a malformed id", async () => {
     const res = await request(makeApp())
       .patch("/admin/fitter-requests/not-a-uuid")
-      .send({ status: "closed" });
+      .send({ status: "closed", closedOutcome: "not_proceeding" });
     expect(res.status).toBe(400);
   });
 });

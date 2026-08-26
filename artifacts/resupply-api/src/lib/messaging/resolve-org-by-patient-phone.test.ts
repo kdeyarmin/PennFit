@@ -32,6 +32,22 @@ describe("resolveOrgIdByPatientPhone", () => {
     expect(supabaseMock.callCount("patients", "select")).toBe(0);
   });
 
+  it("normalizes bare NANP before the phone_e164 lookup", async () => {
+    stageSupabaseResponse("patients", "select", {
+      data: [{ id: "p1", org_id: ORG_A }],
+    });
+    expect(await resolveOrgIdByPatientPhone("2155550000")).toBe(ORG_A);
+    const phoneFilter = supabaseMock
+      .filterCalls("patients", "select")
+      .find((c) => c.verb === "eq" && c.args[0] === "phone_e164");
+    expect(phoneFilter?.args[1]).toBe("+12155550000");
+  });
+
+  it("returns null for unparseable input without querying", async () => {
+    expect(await resolveOrgIdByPatientPhone("1234")).toBeNull();
+    expect(supabaseMock.callCount("patients", "select")).toBe(0);
+  });
+
   it("routes to the single tenant that has this patient", async () => {
     stageSupabaseResponse("patients", "select", {
       data: [

@@ -132,11 +132,12 @@ export function Privacy() {
               </li>
             </ul>
             <p className="mt-2">
-              You re-confirm this storage at checkout via a required consent
-              checkbox. Access to stored orders is limited to <BrandName />{" "}
-              staff who have signed in with an authorized email and is recorded
-              in an internal audit log. To request a copy or deletion of your
-              stored order information, contact <BrandName /> directly.
+              You re-confirm this storage when you submit an order or fit
+              request via a required consent checkbox. Access to stored orders
+              is limited to <BrandName /> staff who have signed in with an
+              authorized email and is recorded in an internal audit log. To
+              request a copy or deletion of your stored order information,
+              contact <BrandName /> directly.
             </p>
           </section>
 

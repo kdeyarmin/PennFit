@@ -22,11 +22,7 @@
 
 import { randomBytes } from "node:crypto";
 
-import {
-  getOrgScopedClient,
-  resolveSeedOrgId,
-  type Json,
-} from "@workspace/resupply-db";
+import { getOrgScopedClient, type Json } from "@workspace/resupply-db";
 
 import { isFeatureEnabled } from "../feature-flags";
 import { logger } from "../logger";
@@ -117,7 +113,7 @@ export interface AutoEnrollInput {
   email: string;
   lineItems: ReadonlyArray<OrderLineItemLike>;
   /** Owning tenant of the order. Defaults to the seed org when omitted. */
-  orgId?: string;
+  orgId: string;
   now?: Date;
   log?: { warn?: (obj: unknown, msg?: string) => void } | null;
 }
@@ -130,7 +126,8 @@ export interface AutoEnrollResult {
     | "disabled"
     | "no_consumables"
     | "unsubscribed"
-    | "no_change";
+    | "no_change"
+    | "tenant_not_resolved";
 }
 
 /**
@@ -141,9 +138,9 @@ export interface AutoEnrollResult {
 export async function autoEnrollReminderFromOrder(
   input: AutoEnrollInput,
 ): Promise<AutoEnrollResult> {
-  const orgId = input.orgId?.trim() || (await resolveSeedOrgId());
+  const orgId = input.orgId?.trim() ?? "";
   if (!orgId) {
-    return { enrolled: false, reason: "disabled" };
+    return { enrolled: false, reason: "tenant_not_resolved" };
   }
   // Per-tenant gate: the order's own tenant decides whether auto-enrollment is on.
   if (!(await isFeatureEnabled("storefront.auto_reminder_enrollment", orgId))) {

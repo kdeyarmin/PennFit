@@ -207,22 +207,19 @@ describe("sendReminderSms — org-scoped happy path", () => {
   });
 });
 
-describe("sendReminderSms — seed-org bridge", () => {
-  it("resolves the seed tenant when orgId is omitted", async () => {
-    stageHappyPath();
+describe("sendReminderSms — require orgId", () => {
+  it("returns tenant_not_resolved when orgId is omitted", async () => {
+    const result = await sendReminderSms(
+      makeInput({ orgId: undefined as unknown as string }),
+    );
 
-    const result = await sendReminderSms(makeInput({ orgId: undefined }));
-
-    expect(result.status).toBe("ok");
-    expect(resolveSeedOrgIdMock).toHaveBeenCalledTimes(1);
-    // The bridge-resolved org propagates to the projection too.
-    expect(tryUpsertMock.mock.calls[0][1].orgId).toBe(ORG_ID);
+    expect(result.status).toBe("tenant_not_resolved");
+    expect(patientReadMock).not.toHaveBeenCalled();
+    expect(sendSmsMock).not.toHaveBeenCalled();
   });
 
-  it("returns tenant_not_resolved when orgId is omitted and no seed tenant exists", async () => {
-    resolveSeedOrgIdMock.mockResolvedValueOnce(null);
-
-    const result = await sendReminderSms(makeInput({ orgId: undefined }));
+  it("returns tenant_not_resolved when orgId is blank", async () => {
+    const result = await sendReminderSms(makeInput({ orgId: "  " }));
 
     expect(result.status).toBe("tenant_not_resolved");
     expect(patientReadMock).not.toHaveBeenCalled();

@@ -274,9 +274,8 @@ async function main(): Promise<void> {
   // this admin's org under the fail-closed gate (a present-but-NULL org_id is
   // rejected). Bootstrap admins are the seed/platform admin → bind to the seed
   // org. BEST-EFFORT: a failure here must NOT abort the bootstrap — the auth
-  // user + reset link are the critical output, and requireAdmin still resolves
-  // a row-less admin to the seed org — so log and continue. Never clobbers an
-  // existing row's role/status.
+  // user + reset link are the critical output — so log and continue. Never
+  // clobbers an existing row's role/status.
   try {
     const seedOrgId = await resolveSeedOrgId();
     if (seedOrgId) {
@@ -319,8 +318,8 @@ async function main(): Promise<void> {
   } catch (err) {
     process.stderr.write(
       `[auth:bootstrap-admin] warning: could not link admin_users row ` +
-        `(${err instanceof Error ? err.message : String(err)}); the admin ` +
-        `still resolves to the seed org via the row-less fallback.\n`,
+        `(${err instanceof Error ? err.message : String(err)}); requireAdmin ` +
+        `will reject this session until admin_users.org_id is set.\n`,
     );
   }
 

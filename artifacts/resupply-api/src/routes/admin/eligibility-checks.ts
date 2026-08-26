@@ -58,13 +58,18 @@ router.post(
       res.status(400).json({ error: "invalid_body" });
       return;
     }
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     try {
       const result = await verifyEligibility({
         insuranceCoverageId: parsed.data.coverageId,
         patientId: parsed.data.id,
         hcpcsCode: bodyParsed.data?.hcpcsCode,
         requestedByEmail: req.adminEmail ?? "unknown",
-        orgId: req.orgId,
+        orgId,
       });
       await logAudit({
         action: "eligibility.verify",

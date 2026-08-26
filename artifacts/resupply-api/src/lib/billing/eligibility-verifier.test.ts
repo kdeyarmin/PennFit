@@ -92,6 +92,8 @@ import {
   getCachedEligibility,
   verifyEligibility,
 } from "./eligibility-verifier";
+
+const ORG_ID = "00000000-0000-4000-8000-000000000001";
 import { resolveClearinghouse } from "./identity-resolver";
 
 type ResolvedClearinghouseMock = Awaited<
@@ -133,6 +135,7 @@ describe("verifyEligibility — patient/coverage scoping (IDOR guard)", () => {
     });
     await expect(
       verifyEligibility({
+        orgId: ORG_ID,
         insuranceCoverageId: COVERAGE_ID,
         patientId: PATIENT_ID,
         requestedByEmail: "ops@pennpaps.com",
@@ -144,6 +147,7 @@ describe("verifyEligibility — patient/coverage scoping (IDOR guard)", () => {
     stageSupabaseResponse("insurance_coverages", "select", { data: null });
     await expect(
       verifyEligibility({
+        orgId: ORG_ID,
         insuranceCoverageId: COVERAGE_ID,
         patientId: PATIENT_ID,
         requestedByEmail: "ops@pennpaps.com",
@@ -163,6 +167,7 @@ describe("verifyEligibility — patient/coverage scoping (IDOR guard)", () => {
     stageSupabaseResponse("patients", "select", { data: null });
     await expect(
       verifyEligibility({
+        orgId: ORG_ID,
         insuranceCoverageId: COVERAGE_ID,
         patientId: PATIENT_ID,
         requestedByEmail: "ops@pennpaps.com",
@@ -196,6 +201,7 @@ describe("verifyEligibility — patient/coverage scoping (IDOR guard)", () => {
     });
     await expect(
       verifyEligibility({
+        orgId: ORG_ID,
         insuranceCoverageId: COVERAGE_ID,
         patientId: PATIENT_ID,
         requestedByEmail: "ops@pennpaps.com",
@@ -239,6 +245,7 @@ describe("verifyEligibility — real-time path", () => {
     vi.mocked(resolveClearinghouse).mockResolvedValueOnce(REALTIME_RESOLVED);
 
     const result = await verifyEligibility({
+      orgId: ORG_ID,
       insuranceCoverageId: COVERAGE_ID,
       patientId: PATIENT_ID,
       requestedByEmail: "ops@pennpaps.com",
@@ -273,6 +280,7 @@ describe("verifyEligibility — real-time path", () => {
     vi.mocked(resolveClearinghouse).mockResolvedValueOnce(REALTIME_RESOLVED);
 
     const result = await verifyEligibility({
+      orgId: ORG_ID,
       insuranceCoverageId: COVERAGE_ID,
       patientId: PATIENT_ID,
       requestedByEmail: "ops@pennpaps.com",
@@ -288,7 +296,7 @@ describe("verifyEligibility — real-time path", () => {
 describe("getCachedEligibility", () => {
   it("returns null when no parsed row exists within the freshness window", async () => {
     stageSupabaseResponse("eligibility_checks", "select", { data: null });
-    const r = await getCachedEligibility(COVERAGE_ID);
+    const r = await getCachedEligibility(COVERAGE_ID, ORG_ID);
     expect(r).toBeNull();
   });
 
@@ -301,7 +309,7 @@ describe("getCachedEligibility", () => {
         responded_at: new Date().toISOString(),
       },
     });
-    const r = await getCachedEligibility(COVERAGE_ID);
+    const r = await getCachedEligibility(COVERAGE_ID, ORG_ID);
     expect(r).not.toBeNull();
     expect(r?.id).toBe("eli_1");
   });

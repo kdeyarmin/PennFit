@@ -234,13 +234,13 @@ function tenantSetupChecklist() {
     {
       id: "payments",
       group: "Payments",
-      title: "Connect payments (Stripe)",
+      title: "Confirm platform billing (Stripe)",
       description:
-        "Connect your Stripe account so storefront checkout deposits to you. Required before opening the cash-pay shop.",
+        "Your CareMetric Breathe subscription bills through Stripe (SaaS). Patients are insurance-only — there is no patient card checkout on the storefront.",
       status: "complete",
-      detail: "Stripe connected and charges enabled.",
-      href: "/admin/billing/config/organization",
-      required: true,
+      detail: "Platform Stripe billing configured.",
+      href: "/admin/billing/package",
+      required: false,
     },
   ];
   const requiredItems = items.filter((i) => i.required);

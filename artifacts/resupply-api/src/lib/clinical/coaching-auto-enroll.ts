@@ -26,7 +26,7 @@
 // (a CSR just worked/resolved it) — is suppressed, so re-runs never pile
 // duplicate plans onto the same patient or churn a freshly-closed one.
 
-import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../logger";
 import {
@@ -94,12 +94,12 @@ export interface AutoEnrollSweepStats {
  */
 export async function runCoachingAutoEnrollSweep(
   /**
-   * Tenant to sweep. The daily cron fans out across every active tenant
-   * (worker/jobs/coaching-auto-enroll.ts) and ALWAYS passes an explicit
-   * orgId. Left optional only for any non-cron caller, which falls back to
-   * the seed org for back-compat.
+   * Tenant to sweep. Required — the daily cron fans out across every
+   * active tenant (worker/jobs/coaching-auto-enroll.ts) and ALWAYS passes
+   * an explicit orgId. A blank/missing orgId fail-closes to the zeroed
+   * stats envelope rather than inventing the seed.
    */
-  explicitOrgId?: string,
+  explicitOrgId: string,
 ): Promise<AutoEnrollSweepStats> {
   const stats: AutoEnrollSweepStats = {
     candidates: 0,
@@ -111,7 +111,7 @@ export async function runCoachingAutoEnrollSweep(
   // Resolve the tenant for the file-local worker pattern. A missing org
   // degrades to the zeroed stats envelope (the same "nothing to do" shape
   // the no-candidates branch returns).
-  const orgId = explicitOrgId ?? (await resolveSeedOrgId());
+  const orgId = explicitOrgId?.trim();
   if (!orgId) return stats;
   const supabase = getOrgScopedClient(orgId);
 

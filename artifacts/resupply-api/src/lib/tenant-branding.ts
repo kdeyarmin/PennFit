@@ -437,6 +437,70 @@ async function loadOrgIdForHost(host: string): Promise<string | null> {
 }
 
 /**
+ * The tenant whose BRAND this host should show — NOT the data-plane
+ * resolver. Returns null for the platform host, unbound domains, and
+ * lookup failures so callers can fall back to the platform identity
+ * (`getPlatformIdentity()` / `DEFAULT_BRANDING`) instead of the seed
+ * tenant. Contrast `resolveOrgIdByHost`, which fails soft to seed for
+ * data access. Same contract as `resolveBrandingByHost` / auth-email-brand.
+ */
+export async function resolveBrandOrgIdByHost(
+  host: string | undefined,
+): Promise<string | null> {
+  const key = normalizeCustomDomain(host ?? "") ?? "";
+  if (!key) return null;
+
+  try {
+    const seedOrgId = await resolveSeedOrgId();
+    if (!seedOrgId) return null;
+    const supabase = getOrgScopedClient(seedOrgId);
+
+    const { data, error } = await withTimeout(
+      supabase
+        .raw()
+        .schema("resupply")
+        .from("organizations")
+        .select("id")
+        .eq("custom_domain", key)
+        .eq("custom_domain_status", "verified")
+        .eq("status", "active")
+        .limit(1)
+        .maybeSingle(),
+    );
+    if (error) throw error;
+    if (data?.id) return data.id;
+
+    const slug = extractTenantSubdomainLabel(host);
+    if (slug) {
+      const { data: bySlug, error: slugErr } = await withTimeout(
+        supabase
+          .raw()
+          .schema("resupply")
+          .from("organizations")
+          .select("id")
+          .eq("slug", slug)
+          .eq("status", "active")
+          .limit(1)
+          .maybeSingle(),
+      );
+      if (slugErr) throw slugErr;
+      if (bySlug?.id) return bySlug.id;
+    }
+    return null;
+  } catch (err) {
+    logger.warn(
+      {
+        event: "tenant_brand_org_resolve_failed",
+        host: key,
+        err: err instanceof Error ? err : new Error(String(err ?? "unknown")),
+      },
+      "host→brand-org resolve failed; falling back to platform brand",
+    );
+    return null;
+  }
+}
+
+/**
  * The tenant (`org_id`) a request on this host operates on. Cached ~60s
  * per host; never throws — any failure degrades to the seed org so the
  * storefront/customer surface stays up and single-tenant-correct.

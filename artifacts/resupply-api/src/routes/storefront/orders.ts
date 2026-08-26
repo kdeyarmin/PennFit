@@ -27,7 +27,6 @@ import { Router } from "express";
 import { SubmitOrderBody } from "../../lib/api-zod/index.js";
 import {
   getOrgScopedClient,
-  resolveSeedOrgId,
   type FacialMeasurementsInfo,
   type Json,
 } from "@workspace/resupply-db";
@@ -109,8 +108,9 @@ router.post(
     // host — where that resolves to the SEED org. Reading the seed's flag
     // would then 409 the patients of a tenant that deliberately turned
     // self-service ordering back on. The signed invite token names the
-    // real tenant, so prefer it; fall back to the host, then the seed org,
-    // exactly as the rest of this route does.
+    // real tenant, so prefer it; fall back to the host. Never invent the
+    // seed when both are missing — `getFeatureFlagState` without an org
+    // degrades toward ON for lead_capture_only (fail closed).
     const inviteToken = req.header("x-fitter-invite-token");
     const inviteVerification =
       typeof inviteToken === "string"
@@ -122,7 +122,7 @@ router.post(
           inviteVerification.inviteId,
         ).catch(() => null)
       : null;
-    const flagOrgId = inviteOrgId ?? req.orgId ?? (await resolveSeedOrgId());
+    const flagOrgId = inviteOrgId ?? req.orgId ?? null;
     const leadCaptureState = await getFeatureFlagState(
       "fitter.lead_capture_only",
       flagOrgId ?? undefined,
@@ -161,11 +161,9 @@ router.post(
     // resolves the tenant by host (verified custom domain → that tenant;
     // platform host → seed org). Prefer that host-resolved tenant so an
     // order placed on a tenant's storefront mirrors into THEIR
-    // `shop_customers`; fall back to the seed org only if host resolution
-    // was unavailable. The order row lives in `public.orders` and is stamped
-    // with this org_id (migration 0463), but a missing tenant must never
-    // block the order (org_id is nullable for that reason).
-    const orgId = req.orgId ?? (await resolveSeedOrgId());
+    // `shop_customers`. Never invent the seed when `req.orgId` is unset —
+    // skip the DB stamp (org_id is nullable) rather than mis-file PHI.
+    const orgId = req.orgId ?? null;
     const supabase = orgId ? getOrgScopedClient(orgId) : null;
     // Patient-facing copy below names the practice; resolve the tenant's own
     // company name (CareMetric Breathe for an unconfigured tenant) so these
@@ -266,8 +264,11 @@ router.post(
         // never reach /account or admin Customer 360. Use the same
         // upsert helper the rest of the shop surface uses so we
         // share the email/displayName invariants.
+        if (!orgId) {
+          throw new Error("tenant_context_missing");
+        }
         await ensureShopCustomerRow({
-          orgId: orgId ?? undefined,
+          orgId,
           customerId: req.userCustomerId,
           email: order.patient.email ?? null,
           displayName:

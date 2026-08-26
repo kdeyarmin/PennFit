@@ -124,7 +124,7 @@ router.post(
       );
     });
 
-    const output = await scrubClaim({ claimId: claim.id });
+    const output = await scrubClaim({ claimId: claim.id, orgId });
 
     const insertRow: Database["resupply"]["Tables"]["claim_scrub_results"]["Insert"] =
       {
@@ -380,7 +380,7 @@ router.post(
       return;
     }
 
-    const output = await analyzeDenial({ claimId: claim.id });
+    const output = await analyzeDenial({ claimId: claim.id, orgId });
 
     const insertRow: Database["resupply"]["Tables"]["claim_denial_analyses"]["Insert"] =
       {

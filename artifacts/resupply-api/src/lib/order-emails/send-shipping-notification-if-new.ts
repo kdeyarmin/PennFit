@@ -256,6 +256,7 @@ export async function sendShippingNotificationIfNew(args: {
       const smsRecipient = await resolveSmsRecipientForShopOrder({
         customerId: claimedRow.customer_id,
         customerEmailFromOrder: claimedRow.customer_email ?? null,
+        orgId,
       });
       if (smsRecipient) {
         // Send under the tenant's own number / Messaging Service when it

@@ -15,6 +15,16 @@ import {
 
 installSupabaseMock();
 
+const { resolveOrgIdByFaxNumberMock } = vi.hoisted(() => ({
+  resolveOrgIdByFaxNumberMock: vi.fn(
+    async (_to?: string): Promise<string | null> =>
+      "00000000-0000-4000-8000-000000000000",
+  ),
+}));
+vi.mock("../messaging/tenant-telecom", () => ({
+  resolveOrgIdByFaxNumber: resolveOrgIdByFaxNumberMock,
+}));
+
 const { isFeatureEnabledMock } = vi.hoisted(() => ({
   isFeatureEnabledMock: vi.fn(async (_key: string) => false),
 }));
@@ -96,6 +106,10 @@ beforeEach(() => {
   openReviewMock.mockClear();
   autoFileMock.mockReset();
   autoFileMock.mockResolvedValue({ status: "no_code" });
+  resolveOrgIdByFaxNumberMock.mockReset();
+  resolveOrgIdByFaxNumberMock.mockResolvedValue(
+    "00000000-0000-4000-8000-000000000000",
+  );
 });
 
 async function run() {

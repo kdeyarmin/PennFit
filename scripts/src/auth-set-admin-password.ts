@@ -26,9 +26,17 @@
 //   * Updates role when --force is passed and the role differs.
 //   * Always upserts the password credential — running the script
 //     twice rotates the password to the new value.
+//   * Ensures a tenant-bound `admin_users` row (seed org) so
+//     requireAdmin can resolve org_id under its fail-closed gate —
+//     the e2e CI seed path uses this script, not bootstrap-admin.
+//     Linking is REQUIRED: a failure exits non-zero so operators are
+//     never told recovery succeeded while requireAdmin would 403.
 //   * Exit codes: 0 ok, 1 usage/db error, 2 supabase env not set.
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import {
+  getSupabaseServiceRoleClient,
+  resolveSeedOrgId,
+} from "@workspace/resupply-db";
 import {
   hashPassword,
   normalizeEmail,
@@ -147,6 +155,51 @@ async function main(): Promise<void> {
     passwordHash,
     mustChange: false,
   });
+
+  // Ensure a tenant-bound admin_users row exists so requireAdmin can resolve
+  // this admin's org under the fail-closed gate (missing / NULL org_id →
+  // 403 tenant_context_missing). Bind to the seed org for this recovery /
+  // e2e seed path; never clobber an existing non-NULL org_id. REQUIRED —
+  // a link failure must not report success while the account remains
+  // unusable behind requireAdmin.
+  const seedOrgId = await resolveSeedOrgId();
+  if (!seedOrgId) {
+    throw new Error(
+      "could not resolve seed org for admin_users linkage; requireAdmin would reject this session",
+    );
+  }
+  const { data: existingAdminRow, error: findErr } = await supabase
+    .schema("resupply")
+    .from("admin_users")
+    .select("id, org_id, auth_user_id, role, status")
+    .eq("email_lower", emailLower)
+    .maybeSingle();
+  if (findErr) throw findErr;
+  if (!existingAdminRow) {
+    const { error: insertErr } = await supabase
+      .schema("resupply")
+      .from("admin_users")
+      .insert({
+        email_lower: emailLower,
+        role: finalRole,
+        status: "active",
+        auth_user_id: userId,
+        org_id: seedOrgId,
+        accepted_at: new Date().toISOString(),
+      });
+    if (insertErr) throw insertErr;
+  } else if (!existingAdminRow.org_id || !existingAdminRow.auth_user_id) {
+    const { error: updateErr } = await supabase
+      .schema("resupply")
+      .from("admin_users")
+      .update({
+        org_id: existingAdminRow.org_id ?? seedOrgId,
+        auth_user_id: existingAdminRow.auth_user_id ?? userId,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("email_lower", emailLower);
+    if (updateErr) throw updateErr;
+  }
 
   process.stdout.write(
     `[auth:set-admin-password] Done. user=${userId} email=${emailLower} ` +

@@ -113,13 +113,11 @@ export function AdminAnalyticsFitterOutcomesPage() {
             <Card>
               <p className="p-4 text-sm">
                 <strong>Nothing has been dispensed in this period yet.</strong>{" "}
-                A fitting counts as dispensed when the cash-pay order it
-                produced is marked <em>delivered</em> — not when it is paid — so
-                this fills in behind shipping rather than at checkout. Fittings
-                that go to insurance through &ldquo;Choose this mask&rdquo; are
-                not cash-pay orders and never count here. Acceptance is
-                separate: it is measured from clinician review, so it fills in
-                as the review queue is worked.
+                A fitting counts as dispensed when staff close the matching fit
+                request as <em>fulfilled</em> — that stamps the patient&apos;s
+                chosen mask on the fit session. Closing as contacted or declined
+                does not count. Acceptance is separate: it is measured from
+                clinician review, so it fills in as the review queue is worked.
               </p>
             </Card>
           ) : null}

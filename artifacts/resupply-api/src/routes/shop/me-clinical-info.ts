@@ -127,12 +127,12 @@ const updateBody = z
 
 router.get("/shop/me/clinical-info", requireSignedIn, async (req, res) => {
   const customerId = req.userCustomerId!;
-  await ensureShopCustomerRow({ orgId: req.orgId, customerId, email: null });
   const orgId = req.orgId;
   if (!orgId) {
     res.status(500).json({ error: "tenant_context_missing" });
     return;
   }
+  await ensureShopCustomerRow({ orgId, customerId, email: null });
   const supabase = getOrgScopedClient(orgId);
   const { data: row } = await supabase
     .from("shop_customers")
@@ -160,13 +160,13 @@ router.put("/shop/me/clinical-info", requireSignedIn, async (req, res) => {
     return;
   }
   const customerId = req.userCustomerId!;
-  await ensureShopCustomerRow({ orgId: req.orgId, customerId, email: null });
-
   const orgId = req.orgId;
   if (!orgId) {
     res.status(500).json({ error: "tenant_context_missing" });
     return;
   }
+  await ensureShopCustomerRow({ orgId, customerId, email: null });
+
   const supabase = getOrgScopedClient(orgId);
   const updates: ShopCustomersUpdate = {
     updated_at: new Date().toISOString(),

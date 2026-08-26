@@ -30,7 +30,7 @@
 
 import type { Logger } from "pino";
 
-import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { autoMatchInboundFaxToPaperwork } from "../billing/bill-hold";
 import { isFeatureEnabled } from "../feature-flags";
@@ -152,17 +152,20 @@ export async function ingestInboundFax(
   storageImpl?: ObjectStorageService,
 ): Promise<IngestInboundFaxOutcome> {
   // Route the inbound fax to the tenant that owns the called number
-  // (migration 0368). Unknown / unprovisioned numbers fall back to the
-  // seed tenant — the historical single-tenant behavior. Fails soft, so a
-  // routing-lookup blip lands the fax in the seed queue rather than losing
-  // it.
-  const orgId =
-    (await resolveOrgIdByFaxNumber(input.toE164 ?? undefined)) ??
-    (await resolveSeedOrgId());
+  // (migration 0368). Fail closed when the To number is unbound or the
+  // lookup returns null — writing into the seed org would park PHI in
+  // another tenant's inbox. The webhook still ACKs 200 to Telnyx; ops
+  // triage from the `fax_inbound_tenant_unmatched` warning. Seed (and
+  // every other) tenant must bind their fax number on
+  // `organizations.fax_from_number` so inbound resolves by number.
+  const orgId = await resolveOrgIdByFaxNumber(input.toE164 ?? undefined);
   if (!orgId) {
     logger.warn(
-      { fax_id_first8: input.telnyxFaxId.slice(0, 8) },
-      "fax_inbound_tenant_context_missing",
+      {
+        fax_id_first8: input.telnyxFaxId.slice(0, 8),
+        to_e164_present: Boolean(input.toE164),
+      },
+      "fax_inbound_tenant_unmatched",
     );
     return { kind: "errored" };
   }
@@ -230,7 +233,7 @@ export async function ingestInboundFax(
   let barcodeFiled = false;
   if (media.persisted && media.bytes && media.contentType) {
     try {
-      if (await isFeatureEnabled("fax.auto_file_signed")) {
+      if (await isFeatureEnabled("fax.auto_file_signed", orgId)) {
         const outcome = await autoFileSignedFax(
           {
             faxId: rowId,
@@ -256,7 +259,12 @@ export async function ingestInboundFax(
   // run after a barcode match could release an UNRELATED requirement's hold
   // with the same fax. Best-effort + never throws.
   if (!barcodeFiled) {
-    await autoMatchInboundFaxToPaperwork(rowId, input.fromE164, supabase.raw());
+    await autoMatchInboundFaxToPaperwork(
+      rowId,
+      input.fromE164,
+      supabase.raw(),
+      orgId,
+    );
   }
 
   // Step 5: referral review (opt-in). When `fax.referral_review` is on and

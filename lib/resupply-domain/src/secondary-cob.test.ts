@@ -55,6 +55,14 @@ describe("deriveSecondaryCob", () => {
     expect(d).toEqual({ eligible: false, reason: "primary_not_paid" });
   });
 
+  it("accepts a partially_paid primary with a patient balance", () => {
+    const d = deriveSecondaryCob(paidPrimary({ status: "partially_paid" }));
+    expect(d.eligible).toBe(true);
+    if (d.eligible) {
+      expect(d.cob.billableToSecondaryCents).toBe(3000);
+    }
+  });
+
   it("rejects when there is no patient-responsibility balance", () => {
     const d = deriveSecondaryCob(
       paidPrimary({ patient_responsibility_cents: 0 }),

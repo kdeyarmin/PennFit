@@ -98,6 +98,10 @@ export interface UpdateFitRequestResponse {
   closedAt: string | null;
   closedOutcome: FitRequestClosedOutcome | null;
   updatedAt: string;
+  /** True when this close stamped dispense on the linked fit session. */
+  dispenseStamped?: boolean;
+  /** True when a non-fulfilled outcome withdrew a prior dispense stamp. */
+  dispenseCleared?: boolean;
 }
 
 export async function updateFitRequest(

@@ -12,10 +12,10 @@
  *   - **Conservative**: only redact patterns that are unambiguous
  *     identifiers (US phone numbers, emails, SSN-shaped numbers,
  *     Medicare-style member ids, long digit runs, dates of birth
- *     in common formats). We deliberately do NOT redact names,
- *     addresses, or free-text health terms — false positives
- *     would degrade answer quality, and the model is told not
- *     to echo them.
+ *     in common formats, and street-line addresses with a house
+ *     number + street suffix). We deliberately do NOT redact names
+ *     or free-text health terms — false positives would degrade
+ *     answer quality, and the model is told not to echo them.
  *   - **Reversible substitution**: each match becomes a `[redacted-<kind>]`
  *     token so the model still understands "the user mentioned a
  *     phone number" and can answer accordingly without seeing the
@@ -59,6 +59,14 @@ const PATTERNS: Array<{
     kind: "dob",
     pattern:
       /\b(?:(?:0?[1-9]|1[0-2])[/.-](?:0?[1-9]|[12]\d|3[01])[/.-](?:19|20)\d{2}|(?:19|20)\d{2}[/.-](?:0?[1-9]|1[0-2])[/.-](?:0?[1-9]|[12]\d|3[01]))\b/g,
+  },
+  // Street line: house number + street name + common US suffix.
+  // Requires a leading digit run so bare place names ("Main Street")
+  // and clinical prose ("4 hours last night") are left alone.
+  {
+    kind: "address",
+    pattern:
+      /\b\d{1,5}\s+[A-Za-z][A-Za-z0-9.'-]{0,40}(?:\s+[A-Za-z][A-Za-z0-9.'-]{0,20}){0,3}\s+(?:St|Street|Ave|Avenue|Rd|Road|Blvd|Boulevard|Ln|Lane|Dr|Drive|Ct|Court|Way|Pkwy|Parkway|Cir|Circle|Pl|Place|Ter|Terrace)\.?\b/gi,
   },
   // Long digit runs (10+ consecutive digits with optional dashes /
   // spaces). Catches insurance member ids, MRNs, and other

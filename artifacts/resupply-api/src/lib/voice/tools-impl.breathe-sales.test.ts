@@ -36,6 +36,7 @@ const SALES_DEPS = {
   callerKind: "breathe_prospect" as const,
   conversationId: "sales-conv-1",
   twilioCallSid: "CA-sales-1",
+  orgId: "00000000-0000-4000-8000-000000000000",
 };
 
 beforeEach(() => {

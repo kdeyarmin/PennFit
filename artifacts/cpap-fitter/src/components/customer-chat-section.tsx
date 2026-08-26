@@ -61,8 +61,8 @@ const SUGGESTED_PROMPTS: ReadonlyArray<{ label: string; prompt: string }> = [
     prompt: "Where is my most recent order?",
   },
   {
-    label: "When is my next subscription shipment?",
-    prompt: "When is my next subscription shipment?",
+    label: "When am I due for resupply?",
+    prompt: "When am I due for my next insurance resupply?",
   },
   {
     label: "What CPAP machine do I have on file?",
@@ -77,8 +77,8 @@ const SUGGESTED_PROMPTS: ReadonlyArray<{ label: string; prompt: string }> = [
     prompt: "How often should I replace my mask cushion?",
   },
   {
-    label: "How do I cancel a subscription?",
-    prompt: "How do I cancel a subscription?",
+    label: "How do I confirm a resupply reminder?",
+    prompt: "How do I confirm a resupply reminder from text or email?",
   },
   {
     label: "Can I return my mask if it doesn't fit?",
@@ -250,8 +250,8 @@ function CustomerChatSectionInner(): React.JSX.Element | null {
     const name = displayName?.split(" ")[0] ?? null;
     const bot = contact.assistantStorefrontName;
     return name
-      ? `Hi ${name}! I'm ${bot} — happy to help with your orders, subscriptions, device, or supplies. And if you ever need a real person, I can pass you straight to the team. What can I do for you?`
-      : `Hi, I'm ${bot} — happy to help with your orders, subscriptions, device, or supplies. And if you ever need a real person, I can pass you straight to the team. What can I do for you?`;
+      ? `Hi ${name}! I'm ${bot} — happy to help with your insurance resupply, device, or supplies. And if you ever need a real person, I can pass you straight to the team. What can I do for you?`
+      : `Hi, I'm ${bot} — happy to help with your insurance resupply, device, or supplies. And if you ever need a real person, I can pass you straight to the team. What can I do for you?`;
   }, [displayName, contact.assistantStorefrontName]);
 
   const sendMessage = useCallback(
@@ -459,10 +459,9 @@ function CustomerChatSectionInner(): React.JSX.Element | null {
       <p className="text-sm text-muted-foreground flex items-start gap-2">
         <ShieldCheck className="h-4 w-4 mt-0.5 shrink-0" />
         <span>
-          Quick answers about your orders, subscriptions, device, and supplies.
-          For prescriptions, refunds, or anything{" "}
-          {contact.assistantStorefrontName} can&apos;t handle, send a message
-          above or call {contact.phoneDisplay}.
+          Quick answers about your insurance resupply, device, and supplies. For
+          prescriptions or anything {contact.assistantStorefrontName} can&apos;t
+          handle, send a message above or call {contact.phoneDisplay}.
         </span>
       </p>
 

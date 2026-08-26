@@ -29,6 +29,8 @@ import {
   VOICE_HANDOFF_TAG,
 } from "./post-call-handoff";
 
+const ORG_ID = "00000000-0000-4000-8000-000000000001";
+
 beforeEach(() => {
   supabaseMock.reset();
   vi.useRealTimers();
@@ -48,7 +50,7 @@ describe("routeVoiceHandoffToCsrQueue — fresh escalation", () => {
     stageSupabaseResponse("conversations", "update", { data: null });
 
     await routeVoiceHandoffToCsrQueue({
-      orgId: undefined,
+      orgId: ORG_ID,
       conversationId: "conv_1",
       outcome: "Patient asked about a billing question we couldn't resolve.",
       sentiment: "concerned",
@@ -83,7 +85,7 @@ describe("routeVoiceHandoffToCsrQueue — fresh escalation", () => {
     stageSupabaseResponse("conversations", "update", { data: null });
 
     await routeVoiceHandoffToCsrQueue({
-      orgId: undefined,
+      orgId: ORG_ID,
       conversationId: "conv_distress",
       outcome: "Caller expressed distress about adherence.",
       sentiment: "distressed",
@@ -108,7 +110,7 @@ describe("routeVoiceHandoffToCsrQueue — never downgrades priority", () => {
     stageSupabaseResponse("conversations", "update", { data: null });
 
     await routeVoiceHandoffToCsrQueue({
-      orgId: undefined,
+      orgId: ORG_ID,
       conversationId: "conv_urgent",
       outcome: "Routine refill confirmation.",
       sentiment: "neutral",
@@ -132,7 +134,7 @@ describe("routeVoiceHandoffToCsrQueue — already escalated", () => {
     });
 
     await routeVoiceHandoffToCsrQueue({
-      orgId: undefined,
+      orgId: ORG_ID,
       conversationId: "conv_already",
       outcome: "Caller mentioned a different concern.",
       sentiment: "concerned",
@@ -148,7 +150,7 @@ describe("routeVoiceHandoffToCsrQueue — missing row", () => {
 
     await expect(
       routeVoiceHandoffToCsrQueue({
-        orgId: undefined,
+        orgId: ORG_ID,
         conversationId: "conv_missing",
         outcome: "Anything",
         sentiment: "neutral",
@@ -173,7 +175,7 @@ describe("routeVoiceHandoffToCsrQueue — tag dedup", () => {
     stageSupabaseResponse("conversations", "update", { data: null });
 
     await routeVoiceHandoffToCsrQueue({
-      orgId: undefined,
+      orgId: ORG_ID,
       conversationId: "conv_tagged",
       outcome: "Re-flagged on a second voice attempt.",
       sentiment: "concerned",
@@ -201,7 +203,7 @@ describe("routeVoiceHandoffToCsrQueue — escalation_reason truncation", () => {
     stageSupabaseResponse("conversations", "update", { data: null });
 
     await routeVoiceHandoffToCsrQueue({
-      orgId: undefined,
+      orgId: ORG_ID,
       conversationId: "conv_long",
       outcome: longOutcome,
       sentiment: "concerned",
@@ -216,6 +218,19 @@ describe("routeVoiceHandoffToCsrQueue — escalation_reason truncation", () => {
 });
 
 describe("routeVoiceHandoffToCsrQueue — fault tolerance", () => {
+  it("skips escalation when orgId is missing", async () => {
+    await expect(
+      routeVoiceHandoffToCsrQueue({
+        orgId: undefined,
+        conversationId: "conv_no_tenant",
+        outcome: "anything",
+        sentiment: "neutral",
+      }),
+    ).resolves.toBeUndefined();
+    expect(getSupabaseCallCount("conversations", "select")).toBe(0);
+    expect(getSupabaseCallCount("conversations", "update")).toBe(0);
+  });
+
   it("does not throw when the read errors out", async () => {
     stageSupabaseResponse("conversations", "select", {
       data: null,
@@ -224,7 +239,7 @@ describe("routeVoiceHandoffToCsrQueue — fault tolerance", () => {
 
     await expect(
       routeVoiceHandoffToCsrQueue({
-        orgId: undefined,
+        orgId: ORG_ID,
         conversationId: "conv_err",
         outcome: "anything",
         sentiment: "neutral",
@@ -249,7 +264,7 @@ describe("routeVoiceHandoffToCsrQueue — fault tolerance", () => {
 
     await expect(
       routeVoiceHandoffToCsrQueue({
-        orgId: undefined,
+        orgId: ORG_ID,
         conversationId: "conv_update_err",
         outcome: "anything",
         sentiment: "neutral",

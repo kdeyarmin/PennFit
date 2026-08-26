@@ -1,4 +1,4 @@
-import { getOrgScopedClient, resolveSeedOrgId } from "../org-scoped-client";
+import { getOrgScopedClient } from "../org-scoped-client";
 import type { ResupplySupabaseClient } from "../supabase-client";
 
 /**
@@ -74,15 +74,11 @@ export interface UpsertPatientLatestMessageInput {
    */
   messageAt: Date;
   /**
-   * Tenant whose projection row this refresh targets. Every read/write
-   * here is scoped to it through `getOrgScopedClient`, so a refresh can
-   * never read one tenant's conversation or stamp another tenant's
-   * patient row. Optional: when omitted, the seed-org bridge resolves
-   * the original operating company so single-tenant / system callers
-   * (inbound webhooks, voice) keep working without threading orgId
-   * through every call site (Phase 0 cutover posture).
+   * Tenant whose projection row this refresh targets. Required — never
+   * invent the seed org. Every read/write is scoped through
+   * `getOrgScopedClient`.
    */
-  orgId?: string;
+  orgId: string;
 }
 
 /**
@@ -122,10 +118,11 @@ export async function upsertPatientLatestMessageSb(
   const preview = buildPreview(input.body);
 
   // Tenant isolation chokepoint: route every read/write through the
-  // org-scoped client so the projection can only ever touch the
-  // caller's tenant. The seed-org bridge keeps unscoped/system callers
-  // working until they thread their own orgId (Phase 0).
-  const orgId = input.orgId ?? (await resolveSeedOrgId()) ?? "";
+  // org-scoped client. Never invent the seed org.
+  const orgId = input.orgId?.trim() ?? "";
+  if (!orgId) {
+    throw new Error("patient_latest_message: tenant context missing");
+  }
   const db = getOrgScopedClient(orgId, supabase);
 
   // Always derive patient id from the conversation.

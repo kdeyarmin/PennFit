@@ -27,7 +27,7 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
       },
       {
         kind: "para",
-        text: "There are two front doors. Patients see a storefront with a guided virtual mask fitter, a shop, and an account area where they manage orders, subscriptions, and communication preferences. Your team sees this admin console, where all of that work is queued, worked, and measured.",
+        text: "There are two front doors. Patients see a branded storefront with a guided virtual mask fitter, insurance resupply confirmations, and an account area for profile, therapy, and messages. Your team sees this admin console, where all of that work is queued, worked, and measured.",
       },
       {
         kind: "bullets",

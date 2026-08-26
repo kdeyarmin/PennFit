@@ -39,7 +39,7 @@
 //   runs detached after the WS has already closed; a routing failure
 //   must not crash the call cleanup path.
 
-import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../logger";
 import { notifyVoiceHandoff } from "../slack/notify";
@@ -66,9 +66,8 @@ export interface RouteVoiceHandoffInput {
   conversationId: string;
   /**
    * The call's tenant (pending.orgId). The escalation read/update is
-   * org-scoped, so without the real tenant a non-seed call's handoff
-   * matched no conversation and was silently dropped. Undefined →
-   * seed fallback (legacy single-tenant posture).
+   * org-scoped; missing/blank orgId skips the handoff (never invent
+   * the seed org).
    */
   orgId: string | undefined;
   /**
@@ -114,7 +113,7 @@ function buildEscalationReason(input: RouteVoiceHandoffInput): string {
 export async function routeVoiceHandoffToCsrQueue(
   input: RouteVoiceHandoffInput,
 ): Promise<void> {
-  const orgId = input.orgId ?? (await resolveSeedOrgId());
+  const orgId = input.orgId?.trim();
   if (!orgId) {
     // Best-effort sweep — degrade like every other failure path here:
     // log a WARN and resolve cleanly (the call cleanup is unaffected).

@@ -363,12 +363,12 @@ const ENGINE: Cap[] = [
   },
   {
     icon: <Repeat size={20} />,
-    title: "Subscriptions & autopay",
-    summary: "Turn a reorder into a standing relationship.",
+    title: "Eligibility-aware refill cadence",
+    summary: "Remind on the payer schedule — never auto-ship without consent.",
     points: [
-      "Optional subscriptions for patients who'd rather set and forget",
-      "Stored-card autopay so a due reorder doesn't wait on payment",
-      "Patients stay supplied without ever thinking about it",
+      "CMS-style affirmative confirmation before every refill",
+      "Cadence from benefits, not a retail subscription calendar",
+      "Patients stay supplied without a patient card on file",
     ],
   },
   {
@@ -383,12 +383,12 @@ const ENGINE: Cap[] = [
   },
   {
     icon: <ShoppingCart size={20} />,
-    title: "Cart-abandonment recovery",
-    summary: "Win back the orders that almost happened.",
+    title: "Missed-confirmation recovery",
+    summary: "Win back the yes that almost happened.",
     points: [
-      "A left-behind cart triggers a branded recovery message",
-      "One-tap link back to a pre-filled checkout",
-      "Revenue you'd otherwise lose, recovered with zero staff effort",
+      "An unanswered reminder escalates text → email → AI voice",
+      "One-tap signed reorder links stay valid through the window",
+      "Staff see who still needs a human nudge",
     ],
   },
   {

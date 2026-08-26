@@ -21,7 +21,6 @@
 import { logAudit } from "@workspace/resupply-audit";
 import {
   getOrgScopedClient,
-  resolveSeedOrgId,
   type ResupplySupabaseClient,
 } from "@workspace/resupply-db";
 
@@ -29,21 +28,9 @@ import { logger } from "../logger";
 
 // The injected-client contract here is the UNSCOPED service-role client:
 // callers (e.g. claim-preflight) pass `supabase.raw()`, and these helpers
-// filter by claim_id / patient_id directly. When NO client is injected,
-// the default is resolved through the org-scoped chokepoint and unwrapped
-// to its raw client so the type + query bodies stay behavior-identical.
+// filter by claim_id / patient_id directly. When NO client is injected the
+// helpers fail closed (empty / no-op) — never invent the seed org.
 type SupabaseClient = ResupplySupabaseClient;
-
-/**
- * Resolve the default unscoped client for the helpers below when the caller
- * did not inject one. Routes the no-arg default through the seed-org
- * chokepoint and returns null when no tenant is resolvable.
- */
-async function resolveDefaultClient(): Promise<SupabaseClient | null> {
-  const orgId = await resolveSeedOrgId();
-  if (!orgId) return null;
-  return getOrgScopedClient(orgId).raw();
-}
 
 export type RequirementType =
   | "prescription"
@@ -180,7 +167,7 @@ export async function listClaimRequirements(
   claimId: string,
   injected?: SupabaseClient,
 ): Promise<PaperworkRequirementRow[]> {
-  const supabase = injected ?? (await resolveDefaultClient());
+  const supabase = injected ?? null;
   if (!supabase) return [];
   const { data, error } = await supabase
     .schema("resupply")
@@ -197,7 +184,7 @@ export async function listPatientRequirements(
   patientId: string,
   injected?: SupabaseClient,
 ): Promise<PaperworkRequirementRow[]> {
-  const supabase = injected ?? (await resolveDefaultClient());
+  const supabase = injected ?? null;
   if (!supabase) return [];
   const { data, error } = await supabase
     .schema("resupply")
@@ -221,7 +208,7 @@ export async function countOutstandingByClaim(
 ): Promise<Map<string, number>> {
   const counts = new Map<string, number>();
   if (claimIds.length === 0) return counts;
-  const supabase = injected ?? (await resolveDefaultClient());
+  const supabase = injected ?? null;
   if (!supabase) return counts;
   const { data, error } = await supabase
     .schema("resupply")
@@ -264,7 +251,7 @@ export async function recomputeBillHold(
   claimId: string,
   opts: RecomputeOpts = {},
 ): Promise<RecomputeResult> {
-  const supabase = opts.supabase ?? (await resolveDefaultClient());
+  const supabase = opts.supabase ?? null;
   if (!supabase) {
     return { claimId, held: false, changed: false, outstandingCount: 0 };
   }
@@ -393,7 +380,7 @@ export async function satisfyRequirement(
   requirement: PaperworkRequirementRow;
   recompute: RecomputeResult | null;
 }> {
-  const supabase = opts.supabase ?? (await resolveDefaultClient());
+  const supabase = opts.supabase ?? null;
   if (!supabase) {
     throw new Error("satisfyRequirement: tenant context missing");
   }
@@ -457,7 +444,7 @@ export async function seedDefaultRequirementsForClaim(
   claimId: string,
   opts: { supabase?: SupabaseClient; createdByEmail?: string | null } = {},
 ): Promise<{ created: number; held: boolean }> {
-  const supabase = opts.supabase ?? (await resolveDefaultClient());
+  const supabase = opts.supabase ?? null;
   if (!supabase) return { created: 0, held: false };
 
   const { data: claim, error: claimErr } = await supabase
@@ -565,30 +552,45 @@ async function resolveOnFile(
 /**
  * Best-effort auto-match of an inbound fax to an outstanding requirement.
  * Called fire-and-forget from the inbound-fax ingest. Matches by the
- * `expected_return_fax_e164` we recorded when the paperwork was sent out;
- * auto-satisfies ONLY when exactly one outstanding requirement expects a
+ * `expected_return_fax_e164` we recorded when the paperwork was sent out,
+ * scoped to the fax's `orgId` (required — no seed / cross-tenant match).
+ * Auto-satisfies ONLY when exactly one outstanding requirement expects a
  * return from this number (never guesses between several). Never throws —
  * a failure just leaves the fax for manual linking in the triage queue.
  */
 export async function autoMatchInboundFaxToPaperwork(
   faxId: string,
   fromE164: string | null,
-  injected?: SupabaseClient,
+  injected: SupabaseClient | undefined,
+  orgId: string | null | undefined,
 ): Promise<{ matched: boolean; requirementId: string | null }> {
   try {
     if (!fromE164) return { matched: false, requirementId: null };
     const normalized = fromE164.trim();
     if (!normalized) return { matched: false, requirementId: null };
 
-    const supabase = injected ?? (await resolveDefaultClient());
-    if (!supabase) return { matched: false, requirementId: null };
+    // Fail closed without a tenant: matching on expected_return_fax_e164
+    // alone could satisfy another tenant's outstanding paperwork (shared
+    // provider fax numbers are common). Callers (inbound ingest) always
+    // know the fax's org.
+    const tenantOrgId = orgId?.trim();
+    if (!tenantOrgId) {
+      logger.warn(
+        { event: "bill_hold.fax_match_tenant_missing" },
+        "bill-hold: inbound fax auto-match skipped (no orgId)",
+      );
+      return { matched: false, requirementId: null };
+    }
+
+    const supabase = injected ?? getOrgScopedClient(tenantOrgId).raw();
 
     const { data, error } = await supabase
       .schema("resupply")
       .from("claim_paperwork_requirements")
       .select(REQUIREMENT_COLUMNS)
       .eq("expected_return_fax_e164", normalized)
-      .eq("status", "outstanding");
+      .eq("status", "outstanding")
+      .eq("org_id", tenantOrgId);
     if (error) throw error;
     const candidates = (data ?? []) as PaperworkRequirementRow[];
     const { matched, ambiguous } = pickFaxMatch(candidates);

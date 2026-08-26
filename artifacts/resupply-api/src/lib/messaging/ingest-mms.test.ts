@@ -53,6 +53,7 @@ const SILENT_LOGGER = {
 const TWILIO_SID = "ACtest";
 const TWILIO_TOKEN = "token-test";
 const MSG_ID = "11111111-1111-4111-8111-111111111111";
+const ORG_ID = "00000000-0000-4000-8000-0000000000a1";
 
 function pngBytes(size = 32): Uint8Array {
   // Valid PNG magic header (89 50 4E 47 0D 0A 1A 0A) followed by
@@ -125,6 +126,7 @@ describe("ingestInboundMmsMedia", () => {
     fetchSpy = mockFetch(() => new Response("", { status: 200 }));
     const result = await ingestInboundMmsMedia(
       {
+        orgId: ORG_ID,
         messageId: MSG_ID,
         rawWebhookBody: { NumMedia: "0" },
         numMedia: 0,
@@ -157,6 +159,7 @@ describe("ingestInboundMmsMedia", () => {
 
     const result = await ingestInboundMmsMedia(
       {
+        orgId: ORG_ID,
         messageId: MSG_ID,
         rawWebhookBody: {
           NumMedia: "1",
@@ -199,6 +202,7 @@ describe("ingestInboundMmsMedia", () => {
 
     const result = await ingestInboundMmsMedia(
       {
+        orgId: ORG_ID,
         messageId: MSG_ID,
         rawWebhookBody: {
           NumMedia: "1",
@@ -233,6 +237,7 @@ describe("ingestInboundMmsMedia", () => {
 
     const result = await ingestInboundMmsMedia(
       {
+        orgId: ORG_ID,
         messageId: MSG_ID,
         rawWebhookBody: {
           NumMedia: "1",
@@ -268,6 +273,7 @@ describe("ingestInboundMmsMedia", () => {
 
     const result = await ingestInboundMmsMedia(
       {
+        orgId: ORG_ID,
         messageId: MSG_ID,
         rawWebhookBody: {
           NumMedia: "2",
@@ -313,6 +319,7 @@ describe("ingestInboundMmsMedia", () => {
 
     const result = await ingestInboundMmsMedia(
       {
+        orgId: ORG_ID,
         messageId: MSG_ID,
         rawWebhookBody: body,
         numMedia: 99,
@@ -341,6 +348,7 @@ describe("ingestInboundMmsMedia", () => {
 
     const result = await ingestInboundMmsMedia(
       {
+        orgId: ORG_ID,
         messageId: MSG_ID,
         rawWebhookBody: {
           NumMedia: "2",
@@ -396,6 +404,7 @@ describe("ingestInboundMmsMedia", () => {
 
     const result = await ingestInboundMmsMedia(
       {
+        orgId: ORG_ID,
         messageId: MSG_ID,
         rawWebhookBody: {
           NumMedia: "1",
@@ -450,6 +459,7 @@ describe("ingestInboundMmsMedia", () => {
 
     const result = await ingestInboundMmsMedia(
       {
+        orgId: ORG_ID,
         messageId: MSG_ID,
         rawWebhookBody: {
           NumMedia: "1",
@@ -477,6 +487,7 @@ describe("ingestInboundMmsMedia", () => {
 
       const outcome = await persistInboundAttachment(
         {
+          orgId: ORG_ID,
           messageId: SAMPLE_MSG,
           bytes: pngBytes(128),
           contentType: "image/png",
@@ -513,6 +524,7 @@ describe("ingestInboundMmsMedia", () => {
       pdfBytes[4] = 0x2d; // -
       const outcome = await persistInboundAttachment(
         {
+          orgId: ORG_ID,
           messageId: SAMPLE_MSG,
           bytes: pdfBytes,
           // SendGrid sometimes forwards "application/pdf; name=foo.pdf"
@@ -532,6 +544,7 @@ describe("ingestInboundMmsMedia", () => {
       fetchSpy = mockFetch(() => new Response("", { status: 200 }));
       const outcome = await persistInboundAttachment(
         {
+          orgId: ORG_ID,
           messageId: SAMPLE_MSG,
           bytes: pngBytes(8),
           contentType: "application/zip",
@@ -550,6 +563,7 @@ describe("ingestInboundMmsMedia", () => {
       fetchSpy = mockFetch(() => new Response("", { status: 200 }));
       const outcome = await persistInboundAttachment(
         {
+          orgId: ORG_ID,
           messageId: SAMPLE_MSG,
           bytes: new Uint8Array(5 * 1024 * 1024 + 1),
           contentType: "image/jpeg",
@@ -569,6 +583,7 @@ describe("ingestInboundMmsMedia", () => {
 
       const outcome = await persistInboundAttachment(
         {
+          orgId: ORG_ID,
           messageId: SAMPLE_MSG,
           bytes: pngBytes(8),
           contentType: "image/png",
@@ -590,6 +605,7 @@ describe("ingestInboundMmsMedia", () => {
 
       const outcome = await persistInboundAttachment(
         {
+          orgId: ORG_ID,
           messageId: SAMPLE_MSG,
           bytes: pngBytes(8),
           contentType: "image/png",
@@ -620,6 +636,7 @@ describe("ingestInboundMmsMedia", () => {
 
       const outcome = await persistInboundAttachment(
         {
+          orgId: ORG_ID,
           messageId: SAMPLE_MSG,
           bytes: pngBytes(8),
           contentType: "image/png",
@@ -664,6 +681,7 @@ describe("ingestInboundMmsMedia", () => {
 
       const promise = ingestInboundMmsMedia(
         {
+          orgId: ORG_ID,
           messageId: MSG_ID,
           rawWebhookBody: {
             NumMedia: "3",
@@ -722,6 +740,7 @@ describe("ingestInboundMmsMedia", () => {
 
       const promise = ingestInboundMmsMedia(
         {
+          orgId: ORG_ID,
           messageId: MSG_ID,
           rawWebhookBody: {
             NumMedia: "2",
@@ -774,6 +793,7 @@ describe("ingestInboundMmsMedia", () => {
 
     const result = await ingestInboundMmsMedia(
       {
+        orgId: ORG_ID,
         messageId: MSG_ID,
         rawWebhookBody: {
           NumMedia: "1",
@@ -861,6 +881,7 @@ describe("ingestInboundMmsMedia — outerSignal budget abort (PR change)", () =>
     // Kick off the ingest — it will stall on the fetch
     const promise = ingestInboundMmsMedia(
       {
+        orgId: ORG_ID,
         messageId: MSG_ID,
         rawWebhookBody: {
           NumMedia: "1",
@@ -893,6 +914,7 @@ describe("ingestInboundMmsMedia — outerSignal budget abort (PR change)", () =>
     fetchSpy = mockFetch(() => new Response("", { status: 200 }));
     const result = await ingestInboundMmsMedia(
       {
+        orgId: ORG_ID,
         messageId: MSG_ID,
         rawWebhookBody: { NumMedia: "0" },
         numMedia: 0,

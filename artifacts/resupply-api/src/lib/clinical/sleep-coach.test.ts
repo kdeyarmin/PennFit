@@ -26,6 +26,8 @@ import type {
 } from "@workspace/resupply-ai";
 import { askSleepCoach } from "./sleep-coach";
 
+const ORG_ID = "00000000-0000-4000-8000-000000000001";
+
 beforeEach(() => {
   supabaseMock.reset();
   vi.useRealTimers();
@@ -106,6 +108,7 @@ describe("askSleepCoach — Anthropic path, no tool call", () => {
       textResponse("Try loosening the top strap one notch tonight."),
     ]);
     const result = await askSleepCoach({
+      orgId: ORG_ID,
       patientId: "pt_1",
       question: "What can I try to stop the mask leaking?",
       anthropicClient: client,
@@ -148,6 +151,7 @@ describe("askSleepCoach — Anthropic path, single tool call", () => {
       },
     );
     const result = await askSleepCoach({
+      orgId: ORG_ID,
       patientId: "pt_2",
       question: "What nasal masks do you carry?",
       anthropicClient: client,
@@ -180,6 +184,7 @@ describe("askSleepCoach — Anthropic path, error", () => {
       },
     };
     const result = await askSleepCoach({
+      orgId: ORG_ID,
       patientId: "pt_3",
       question: "Quick check-in",
       anthropicClient: erroringClient,
@@ -221,6 +226,7 @@ describe("askSleepCoach — Anthropic path, retry", () => {
       },
     };
     const result = await askSleepCoach({
+      orgId: ORG_ID,
       patientId: "pt_retry_ok",
       question: "Quick check-in",
       anthropicClient: client,
@@ -249,6 +255,7 @@ describe("askSleepCoach — Anthropic path, retry", () => {
       },
     };
     const result = await askSleepCoach({
+      orgId: ORG_ID,
       patientId: "pt_retry_400",
       question: "Quick check-in",
       anthropicClient: client,
@@ -275,6 +282,7 @@ describe("askSleepCoach — round cap", () => {
       undefined,
     );
     const result = await askSleepCoach({
+      orgId: ORG_ID,
       patientId: "pt_round_cap",
       question: "Cycle me through everything",
       anthropicClient: client,
@@ -349,6 +357,7 @@ describe("askSleepCoach — OpenAI fallback path (tools)", () => {
 
     try {
       const result = await askSleepCoach({
+        orgId: ORG_ID,
         patientId: "pt_openai_tools",
         question: "what nasal masks do you carry?",
         apiKey: "sk-test",

@@ -122,6 +122,36 @@ describe("createOpenAiFallbackAdapter — happy path", () => {
     const result = await adapter.classify({ body: "???" });
     expect(result.intent).toBe("unknown");
   });
+
+  it("scrubs phone / email / street address from the outbound user prompt", async () => {
+    let capturedUserContent = "";
+    const adapter = createOpenAiFallbackAdapter({
+      apiKey: "sk-test",
+      fetchImpl: async (_url, init) => {
+        const body = JSON.parse(String(init?.body ?? "{}")) as {
+          messages?: Array<{ role: string; content: string }>;
+        };
+        capturedUserContent =
+          body.messages?.find((m) => m.role === "user")?.content ?? "";
+        return jsonResponse(openAiSuccessBody("unknown"));
+      },
+    });
+    await adapter.classify({
+      body: "Call me at (814) 471-0627 or jane@example.com — ship to 123 Main Street",
+      thread: [
+        {
+          role: "patient",
+          body: "My email is jane@example.com",
+        },
+      ],
+    });
+    expect(capturedUserContent).not.toContain("471-0627");
+    expect(capturedUserContent).not.toContain("jane@example.com");
+    expect(capturedUserContent).not.toContain("123 Main Street");
+    expect(capturedUserContent).toContain("[redacted-phone]");
+    expect(capturedUserContent).toContain("[redacted-email]");
+    expect(capturedUserContent).toContain("[redacted-address]");
+  });
 });
 
 // ---------------------------------------------------------------------------

@@ -72,7 +72,9 @@ describe("reactivatePatient — happy path", () => {
       error: null,
     });
 
-    await expect(reactivatePatient(PATIENT_ID)).resolves.toBeUndefined();
+    await expect(
+      reactivatePatient(PATIENT_ID, ORG_ID),
+    ).resolves.toBeUndefined();
 
     // Verify the patient update was called once
     expect(supabaseMock.callCount("patients", "update")).toBe(1);
@@ -118,7 +120,7 @@ describe("reactivatePatient — happy path", () => {
       error: null,
     });
 
-    await reactivatePatient(PATIENT_ID);
+    await reactivatePatient(PATIENT_ID, ORG_ID);
 
     const [custPayload] = supabaseMock.writePayloads(
       "shop_customers",
@@ -153,7 +155,9 @@ describe("reactivatePatient — happy path", () => {
       error: null,
     });
 
-    await expect(reactivatePatient(PATIENT_ID)).resolves.toBeUndefined();
+    await expect(
+      reactivatePatient(PATIENT_ID, ORG_ID),
+    ).resolves.toBeUndefined();
 
     const [custPayload] = supabaseMock.writePayloads(
       "shop_customers",
@@ -182,7 +186,9 @@ describe("reactivatePatient — no-op paths", () => {
       error: null,
     });
 
-    await expect(reactivatePatient(PATIENT_ID)).resolves.toBeUndefined();
+    await expect(
+      reactivatePatient(PATIENT_ID, ORG_ID),
+    ).resolves.toBeUndefined();
 
     // shop_customers should never be touched
     expect(supabaseMock.callCount("shop_customers", "select")).toBe(0);
@@ -195,7 +201,9 @@ describe("reactivatePatient — no-op paths", () => {
       error: null,
     });
 
-    await expect(reactivatePatient(PATIENT_ID)).resolves.toBeUndefined();
+    await expect(
+      reactivatePatient(PATIENT_ID, ORG_ID),
+    ).resolves.toBeUndefined();
 
     expect(supabaseMock.callCount("shop_customers", "select")).toBe(0);
     expect(supabaseMock.callCount("shop_customers", "update")).toBe(0);
@@ -212,7 +220,9 @@ describe("reactivatePatient — no-op paths", () => {
       error: null,
     });
 
-    await expect(reactivatePatient(PATIENT_ID)).resolves.toBeUndefined();
+    await expect(
+      reactivatePatient(PATIENT_ID, ORG_ID),
+    ).resolves.toBeUndefined();
 
     // Should not attempt to update a row that doesn't exist
     expect(supabaseMock.callCount("shop_customers", "update")).toBe(0);
@@ -230,7 +240,7 @@ describe("reactivatePatient — error propagation", () => {
       error: { message: "patients write failed", code: "PGRST500" },
     });
 
-    await expect(reactivatePatient(PATIENT_ID)).rejects.toMatchObject({
+    await expect(reactivatePatient(PATIENT_ID, ORG_ID)).rejects.toMatchObject({
       message: "patients write failed",
     });
   });
@@ -252,7 +262,7 @@ describe("reactivatePatient — error propagation", () => {
       error: { message: "shop_customers write failed", code: "PGRST500" },
     });
 
-    await expect(reactivatePatient(PATIENT_ID)).rejects.toMatchObject({
+    await expect(reactivatePatient(PATIENT_ID, ORG_ID)).rejects.toMatchObject({
       message: "shop_customers write failed",
     });
   });
@@ -285,7 +295,7 @@ describe("reactivatePatient — contrast with pausePatient (regression guard)", 
       error: null,
     });
 
-    await reactivatePatient(PATIENT_ID);
+    await reactivatePatient(PATIENT_ID, ORG_ID);
 
     const [payload] = supabaseMock.writePayloads(
       "shop_customers",
@@ -445,6 +455,7 @@ describe("placeResupplyOrderForConversation — coverage guard", () => {
 
     const result = await placeResupplyOrderForConversation({
       conversationId: CONV_ID,
+      orgId: ORG_ID,
     });
 
     expect(result.status).toBe("coverage_blocked");
@@ -486,6 +497,7 @@ describe("placeResupplyOrderForConversation — coverage guard", () => {
 
     const result = await placeResupplyOrderForConversation({
       conversationId: CONV_ID,
+      orgId: ORG_ID,
     });
 
     expect(result.status).toBe("coverage_blocked");
@@ -606,6 +618,7 @@ describe("placeResupplyOrderForConversation — continued-use guard", () => {
 
     const result = await placeResupplyOrderForConversation({
       conversationId: CONV_ID,
+      orgId: ORG_ID,
     });
 
     expect(result.status).toBe("usage_review");
@@ -640,6 +653,7 @@ describe("placeResupplyOrderForConversation — continued-use guard", () => {
 
     const result = await placeResupplyOrderForConversation({
       conversationId: CONV_ID,
+      orgId: ORG_ID,
     });
 
     expect(result.status).toBe("ok");
@@ -656,6 +670,7 @@ describe("placeResupplyOrderForConversation — continued-use guard", () => {
 
     const result = await placeResupplyOrderForConversation({
       conversationId: CONV_ID,
+      orgId: ORG_ID,
     });
 
     expect(result.status).toBe("ok");
@@ -676,6 +691,7 @@ describe("placeResupplyOrderForConversation — continued-use guard", () => {
 
     const result = await placeResupplyOrderForConversation({
       conversationId: CONV_ID,
+      orgId: ORG_ID,
     });
 
     expect(result.status).toBe("ok");
@@ -696,6 +712,7 @@ describe("placeResupplyOrderForConversation — continued-use guard", () => {
 
     const result = await placeResupplyOrderForConversation({
       conversationId: CONV_ID,
+      orgId: ORG_ID,
     });
 
     expect(result.status).toBe("ok");
@@ -711,6 +728,7 @@ describe("placeResupplyOrderForConversation — continued-use guard", () => {
 
     const result = await placeResupplyOrderForConversation({
       conversationId: CONV_ID,
+      orgId: ORG_ID,
     });
 
     expect(result.status).toBe("ok");
@@ -726,6 +744,7 @@ describe("placeResupplyOrderForConversation — continued-use guard", () => {
 
     const result = await placeResupplyOrderForConversation({
       conversationId: CONV_ID,
+      orgId: ORG_ID,
     });
 
     expect(result.status).toBe("ok");
@@ -770,6 +789,7 @@ describe("placeResupplyOrderForConversation — continued-use guard", () => {
 
     const result = await placeResupplyOrderForConversation({
       conversationId: CONV_ID,
+      orgId: ORG_ID,
     });
 
     expect(result.status).toBe("ok");
@@ -868,6 +888,7 @@ describe("placeResupplyOrderForConversation — refill-window guard", () => {
 
     const result = await placeResupplyOrderForConversation({
       conversationId: CONV_ID,
+      orgId: ORG_ID,
     });
 
     expect(result.status).toBe("too_early");
@@ -903,6 +924,7 @@ describe("placeResupplyOrderForConversation — refill-window guard", () => {
 
     const result = await placeResupplyOrderForConversation({
       conversationId: CONV_ID,
+      orgId: ORG_ID,
     });
 
     expect(result.status).toBe("ok");
@@ -979,6 +1001,7 @@ describe("placeResupplyOrderForConversation — refill attestation capture", () 
 
     const result = await placeResupplyOrderForConversation({
       conversationId: CONV_ID,
+      orgId: ORG_ID,
       affirmation: {
         channel: "sms",
         continuedUse: true,
@@ -1009,6 +1032,7 @@ describe("placeResupplyOrderForConversation — refill attestation capture", () 
 
     const result = await placeResupplyOrderForConversation({
       conversationId: CONV_ID,
+      orgId: ORG_ID,
     });
 
     expect(result.status).toBe("ok");
@@ -1052,6 +1076,7 @@ describe("placeResupplyOrderForConversation — address-change guard", () => {
 
     const result = await placeResupplyOrderForConversation({
       conversationId: CONV_ID,
+      orgId: ORG_ID,
     });
 
     expect(result.status).toBe("address_change_pending");
@@ -1089,6 +1114,7 @@ describe("placeResupplyOrderForConversation — address-change guard", () => {
 
     const result = await placeResupplyOrderForConversation({
       conversationId: CONV_ID,
+      orgId: ORG_ID,
     });
 
     expect(result.status).not.toBe("address_change_pending");
@@ -1122,6 +1148,7 @@ describe("placeResupplyOrderForConversation — address-change guard", () => {
 
     const result = await placeResupplyOrderForConversation({
       conversationId: CONV_ID,
+      orgId: ORG_ID,
     });
 
     expect(result.status).not.toBe("address_change_pending");

@@ -44,7 +44,6 @@
 
 import {
   getOrgScopedClient,
-  resolveSeedOrgId,
   type Json,
   type OrgScopedClient,
 } from "@workspace/resupply-db";
@@ -65,6 +64,7 @@ import {
 } from "../entitlement/resolve-sku-entitlement";
 import { isFeatureEnabled } from "../feature-flags";
 import { recordDispense } from "../catalog/dispense";
+import { openOutreachEpisode } from "../episodes/open-outreach-episode";
 import { logger } from "../logger";
 
 export interface NotEligibleEntitlement {
@@ -174,10 +174,12 @@ export type PlaceOrderResult =
 
 export interface PlaceOrderInput {
   conversationId: string;
-  /** Tenant the conversation belongs to. Defaults to the seed org
-   *  (single-tenant bridge) for the SMS/voice callers that have no
-   *  request tenant; the email-link route passes the conversation's org. */
-  orgId?: string;
+  /** Tenant the conversation belongs to. Required — callers must pass
+   *  the conversation's org (SMS/voice stamp it on the inbound session;
+   *  the email-link route reads it from the conversation). Never invent
+   *  the seed org here: that would place another tenant's order under
+   *  the seed ledger. */
+  orgId: string;
   /**
    * The beneficiary's Medicare/payer refill attestation. When provided
    * AND the `resupply.refill_affirmation_capture` flag is on, a
@@ -191,7 +193,7 @@ export interface PlaceOrderInput {
 export async function placeResupplyOrderForConversation(
   input: PlaceOrderInput,
 ): Promise<PlaceOrderResult> {
-  const orgId = input.orgId ?? (await resolveSeedOrgId());
+  const orgId = input.orgId?.trim();
   if (!orgId) return { status: "conversation_not_found" };
   const supabase = getOrgScopedClient(orgId);
 
@@ -257,7 +259,7 @@ export async function placeResupplyOrderForConversation(
   if (!episode.prescription_id) return { status: "no_active_prescription" };
   const { data: rx, error: rxErr } = await supabase
     .from("prescriptions")
-    .select("id, item_sku")
+    .select("id, item_sku, cadence_days")
     .eq("id", episode.prescription_id)
     .limit(1)
     .maybeSingle();
@@ -521,6 +523,31 @@ export async function placeResupplyOrderForConversation(
       affirmation: input.affirmation,
       entitlement: resolvedEntitlement,
     });
+  }
+
+  // Open the NEXT cycle so the ladder continues after this confirm.
+  // Best-effort: the ship already happened; a failed next-episode write
+  // is logged for ops, never turns a successful confirm into a failure.
+  try {
+    await openOutreachEpisode({
+      orgId,
+      patientId: episode.patient_id,
+      prescriptionId: episode.prescription_id,
+      cadenceDays:
+        typeof rx.cadence_days === "number" && rx.cadence_days > 0
+          ? rx.cadence_days
+          : 90,
+    });
+  } catch (err) {
+    logger.warn(
+      {
+        event: "resupply.next_episode_open_failed",
+        episodeId: episode.id,
+        prescriptionId: episode.prescription_id,
+        errName: err instanceof Error ? err.name : "unknown",
+      },
+      "resupply: next-cycle episode open failed after confirm",
+    );
   }
 
   return {
@@ -1075,6 +1102,7 @@ async function consultCoverageEligibility(
   return consultCoverageEligibilityForCoverage(
     coverage.id,
     coverage.payer_name,
+    supabase.orgId,
   );
 }
 
@@ -1279,9 +1307,9 @@ async function raiseUsageReviewAlert(
  */
 export async function pausePatient(
   patientId: string,
-  orgIdInput?: string,
+  orgIdInput: string,
 ): Promise<void> {
-  const orgId = orgIdInput ?? (await resolveSeedOrgId());
+  const orgId = orgIdInput?.trim();
   if (!orgId) return;
   const supabase = getOrgScopedClient(orgId);
   const nowIso = new Date().toISOString();
@@ -1342,9 +1370,9 @@ export async function pausePatient(
  */
 export async function reactivatePatient(
   patientId: string,
-  orgIdInput?: string,
+  orgIdInput: string,
 ): Promise<void> {
-  const orgId = orgIdInput ?? (await resolveSeedOrgId());
+  const orgId = orgIdInput?.trim();
   if (!orgId) return;
   const supabase = getOrgScopedClient(orgId);
   const nowIso = new Date().toISOString();

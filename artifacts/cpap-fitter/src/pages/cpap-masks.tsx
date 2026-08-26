@@ -623,7 +623,7 @@ export function CpapMasks() {
               },
               {
                 q: "How fast does a mask actually arrive?",
-                a: "In-stock complete mask systems ship the same business day if you order before 1pm ET, the next business day otherwise. Standard ground takes 2–4 business days; expedited shipping is available at checkout. Tracking arrives by SMS and email.",
+                a: "In-stock complete mask systems ship the same business day once your insurance request is confirmed before 1pm ET, the next business day otherwise. Standard ground takes 2–4 business days; ask our team about expedited shipping when we place the order. Tracking arrives by SMS and email.",
               },
               {
                 q: "Can I switch brands later without losing my fit?",
@@ -662,7 +662,7 @@ export function CpapMasks() {
             </div>
           </div>
           <h2 className="text-display text-2xl md:text-3xl font-bold tracking-tight text-foreground/90">
-            More than a checkout button.
+            More than a fit request.
           </h2>
         </div>
 

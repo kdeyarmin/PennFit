@@ -36,10 +36,8 @@ function buildSteps(contact: CompanyContact): HelpStep[] {
       body: (
         <p>
           Before discussing anything about your account, the assistant confirms
-          your identity — it asks for your <strong>date of birth</strong>, and
-          for shop accounts it may also confirm the{" "}
-          <strong>last four digits of the card on file</strong>. Nothing
-          account-specific is shared until that matches.
+          your identity — it asks for your <strong>date of birth</strong>.
+          Nothing account-specific is shared until that matches.
         </p>
       ),
       note: "Calling for general questions — replacement schedules, mask types, how the fitter works? No verification needed for that.",

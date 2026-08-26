@@ -86,8 +86,8 @@ export function AdminOrders() {
         </div>
       </div>
 
-      {/* CSR-created "sign & pay" orders: build an order, send the
-          customer a secure link to review, e-sign, and pay by card. */}
+      {/* CSR-created signature orders: build an order, send the
+          customer a secure link to review and e-sign; billed to insurance. */}
       <CsrOrderRequestsPanel />
 
       {/* Filters */}

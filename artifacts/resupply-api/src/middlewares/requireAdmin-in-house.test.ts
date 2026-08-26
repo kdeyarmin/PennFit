@@ -88,11 +88,6 @@ vi.mock("@workspace/resupply-db", () => ({
       select: async () => ({ data: mockAgreementRows, error: null }),
     }),
   }),
-  // requireAdmin resolves the (single-tenant) seed org_id best-effort to
-  // attach req.orgId. Default to none — exercising the "no org attached"
-  // branch a fresh environment hits before the seed tenant is cached (which
-  // also means the agreements gate is skipped for the legacy test cases).
-  resolveSeedOrgId: async () => null,
 }));
 
 import { requireAdmin, requireAdminOnly } from "./requireAdmin";
@@ -104,6 +99,14 @@ const ALL_SIGNED_ROWS = REQUIRED_AGREEMENTS.map((a) => ({
   agreement_type: a.type,
   version: a.version,
 }));
+
+/** Default tenant for happy-path tests (admin_users.org_id is required). */
+const DEFAULT_ORG_ID = "org-test";
+const DEFAULT_ADMIN_USERS_ROW = {
+  role: "admin",
+  location_id: null,
+  org_id: DEFAULT_ORG_ID,
+} as const;
 
 function makeApp(): Express {
   const app = express();
@@ -243,7 +246,12 @@ describe("requireAdmin — in-house pf_session cookie path", () => {
 
   beforeEach(() => {
     mockDeps = null;
-    mockAdminUsersLookup = { data: null, error: null };
+    // Happy path: admin_users carries org_id (required — no seed fallback)
+    // and the tenant has signed agreements so the G16 gate does not block.
+    mockAdminUsersLookup = {
+      data: { ...DEFAULT_ADMIN_USERS_ROW },
+      error: null,
+    };
     // Default: the impersonator is an active platform admin (present row).
     mockPlatformAdminLookup = {
       data: { auth_user_id: "platform-admin" },
@@ -251,7 +259,7 @@ describe("requireAdmin — in-house pf_session cookie path", () => {
     };
     // Reset the agreements gate between cases (the pending cache is
     // module-level and would otherwise leak across tests).
-    mockAgreementRows = [];
+    mockAgreementRows = ALL_SIGNED_ROWS;
     invalidatePendingAgreementsCache();
     originalEnv = {
       RESUPPLY_ADMIN_EMAILS: process.env.RESUPPLY_ADMIN_EMAILS,
@@ -428,7 +436,7 @@ describe("requireAdmin — in-house pf_session cookie path", () => {
       const { deps, repo } = await buildDepsWithRepo();
       mockDeps = deps;
       mockAdminUsersLookup = {
-        data: { role: "csr", location_id: null },
+        data: { role: "csr", location_id: null, org_id: DEFAULT_ORG_ID },
         error: null,
       };
       const { cookie } = await seedSignedInUser(repo, {
@@ -474,7 +482,7 @@ describe("requireAdmin — in-house pf_session cookie path", () => {
       expect(res.body.impersonation).toBe(false);
     });
 
-    it("falls back to the coarse role when NO admin_users row exists (legacy)", async () => {
+    it("fails closed (403) when no admin_users row exists (no seed fallback)", async () => {
       const { deps, repo } = await buildDepsWithRepo();
       mockDeps = deps;
       mockAdminUsersLookup = { data: null, error: null };
@@ -488,7 +496,29 @@ describe("requireAdmin — in-house pf_session cookie path", () => {
         .get("/protected")
         .set("Cookie", cookie);
 
-      expect(res.status).toBe(200);
+      expect(res.status).toBe(403);
+      expect(res.body.error).toBe("tenant_context_missing");
+    });
+
+    it("fails closed (403) when admin_users.org_id is null", async () => {
+      const { deps, repo } = await buildDepsWithRepo();
+      mockDeps = deps;
+      mockAdminUsersLookup = {
+        data: { role: "admin", location_id: null, org_id: null },
+        error: null,
+      };
+      const { cookie } = await seedSignedInUser(repo, {
+        id: "u_no_org",
+        email: "no-org@example.com",
+        role: "admin",
+      });
+
+      const res = await request(makeApp())
+        .get("/protected")
+        .set("Cookie", cookie);
+
+      expect(res.status).toBe(403);
+      expect(res.body.error).toBe("tenant_context_missing");
     });
 
     it("fails closed (401) when the admin_users lookup returns a PostgREST error", async () => {
@@ -638,7 +668,10 @@ describe("requireAdmin — in-house pf_session cookie path", () => {
     it("normal (non-impersonation) sessions are unaffected", async () => {
       const { deps, repo } = await buildDepsWithRepo();
       mockDeps = deps;
-      mockAdminUsersLookup = { data: null, error: null };
+      mockAdminUsersLookup = {
+        data: { role: "admin", location_id: null, org_id: DEFAULT_ORG_ID },
+        error: null,
+      };
       const { cookie } = await seedSignedInUser(repo, {
         id: "u_admin",
         email: "csr@penn.example",
@@ -652,6 +685,7 @@ describe("requireAdmin — in-house pf_session cookie path", () => {
       expect(res.status).toBe(200);
       expect(res.body.impersonation).toBe(false);
       expect(res.body.impersonatorUserId).toBeNull();
+      expect(res.body.orgId).toBe(DEFAULT_ORG_ID);
     });
 
     it("rejects an impersonation session when the impersonator is no longer a platform admin (401)", async () => {

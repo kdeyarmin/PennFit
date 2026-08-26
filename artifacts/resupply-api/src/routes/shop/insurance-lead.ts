@@ -27,15 +27,13 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import { resolveSeedOrgId } from "@workspace/resupply-db";
-
 import { sendInsuranceLeadEmails } from "../../lib/insurance-lead-email";
 import {
   recordInsuranceLead,
   stampInsuranceLeadDelivery,
 } from "../../lib/insurance-lead-record";
 import { requestHost } from "../../lib/request-host.js";
-import { resolveOrgIdByHost } from "../../lib/tenant-branding.js";
+import { resolveBrandOrgIdByHost } from "../../lib/tenant-branding.js";
 
 const router: IRouter = Router();
 
@@ -122,14 +120,11 @@ router.post("/shop/insurance-leads", async (req, res) => {
     return;
   }
 
-  // Public, unauthenticated route — resolve the tenant by host so the lead is
-  // FILED under, and the patient confirmation goes out under (and branded
-  // with), the tenant the lead came in on. Apex / miss → seed org
-  // (single-tenant unchanged).
-  const orgId =
-    (await resolveOrgIdByHost(requestHost(req))) ??
-    (await resolveSeedOrgId()) ??
-    undefined;
+  // Public, unauthenticated route — resolve the tenant by verified
+  // custom domain / subdomain ONLY. Platform host and unbound domains
+  // return null (resolveBrandOrgIdByHost) so we never invent the seed
+  // org and file another tenant's PHI under Penn's queue.
+  const orgId = (await resolveBrandOrgIdByHost(requestHost(req))) ?? undefined;
 
   // DB persistence first (best-effort) so that even if SendGrid
   // throws/hangs after this point, the row is in the admin queue.

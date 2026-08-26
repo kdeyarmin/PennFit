@@ -2,7 +2,7 @@
 //
 // What a freshly signed-up tenant owner uses to finish standing up their
 // workspace: branding, custom domain, phone / SMS / fax numbers, email
-// sender, payments, team, and catalog. Each row links to the page that
+// sender, team, and patients. Each row links to the page that
 // configures it and reflects LIVE status from
 // /resupply-api/admin/organization/setup-checklist. Distinct from the
 // platform deployment checklist (account-setup.tsx, platform super-admins).
@@ -41,7 +41,7 @@ export function AdminSetupChecklistPage() {
         <PageHeader
           icon={ClipboardCheck}
           title="Set up your workspace"
-          description="Finish configuring your account so patient messaging, email, payments, and your storefront all run under your own brand. Each step links to the page that completes it."
+          description="Finish configuring your account so patient messaging, email, and your storefront all run under your own brand. Each step links to the page that completes it."
         />
         {query.isPending ? (
           <Spinner label="Checking your setup…" />

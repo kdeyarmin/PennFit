@@ -2234,6 +2234,7 @@ export interface Database {
           fulfillment_id: string | null;
           status:
             | "draft"
+            | "submitting"
             | "submitted"
             | "accepted"
             | "denied"

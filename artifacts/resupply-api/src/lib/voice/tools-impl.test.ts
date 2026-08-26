@@ -13,20 +13,8 @@
 
 import { describe, it, expect, vi } from "vitest";
 
-// The dispatcher resolves its tenant via `resolveSeedOrgId()` before any
-// DB use (see Impl.db()). With no live database that real resolver
-// returns null and the dispatcher throws "tenant context missing", so we
-// stub the seed resolver to a fixed test org. `getOrgScopedClient` stays
-// REAL so the injected stub client is wrapped by the production facade
-// (the query bodies are identical on both paths).
-vi.mock("@workspace/resupply-db", async (importOriginal) => {
-  const actual =
-    await importOriginal<typeof import("@workspace/resupply-db")>();
-  return {
-    ...actual,
-    resolveSeedOrgId: async () => "00000000-0000-0000-0000-000000000001",
-  };
-});
+// Dispatcher requires deps.orgId (no seed invent). Tests pass orgId
+// explicitly; getOrgScopedClient wraps the injected stub client.
 
 import { createVoiceToolDispatcher } from "./tools-impl";
 
@@ -62,10 +50,13 @@ function buildStubSupabase(row: StubRow | null) {
   } as unknown as never;
 }
 
+const TEST_ORG = "00000000-0000-0000-0000-000000000001";
+
 const baseDeps = {
   patientId: "pat-1",
   conversationId: "conv-1",
   episodeId: "epi-1",
+  orgId: TEST_ORG,
 };
 
 describe("VoiceToolDispatcher — identity attempt cap", () => {
@@ -104,9 +95,8 @@ describe("VoiceToolDispatcher — identity attempt cap", () => {
     // Regression (G7): the dispatcher must scope patient reads/writes to the
     // call's actual tenant. Before the fix db() always resolved the seed org,
     // so a non-seed patient was filtered out and identity verification could
-    // never succeed for a second tenant. The mocked resolveSeedOrgId() returns
-    // "...0001"; deps.orgId here is a DISTINCT non-seed org, and the org-scoped
-    // facade must filter on THAT.
+    // never succeed for a second tenant. deps.orgId here is a DISTINCT org
+    // from TEST_ORG, and the org-scoped facade must filter on THAT.
     const NON_SEED_ORG = "22222222-2222-4222-8222-222222222222";
     const eqCalls: Array<[string, unknown]> = [];
     const stubRow: StubRow = {
@@ -914,6 +904,7 @@ function shopDispatcher(opts: ShopStubOpts) {
     callerKind: "shop_customer",
     conversationId: "conv-shop-1",
     shopCustomerId: "cust-1",
+    orgId: TEST_ORG,
     supabase: buildShopStub(opts),
   });
 }

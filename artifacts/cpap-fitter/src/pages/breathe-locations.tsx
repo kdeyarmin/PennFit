@@ -27,7 +27,7 @@ import "./breathe.css";
  * is_active); staff are assignable to locations; a counts-only per-location
  * rollup (patient / active-patient / staff counts + an "unassigned" bucket,
  * no PHI) via the org-scoped location_rollup RPC; active locations become
- * in-store pickup choices on the storefront (checkout validates the choice and
+ * in-store pickup choices on the storefront (order confirm validates the choice and
  * the order carries the pickup address); a primary-location resolver drives
  * defaults; everything stays org-isolated per tenant.
  *
@@ -252,7 +252,7 @@ const PICKUP: Cap[] = [
   {
     icon: <Store size={20} />,
     title: "Every active branch is a pickup point",
-    summary: "Patients choose in-store pickup right at checkout.",
+    summary: "Patients choose in-store pickup when confirming their order.",
     gold: true,
     points: [
       "Your active locations appear as pickup choices, primary first",
@@ -262,10 +262,10 @@ const PICKUP: Cap[] = [
   },
   {
     icon: <BadgeCheck size={20} />,
-    title: "Checkout keeps it valid",
+    title: "Order confirm keeps it valid",
     summary: "No stale or closed branch slips through.",
     points: [
-      "Checkout validates the chosen pickup location is a real, active branch",
+      "Confirm validates the chosen pickup location is a real, active branch",
       "A deactivated location can't be selected after the fact",
       "The choice is tied to the order, not guessed later",
     ],
@@ -295,9 +295,9 @@ function Pickup() {
           </h2>
           <p className="bx-lede">
             With more than one location, in-store pickup becomes a real option.
-            Your branches show up on the storefront as pickup points, checkout
-            keeps the choice valid, and the order carries the branch address all
-            the way through.
+            Your branches show up on the storefront as pickup points, order
+            confirm keeps the choice valid, and the order carries the branch
+            address all the way through.
           </p>
         </div>
         <CapGrid items={PICKUP} />

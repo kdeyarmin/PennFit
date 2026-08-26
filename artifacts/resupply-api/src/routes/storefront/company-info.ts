@@ -12,21 +12,22 @@ import { Router, type IRouter } from "express";
 
 import {
   getCompanyInfo,
+  getPlatformIdentity,
   resolveAssistantNamesForOrg,
 } from "../../lib/company-info";
-import { resolveOrgIdByHost } from "../../lib/tenant-branding.js";
+import { resolveBrandOrgIdByHost } from "../../lib/tenant-branding.js";
 import { requestHost } from "../../lib/request-host.js";
 
 const router: IRouter = Router();
 
 router.get("/company-info", async (req, res) => {
-  // Resolve the tenant that owns THIS host so the storefront shows its own
-  // contact identity + assistant name (both are per-tenant), not the seed
-  // org's. A NULL/unresolved host falls back to the seed/default identity, so
-  // the single-tenant deployment is unchanged. Fail-soft: the resolver never
-  // throws.
-  const orgId = (await resolveOrgIdByHost(requestHost(req))) ?? undefined;
-  const info = await getCompanyInfo(orgId);
+  // Branding resolver — NOT resolveOrgIdByHost. The data-plane resolver
+  // fails soft to the seed (Penn) org on the platform host / unbound
+  // domains; that leaked the seed tenant's phone/email/name onto
+  // cmbreathe.com. Auth email already avoids this via
+  // resolveBrandingByHost; company-info must match that contract.
+  const orgId = (await resolveBrandOrgIdByHost(requestHost(req))) ?? undefined;
+  const info = orgId ? await getCompanyInfo(orgId) : getPlatformIdentity();
   const assistantNames = orgId
     ? await resolveAssistantNamesForOrg(orgId)
     : {
@@ -34,7 +35,7 @@ router.get("/company-info", async (req, res) => {
         assistantAdminName: info.assistantAdminName,
       };
   // Cacheable for 5 min, but the body varies by HOST (tenant identity +
-  // assistant names resolve from resolveOrgIdByHost). A shared/edge cache
+  // assistant names resolve from the brand host). A shared/edge cache
   // keyed only on the URL path would serve one tenant's contact info to
   // another tenant's storefront. `Vary` makes any conformant cache key on
   // the host — byte-for-byte matching storefront-branding.ts.

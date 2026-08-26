@@ -304,7 +304,7 @@ function VendorStrip({
     {
       key: "stripe",
       label: "Stripe",
-      hint: "Cash-pay shop checkout + refunds",
+      hint: "Platform SaaS billing (tenant subscription)",
     },
     {
       key: "objectStorage",

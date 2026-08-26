@@ -26,10 +26,10 @@ import { z } from "zod";
 
 import {
   getOrgScopedClient,
-  resolveSeedOrgId,
   type Json,
   type OrgScopedClient,
 } from "@workspace/resupply-db";
+import { normalizeE164 } from "@workspace/resupply-domain";
 import {
   buildConnectStreamTwiml,
   buildHangupTwiml,
@@ -39,7 +39,10 @@ import {
 import { getCompanyInfo } from "../../lib/company-info";
 import { isFeatureEnabled } from "../../lib/feature-flags";
 import { logger } from "../../lib/logger";
-import { resolveOrgIdByCalledNumber } from "../../lib/messaging/tenant-telecom";
+import {
+  resolveOrgIdByCalledNumber,
+  resolveOrgIdByPatientPhone,
+} from "../../lib/messaging/tenant-telecom";
 import { resolveBrandingByOrgId } from "../../lib/tenant-branding";
 import { getPendingSessions } from "../../lib/voice/pending-sessions";
 import { resolveCallerByPhone } from "../../lib/voice/resolve-caller";
@@ -50,13 +53,14 @@ import {
   readVoicePublicBaseUrlOrNull,
 } from "../../lib/voice/voice-config";
 
-// Episode statuses a caller can still act on by phone (pre-confirm). A
-// confirmed/fulfilled/cancelled episode has nothing left to reorder, so
-// we don't route those to the agent.
+// Episode statuses a caller can still act on by phone (pre-confirm).
+// Match the reminder ladder's in-progress set — a declined episode is
+// done for this cycle (patient said no); rebinding it to the AI agent
+// would restart outreach they already refused. Confirmed / fulfilled /
+// cancelled likewise have nothing left to reorder.
 const ACTIONABLE_EPISODE_STATUSES = [
   "outreach_pending",
   "awaiting_response",
-  "declined",
 ] as const;
 
 const INBOUND_CALL_CONTEXT =
@@ -70,8 +74,9 @@ const INBOUND_GREETING =
 
 const INBOUND_SHOP_CALL_CONTEXT =
   "Inbound call: a storefront customer phoned to check on their account. " +
-  "Verify by the last four digits of the card on file, then review their " +
-  "recent order and subscription status. For any change, hand off to a human.";
+  "Verify identity with verify_shop_customer_identity({last_four}) — the " +
+  "tool compares against their saved payment-method last four — then " +
+  "review their recent order status. For any change, hand off to a human.";
 
 const INBOUND_SHOP_GREETING =
   "Hi there, thanks for calling Penn Home Medical Supply! I can help you check on your " +
@@ -124,16 +129,21 @@ router.post("/voice/inbound-reorder", signatureMiddleware, async (req, res) => {
       .send(buildHangupTwiml("Invalid call payload."));
     return;
   }
-  const { From, CallSid } = parsed.data;
+  const { CallSid } = parsed.data;
 
   // Webhook: no req.orgId. Route by the CALLED number to the tenant that
-  // owns it (G7), falling back to the seed org when unregistered. On miss
-  // degrade to a clean Hangup so a tenant-context gap never retry-storms
-  // Twilio. With no per-tenant numbers configured this resolves to seed.
+  // owns it (G7). On a shared platform number, route by the CALLER's patient
+  // phone (same ladder as SMS inbound). Never invent the seed org for an
+  // unknown caller — Hangup so we don't open a voice session under Penn.
   const calledNumber = parsed.data.Called ?? parsed.data.To;
-  const orgId =
-    (await resolveOrgIdByCalledNumber(calledNumber)) ??
-    (await resolveSeedOrgId());
+  const callerRaw = parsed.data.From ?? parsed.data.Caller;
+  const calledOrgId = await resolveOrgIdByCalledNumber(calledNumber);
+  const normalizedCaller = normalizeE164(callerRaw);
+  const orgId = calledOrgId
+    ? calledOrgId
+    : normalizedCaller
+      ? await resolveOrgIdByPatientPhone(normalizedCaller)
+      : null;
   if (!orgId) {
     res
       .status(200)
@@ -166,7 +176,7 @@ router.post("/voice/inbound-reorder", signatureMiddleware, async (req, res) => {
   // as "unidentified" — that would mask an outage and mis-route the caller.
   // Surface it and ask the caller to retry (same posture as the session-
   // insert failure below); log only the digit-count to keep PHI out.
-  const callerE164 = From ?? parsed.data.Caller ?? "";
+  const callerE164 = normalizedCaller ?? "";
   let patientId: string | null;
   let shopCustomerId: string | null;
   let ambiguous: boolean;

@@ -95,12 +95,19 @@ router.post(
   requirePermission("admin.tools.manage"),
   adminSmartTriggerRunLimiter,
   async (req, res) => {
-    const result = await runSmartTriggerEvaluator({
-      adminEmail: req.adminEmail ?? null,
-      adminUserId: req.adminUserId ?? null,
-      ip: req.ip ?? null,
-      userAgent: req.get("user-agent") ?? null,
-    });
+    if (!req.orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const result = await runSmartTriggerEvaluator(
+      {
+        adminEmail: req.adminEmail ?? null,
+        adminUserId: req.adminUserId ?? null,
+        ip: req.ip ?? null,
+        userAgent: req.get("user-agent") ?? null,
+      },
+      req.orgId,
+    );
     res.json(result);
   },
 );
@@ -122,6 +129,11 @@ router.post(
     }
     const channel = channelParse.data;
 
+    if (!req.orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+
     const outcome = await runSmartTriggerSendDue(
       channel,
       {
@@ -132,7 +144,7 @@ router.post(
       },
       { subjectForKind, textBody, htmlBody, smsBody, pushBody },
       // Honor the admin's tenant so a per-tenant Control Center toggle
-      // gates this manual "Run now" (the worker cron stays seed-scoped).
+      // gates this manual "Run now".
       req.orgId,
     );
 

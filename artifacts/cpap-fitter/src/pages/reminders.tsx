@@ -214,9 +214,9 @@ export function Reminders() {
           Never run out of CPAP supplies
         </h1>
         <p className="text-muted-foreground max-w-xl mx-auto">
-          Subscribe and we'll auto-ship the right replacements on your schedule.
-          Same price as one-time. Pause or cancel anytime — no phone calls, no
-          insurance hoops.
+          Get insurance resupply reminders on your schedule, then confirm with
+          one tap when you&apos;re due. No patient checkout — supplies bill
+          through your plan.
         </p>
       </div>
 
@@ -235,12 +235,11 @@ export function Reminders() {
           </div>
           <div className="flex-1 min-w-0">
             <h2 className="text-lg font-semibold text-[hsl(var(--penn-navy))]">
-              Subscribe &amp; ship
+              Insurance resupply
             </h2>
             <p className="text-sm text-muted-foreground mt-1">
-              Pick your supplies once, get them shipped on the schedule that
-              matches your insurance allowance. Cancel anytime from your
-              account.
+              We verify benefits and ship on your plan&apos;s replacement
+              schedule after you confirm. No patient card checkout.
             </p>
             <div className="mt-4 flex flex-wrap items-center gap-3">
               <Button asChild size="lg" data-testid="reminders-subscribe-cta">
@@ -267,7 +266,7 @@ export function Reminders() {
       <div className="text-center mb-6" data-testid="reminders-email-secondary">
         <p className="text-sm text-muted-foreground inline-flex items-center gap-2">
           <Bell className="w-3.5 h-3.5" />
-          Not ready to subscribe?{" "}
+          Not ready to order yet?{" "}
           <a
             href="#email-reminders"
             className="font-medium text-primary hover:underline"

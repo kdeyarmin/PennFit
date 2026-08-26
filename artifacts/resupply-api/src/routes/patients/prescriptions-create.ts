@@ -24,6 +24,7 @@ import { z } from "zod";
 import { logAudit } from "@workspace/resupply-audit";
 import { type Json, getOrgScopedClient } from "@workspace/resupply-db";
 
+import { openOutreachEpisode } from "../../lib/episodes/open-outreach-episode";
 import { logger } from "../../lib/logger";
 import { redactDbErr } from "../../lib/redact-db-err";
 import { adminWriteRateLimiter } from "../../middlewares/admin-rate-limit";
@@ -187,6 +188,30 @@ router.post(
       .single();
     if (error) throw error;
 
+    // Open the first outreach episode so the reminder ladder can see this
+    // Rx. Best-effort after the prescription row is durable — a ladder
+    // write failure must not roll back the clinical record; ops can open
+    // an episode by hand if this log fires. Idempotent against races.
+    let episodeId: string | null = null;
+    try {
+      const opened = await openOutreachEpisode({
+        orgId,
+        patientId,
+        prescriptionId: row.id,
+        cadenceDays: body.cadenceDays,
+      });
+      episodeId = opened.episodeId;
+    } catch (err) {
+      logger.warn(
+        {
+          err: redactDbErr(err),
+          patient_id: patientId,
+          prescription_id: row.id,
+        },
+        "patient.prescription.create: openOutreachEpisode failed",
+      );
+    }
+
     const populated = ["itemSku", "cadenceDays", "validFrom"];
     if (body.validUntil) populated.push("validUntil");
     if (body.hcpcsCode) populated.push("hcpcsCode");
@@ -207,6 +232,7 @@ router.post(
         item_sku: body.itemSku,
         cadence_days: body.cadenceDays,
         populated_fields: populated,
+        episode_id: episodeId,
       },
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
@@ -217,7 +243,7 @@ router.post(
       );
     });
 
-    res.status(201).json({ id: row.id });
+    res.status(201).json({ id: row.id, episodeId });
   },
 );
 

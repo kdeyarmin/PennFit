@@ -22,6 +22,8 @@ const supabaseMock = installSupabaseMock();
 
 import { dispatchAlert } from "./dispatch";
 
+const ORG_ID = "00000000-0000-4000-8000-000000000000";
+
 const ACTIVE_DEF = {
   key: "resupply_due",
   channels: ["email", "sms", "voice"],
@@ -60,6 +62,7 @@ describe("dispatchAlert — override layering", () => {
     });
 
     const outcome = await dispatchAlert({
+      orgId: ORG_ID,
       alertKey: "resupply_due",
       channel: "sms",
       patientId: "p_1",
@@ -82,6 +85,7 @@ describe("dispatchAlert — override layering", () => {
     stageSupabaseResponse("patients", "select", { data: null });
 
     const outcome = await dispatchAlert({
+      orgId: ORG_ID,
       alertKey: "resupply_due",
       channel: "sms",
       patientId: "p_missing",
@@ -97,6 +101,7 @@ describe("dispatchAlert — override layering", () => {
     stageSupabaseResponse("alert_message_overrides", "select", { data: null });
 
     const outcome = await dispatchAlert({
+      orgId: ORG_ID,
       alertKey: "resupply_due",
       channel: "sms",
       patientId: "p_1",
@@ -109,6 +114,7 @@ describe("dispatchAlert — override layering", () => {
       error: { code: "42P01", message: "relation does not exist" },
     });
     const outcome = await dispatchAlert({
+      orgId: ORG_ID,
       alertKey: "resupply_due",
       channel: "sms",
       patientId: "p_1",
@@ -144,6 +150,7 @@ describe("dispatchAlert — override layering", () => {
 
     // Caller omits order_number → it stays literal → must NOT send.
     const outcome = await dispatchAlert({
+      orgId: ORG_ID,
       alertKey: "resupply_due",
       channel: "sms",
       patientId: "p_1",

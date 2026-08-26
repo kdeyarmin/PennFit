@@ -50,9 +50,9 @@ export const HELP_CATEGORIES: readonly HelpCategory[] = [
   },
   {
     id: "orders",
-    label: "Orders & shop",
+    label: "Orders & fulfillment",
     blurb:
-      "Taking orders, fulfillment and shipping, subscriptions, returns, and inventory.",
+      "Insurance orders, fulfillment and shipping, signature paperwork, and inventory.",
   },
   {
     id: "billing",

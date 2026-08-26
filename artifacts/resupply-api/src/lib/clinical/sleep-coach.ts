@@ -31,7 +31,7 @@ import {
   getResponseToolCalls,
   sendWithRetry,
 } from "@workspace/resupply-ai";
-import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 import { COMPLIANT_MINUTES_PER_NIGHT } from "@workspace/resupply-domain";
 
 import {
@@ -160,10 +160,12 @@ export interface SleepCoachInput {
    */
   anthropicClient?: AnthropicClient;
   /**
-   * Owning tenant, for AI-token COGS attribution. Optional — a missing
-   * orgId records nothing (recordAiTokenUsage no-ops on absent orgId).
+   * Owning tenant. Required for therapy-context assembly and AI-token
+   * COGS attribution — the storefront route always passes the host-
+   * resolved orgId. A blank/missing orgId fail-closes to empty context
+   * rather than inventing the seed.
    */
-  orgId?: string;
+  orgId: string;
 }
 
 export interface SleepCoachReply {
@@ -586,13 +588,13 @@ export async function askSleepCoach(
 
 async function assembleContext(
   patientId: string,
-  explicitOrgId?: string,
+  explicitOrgId: string,
 ): Promise<Record<string, unknown>> {
-  // Resolve the tenant for therapy-context assembly. A missing org
+  // Resolve the tenant for therapy-context assembly. A missing/blank org
   // degrades to the same shape an empty-data patient produces — the
   // coach then answers from the system prompt without any rollup, the
-  // same behavior as a patient with no nights on file.
-  const orgId = explicitOrgId ?? (await resolveSeedOrgId());
+  // same behavior as a patient with no nights on file. Never invent seed.
+  const orgId = explicitOrgId?.trim();
   if (!orgId) {
     return {
       patient: { initials: "", dobYear: null },

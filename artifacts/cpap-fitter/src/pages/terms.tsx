@@ -118,9 +118,9 @@ export function Terms() {
               <BrandName /> will send you transactional SMS text messages
               relating to your account, your order, and your CPAP resupply
               schedule. By providing your mobile number and checking the contact
-              consent box at checkout you expressly consent to receive these
-              messages from <BrandName /> at the number provided, including via
-              automated systems.
+              consent box on your order or fit request you expressly consent to
+              receive these messages from <BrandName /> at the number provided,
+              including via automated systems.
             </p>
             <ul className="list-disc pl-5 mt-2 space-y-1">
               <li>

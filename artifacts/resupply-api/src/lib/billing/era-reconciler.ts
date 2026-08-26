@@ -42,7 +42,6 @@ import {
   type Database,
   getOrgScopedClient,
   type OrgScopedClient,
-  resolveSeedOrgId,
 } from "@workspace/resupply-db";
 import type {
   Adjustment,
@@ -93,9 +92,8 @@ export interface ReconcileEraOptions {
   fileName: string;
   /** Payer-supplied check / EFT number. */
   checkOrEftNumber: string | null;
-  /** Tenant whose claims this remittance posts against. Defaults to the
-   *  seed org (single-tenant bridge) when omitted. */
-  orgId?: string;
+  /** Tenant whose claims this remittance posts against. Required. */
+  orgId: string;
 }
 
 const TERMINAL_STATUSES: readonly ClaimRow["status"][] = ["closed"];
@@ -114,8 +112,8 @@ export async function reconcileEra(
   opts: ReconcileEraOptions,
 ): Promise<ReconciliationSummary> {
   // ERA posts against tenant-scoped claims; route every read/write through
-  // the org-scoped chokepoint, defaulting to the seed org.
-  const orgId = opts.orgId ?? (await resolveSeedOrgId());
+  // the org-scoped chokepoint. Never invent the seed org.
+  const orgId = opts.orgId?.trim();
   if (!orgId) {
     throw new Error("era-reconciler: no org resolved for remittance posting");
   }
@@ -537,7 +535,18 @@ function allowedTransition(
   // tolerate "submitted -> paid" because an OA round-trip can resolve
   // a claim before we observe the 277CA "accepted" intermediate.
   const VALID: Record<ClaimRow["status"], readonly ClaimRow["status"][]> = {
-    draft: ["submitted"],
+    draft: ["submitted", "submitting"],
+    // Crash mid-upload escape: release to draft, or accept clearinghouse
+    // outcomes that arrived while the claim was locked.
+    submitting: [
+      "draft",
+      "submitted",
+      "accepted",
+      "denied",
+      "rejected",
+      "paid",
+      "partially_paid",
+    ],
     submitted: ["accepted", "denied", "paid", "partially_paid", "rejected"],
     accepted: ["paid", "denied", "partially_paid"],
     denied: ["appealed", "closed"],

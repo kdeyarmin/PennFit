@@ -44,8 +44,9 @@ export function __clearProductScopeCacheForTests(): void {
  * `organizations.billing_required` flag (migration 0427) has NO effect until
  * an operator opts in with BILLING_PAYWALL_ENFORCED, so the column can be
  * shipped and backfilled safely before the wall goes live. The operator must
- * have platform Stripe billing configured before enabling it (the
- * `invoice.paid` webhook is what clears the flag); otherwise a flagged tenant
+ * have platform Stripe billing configured before enabling it (checkout /
+ * `invoice.paid` clear the flag; `invoice.payment_failed` and
+ * `customer.subscription.deleted` re-lock it); otherwise a flagged tenant
  * has no way to unlock.
  */
 function isPaywallEnforced(): boolean {

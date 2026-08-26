@@ -242,8 +242,8 @@ export function Consent() {
                 shipping, insurance, and prescription details you enter are
                 stored in <BrandName />
                 's secure database so our fulfillment team can ship your mask
-                and bill your insurance. You'll re-confirm this at checkout. See
-                our{" "}
+                and bill your insurance. You'll re-confirm this when you submit
+                an order or fit request. See our{" "}
                 <Link href="/privacy" className="underline hover:text-primary">
                   Privacy Policy
                 </Link>{" "}

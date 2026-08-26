@@ -232,6 +232,7 @@ export async function buildReceiver(
     const recipient = await resolveSmsRecipientForShopOrder({
       customerId: order.customerId,
       customerEmailFromOrder: order.customerEmail,
+      orgId,
     });
     phone = recipient?.phoneE164 ?? null;
   } catch {

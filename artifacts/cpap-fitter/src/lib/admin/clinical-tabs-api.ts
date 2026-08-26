@@ -283,9 +283,12 @@ export const faxPriorAuthRequestForm = (
 
 export type InsuranceClaimStatus =
   | "draft"
+  | "submitting"
   | "submitted"
   | "accepted"
   | "denied"
+  | "rejected"
+  | "partially_paid"
   | "paid"
   | "appealed"
   | "closed";

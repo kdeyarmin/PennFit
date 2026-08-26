@@ -17,6 +17,8 @@ const supabaseMock = installSupabaseMock();
 
 import { analyzeDenial } from "./ai-denial-analyzer";
 
+const ORG_ID = "00000000-0000-4000-8000-000000000001";
+
 const CLAIM_ID = "11111111-1111-4111-8111-111111111111";
 
 function stageDeniedClaimContext(): void {
@@ -89,7 +91,10 @@ describe("analyzeDenial", () => {
   });
 
   it("returns errored when OPENAI_API_KEY is missing", async () => {
-    const r = await analyzeDenial({ claimId: CLAIM_ID });
+    const r = await analyzeDenial({
+      orgId: ORG_ID,
+      claimId: CLAIM_ID,
+    });
     expect(r.recommendation).toBe("manual_review");
     expect(r.errorMessage).toMatch(/OPENAI_API_KEY/);
     expect(r.canAutoResubmit).toBe(false);
@@ -99,6 +104,7 @@ describe("analyzeDenial", () => {
     stageSupabaseResponse("insurance_claims", "select", { data: null });
     const fetchImpl = vi.fn();
     const r = await analyzeDenial({
+      orgId: ORG_ID,
       claimId: CLAIM_ID,
       apiKey: "sk-test",
       fetchImpl: fetchImpl as unknown as typeof fetch,
@@ -148,6 +154,7 @@ describe("analyzeDenial", () => {
       }),
     });
     const r = await analyzeDenial({
+      orgId: ORG_ID,
       claimId: CLAIM_ID,
       apiKey: "sk-test",
       fetchImpl: fetchImpl as unknown as typeof fetch,
@@ -189,6 +196,7 @@ describe("analyzeDenial", () => {
       }),
     });
     const r = await analyzeDenial({
+      orgId: ORG_ID,
       claimId: CLAIM_ID,
       apiKey: "sk-test",
       fetchImpl: fetchImpl as unknown as typeof fetch,
@@ -225,6 +233,7 @@ describe("analyzeDenial", () => {
       }),
     });
     const r = await analyzeDenial({
+      orgId: ORG_ID,
       claimId: CLAIM_ID,
       apiKey: "sk-test",
       fetchImpl: fetchImpl as unknown as typeof fetch,
@@ -268,6 +277,7 @@ describe("analyzeDenial", () => {
       }),
     });
     const r = await analyzeDenial({
+      orgId: ORG_ID,
       claimId: CLAIM_ID,
       apiKey: "sk-test",
       fetchImpl: fetchImpl as unknown as typeof fetch,

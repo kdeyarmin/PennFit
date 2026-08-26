@@ -97,16 +97,14 @@ are display-only and do NOT influence authorization.
 
 shows green/red dots per vendor)
 
-- [ ] `STRIPE_SECRET_KEY` + `STRIPE_WEBHOOK_SIGNING_SECRET` — cash-pay
-      shop checkout, refunds, subscription mirror. The webhook secret
-      env is `STRIPE_WEBHOOK_SIGNING_SECRET` (see
-      `artifacts/resupply-api/src/lib/stripe/config.ts:66`); the
-      `STRIPE_WEBHOOK_SECRET` name used by an older
-      `admin/system-integrations-status` field is a stale alias and
-      will be removed in a follow-up.
+- [ ] `STRIPE_PLATFORM_SECRET_KEY` (+ platform webhook) — tenant SaaS
+      billing only (`/admin/billing/package`). Patients are insurance-
+      only; there is no patient card checkout. Legacy
+      `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SIGNING_SECRET` names may
+      still appear in shared-mode envs (see
+      `artifacts/resupply-api/src/lib/stripe/config.ts`).
 - [ ] `SENDGRID_API_KEY` + `SENDGRID_FROM_EMAIL` + `SENDGRID_FROM_NAME` —
-      order receipts, reminder emails, cart-abandonment, review
-      requests.
+      reminders, password resets, review requests, operator digests.
 - [ ] `TWILIO_ACCOUNT_SID` + `TWILIO_AUTH_TOKEN` +
       `TWILIO_MESSAGING_SERVICE_SID` — outbound SMS.
 - [ ] `TWILIO_VOICE_PHONE_NUMBER` — outbound voice calls.

@@ -142,7 +142,7 @@ const CAPABILITIES: Capability[] = [
       "AI reasons over each patient's reorder window to choose the right message, channel and moment",
       "Escalates text → email → AI phone call; an unanswered call is retried before a human steps in",
       "One-tap signed reorder links — reply YES, tap, or just say yes; no login, no friction",
-      "Subscriptions, autopay and cart-abandonment recovery",
+      "Missed-confirmation recovery across text, email, and AI voice",
       "A device-driven “supplies due” worklist built from real machine data",
     ],
   },
@@ -155,7 +155,7 @@ const CAPABILITIES: Capability[] = [
       "AI-scrubbed 837P auto-submitted via Office Ally — or any clearinghouse",
       "835/ERA auto-posting and denials ranked by dollars recoverable × win odds",
       "Prior auth, A/R aging, timely-filing and capped-rental modifier rotation",
-      "Patient payment plans, card autopay and automated collections",
+      "Bill-hold until insurance clears; clear patient statements after ERA",
       "Payer profitability, collections forecast and patient statements",
     ],
     gold: true,
@@ -215,10 +215,10 @@ const CAPABILITIES: Capability[] = [
     title: "Branded storefront",
     summary: "A shop that converts shoppers into patients.",
     points: [
-      "Catalog, cart, Stripe checkout, subscriptions, returns and reviews",
-      "Live insurance benefit estimates before a patient ever pays",
-      "Your brand, your domain — patient accounts, tracking and POD photos",
-      "Cash-pay checkout straight from a fitting result, insurance path alongside it",
+      "Catalog and patient accounts on your brand and domain",
+      "Live insurance benefit estimates before supplies ship",
+      "Fitting results feed insurance requests — no retail checkout",
+      "Order tracking and POD photos under your storefront",
     ],
   },
   {
@@ -475,12 +475,12 @@ const ROLES: RoleBlock[] = [
       },
       {
         icon: <CircleDollarSign size={20} />,
-        title: "Patient payment plans & automated collections",
-        body: "The patient-pay half runs on the same automation as the insurance side: card autopay and installment plans on high balances, an aged-A/R worklist that duns on a schedule, and bill-hold that keeps a patient from being invoiced until their claim clears.",
+        title: "Bill-hold, A/R & clear patient statements",
+        body: "Patients are insurance-only — no storefront card capture. Bill-hold keeps a patient from being invoiced until their claim clears; aged A/R and statements run after the ERA so you only collect real responsibility.",
         impacts: [
           {
             kind: "revenue",
-            text: "Plans and autopay convert high balances that otherwise become write-offs.",
+            text: "Fewer write-offs from surprise balances that insurance already covered.",
           },
           {
             kind: "time",

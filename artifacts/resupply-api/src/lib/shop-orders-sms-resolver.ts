@@ -27,7 +27,6 @@ import {
   type CommunicationPreferences,
   type Json,
   getOrgScopedClient,
-  resolveSeedOrgId,
 } from "@workspace/resupply-db";
 
 import { shouldSendSms } from "./comm-prefs";
@@ -46,12 +45,11 @@ export interface ResolveSmsRecipientArgs {
   customerId: string | null;
   customerEmailFromOrder: string | null;
   /**
-   * Tenant the order belongs to. When provided, shop_customers + patients
+   * Tenant the order belongs to. Required — shop_customers + patients
    * are read in THIS org so a non-seed tenant's customer resolves correctly
-   * (and matches the tenant-scoped SMS sender). Omitted callers fall back to
-   * the seed org for backward compatibility.
+   * (and matches the tenant-scoped SMS sender). Never invents the seed org.
    */
-  orgId?: string | null;
+  orgId: string;
 }
 
 export interface SmsRecipient {
@@ -73,8 +71,7 @@ export interface SmsRecipient {
 export async function resolveSmsRecipientForShopOrder(
   args: ResolveSmsRecipientArgs,
 ): Promise<SmsRecipient | null> {
-  const orgId =
-    args.orgId && args.orgId.trim() ? args.orgId : await resolveSeedOrgId();
+  const orgId = args.orgId?.trim() ?? "";
   if (!orgId) {
     // Tenant context missing — no recipient resolvable. Same
     // "no SMS — skip silently" null return this function already uses.

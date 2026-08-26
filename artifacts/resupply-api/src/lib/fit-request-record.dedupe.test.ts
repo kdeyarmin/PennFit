@@ -94,6 +94,10 @@ const log = vi.hoisted(() => ({
 
 vi.mock("./logger", () => ({ logger: log }));
 
+vi.mock("./fitting/legacy-fit-session", () => ({
+  createLegacyFitSessionForRequest: vi.fn(async () => "legacy-session-id"),
+}));
+
 import {
   computeFitRequestDedupeHash,
   recordFitRequest,

@@ -32,11 +32,7 @@
 import type { Logger } from "pino";
 
 import { logAudit } from "@workspace/resupply-audit";
-import {
-  getOrgScopedClient,
-  resolveSeedOrgId,
-  type OrgScopedClient,
-} from "@workspace/resupply-db";
+import type { OrgScopedClient } from "@workspace/resupply-db";
 
 import { satisfyRequirement } from "../billing/bill-hold";
 import { tryDecodeTrackingBarcode } from "../inbound-fax/barcode-decode";
@@ -77,7 +73,13 @@ export interface AutoFileSignedFaxInput {
 }
 
 export interface AutoFileSignedFaxDeps {
-  supabase?: SupabaseClient;
+  /**
+   * Org-scoped client for the fax's tenant. Required for DB writes —
+   * callers must pass the same client used to insert the inbound_faxes
+   * row. There is no seed-org fallback (that would file chart docs /
+   * release holds under another tenant).
+   */
+  supabase: SupabaseClient;
   logger?: Logger;
   /** Deterministic decode fast-path; injectable for tests. */
   decode?: typeof tryDecodeTrackingBarcode;
@@ -186,30 +188,10 @@ async function resolveTrackingCode(
  */
 export async function autoFileSignedFax(
   input: AutoFileSignedFaxInput,
-  deps: AutoFileSignedFaxDeps = {},
+  deps: AutoFileSignedFaxDeps,
 ): Promise<AutoFileOutcome> {
   const log = deps.logger ?? defaultLogger;
-  let supabase = deps.supabase;
-  if (!supabase) {
-    const orgId = await resolveSeedOrgId();
-    if (!orgId) {
-      // No seed tenant resolvable — we can't touch the DB to record an
-      // outcome, so degrade to `offline` (the same status the scan path
-      // returns when the AI vision provider is unavailable). The fax
-      // stays in the triage queue exactly as a no-op would leave it.
-      log.warn(
-        { fax_id_first8: input.faxId.slice(0, 8) },
-        "fax_auto_file_tenant_context_missing",
-      );
-      return {
-        status: "offline",
-        trackingCode: null,
-        signatureTrackingId: null,
-        chartDocumentId: null,
-      };
-    }
-    supabase = getOrgScopedClient(orgId);
-  }
+  const supabase = deps.supabase;
   const decode = deps.decode ?? tryDecodeTrackingBarcode;
   const scan = deps.scan ?? scanFaxForTrackingCode;
 

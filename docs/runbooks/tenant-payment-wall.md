@@ -19,12 +19,36 @@ paying tenant out or let an unpaid one in, which this runbook catches.
 - The lock clears the moment payment lands: the Stripe **`checkout.session.completed`**
   webhook (hosted "Pay now") or **`invoice.paid`** (the invoiced net-15 path)
   sets `billing_required = false`.
+- **Re-lock on failed / canceled SaaS billing.** Platform webhook handlers set
+  `billing_required = true` again on **`invoice.payment_failed`** and
+  **`customer.subscription.deleted`** (still only when
+  `BILLING_PAYWALL_ENFORCED` is on). Operators should expect the console to
+  collapse back to billing + account security after a declined renewal or
+  canceled subscription.
 - **OFF by default.** Enforcement is gated by `BILLING_PAYWALL_ENFORCED`; with
   it unset the `billing_required` column has **no effect**. Existing tenants are
   grandfathered (the column defaults `false`, and migration 0362 already gave
   every existing org an active subscription).
 - **Fails OPEN.** Any error resolving the scope degrades to `full`, so a DB
   hiccup never locks a tenant out.
+
+## What the wall does NOT gate (by design)
+
+The payment wall is **admin-console only**. It must not block patient care or
+platform plumbing while a tenant sorts billing:
+
+| Surface                                                                | Why it stays open                                                                                                                                              |
+| ---------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Storefront `/api/*` (fitter, chat, company-info, CSR sign links, auth) | Patients and unsigned visitors must keep working; unpaid SaaS ≠ cut off therapy.                                                                               |
+| Auth mounts (storefront / staff / provider)                            | Locking sign-in would strand the admin who needs to pay.                                                                                                       |
+| Twilio / Telnyx / SendGrid webhooks and voice / SMS / fax inbound      | Carrier callbacks cannot wait on billing; they stay reachable.                                                                                                 |
+| In-process worker (reminders, PHI sweep, therapy sync, …)              | Jobs keep running; unpaid tenants are not silently silenced mid-cycle. Prefer product decisions later if specific non-critical jobs should skip `locked` orgs. |
+| Platform-admin / support surfaces                                      | Ops must still reach the tenant to help them pay or unblock.                                                                                                   |
+
+Allowlisted admin paths while `locked` live in `LOCKED_ALLOWED_PREFIXES` in
+`artifacts/resupply-api/src/lib/product-scope.ts` (billing package / plans /
+subscription / checkout / addons / preview / usage-events, MFA, agreements,
+inbox-counts chrome). Do **not** broaden that list to operational PHI routes.
 
 ## 0. Preconditions
 
@@ -34,8 +58,8 @@ paying tenant out or let an unpaid one in, which this runbook catches.
   `invoice.paid` / `checkout.session.completed` webhook there is nothing to
   clear the gate, so a flagged tenant would be locked with no way out.
 - The Stripe **webhook** endpoint is receiving events (`checkout.session.completed`,
-  `invoice.paid`, `customer.subscription.*`) — same endpoint platform billing
-  already uses (`handlePlatformTenantStripeEvent`).
+  `invoice.paid`, `invoice.payment_failed`, `customer.subscription.*`) — same
+  endpoint platform billing already uses (`handlePlatformTenantStripeEvent`).
 - Migrations through **0427** applied (`RUN_DB_MIGRATIONS=true` on deploy, or
   run `migrate.mjs`).
 - A **throwaway test tenant** you can create via the public sign-up (you do NOT
@@ -90,6 +114,22 @@ Check the logs for the unlock signal:
 ```
 event=platform_billing_paywall_cleared   org_id=<org>   via=checkout   # or invoice.paid
 ```
+
+## 3b. Confirm re-lock (test mode)
+
+After unlock, force a decline or cancel in the Stripe Dashboard for that
+subscription (or send a test `invoice.payment_failed` /
+`customer.subscription.deleted` with `metadata.billing_scope = platform_tenant`
+
+- `org_id`). Expect:
+
+```
+event=platform_billing_paywall_*   billing_required set   via=invoice.payment_failed
+# or via=subscription.deleted
+```
+
+Refresh `/admin`: the locked banner returns until they pay again (or you
+manually clear `billing_required`).
 
 ## 4. Enable in production
 

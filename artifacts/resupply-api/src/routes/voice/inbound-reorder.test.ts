@@ -49,6 +49,21 @@ import {
 
 const supabaseMock = installSupabaseMock();
 
+// Isolate tenant routing from these route tests — otherwise the shared-
+// number patient-phone lookup consumes the staged patients SELECT and
+// the identifyCaller assertions flake. Called-number → fixed seed org.
+vi.mock("../../lib/messaging/tenant-telecom", async () => {
+  const actual = await vi.importActual<
+    typeof import("../../lib/messaging/tenant-telecom")
+  >("../../lib/messaging/tenant-telecom");
+  return {
+    ...actual,
+    resolveOrgIdByCalledNumber: async () =>
+      "00000000-0000-4000-8000-000000000000",
+    resolveOrgIdByPatientPhone: async () => null,
+  };
+});
+
 // ── Logger mock ───────────────────────────────────────────────────────────────
 const { loggerMock } = vi.hoisted(() => ({
   loggerMock: { error: vi.fn(), warn: vi.fn(), info: vi.fn() },

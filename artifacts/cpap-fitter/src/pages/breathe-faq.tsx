@@ -254,7 +254,7 @@ const FAQ_GROUPS: FaqGroup[] = [
       },
       {
         q: "Can it take patient payments too?",
-        a: "Yes. The branded storefront uses Stripe for checkout, subscriptions, and autopay, and you can show patients a live benefit estimate of their out-of-pocket cost before they ever pay.",
+        a: "No — patients are insurance-only. Supplies move through eligibility, signature/confirmation, claim, and ERA. Stripe on the platform is only for tenant SaaS billing (your CareMetric Breathe subscription), not patient cards. You can still show benefit estimates so patients understand coverage before confirming a resupply.",
       },
     ],
   },

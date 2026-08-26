@@ -103,16 +103,21 @@ self-serve from the admin console. The **Set up your workspace** checklist
 (`/admin/setup`, served by `GET /admin/organization/setup-checklist`) shows
 each step's live status and links to its page:
 
-| Step                 | Page (nav: Settings → …)                              | Backed by                                                                     |
-| -------------------- | ----------------------------------------------------- | ----------------------------------------------------------------------------- |
-| Storefront name/logo | Storefront branding                                   | `organizations.storefront_name` / `logo_url`                                  |
-| Custom domain        | Storefront branding                                   | `custom_domain*` (see [`tenant-custom-domain.md`](./tenant-custom-domain.md)) |
-| Phone & SMS numbers  | Phone & SMS                                           | `voice_from_number` / `sms_from_number` / `twilio_messaging_service_sid`      |
-| Fax number           | Fax number                                            | `fax_from_number` (see **Fax number** above)                                  |
-| Email From address   | Email From address                                    | `from_email` / `from_name` (+ live SendGrid domain-auth check)                |
-| Payments             | Billing → Config → Organization (Stripe Connect card) | `stripe_account_id` / `stripe_charges_enabled`                                |
-| Catalog              | Shop → Inventory                                      | products (Stripe-sourced)                                                     |
-| Team                 | Team                                                  | `admin_users` invites                                                         |
+| Step                 | Page (nav: Settings → …)           | Backed by                                                                     |
+| -------------------- | ---------------------------------- | ----------------------------------------------------------------------------- |
+| Storefront name/logo | Storefront branding                | `organizations.storefront_name` / `logo_url`                                  |
+| Custom domain        | Storefront branding                | `custom_domain*` (see [`tenant-custom-domain.md`](./tenant-custom-domain.md)) |
+| Phone & SMS numbers  | Phone & SMS                        | `voice_from_number` / `sms_from_number` / `twilio_messaging_service_sid`      |
+| Fax number           | Fax number                         | `fax_from_number` (see **Fax number** above)                                  |
+| Email From address   | Email From address                 | `from_email` / `from_name` (+ live SendGrid domain-auth check)                |
+| Patients             | PacWare import (or organic intake) | `patients`                                                                    |
+| Team                 | Team                               | `admin_users` invites                                                         |
+
+There is **no patient card checkout** step. Stripe on the platform is
+**tenant SaaS billing** only (`/admin/billing/package` — see
+[`tenant-payment-wall.md`](./tenant-payment-wall.md)). The product catalog
+for insurance fulfillments lives in Postgres (`resupply.products`), not a
+tenant Stripe Products list.
 
 **Phone & SMS** (`/admin/phone-settings`) mirrors the fax flow but on
 **Twilio**: a tenant can auto-buy a voice+SMS-capable number by area code
@@ -132,30 +137,13 @@ name alone is ignored — only a From address switches a tenant off the
 platform default (`resolveTenantSender`). Deliverability still requires the
 sending **domain** to be authenticated (SPF/DKIM) in SendGrid out of band.
 
-> **Product catalog (per-tenant).** Stripe Connect runs in _direct-charges_
-> mode, so a connected tenant's storefront catalog is read from — and
-> checkout routes to — **their own** connected Stripe account
-> (`GET /shop/products`, cart validation, and reorder suggestions all pass
-> the tenant's `{ stripeAccount }`; the catalog cache is keyed per account so
-> one tenant's catalog never serves on another's storefront). A brand-new
-> tenant therefore starts empty. **Shop → Inventory → "Load starter
-> catalog"** (`POST /admin/shop/catalog/seed`, gated by `admin.tools.manage`)
-> one-clicks a tenant-neutral ~27-item CPAP-supply catalog into the tenant's
-> own account so the storefront isn't empty; it is **idempotent** (re-running
-> only updates existing SKUs by `metadata.shop_sku`). The tenant then edits
-> names/prices from the same page. A non-seed tenant must connect Stripe
-> first (the seed refuses to write to the shared platform account →
-> `409 connect_stripe_first`); the seed tenant (Penn Home Medical Supply)
-> keeps its own branded catalog via `scripts/src/seed-stripe-products.ts`.
-> The checklist's **catalog** item flips to complete once the tenant has
-> products of their own.
->
-> Admin **counter orders** (`/admin/shop/counter-orders`, the CSR Front
-> Desk) are Connect-aware too: they validate + re-price against the tenant's
-> connected account (the same `{ stripeAccount }` the storefront uses). No
-> Stripe charge is created at the counter — the lanes are **cash** (collected
-> in person) and **insurance** (filed through the existing claims pipeline) —
-> so only the catalog reads needed per-tenant scoping.
+> **Product catalog (insurance).** SKUs live in Postgres
+> (`resupply.products`, migration **0520**). Stock moves only through
+> `adjustStock()` / `resupply.adjust_product_stock` — never a direct
+> `UPDATE products.stock_count`. Patients never check out with a card;
+> CSR signature orders and the resupply engine queue insurance fulfillments.
+> Historical `shop_*` tables may still hold analytics rows and take no new
+> retail writes.
 
 ## Feature-flag presets
 

@@ -28,7 +28,7 @@ import "./breathe.css";
  * Pulls the money story — currently split across sections on the homepage and
  * product tour — into one definitive page: eligibility → AI claim scrub →
  * 837P submission → 835/ERA posting → ranked denials → prior auth → the
- * patient-pay half (payment plans, autopay, collections, A/R) → payer
+ * post-ERA statements (bill-hold, collections, A/R) → payer
  * intelligence (fee schedules, profitability, timely filing). Every capability
  * maps to shipped admin routes (eligibility-checks, billing-batch, denials/
  * appeals, prior-auth-queue, payment-plans, collections-worklist,
@@ -255,7 +255,7 @@ function Insurance() {
   );
 }
 
-/* ── The patient-pay half ── */
+/* ── After insurance posts ── */
 const PATIENT_PAY: {
   icon: React.ReactNode;
   metric: string;
@@ -266,18 +266,18 @@ const PATIENT_PAY: {
 }[] = [
   {
     icon: <Wallet size={22} />,
-    metric: "Plans",
-    metricSub: "& autopay",
-    title: "Payment plans that pay you on schedule",
+    metric: "ERA",
+    metricSub: "then statement",
+    title: "Bill only real patient responsibility",
     gold: true,
-    body: "High-ticket balances convert when patients can split them. Stored-card autopay charges each installment on time and retries a failed charge — no manual dunning, no write-offs you never see coming.",
+    body: "Patients are insurance-only — no card capture on the storefront. After the 835/ERA posts, statements show what insurance paid and what (if anything) remains, without a retail checkout path.",
   },
   {
     icon: <CreditCard size={22} />,
     metric: "A/R ↓",
     metricSub: "aged & worked",
     title: "Collections that run themselves",
-    body: "An aged-A/R worklist drives escalating, on-brand SMS and email on a schedule, offers a plan past a threshold, and flags the accounts worth handing to an agency — so receivables stop sitting at 60 and 90 days.",
+    body: "An aged-A/R worklist drives escalating, on-brand SMS and email on a schedule and flags the accounts worth handing to an agency — so receivables stop sitting at 60 and 90 days.",
   },
   {
     icon: <ScrollText size={22} />,
@@ -291,7 +291,7 @@ const PATIENT_PAY: {
     metric: "Statements",
     metricSub: "clear & paid",
     title: "Statements patients understand",
-    body: "Each statement shows the service, what insurance paid, and what's owed — emailed and downloadable from the patient portal, with a one-tap link to pay or start a plan.",
+    body: "Each statement shows the service, what insurance paid, and what's owed — emailed and downloadable from the patient portal, with a clear path to talk to your team.",
   },
 ];
 
@@ -304,14 +304,13 @@ function PatientPay() {
             <Wallet size={13} /> The other half of revenue
           </span>
           <h2 className="bx-h2">
-            Patient-pay is half your money — <em>collect it too</em>
+            After insurance posts — <em>clear statements</em>
           </h2>
           <p className="bx-lede">
-            Most DME software stops at the insurance claim and leaves patient
-            balances to a spreadsheet and a phone call. Breathe runs the
-            patient-pay side with the same automation: plans, autopay,
-            collections, and clear statements — so the cash you&apos;ve earned
-            actually lands.
+            Patients are insurance-only: no storefront card capture. Breathe
+            holds balances until the claim clears, ages A/R, and sends
+            statements that show what insurance paid — so patients only see real
+            responsibility.
           </p>
         </div>
         <div className="bx-pillars">
@@ -413,7 +412,7 @@ function Payer() {
 export function BreatheRevenueCycle() {
   useDocumentTitle(
     "Get paid — the Breathe revenue cycle by CareMetric.ai",
-    "Breathe runs the whole DME revenue cycle on one record: instant eligibility, AI-scrubbed 837P claims, 835/ERA auto-posting, ranked denials, electronic prior auth, plus the patient-pay half — payment plans, autopay, collections, and payer profitability.",
+    "Breathe runs the whole DME revenue cycle on one record: instant eligibility, AI-scrubbed 837P claims, 835/ERA auto-posting, ranked denials, electronic prior auth, bill-hold, clear statements, and payer profitability.",
     { schema: "Article" },
   );
   return (
@@ -427,7 +426,7 @@ export function BreatheRevenueCycle() {
             <span className="grad-em">actually collected.</span>
           </>
         }
-        sub="Instant eligibility, AI-scrubbed claims, auto-posted ERAs, and ranked denials — plus the patient-pay half most software ignores: plans, autopay, and collections. The whole revenue cycle on one patient record."
+        sub="Instant eligibility, AI-scrubbed claims, auto-posted ERAs, and ranked denials — plus bill-hold and clear statements after insurance posts. The whole revenue cycle on one patient record."
       />
       <Lifecycle />
       <ClaimsEngine />

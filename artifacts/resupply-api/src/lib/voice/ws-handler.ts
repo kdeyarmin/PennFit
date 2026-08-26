@@ -187,13 +187,11 @@ export async function handleVoiceWsConnection(
   pending: PendingSessionEntry,
 ): Promise<void> {
   const config = readVoiceConfigOrThrow();
-  // Voice WS has no auth tenant context — prefer the tenant the
-  // registering route (place-call / inbound-reorder) stamped on the
-  // pending session so the bridge persists + sends under the RIGHT
-  // tenant (G7). Fall back to the seed org for legacy/diagnostic entries
-  // that carry no orgId (single-tenant-correct). If neither resolves the
-  // call can't persist anything, so close cleanly rather than run unscoped.
-  const orgId = pending.orgId ?? (await resolveSeedOrgId());
+  // Voice WS has no auth tenant context — the registering route
+  // (place-call / inbound-reorder) MUST stamp pending.orgId so the
+  // bridge persists + sends under the RIGHT tenant (G7). Never invent
+  // the seed org: a missing stamp would mis-file PHI under the seed.
+  const orgId = pending.orgId;
   if (!orgId) {
     logger.error(
       { event: "voice_ws_no_tenant" },
@@ -1375,11 +1373,26 @@ export async function handleBreatheSalesWsConnection(
   };
 
   // Real sales dispatcher: no patient/episode/customer, no conversations row.
-  // It resolves the seed org itself for its platform-global writes
-  // (sales_leads) and super-admin notifications.
+  // sales_leads + super-admin notifications are PLATFORM-global — stamp the
+  // seed/platform org explicitly here (not inside tools-impl). Patient voice
+  // must never invent seed; this path is the one intentional exception.
+  const platformOrgId = await resolveSeedOrgId();
+  if (!platformOrgId) {
+    logger.error(
+      { event: "voice_breathe_sales_no_platform_org" },
+      "voice sales: platform org unavailable; closing connection",
+    );
+    try {
+      ws.close();
+    } catch {
+      /* already closed */
+    }
+    return;
+  }
   const dispatcher = createVoiceToolDispatcher({
     callerKind: "breathe_prospect",
     conversationId: pending.conversationId,
+    orgId: platformOrgId,
     ...(pending.twilioCallSid ? { twilioCallSid: pending.twilioCallSid } : {}),
   });
 
@@ -1585,7 +1598,7 @@ async function persistTranscript(
     body: turn.text,
     direction,
     messageAt: sentAt,
-    // Voice WS (no auth tenant context): seed-org bridge.
+    // Voice WS: tenant comes from the org-scoped client on the session.
     orgId: supabase.orgId,
   });
 }
@@ -1695,15 +1708,14 @@ async function writeDeepgramAuditTranscript(
   conversationId: string,
   twilioCallSid: string | null,
   deepgramTurns: ReadonlyArray<string>,
-  // The call's tenant (pending.orgId). Falls back to the seed org only
-  // when the session carries no org — never overrides a known tenant,
-  // which previously mis-tagged non-seed transcripts to the seed org.
+  // The call's tenant (pending.orgId). Required — never invent the seed
+  // org, which previously mis-tagged non-seed transcripts.
   orgIdInput: string | undefined,
 ): Promise<void> {
   const fullTranscript = deepgramTurns.join(" ");
   let transcriptMessageId: string | null = null;
   try {
-    const orgId = orgIdInput ?? (await resolveSeedOrgId());
+    const orgId = orgIdInput?.trim();
     if (!orgId) throw new Error("tenant context missing");
     const supabase = getOrgScopedClient(orgId);
     const { data: inserted, error } = await supabase
@@ -1893,7 +1905,7 @@ async function persistSummaryMessage(
     lines.push("Human follow-up recommended.");
   }
   try {
-    const orgId = input.orgId ?? (await resolveSeedOrgId());
+    const orgId = input.orgId?.trim();
     if (!orgId) throw new Error("tenant context missing");
     const supabase = getOrgScopedClient(orgId);
     const { error } = await supabase.from("messages").insert({

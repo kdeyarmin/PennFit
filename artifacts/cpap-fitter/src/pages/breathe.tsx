@@ -2428,7 +2428,7 @@ const DEEP_DIVES: {
     href: "/breathe/get-paid",
     gold: true,
     blurb:
-      "Eligibility to ERA in one flow: claim scrubbing, auto-posting, ranked denials, patient-pay plans, and payer profitability.",
+      "Eligibility to ERA in one flow: claim scrubbing, auto-posting, ranked denials, bill-hold, and payer profitability.",
   },
   {
     title: "AI voice agent",
@@ -2731,7 +2731,7 @@ function RevenueRecovery() {
         </div>
         <p className="bx-stats-note bx-reveal">
           Plus secondary &amp; COB rollover, capped-rental tracking, A/R aging,
-          timely-filing alerts, patient payment plans &amp; collections, and
+          timely-filing alerts, bill-hold &amp; clear statements, and
           payer-profitability — the full revenue cycle on one record.{" "}
           <Link href="/breathe/get-paid">See how you get paid →</Link>
         </p>
@@ -3488,7 +3488,7 @@ const FEATURES: Feature[] = [
   {
     icon: <Store size={22} />,
     title: "Branded Storefront & Shop",
-    body: "Your own CPAP storefront with catalog, cart, Stripe checkout, subscriptions, returns, and reviews — plus live insurance benefit estimates before a patient pays.",
+    body: "Your own branded CPAP storefront with mask fitting, fit requests, signature orders, and insurance benefit estimates — patients confirm resupply; nothing is charged on a patient card.",
   },
   {
     icon: <Workflow size={22} />,
@@ -4066,7 +4066,7 @@ const CAPABILITIES: Capability[] = [
     points: [
       "Eligibility-aware reminders by SMS, email & voice",
       "One-tap signed reorder links — no login, no friction",
-      "Subscriptions, autopay & cart-abandonment recovery",
+      "Missed-confirmation recovery across text, email, and AI voice",
     ],
   },
   {
@@ -4130,9 +4130,9 @@ const CAPABILITIES: Capability[] = [
     title: "Storefront & shop",
     summary: "A branded shop that converts shoppers to patients.",
     points: [
-      "Catalog, cart, Stripe checkout, returns & reviews",
-      "Subscriptions, autopay & cart-abandonment recovery",
-      "Live insurance benefit estimates before checkout",
+      "Mask fitter, fit requests, signature orders & reviews",
+      "Missed-confirmation recovery across text, email, and AI voice",
+      "Live insurance benefit estimates before they confirm",
     ],
   },
   {
@@ -4467,7 +4467,7 @@ const COMPARE_ROWS: CompareRow[] = [
   },
   {
     label: "Built-in branded storefront & shop",
-    sub: "catalog · cart · checkout",
+    sub: "fitter · signature orders · insurance",
     breathe: "yes",
     cols: ["partial", "partial", "no"],
   },
@@ -5172,8 +5172,8 @@ const PLANS: {
       "5 staff seats · 500 active patients · 1 location",
       "Branded CPAP storefront + mask fitter",
       "Virtual mask fitter — 25 fittings/mo, then $2 each",
-      "Shop, cart, checkout, and order tracking",
-      "Resupply reminders + subscription tracking",
+      "Branded storefront, mask fitter, and insurance order tracking",
+      "Resupply reminders + confirmation tracking",
     ],
   },
   {

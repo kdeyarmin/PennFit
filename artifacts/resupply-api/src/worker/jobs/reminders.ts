@@ -77,7 +77,6 @@ import {
   type Database,
   type OrgScopedClient,
   getOrgScopedClient,
-  resolveSeedOrgId,
 } from "@workspace/resupply-db";
 import { DEFAULT_SENDGRID_FROM_EMAIL } from "@workspace/resupply-email";
 import {
@@ -89,6 +88,7 @@ import {
 import { hasLinkHmacKey } from "@workspace/resupply-secrets";
 
 import { getCompanyInfo } from "../../lib/company-info.js";
+import { markEpisodeAwaitingResponse } from "../../lib/episodes/mark-awaiting-response.js";
 import { logger } from "../../lib/logger.js";
 import { applyTenantEmailSender } from "../../lib/email/apply-tenant-email-sender.js";
 import { applyTenantSmsFrom } from "../../lib/messaging/tenant-telecom.js";
@@ -601,17 +601,25 @@ export async function scanForDueReminders(
     for (const row of data ?? []) patientById.set(row.id, row);
   }
 
-  // Step 4: lastFulfilledAt is MAX(shipped_at) per (patient, item_sku).
-  // PostgREST has no GROUP BY, so we fetch all fulfillment shipped
-  // rows for the patients of interest and reduce in JS. Chunk the
-  // `patient_id` IN list AND page within each chunk — fulfillments
-  // accumulate one row per shipment over ALL time, so 200 patients can
-  // own far more than the ~1000-row PostgREST cap. An unpaginated
-  // select silently truncated there: when a patient's LATEST shipment
-  // fell off the page, the reducer kept an older shipped_at (or fell
-  // back to prescription.created_at) and the cadence check fired a
-  // reminder before the patient was actually due. Same cap-truncation
-  // class as the Step-2/Step-5 comments above.
+  // Step 4: lastFulfilledAt is MAX(COALESCE(shipped_at, created_at)) per
+  // (patient, item_sku) for non-cancelled fulfillments. Resupply confirm
+  // inserts `status='queued'` and never stamps `shipped_at` (PacWare
+  // ships out of band); entitlement already baselines on `created_at`.
+  // Requiring `shipped_at` alone made every insurance dispense invisible
+  // to cadence math, so the scan fell back to prescription.created_at
+  // and re-pinged patients who had just confirmed. Prefer carrier
+  // `shipped_at` when present; otherwise use queue time.
+  //
+  // PostgREST has no GROUP BY, so we fetch fulfillment rows for the
+  // patients of interest and reduce in JS. Chunk the `patient_id` IN
+  // list AND page within each chunk — fulfillments accumulate one row
+  // per dispense over ALL time, so 200 patients can own far more than
+  // the ~1000-row PostgREST cap. An unpaginated select silently
+  // truncated there: when a patient's LATEST dispense fell off the
+  // page, the reducer kept an older baseline (or fell back to
+  // prescription.created_at) and the cadence check fired a reminder
+  // before the patient was actually due. Same cap-truncation class as
+  // the Step-2/Step-5 comments above.
   const lastFulfilledByKey = new Map<string, string>();
   const activePatientIds = Array.from(patientById.keys());
   for (let i = 0; i < activePatientIds.length; i += 200) {
@@ -619,19 +627,20 @@ export async function scanForDueReminders(
     for (let from = 0; ; from += PAGE_SIZE) {
       const { data, error } = await supabase
         .from("fulfillments")
-        .select("id, patient_id, item_sku, shipped_at")
+        .select("id, patient_id, item_sku, shipped_at, created_at, status")
         .in("patient_id", batch)
-        .not("shipped_at", "is", null)
+        .neq("status", "cancelled")
         .order("id", { ascending: true })
         .range(from, from + PAGE_SIZE - 1);
       if (error) throw error;
       if (!data || data.length === 0) break;
       for (const row of data) {
-        if (!row.shipped_at) continue;
+        const at = row.shipped_at ?? row.created_at;
+        if (!at) continue;
         const key = `${row.patient_id}\x00${row.item_sku}`;
         const prev = lastFulfilledByKey.get(key);
-        if (!prev || row.shipped_at > prev) {
-          lastFulfilledByKey.set(key, row.shipped_at);
+        if (!prev || at > prev) {
+          lastFulfilledByKey.set(key, at);
         }
       }
       if (data.length < PAGE_SIZE) break;
@@ -969,15 +978,14 @@ export async function registerReminderJobs(boss: PgBoss): Promise<void> {
       );
       return;
     }
-    // Prefer the tenant stamped by the per-tenant scan fan-out; fall back
-    // to the seed org for jobs enqueued before the fan-out deploy. Treat an
-    // empty/whitespace payload orgId as absent (a blank id would otherwise
-    // throw in getOrgScopedClient instead of using the seed fallback).
-    const orgId = j.data.orgId?.trim() || (await resolveSeedOrgId());
+    // Prefer the tenant stamped by the per-tenant scan fan-out. Jobs without
+    // a real orgId are skipped (never seed-fallback) so a stale/malformed
+    // payload cannot text a patient under the wrong tenant.
+    const orgId = j.data.orgId?.trim() || null;
     if (!orgId) {
       logger.warn(
         { job_id: j.id },
-        "reminders.send-sms: no org resolved — skipping",
+        "reminders.send-sms: missing orgId — skipping",
       );
       return;
     }
@@ -1088,6 +1096,7 @@ export async function registerReminderJobs(boss: PgBoss): Promise<void> {
         channel: "sms",
         source: "reminders.sms",
       });
+      await markEpisodeAwaitingResponse(supabase, j.data.episodeId);
     }
   });
 
@@ -1102,15 +1111,14 @@ export async function registerReminderJobs(boss: PgBoss): Promise<void> {
       );
       return;
     }
-    // Prefer the tenant stamped by the per-tenant scan fan-out; fall back
-    // to the seed org for jobs enqueued before the fan-out deploy. Treat an
-    // empty/whitespace payload orgId as absent (a blank id would otherwise
-    // throw in getOrgScopedClient instead of using the seed fallback).
-    const orgId = j.data.orgId?.trim() || (await resolveSeedOrgId());
+    // Prefer the tenant stamped by the per-tenant scan fan-out. Jobs without
+    // a real orgId are skipped (never seed-fallback) so a stale/malformed
+    // payload cannot email a patient under the wrong tenant.
+    const orgId = j.data.orgId?.trim() || null;
     if (!orgId) {
       logger.warn(
         { job_id: j.id },
-        "reminders.send-email: no org resolved — skipping",
+        "reminders.send-email: missing orgId — skipping",
       );
       return;
     }
@@ -1184,6 +1192,7 @@ export async function registerReminderJobs(boss: PgBoss): Promise<void> {
         channel: "email",
         source: "reminders.email",
       });
+      await markEpisodeAwaitingResponse(supabase, j.data.episodeId);
     }
   });
 

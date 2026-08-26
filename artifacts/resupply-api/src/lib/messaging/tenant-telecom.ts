@@ -274,10 +274,10 @@ export async function resolveTenantFaxFrom(
 
 /**
  * Reverse lookup for an inbound FAX webhook: the `org_id` that owns the
- * called fax number, or `null` when no tenant is bound to it (caller falls
- * back to the seed org). The unique partial index on `fax_from_number`
- * guarantees at most one match. Fails soft to `null` so a DB blip never
- * misroutes an inbound fax — it just lands in the seed tenant's queue.
+ * called fax number, or `null` when no tenant is bound to it. The unique
+ * partial index on `fax_from_number` guarantees at most one match. Fails
+ * soft to `null` on a DB blip so the caller can refuse the write (ingest
+ * fail-closes — it must not park PHI in another tenant's inbox).
  */
 export async function resolveOrgIdByFaxNumber(
   toNumber: string | undefined,
@@ -341,7 +341,10 @@ const byPatientPhone = new Map<string, CacheEntry<string | null>>();
 export async function resolveOrgIdByPatientPhone(
   fromNumber: string | undefined,
 ): Promise<string | null> {
-  const number = fromNumber?.trim();
+  // Same normalize-before-lookup posture as resolveOrgIdByCalledNumber /
+  // SMS inbound: bare NANP / 11-digit forms must become +1… before the
+  // phone_e164 equality, and non-E.164 input must not reach PostgREST.
+  const number = normalizeE164(fromNumber);
   if (!number) return null;
   const now = Date.now();
   const cached = byPatientPhone.get(number);
