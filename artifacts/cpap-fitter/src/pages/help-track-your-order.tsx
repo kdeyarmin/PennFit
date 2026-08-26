@@ -37,8 +37,11 @@ const steps: HelpStep[] = [
     substeps: [
       <>
         Type your <strong>order reference number</strong> — it looks like{" "}
-        <code className="text-xs bg-muted px-1 py-0.5 rounded">PENN-AB1234</code>{" "}
-        (or a legacy <code className="text-xs bg-muted px-1 py-0.5 rounded">PHM-…</code>{" "}
+        <code className="text-xs bg-muted px-1 py-0.5 rounded">
+          PENN-AB1234
+        </code>{" "}
+        (or a legacy{" "}
+        <code className="text-xs bg-muted px-1 py-0.5 rounded">PHM-…</code>{" "}
         reference) and is on your confirmation screen and email.
       </>,
       <>

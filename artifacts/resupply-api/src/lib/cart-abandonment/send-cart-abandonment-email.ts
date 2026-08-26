@@ -17,11 +17,11 @@
 //     leak. The subject line mentions item count only.
 //
 // Template:
-//   - Subject:   "You left {N} items in your {brand} cart"
+//   - Subject:   "You started an order at {brand} — let's finish through insurance"
 //   - HTML body: brand banner, item list (qty × name @ unit price),
 //                subtotal, primary CTA "Contact us to finish" linking
 //                to /contact (cash-pay cart is retired), footer
-//                explaining the one-nudge-per-cart policy.
+//                explaining the one-nudge-per-incomplete-order policy.
 
 import {
   BREATHE_COLORS,

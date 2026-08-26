@@ -385,11 +385,10 @@ export function HowItWorks() {
               </h3>
               <p className="text-sm text-muted-foreground leading-relaxed">
                 Our online fitter and insurance ordering are convenient, but
-                they're not a
-                substitute for clinical advice. If you have severe pressure
-                sores, an open facial wound, a recent facial injury, or you're a
-                pediatric patient, please contact our team directly so a
-                respiratory therapist can fit you in person.
+                they're not a substitute for clinical advice. If you have severe
+                pressure sores, an open facial wound, a recent facial injury, or
+                you're a pediatric patient, please contact our team directly so
+                a respiratory therapist can fit you in person.
               </p>
             </div>
           </CardContent>
