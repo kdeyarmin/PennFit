@@ -31,6 +31,7 @@ import {
   resolveAssignableStaff,
 } from "../../lib/calendar/assignable-staff";
 import { logger } from "../../lib/logger";
+import { resolveTenantBaseUrl } from "../../lib/tenant-branding";
 import {
   adminRateLimit,
   adminReadRateLimiter,
@@ -109,8 +110,11 @@ const listQuery = z.object({
 const DAY_MS = 86_400_000;
 
 /** Absolute URL to the company calendar for the notification email. */
-function calendarDashboardUrl(): string {
-  return `${getAuthDeps().publicBaseUrl}/admin/company-calendar`;
+async function calendarDashboardUrl(orgId: string): Promise<string> {
+  const base = (
+    (await resolveTenantBaseUrl(orgId)) ?? getAuthDeps().publicBaseUrl
+  ).replace(/\/$/, "");
+  return `${base}/admin/company-calendar`;
 }
 
 /** Fire-and-forget the assignment email; never throws into the request. */
@@ -123,17 +127,20 @@ function fireAssignmentEmail(args: {
   assignedByEmail: string | null;
   orgId: string;
 }): void {
-  void sendAppointmentAssignedEmail({
-    toEmail: args.assignee.email,
-    assigneeName: args.assignee.displayName,
-    startsAt: args.startsAt,
-    endsAt: args.endsAt,
-    eventType: args.eventType,
-    location: args.location,
-    assignedByEmail: args.assignedByEmail,
-    dashboardUrl: calendarDashboardUrl(),
-    orgId: args.orgId,
-  })
+  void (async () => {
+    const dashboardUrl = await calendarDashboardUrl(args.orgId);
+    return sendAppointmentAssignedEmail({
+      toEmail: args.assignee.email,
+      assigneeName: args.assignee.displayName,
+      startsAt: args.startsAt,
+      endsAt: args.endsAt,
+      eventType: args.eventType,
+      location: args.location,
+      assignedByEmail: args.assignedByEmail,
+      dashboardUrl,
+      orgId: args.orgId,
+    });
+  })()
     .then((r) => {
       if (!r.delivered) {
         // Metadata only — no patient data, no recipient address in the log.

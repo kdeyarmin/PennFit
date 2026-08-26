@@ -220,10 +220,9 @@ export async function sendShippingNotificationIfNew(args: {
         const counts = await sendPushToCustomer(orgId, claimedRow.customer_id, {
           title: `Your ${pushBrand.storefrontName} order shipped`,
           body: `${claimedRow.tracking_carrier} · ${claimedRow.tracking_number}`,
-          // Match the email CTA: public order tracking (no auth wall).
-          // /account is gated and used to bounce unsigned-in patients to
-          // sign-in before they could look up the shipment.
-          url: "/track-order",
+          // Cash-pay shop orders are not trackable via /track-order
+          // (PENN/PHM only). Point push at contact, matching the email CTA.
+          url: "/contact",
           tag: `shop_order_shipped:${claimedRow.id}`,
         });
         if (counts.delivered + counts.expired + counts.transient > 0) {

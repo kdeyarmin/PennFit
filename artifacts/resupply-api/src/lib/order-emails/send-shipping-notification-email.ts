@@ -183,7 +183,7 @@ export async function sendShippingNotificationEmail(
       (await resolveTenantBaseUrl(input.orgId)) ??
       undefined,
   );
-  const orderUrl = `${base}/track-order`;
+  const orderUrl = `${base}/contact`;
   const trackingUrl = getCarrierTrackingUrl(carrier, trackingNumber);
 
   // ---------- text body ----------
@@ -204,7 +204,7 @@ export async function sendShippingNotificationEmail(
     }
     textLines.push("");
   }
-  textLines.push(`View your order: ${orderUrl}`);
+  textLines.push(`Questions about your order? ${orderUrl}`);
   textLines.push("");
   textLines.push(
     "If anything looks off (wrong address, wrong items), reply to this " +
@@ -246,11 +246,11 @@ export async function sendShippingNotificationEmail(
       .join("\n"),
     button: trackingUrl
       ? { label: "Track package", url: trackingUrl }
-      : { label: "View order", url: orderUrl },
+      : { label: "Contact us", url: orderUrl },
     // Secondary action belongs BELOW the CTA, so it renders in the
     // post-button slot rather than in contentHtml (which sits above it).
     postButtonHtml: trackingUrl
-      ? secondaryLink("Or view your full order", orderUrl)
+      ? secondaryLink("Or contact us about this order", orderUrl)
       : "",
     footerLines: [
       "If anything looks off — wrong address, wrong items — reply to this message right away and we'll sort it out.",

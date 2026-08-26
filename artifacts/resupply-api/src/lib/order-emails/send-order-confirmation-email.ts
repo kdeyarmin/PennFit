@@ -199,7 +199,7 @@ export async function sendOrderConfirmationEmail(
       (await resolveTenantBaseUrl(input.orgId)) ??
       undefined,
   );
-  const orderUrl = `${base}/track-order`;
+  const orderUrl = `${base}/contact`;
   // Cash-pay /shop is retired — send patients to insurance coverage
   // rather than a LegacyShopRedirect hop off /shop.
   const coverageUrl = `${base}/insurance`;
@@ -227,7 +227,7 @@ export async function sendOrderConfirmationEmail(
     }
     textLines.push("");
   }
-  textLines.push(`View your order: ${orderUrl}`);
+  textLines.push(`Questions about your order? ${orderUrl}`);
   textLines.push(`Insurance coverage: ${coverageUrl}`);
   textLines.push("");
   textLines.push(
@@ -250,7 +250,7 @@ export async function sendOrderConfirmationEmail(
           })),
         )
       : textParagraph(
-          "Your full itemized order is available online — use the View order button below.",
+          "Questions about your order? Use the Contact us button below.",
         );
 
   const addressPanel = shippingAddress
@@ -280,7 +280,7 @@ export async function sendOrderConfirmationEmail(
     ]
       .filter(Boolean)
       .join("\n"),
-    button: { label: "View order", url: orderUrl },
+    button: { label: "Contact us", url: orderUrl },
     footerHtml: `<a href="${escapeHtml(coverageUrl)}" style="color:${BREATHE_COLORS.blue};text-decoration:underline;">Insurance coverage</a>`,
     footerLines: [
       "We'll send another email with tracking info once your order ships.",

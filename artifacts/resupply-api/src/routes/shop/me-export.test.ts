@@ -3,7 +3,8 @@
 // Coverage:
 //   * 401 without sign-in
 //   * Sends Content-Disposition attachment with .json filename
-//   * Aggregates seven concurrent reads (customer, orders, items, subs, returns, reviews, carts)
+//   * Aggregates concurrent reads (customer, orders, items, returns, reviews, carts)
+//     — subscriptions are always empty (cash-pay auto-ship retired)
 //   * Joins line items onto their order rows by order_id
 //   * Sets correct Content-Type
 //   * Includes the "phi: separate system" disclaimer in notes
@@ -40,7 +41,6 @@ function stageAllEmpty(): void {
   stageSupabaseResponse("shop_customers", "select", { data: [] });
   stageSupabaseResponse("shop_orders", "select", { data: [] });
   stageSupabaseResponse("shop_order_items", "select", { data: [] });
-  stageSupabaseResponse("shop_subscriptions", "select", { data: [] });
   stageSupabaseResponse("shop_returns", "select", { data: [] });
   stageSupabaseResponse("shop_reviews", "select", { data: [] });
   stageSupabaseResponse("shop_abandoned_carts", "select", { data: [] });
@@ -76,6 +76,7 @@ describe("GET /shop/me/export", () => {
     expect(body.notes.phi).toContain("separate system");
     expect(body.profile).toBeNull();
     expect(body.orders).toEqual([]);
+    expect(body.subscriptions).toEqual([]);
   });
 
   it("joins line items onto their parent orders", async () => {
@@ -106,7 +107,6 @@ describe("GET /shop/me/export", () => {
         { id: "li_3", order_id: "ord_2", product_id: "prod_c", quantity: 1 },
       ],
     });
-    stageSupabaseResponse("shop_subscriptions", "select", { data: [] });
     stageSupabaseResponse("shop_returns", "select", { data: [] });
     stageSupabaseResponse("shop_reviews", "select", { data: [] });
     stageSupabaseResponse("shop_abandoned_carts", "select", { data: [] });

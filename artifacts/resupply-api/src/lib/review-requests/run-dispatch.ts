@@ -24,6 +24,7 @@ import {
 import { isInDndWindow } from "../comm-prefs";
 import { isFeatureEnabled } from "../feature-flags";
 import { sendReviewRequestEmail } from "../messaging/review-request-email";
+import { resolveTenantBaseUrl } from "../tenant-branding";
 
 const REVIEW_REQUEST_AGE_DAYS = 14;
 const SCAN_LIMIT = 100;
@@ -141,10 +142,12 @@ export async function runReviewRequestDispatch(opts: {
 
   const stats: ReviewRequestDispatchStats = { ...ZERO };
 
-  const baseUrl =
+  const baseUrl = (
+    (await resolveTenantBaseUrl(orgId)) ??
     process.env.SHOP_PUBLIC_BASE_URL ??
     process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL ??
-    "https://cmbreathe.com";
+    "https://cmbreathe.com"
+  ).replace(/\/$/, "");
 
   const unclaim = async (id: string): Promise<void> => {
     const { error: unclaimErr } = await supabase

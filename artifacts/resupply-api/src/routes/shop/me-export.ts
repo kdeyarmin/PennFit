@@ -75,7 +75,6 @@ router.get(
       customersRes,
       ordersRes,
       itemsRes,
-      subsRes,
       returnsRes,
       reviewsRes,
       cartsRes,
@@ -83,14 +82,14 @@ router.get(
       supabase
         .from("shop_customers")
         .select(
-          "customer_id, stripe_customer_id, display_name, email_lower, shipping_address_json, default_payment_method_brand, default_payment_method_last4, default_payment_method_exp_month, default_payment_method_exp_year, communication_preferences, cpap_device_json, physician_info_json, facial_measurements_json, caregiver_email, caregiver_name, caregiver_consent_at, caregiver_revoked_at, membership_tier, membership_started_at, membership_renews_at, created_at, updated_at",
+          "customer_id, display_name, email_lower, shipping_address_json, communication_preferences, cpap_device_json, physician_info_json, facial_measurements_json, caregiver_email, caregiver_name, caregiver_consent_at, caregiver_revoked_at, created_at, updated_at",
         )
         .eq("customer_id", customerId)
         .limit(1),
       supabase
         .from("shop_orders")
         .select(
-          "id, stripe_session_id, stripe_payment_intent_id, status, amount_total_cents, currency, tracking_carrier, tracking_number, shipped_at, delivered_at, shipping_address_json, customer_email, paid_at, created_at, updated_at",
+          "id, stripe_session_id, status, amount_total_cents, currency, tracking_carrier, tracking_number, shipped_at, delivered_at, shipping_address_json, customer_email, paid_at, created_at, updated_at",
         )
         .eq("customer_id", customerId)
         .order("created_at", { ascending: false }),
@@ -100,13 +99,8 @@ router.get(
           "id, order_id, product_id, price_id, quantity, unit_amount_cents, currency, paid_at, created_at",
         )
         .eq("customer_id", customerId),
-      supabase
-        .from("shop_subscriptions")
-        .select(
-          "id, stripe_subscription_id, stripe_customer_id, status, items, current_period_end, cancel_at_period_end, canceled_at, initial_amount_total_cents, created_at, updated_at",
-        )
-        .eq("customer_id", customerId)
-        .order("created_at", { ascending: false }),
+      // shop_subscriptions intentionally omitted — cash-pay auto-ship is
+      // retired and must not reappear as live standing orders in exports.
       supabase
         .from("shop_returns")
         .select(
@@ -132,7 +126,6 @@ router.get(
       customersRes,
       ordersRes,
       itemsRes,
-      subsRes,
       returnsRes,
       reviewsRes,
       cartsRes,
@@ -142,7 +135,6 @@ router.get(
     const customers = customersRes.data ?? [];
     const orders = ordersRes.data ?? [];
     const items = itemsRes.data ?? [];
-    const subs = subsRes.data ?? [];
     const returns = returnsRes.data ?? [];
     const reviews = reviewsRes.data ?? [];
     const carts = cartsRes.data ?? [];
@@ -179,13 +171,14 @@ router.get(
             ...o,
             items: itemsByOrder.get(o.id) ?? [],
           })),
-          subscriptions: subs,
+          // Cash-pay Subscribe & Save is retired — always empty.
+          subscriptions: [],
           returns,
           reviews,
           abandonedCart: carts[0] ?? null,
           notes: {
             coverage:
-              "This file contains every record the cash-pay shop holds for your account.",
+              "This file contains the storefront records we still hold for your account (profile, historical orders, returns, reviews). Standing auto-ship subscriptions and card-on-file details are not included — patients are insurance-only.",
             // Support address resolved per TENANT: this file is handed to
             // the customer, and a hardcoded mailbox pointed every tenant's
             // customers at the seed tenant's inbox. An unconfigured tenant

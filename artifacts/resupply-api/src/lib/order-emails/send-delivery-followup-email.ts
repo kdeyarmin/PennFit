@@ -120,7 +120,7 @@ export async function sendDeliveryFollowupEmail(
       (await resolveTenantBaseUrl(input.orgId)) ??
       undefined,
   );
-  const orderUrl = `${base}/track-order`;
+  const orderUrl = `${base}/contact`;
   const returnsUrl = `${base}/contact`;
   const reviewUrl = `${base}/contact?utm_campaign=delivery_followup`;
 
@@ -186,7 +186,7 @@ export async function sendDeliveryFollowupEmail(
     "Sleep well,",
     `The ${brandName} team`,
     "",
-    `View your order: ${orderUrl}`,
+    `Questions about your order? ${orderUrl}`,
     ...(npsRow ? npsRow.text : []),
   ].join("\n");
 
@@ -226,7 +226,7 @@ ${npsRow.html}
     ]
       .filter(Boolean)
       .join("\n"),
-    footerHtml: `<a href="${escapeHtml(orderUrl)}" style="color:${BREATHE_COLORS.blue};text-decoration:underline;">View your order</a>`,
+    footerHtml: `<a href="${escapeHtml(orderUrl)}" style="color:${BREATHE_COLORS.blue};text-decoration:underline;">Contact us</a>`,
     footerLines: [`Sleep well, the ${brandName} team`],
     copyrightName: brandName,
   });

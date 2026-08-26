@@ -156,9 +156,8 @@ export async function sendRefundNotificationIfNew(args: {
         const counts = await sendPushToCustomer(orgId, claimedRow.customer_id, {
           title: `Refund issued — ${brand.storefrontName}`,
           body: "A refund has been issued to your original payment method.",
-          // Match the email CTA: public order tracking (no auth wall).
-          url: "/track-order",
-          tag: `shop_order_refund:${claimedRow.id}`,
+          // Cash-pay shop orders are not trackable via /track-order.
+          url: "/contact",
         });
         if (counts.delivered + counts.expired + counts.transient > 0) {
           log?.info?.(

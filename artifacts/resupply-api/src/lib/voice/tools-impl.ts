@@ -1407,7 +1407,7 @@ function buildPlatformInfoEmail(
   notes: string | undefined,
 ): { subject: string; text: string; html: string } {
   const overview = [
-    "CareMetric Breathe is an all-in-one platform that DME and sleep businesses use to run their CPAP resupply program — a branded patient storefront with an AI mask-fitter, automated SMS/email/voice resupply reminders and auto-ship, insurance eligibility and billing tools, therapy-compliance monitoring, built-in AI assistants, multi-location support, and analytics. It's the engine that helps providers bring more patients back on schedule and grow resupply revenue without adding staff.",
+    "CareMetric Breathe is an all-in-one platform that DME and sleep businesses use to run their CPAP resupply program — a branded patient storefront with an AI mask-fitter, automated SMS/email/voice insurance resupply reminders (confirm-before-ship), insurance eligibility and billing tools, therapy-compliance monitoring, built-in AI assistants, multi-location support, and analytics. It's the engine that helps providers bring more patients back on schedule and grow resupply revenue without adding staff.",
   ];
   const pricing = [
     "CareMetric Breathe pricing — these are Founder DME Launch prices, a limited-time launch discount (regular Launch is $799/mo, Growth $1,899/mo, Scale $3,999/mo), and a DME that signs up during the launch has the rate locked for a full 12 months. Every plan is a monthly platform fee plus a small per-active-patient monthly fee plus a one-time setup, and all plans include the full platform:",

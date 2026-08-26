@@ -92,14 +92,9 @@ router.get("/shop/me", attachSignedIn, async (req, res) => {
       cpapDevice: row.cpap_device_json ?? null,
       physicianInfo: row.physician_info_json ?? null,
     },
-    savedCard: row.default_payment_method_id
-      ? {
-          brand: row.default_payment_method_brand,
-          last4: row.default_payment_method_last4,
-          expMonth: row.default_payment_method_exp_month,
-          expYear: row.default_payment_method_exp_year,
-        }
-      : null,
+    // Patient cash-pay / card-on-file is retired. Keep the field so
+    // older SPA builds don't break, but never surface a saved card.
+    savedCard: null,
     recentOrders: (
       (recent ?? []) as Array<
         Database["resupply"]["Tables"]["shop_orders"]["Row"]

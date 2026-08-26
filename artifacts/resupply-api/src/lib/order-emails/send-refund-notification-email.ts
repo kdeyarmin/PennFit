@@ -98,7 +98,7 @@ export async function sendRefundNotificationEmail(
       (await resolveTenantBaseUrl(input.orgId)) ??
       undefined,
   );
-  const orderUrl = `${base}/track-order`;
+  const orderUrl = `${base}/contact`;
 
   const lead = isPartial
     ? `We've issued a partial refund of ${amount} to your original payment method.`
@@ -110,7 +110,7 @@ export async function sendRefundNotificationEmail(
     "",
     "Refunds typically take 5–10 business days to appear on your statement, depending on your bank.",
     "",
-    `View your order: ${orderUrl}`,
+    `Questions about your order? ${orderUrl}`,
     "",
     "Questions about this refund? Just reply to this message and we'll help.",
   ].join("\n");
@@ -128,7 +128,7 @@ export async function sendRefundNotificationEmail(
         "Refunds typically take 5–10 business days to appear on your statement, depending on your bank.",
       ),
     ].join("\n"),
-    button: { label: "View order", url: orderUrl },
+    button: { label: "Contact us", url: orderUrl },
     footerLines: [
       "Questions about this refund? Reply to this message and we'll help.",
     ],

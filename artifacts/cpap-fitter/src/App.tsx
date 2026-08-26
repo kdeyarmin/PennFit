@@ -833,7 +833,7 @@ function LegacyResupplyRedirect({ rest }: { rest: string }) {
  * living insurance-era surfaces while preserving query strings and
  * hashes:
  *   - order history → /track-order
- *   - cart / checkout / success receipts → /track-order (or /contact)
+ *   - cart / checkout / success receipts → /contact (no trackable ref)
  *   - everything else (product pages, generic /shop) → /insurance
  */
 function LegacyShopRedirect({ rest }: { rest: string }) {
@@ -853,10 +853,10 @@ function LegacyShopRedirect({ rest }: { rest: string }) {
       normalized === "checkout-success" ||
       normalized.startsWith("checkout-success")
     ) {
-      // Abandoned-cart / receipt emails used to deep-link here. Track
-      // status is the closest living patient action; contact is a
-      // fallback when they have no reference yet.
-      path = "/track-order";
+      // Abandoned-cart / mid-checkout bookmarks have no PENN/PHM
+      // reference — /track-order would just reject the empty form.
+      // Match abandonment-email CTAs and send them to a human.
+      path = "/contact";
     } else if (normalized === "nps" || normalized.startsWith("orders/nps")) {
       path = "/nps";
     }

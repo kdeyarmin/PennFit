@@ -140,7 +140,7 @@ export async function sendDeliveredNotificationEmail(
       (await resolveTenantBaseUrl(input.orgId)) ??
       undefined,
   );
-  const orderUrl = `${base}/track-order`;
+  const orderUrl = `${base}/contact`;
   const trackingUrl =
     carrier && trackingNumber
       ? getCarrierTrackingUrl(carrier, trackingNumber)
@@ -164,7 +164,7 @@ export async function sendDeliveredNotificationEmail(
     }
     textLines.push("");
   }
-  textLines.push(`View your order: ${orderUrl}`);
+  textLines.push(`Questions about your order? ${orderUrl}`);
   textLines.push("");
   textLines.push(
     "Didn't receive it, or did something arrive damaged? Reply to this " +
@@ -212,9 +212,9 @@ export async function sendDeliveredNotificationEmail(
       .join("\n"),
     button: trackingUrl
       ? { label: "View delivery details", url: trackingUrl }
-      : { label: "View order", url: orderUrl },
+      : { label: "Contact us", url: orderUrl },
     postButtonHtml: trackingUrl
-      ? secondaryLink("Or view your full order", orderUrl)
+      ? secondaryLink("Or contact us about this order", orderUrl)
       : "",
     footerLines: [
       "Didn't receive it, or did something arrive damaged? Reply to this message and we'll make it right.",

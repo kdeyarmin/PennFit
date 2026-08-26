@@ -127,7 +127,7 @@ export async function sendReadyForPickupEmail(
       (await resolveTenantBaseUrl(input.orgId)) ??
       undefined,
   );
-  const orderUrl = `${base}/track-order`;
+  const orderUrl = `${base}/contact`;
 
   // ---------- text body ----------
   const textLines: string[] = [
@@ -139,7 +139,7 @@ export async function sendReadyForPickupEmail(
     "Please bring a photo ID matching the order. " +
       "If someone else is collecting on your behalf, let us know in advance.",
     "",
-    `View your order: ${orderUrl}`,
+    `Questions about your order? ${orderUrl}`,
   ];
   const text = textLines.join("\n");
 
@@ -154,7 +154,7 @@ export async function sendReadyForPickupEmail(
       textParagraph(`Good news — your ${brandName} order is ready to pick up.`),
       infoPanel({ title: "Pick up at", html: locationHtml(location) }),
     ].join("\n"),
-    button: { label: "View order", url: orderUrl },
+    button: { label: "Contact us", url: orderUrl },
     footerLines: [
       "Please bring a photo ID matching the order. If someone else is collecting on your behalf, let us know in advance.",
     ],

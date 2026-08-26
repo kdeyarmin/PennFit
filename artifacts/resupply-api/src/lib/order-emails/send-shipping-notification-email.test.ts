@@ -206,8 +206,8 @@ describe("sendShippingNotificationEmail", () => {
     // Tracking number renders as text; no "Track package" CTA.
     expect(arg.html).toContain("ABC123");
     expect(arg.html).not.toContain("Track package");
-    // Fallback CTA goes to the order page.
-    expect(arg.html).toContain("View order");
+    // Fallback CTA goes to contact (shop orders aren't trackable).
+    expect(arg.html).toContain("Contact us");
   });
 
   it("escapes hostile carrier/tracking values into the body", async () => {
