@@ -122,7 +122,7 @@ describe("staffHelpDocs", () => {
     // handbook must say so rather than list them as the RT's work.
     const rt = staffHelpDocs("rt", CO)[1]!;
     const caveat = rt.sections.find((sec) =>
-      sec.heading?.startsWith("Screens you can see"),
+      sec.heading?.startsWith("What your role does not cover"),
     );
     expect(caveat).toBeDefined();
     const rtDuties = JSON.stringify({
