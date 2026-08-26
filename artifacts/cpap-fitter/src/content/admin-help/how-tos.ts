@@ -1147,7 +1147,7 @@ export const HOW_TO_GUIDES: readonly HowToGuide[] = [
       },
       {
         title: "Add prescriptions — importing patients is not enough",
-        body: 'Reminders run per supply line. Each active prescription opens an outreach episode when that item is due. Importing a PacWare roster fills demographics, but it does not start reminders until you record what each person is entitled to resupply — from the patient chart, or when a patient confirms an order.',
+        body: "Reminders run per supply line. Each active prescription opens an outreach episode when that item is due. Importing a PacWare roster fills demographics, but it does not start reminders until you record what each person is entitled to resupply — from the patient chart, or when a patient confirms an order.",
         callout: {
           tone: "warning",
           text: "If patients exist but nobody is getting reminders, check for active prescriptions first. The setup checklist at /admin/setup turns green on this row once at least one Rx line is on file.",
@@ -1159,7 +1159,7 @@ export const HOW_TO_GUIDES: readonly HowToGuide[] = [
       },
       {
         title: "Tune escalation spacing (optional)",
-        body: 'System Configuration /admin/system/configuration → Resupply reminders controls how many days pass between ladder steps (default 3) and when to stop nagging (default 21). Leave the defaults unless your team wants a slower or faster follow-up cadence.',
+        body: "System Configuration /admin/system/configuration → Resupply reminders controls how many days pass between ladder steps (default 3) and when to stop nagging (default 21). Leave the defaults unless your team wants a slower or faster follow-up cadence.",
       },
       {
         title: "Understand the patient's side",
@@ -1172,7 +1172,8 @@ export const HOW_TO_GUIDES: readonly HowToGuide[] = [
     ],
     troubleshooting: [
       {
-        symptom: "Nobody is getting reminders even though patients are on file.",
+        symptom:
+          "Nobody is getting reminders even though patients are on file.",
         fix: "Confirm each patient has an active prescription for the supply you resupply, that Control Center has SMS/email reminders and escalation dispatch on, and that the episode is past due in Episodes /admin/episodes.",
       },
       {
@@ -1541,7 +1542,7 @@ export const HOW_TO_GUIDES: readonly HowToGuide[] = [
       },
       {
         title: "Start resupply lines after the roster lands",
-        body: 'Importing demographics does not start reminder outreach. After a successful import, use Start resupply lines on the same page to add four standard consumable prescriptions (filter, cushion, mask, tubing) with Medicare LCD cadences for each PacWare patient who has no active prescriptions yet. That opens outreach episodes so the SMS → email ladder can run.',
+        body: "Importing demographics does not start reminder outreach. After a successful import, use Start resupply lines on the same page to add four standard consumable prescriptions (filter, cushion, mask, tubing) with Medicare LCD cadences for each PacWare patient who has no active prescriptions yet. That opens outreach episodes so the SMS → email ladder can run.",
       },
       {
         title: "Always use the verify step on an export",

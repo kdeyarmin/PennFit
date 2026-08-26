@@ -254,18 +254,18 @@ episode.
 
 ## 7. Configuration
 
-| Control                          | Type                        | Default         | Effect                                                                      |
-| -------------------------------- | --------------------------- | --------------- | --------------------------------------------------------------------------- |
-| `sms.reminders`                  | feature flag                | on              | First-touch + escalation SMS.                                               |
-| `email.reminders`                | feature flag                | on              | First-touch + escalation email.                                             |
-| `reminder_escalation.dispatcher` | feature flag                | (per migration) | Master switch for the daily escalation sweep.                               |
-| `reminder_escalation.voice`      | feature flag                | **off**         | Adds the automated-call tier to the ladder. Opt-in per tenant.              |
-| `patients.cadence_override_days` | column                      | null            | Per-patient cadence.                                                        |
-| `patients.channel_preference`    | column                      | null            | Per-patient first-touch channel.                                            |
-| `frequency_rules`                | table                       | —               | SKU/payer/tenure-scoped cadence + channel.                                  |
+| Control                          | Type                                                   | Default         | Effect                                                                      |
+| -------------------------------- | ------------------------------------------------------ | --------------- | --------------------------------------------------------------------------- |
+| `sms.reminders`                  | feature flag                                           | on              | First-touch + escalation SMS.                                               |
+| `email.reminders`                | feature flag                                           | on              | First-touch + escalation email.                                             |
+| `reminder_escalation.dispatcher` | feature flag                                           | (per migration) | Master switch for the daily escalation sweep.                               |
+| `reminder_escalation.voice`      | feature flag                                           | **off**         | Adds the automated-call tier to the ladder. Opt-in per tenant.              |
+| `patients.cadence_override_days` | column                                                 | null            | Per-patient cadence.                                                        |
+| `patients.channel_preference`    | column                                                 | null            | Per-patient first-touch channel.                                            |
+| `frequency_rules`                | table                                                  | —               | SKU/payer/tenure-scoped cadence + channel.                                  |
 | `RESUPPLY_ESCALATION_DELAY_DAYS` | app_config (System Configuration → Resupply reminders) | 3               | Min days between ladder steps (clamped 1–30).                               |
 | `RESUPPLY_ESCALATION_MAX_DAYS`   | app_config (System Configuration → Resupply reminders) | 21              | Stop-nagging age from first touch (clamped (delay)–120).                    |
-| `MAX_VOICE_ATTEMPTS`             | constant                    | 2               | Voice dial cap before the CSR hand-off (unanswered calls retry up to this). |
+| `MAX_VOICE_ATTEMPTS`             | constant                                               | 2               | Voice dial cap before the CSR hand-off (unanswered calls retry up to this). |
 
 The voice tier additionally requires the voice path to be configured:
 `OPENAI_API_KEY`, `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`,

@@ -14,10 +14,9 @@ export interface DefaultResupplyLine {
 }
 
 /** Four consumables most CPAP resupply programs track out of the box. */
-export const DEFAULT_MEDICARE_RESUPPLY_LINES: readonly DefaultResupplyLine[] =
-  [
-    { itemSku: "FILTER-DISP-STD", cadenceDays: 15 },
-    { itemSku: "CUSHION-STD", cadenceDays: 30 },
-    { itemSku: "MASK-STD", cadenceDays: 90 },
-    { itemSku: "TUBING-STD", cadenceDays: 90 },
-  ] as const;
+export const DEFAULT_MEDICARE_RESUPPLY_LINES: readonly DefaultResupplyLine[] = [
+  { itemSku: "FILTER-DISP-STD", cadenceDays: 15 },
+  { itemSku: "CUSHION-STD", cadenceDays: 30 },
+  { itemSku: "MASK-STD", cadenceDays: 90 },
+  { itemSku: "TUBING-STD", cadenceDays: 90 },
+] as const;

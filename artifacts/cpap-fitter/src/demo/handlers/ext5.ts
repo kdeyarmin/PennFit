@@ -1157,39 +1157,43 @@ export const ext5Handlers: DemoHandler[] = [
 
   // ── Resupply bootstrap (resupply-bootstrap.ts) ─────────────────────
   // POST /resupply-api/admin/resupply/bootstrap-prescriptions
-  route("POST", "/resupply-api/admin/resupply/bootstrap-prescriptions", (req) => {
-    const body = req.json<{ mode?: string; onlyPacwarePatients?: boolean }>();
-    const onlyPacwarePatients = body?.onlyPacwarePatients ?? true;
-    const lineSkus = [
-      "FILTER-DISP-STD",
-      "CUSHION-STD",
-      "MASK-STD",
-      "TUBING-STD",
-    ];
-    const eligiblePatients = 4;
-    const linesPerPatient = lineSkus.length;
+  route(
+    "POST",
+    "/resupply-api/admin/resupply/bootstrap-prescriptions",
+    (req) => {
+      const body = req.json<{ mode?: string; onlyPacwarePatients?: boolean }>();
+      const onlyPacwarePatients = body?.onlyPacwarePatients ?? true;
+      const lineSkus = [
+        "FILTER-DISP-STD",
+        "CUSHION-STD",
+        "MASK-STD",
+        "TUBING-STD",
+      ];
+      const eligiblePatients = 4;
+      const linesPerPatient = lineSkus.length;
 
-    if (body?.mode === "commit") {
+      if (body?.mode === "commit") {
+        return json({
+          mode: "commit",
+          eligiblePatients,
+          patientsBootstrapped: eligiblePatients,
+          prescriptionsCreated: eligiblePatients * linesPerPatient,
+          episodesOpened: eligiblePatients * linesPerPatient,
+          episodeOpenFailures: 0,
+          onlyPacwarePatients,
+        });
+      }
+
       return json({
-        mode: "commit",
+        mode: "preview",
         eligiblePatients,
-        patientsBootstrapped: eligiblePatients,
-        prescriptionsCreated: eligiblePatients * linesPerPatient,
-        episodesOpened: eligiblePatients * linesPerPatient,
-        episodeOpenFailures: 0,
+        linesPerPatient,
+        prescriptionsToCreate: eligiblePatients * linesPerPatient,
+        lineSkus,
         onlyPacwarePatients,
       });
-    }
-
-    return json({
-      mode: "preview",
-      eligiblePatients,
-      linesPerPatient,
-      prescriptionsToCreate: eligiblePatients * linesPerPatient,
-      lineSkus,
-      onlyPacwarePatients,
-    });
-  }),
+    },
+  ),
 
   // ── Patient address history ─────────────────────────────────────────
   route("GET", "/resupply-api/admin/patients/:id/address-history", () =>

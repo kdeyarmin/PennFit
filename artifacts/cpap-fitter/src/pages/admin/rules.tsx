@@ -137,8 +137,8 @@ function Header({ onCreate }: { onCreate: () => void }) {
         </h1>
         <p className="text-sm" style={{ color: "hsl(var(--ink-3))" }}>
           Default reminder cadences and channels by therapy type, payer, and
-          customer tenure. Per-patient overrides always win. Medicare LCD defaults
-          ship preloaded — simulate a patient in{" "}
+          customer tenure. Per-patient overrides always win. Medicare LCD
+          defaults ship preloaded — simulate a patient in{" "}
           <Link
             href="/admin/rule-tester"
             className="font-medium underline decoration-dotted"

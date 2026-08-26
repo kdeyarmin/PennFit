@@ -190,7 +190,8 @@ export async function commitBootstrapPrescriptions(
           createdAt: new Date(patient.created_at),
           insurancePayer: patient.insurance_payer,
           cadenceOverrideDays: patient.cadence_override_days,
-          channelPreference: patient.channel_preference as OutreachChannel | null,
+          channelPreference:
+            patient.channel_preference as OutreachChannel | null,
           hasPhone: patient.phone_e164 != null,
         },
         prescription: {

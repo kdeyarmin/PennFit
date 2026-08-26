@@ -637,12 +637,16 @@ function BootstrapResupplyPanel() {
       }}
       data-testid="pacware-bootstrap-resupply"
     >
-      <div className="font-semibold">Start resupply lines for imported patients</div>
+      <div className="font-semibold">
+        Start resupply lines for imported patients
+      </div>
       <p className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
         Adds four standard consumable prescriptions (disposable filter, cushion,
         mask, tubing) with Medicare LCD cadences for each{" "}
-        <strong>active patient with a PacWare id and no active prescriptions</strong>.
-        Outreach episodes open automatically so reminders can run.
+        <strong>
+          active patient with a PacWare id and no active prescriptions
+        </strong>
+        . Outreach episodes open automatically so reminders can run.
       </p>
       <div className="flex flex-wrap gap-2">
         <Button onClick={() => void onPreview()} disabled={busy}>
@@ -669,11 +673,15 @@ function BootstrapResupplyPanel() {
         </p>
       )}
       {commit && (
-        <p className="text-xs font-medium" style={{ color: "hsl(142,72%,29%)" }}>
+        <p
+          className="text-xs font-medium"
+          style={{ color: "hsl(142,72%,29%)" }}
+        >
           Added {commit.prescriptionsCreated} prescriptions and opened{" "}
           {commit.episodesOpened} outreach episode
-          {commit.episodesOpened === 1 ? "" : "s"} for {commit.patientsBootstrapped}{" "}
-          patient{commit.patientsBootstrapped === 1 ? "" : "s"}.
+          {commit.episodesOpened === 1 ? "" : "s"} for{" "}
+          {commit.patientsBootstrapped} patient
+          {commit.patientsBootstrapped === 1 ? "" : "s"}.
           {commit.episodeOpenFailures > 0 &&
             ` ${commit.episodeOpenFailures} episode(s) could not be opened — check logs.`}
         </p>
