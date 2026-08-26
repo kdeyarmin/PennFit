@@ -56,6 +56,7 @@ const KIND_TONE: Record<string, string> = {
   episode: "bg-amber-100 text-amber-900",
   fulfillment: "bg-emerald-100 text-emerald-900",
   fitter_order: "bg-sky-100 text-sky-900",
+  csr_order: "bg-sky-100 text-sky-900",
   shop_order: "bg-emerald-100 text-emerald-900",
   shop_customer: "bg-slate-100 text-slate-700",
 };

@@ -7,8 +7,9 @@
 // Captures the single largest "where's my order?" inbound CSR
 // contact deflectable with a simple self-service surface.
 //
-// Accepts mint `PENN-XXXXXX` (or bare 6) plus legacy `PHM-XXX-XXX`
-// still in flight. Signed-in account history remains on /account.
+// Accepts mint `PENN-XXXXXX` (or bare 6), legacy `PHM-XXX-XXX`, and
+// CSR signature-order `ORD-XXXXXX` still in flight. Signed-in account
+// history remains on /account.
 
 import React, { useState } from "react";
 import { Link } from "wouter";
@@ -28,9 +29,9 @@ import { useCompanyContact } from "@/lib/contact";
 import { formatAppDate } from "@/lib/utils";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-/** Matches mint (`PENN-`+6 / bare 6) plus legacy `PHM-XXX-XXX` still in flight. */
+/** Matches mint (`PENN-`/`ORD-`+6 / bare 6) plus legacy `PHM-XXX-XXX`. */
 const REF_RE =
-  /^(?:(?:PENN-)?[A-Za-z0-9]{6}|PHM-[A-Za-z0-9]{3}-[A-Za-z0-9]{3})$/i;
+  /^(?:(?:PENN-|ORD-)?[A-Za-z0-9]{6}|PHM-[A-Za-z0-9]{3}-[A-Za-z0-9]{3})$/i;
 
 interface TrackResult {
   orderReference: string;
@@ -50,6 +51,24 @@ function formatStatus(s: string | null): {
         label: "Received",
         description:
           "Our fulfillment team has your order. A team member contacts you within 1 business day.",
+      };
+    case "signed":
+      return {
+        label: "Signed",
+        description:
+          "Your paperwork is signed. We are preparing your insurance shipment.",
+      };
+    case "awaiting_signature":
+      return {
+        label: "Awaiting your signature",
+        description:
+          "Open the secure link from your invite email or text to review and sign. Call us if you need the link resent.",
+      };
+    case "canceled":
+      return {
+        label: "Canceled",
+        description:
+          "This order request was canceled. Call us if that looks wrong.",
       };
     case "failed":
       return {
