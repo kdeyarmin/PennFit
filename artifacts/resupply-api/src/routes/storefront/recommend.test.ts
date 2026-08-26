@@ -60,11 +60,25 @@ function validToken(): string {
  * POST /recommend with a valid invite token attached. Centralises the
  * header so the plausibility-guard cases below read as before.
  */
-function postRecommend(body: object) {
+function postRecommend(body: Record<string, unknown>) {
+  // Tests that intentionally omit population must pass `population: undefined`
+  // via a body that has the key; otherwise default adult so plausibility
+  // cases stay focused on measurement bounds.
+  const payload = Object.prototype.hasOwnProperty.call(body, "population")
+    ? body
+    : { ...body, population: "adult" };
+  // Drop the key when explicitly undefined so Zod sees "omitted".
+  if (payload.population === undefined) {
+    const { population: _omit, ...rest } = payload;
+    return request(makeApp())
+      .post("/recommend")
+      .set("x-fitter-invite-token", validToken())
+      .send(rest);
+  }
   return request(makeApp())
     .post("/recommend")
     .set("x-fitter-invite-token", validToken())
-    .send(body);
+    .send(payload);
 }
 
 // The canonical face — MediaPipe's metric reference mesh, as this
@@ -99,9 +113,11 @@ const VALID_ANSWERS = {
 
 describe("POST /recommend — invitation-only gate", () => {
   it("rejects a request with NO invite token (403)", async () => {
-    const res = await request(makeApp())
-      .post("/recommend")
-      .send({ measurements: VALID_MEASUREMENTS, answers: VALID_ANSWERS });
+    const res = await request(makeApp()).post("/recommend").send({
+      measurements: VALID_MEASUREMENTS,
+      answers: VALID_ANSWERS,
+      population: "adult",
+    });
     expect(res.status).toBe(403);
     expect(res.body.error).toMatch(/invitation only/i);
   });
@@ -110,7 +126,11 @@ describe("POST /recommend — invitation-only gate", () => {
     const res = await request(makeApp())
       .post("/recommend")
       .set("x-fitter-invite-token", "not-a-real-token")
-      .send({ measurements: VALID_MEASUREMENTS, answers: VALID_ANSWERS });
+      .send({
+        measurements: VALID_MEASUREMENTS,
+        answers: VALID_ANSWERS,
+        population: "adult",
+      });
     expect(res.status).toBe(403);
   });
 
@@ -121,7 +141,11 @@ describe("POST /recommend — invitation-only gate", () => {
     const res = await request(makeApp())
       .post("/recommend")
       .set("x-fitter-invite-token", tampered)
-      .send({ measurements: VALID_MEASUREMENTS, answers: VALID_ANSWERS });
+      .send({
+        measurements: VALID_MEASUREMENTS,
+        answers: VALID_ANSWERS,
+        population: "adult",
+      });
     expect(res.status).toBe(403);
   });
 
@@ -134,7 +158,11 @@ describe("POST /recommend — invitation-only gate", () => {
     const res = await request(makeApp())
       .post("/recommend")
       .set("x-fitter-invite-token", expired)
-      .send({ measurements: VALID_MEASUREMENTS, answers: VALID_ANSWERS });
+      .send({
+        measurements: VALID_MEASUREMENTS,
+        answers: VALID_ANSWERS,
+        population: "adult",
+      });
     expect(res.status).toBe(403);
   });
 
@@ -142,6 +170,7 @@ describe("POST /recommend — invitation-only gate", () => {
     const res = await postRecommend({
       measurements: VALID_MEASUREMENTS,
       answers: VALID_ANSWERS,
+      population: "adult",
     });
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body.topRecommendations)).toBe(true);
@@ -153,6 +182,7 @@ describe("POST /recommend — plausibility guard", () => {
     const res = await postRecommend({
       measurements: VALID_MEASUREMENTS,
       answers: VALID_ANSWERS,
+      population: "adult",
     });
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body.topRecommendations)).toBe(true);
@@ -280,17 +310,15 @@ describe("POST /recommend — plausibility guard", () => {
 // ---------------------------------------------------------------------------
 
 describe("POST /recommend — population", () => {
-  it("echoes 'adult' when the field is omitted (back-compat)", async () => {
-    // A client that predates the adult-or-child question sends nothing.
-    // The route has always assumed an adult, and that is also the only
-    // default that fails safe against this catalog's adult-only bands.
+  it("rejects when population is omitted (never assume adult)", async () => {
+    // Population is asked, never assumed — omitting used to silently size
+    // children against adult bands. The SPA always sends the gate answer.
     const res = await postRecommend({
       measurements: VALID_MEASUREMENTS,
       answers: VALID_ANSWERS,
+      population: undefined,
     });
-    expect(res.status).toBe(200);
-    expect(res.body.population).toBe("adult");
-    expect(res.body.topRecommendations.length).toBeGreaterThan(0);
+    expect(res.status).toBe(400);
   });
 
   it("ranks nothing for a pediatric session, and says so", async () => {
@@ -374,6 +402,7 @@ describe("rate limiting", () => {
     const res = await postRecommend({
       measurements: VALID_MEASUREMENTS,
       answers: VALID_ANSWERS,
+      population: "adult",
     });
     // draft-7 standard headers — present only if the limiter actually ran.
     expect(res.headers["ratelimit"]).toBeDefined();
@@ -383,9 +412,11 @@ describe("rate limiting", () => {
   it("runs the limiter BEFORE the invite gate, so an unauthorized flood is capped too", async () => {
     // The limiter has to sit ahead of the authorization check or a
     // caller with no token at all could hammer the route for free.
-    const res = await request(makeApp())
-      .post("/recommend")
-      .send({ measurements: VALID_MEASUREMENTS, answers: VALID_ANSWERS });
+    const res = await request(makeApp()).post("/recommend").send({
+      measurements: VALID_MEASUREMENTS,
+      answers: VALID_ANSWERS,
+      population: "adult",
+    });
     expect(res.status).toBe(403);
     expect(res.headers["ratelimit"]).toBeDefined();
   });

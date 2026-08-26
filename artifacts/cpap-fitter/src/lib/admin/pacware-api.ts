@@ -152,3 +152,35 @@ export const setPacwareAutoSync = (autoSync: boolean) =>
     method: "PUT",
     body: JSON.stringify({ autoSync }),
   });
+
+export interface BootstrapPrescriptionsPreview {
+  mode: "preview";
+  eligiblePatients: number;
+  linesPerPatient: number;
+  prescriptionsToCreate: number;
+  lineSkus: string[];
+  onlyPacwarePatients: boolean;
+}
+
+export interface BootstrapPrescriptionsCommit {
+  mode: "commit";
+  eligiblePatients: number;
+  patientsBootstrapped: number;
+  prescriptionsCreated: number;
+  episodesOpened: number;
+  episodeOpenFailures: number;
+  onlyPacwarePatients: boolean;
+}
+
+/** Seed standard consumable Rx lines for patients with none yet. */
+export const bootstrapResupplyPrescriptions = (
+  mode: "preview" | "commit",
+  onlyPacwarePatients = true,
+) =>
+  jsonFetch<BootstrapPrescriptionsPreview | BootstrapPrescriptionsCommit>(
+    "/admin/resupply/bootstrap-prescriptions",
+    {
+      method: "POST",
+      body: JSON.stringify({ mode, onlyPacwarePatients }),
+    },
+  );

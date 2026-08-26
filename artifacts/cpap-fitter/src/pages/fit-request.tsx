@@ -198,6 +198,14 @@ export function FitRequest() {
 
   const onSubmit = async (values: FormValues) => {
     if (submitting) return;
+    // Population is asked, never assumed — block submit if the gate
+    // answer is missing (should not happen after the questionnaire).
+    if (!population) {
+      setFailure(
+        "We need to know whether this fitting is for an adult or a child. Go back and answer that question first.",
+      );
+      return;
+    }
     // Honeypot: pretend it worked so the bot stops retrying, and never
     // touch the API.
     if (values.website && values.website.length > 0) {
@@ -225,7 +233,7 @@ export function FitRequest() {
       groupNumber: values.groupNumber,
       prescribingPhysician: values.prescribingPhysician,
       notes: values.notes,
-      population: population ?? "adult",
+      population,
       fitSessionId,
       recommendedMaskId: chosenMask?.maskId ?? null,
       recommendedMaskName: chosenMask?.name ?? null,

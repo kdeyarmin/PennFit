@@ -242,6 +242,39 @@ function tenantSetupChecklist() {
       href: "/admin/billing/package",
       required: false,
     },
+    {
+      id: "resupply-automation",
+      group: "Resupply automation",
+      title: "Turn on automated resupply reminders",
+      description:
+        "SMS and email reminders escalate across channels until the patient confirms or opts out.",
+      status: "complete",
+      detail: "Core reminder switches are on.",
+      href: "/admin/control-center",
+      required: false,
+    },
+    {
+      id: "resupply-cadences",
+      group: "Resupply automation",
+      title: "Review supply cadences",
+      description:
+        "Medicare LCD defaults ship preloaded — review Frequency rules before you go live.",
+      status: "complete",
+      detail: "12 active frequency rules.",
+      href: "/admin/rules",
+      required: false,
+    },
+    {
+      id: "resupply-prescriptions",
+      group: "Resupply automation",
+      title: "Add prescriptions for active patients",
+      description:
+        "Each active prescription opens an outreach episode when that supply is due.",
+      status: "complete",
+      detail: "48 active prescriptions on file.",
+      href: "/admin/patients",
+      required: false,
+    },
   ];
   const requiredItems = items.filter((i) => i.required);
   const requiredDone = requiredItems.filter(

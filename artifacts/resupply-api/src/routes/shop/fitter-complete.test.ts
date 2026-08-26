@@ -66,6 +66,16 @@ import {
 
 const supabaseMock = installSupabaseMock();
 
+const resolveBrandOrgIdByHostMock = vi.hoisted(() =>
+  vi.fn<() => Promise<string | null>>(async () => "org-from-host"),
+);
+vi.mock("../../lib/tenant-branding", () => ({
+  resolveBrandOrgIdByHost: resolveBrandOrgIdByHostMock,
+}));
+vi.mock("../../lib/request-host", () => ({
+  requestHost: () => "tenant.example.com",
+}));
+
 const supabaseMockLegacy = vi.fn();
 vi.mock("@workspace/resupply-db", async () => {
   const real = await vi.importActual<typeof import("@workspace/resupply-db")>(
@@ -129,6 +139,7 @@ beforeEach(() => {
     "QkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkI=";
   supabaseMock.reset();
   supabaseMockLegacy.mockReset();
+  resolveBrandOrgIdByHostMock.mockReset().mockResolvedValue("org-from-host");
   _resetFitterCompleteRateBucketForTests();
 
   // Default: no-op chain that records the read/update but returns

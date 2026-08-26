@@ -16,13 +16,13 @@ import {
 
 const supabaseMock = installSupabaseMock();
 
-const resolveOrgIdByHostMock = vi.hoisted(() =>
+const resolveBrandOrgIdByHostMock = vi.hoisted(() =>
   // Typed string | null so the no-tenant case can resolve null directly
-  // (the route's resolveOrgIdByHost returns string | null).
+  // (the route's resolveBrandOrgIdByHost returns string | null).
   vi.fn<() => Promise<string | null>>(async () => "org-from-host"),
 );
 vi.mock("../../lib/tenant-branding", () => ({
-  resolveOrgIdByHost: resolveOrgIdByHostMock,
+  resolveBrandOrgIdByHost: resolveBrandOrgIdByHostMock,
 }));
 vi.mock("../../lib/request-host", () => ({
   requestHost: () => "tenant.example.com",
@@ -38,7 +38,7 @@ function makeApp(): Express {
 
 beforeEach(() => {
   supabaseMock.reset();
-  resolveOrgIdByHostMock.mockReset().mockResolvedValue("org-from-host");
+  resolveBrandOrgIdByHostMock.mockReset().mockResolvedValue("org-from-host");
 });
 
 describe("GET /shop/education-videos", () => {
@@ -63,7 +63,9 @@ describe("GET /shop/education-videos", () => {
 
     expect(res.status).toBe(200);
     // Tenant resolved from the request host.
-    expect(resolveOrgIdByHostMock).toHaveBeenCalledWith("tenant.example.com");
+    expect(resolveBrandOrgIdByHostMock).toHaveBeenCalledWith(
+      "tenant.example.com",
+    );
     // The catalog read scoped to that tenant (facade appends org_id).
     const filters = getSupabaseFilterCalls("education_videos", "select");
     expect(
@@ -87,7 +89,7 @@ describe("GET /shop/education-videos", () => {
   });
 
   it("returns an empty library when no tenant resolves", async () => {
-    resolveOrgIdByHostMock.mockResolvedValue(null);
+    resolveBrandOrgIdByHostMock.mockResolvedValue(null);
     const res = await request(makeApp()).get("/shop/education-videos");
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ groups: [] });

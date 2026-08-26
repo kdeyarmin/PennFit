@@ -63,6 +63,48 @@ describe("deriveSecondaryCob", () => {
     }
   });
 
+  it("forwards residual on a denied primary (PR preferred)", () => {
+    const d = deriveSecondaryCob(
+      paidPrimary({
+        status: "denied",
+        total_paid_cents: 0,
+        patient_responsibility_cents: 18000,
+      }),
+    );
+    expect(d.eligible).toBe(true);
+    if (d.eligible) {
+      expect(d.cob.billableToSecondaryCents).toBe(18000);
+      expect(d.cob.primaryPaidCents).toBe(0);
+    }
+  });
+
+  it("forwards billed-minus-paid on a denied primary with no PR", () => {
+    const d = deriveSecondaryCob(
+      paidPrimary({
+        status: "denied",
+        total_billed_cents: 20000,
+        total_paid_cents: 0,
+        patient_responsibility_cents: 0,
+      }),
+    );
+    expect(d.eligible).toBe(true);
+    if (d.eligible) {
+      expect(d.cob.billableToSecondaryCents).toBe(20000);
+    }
+  });
+
+  it("rejects a denied primary with nothing left to bill", () => {
+    const d = deriveSecondaryCob(
+      paidPrimary({
+        status: "denied",
+        total_billed_cents: 0,
+        total_paid_cents: 0,
+        patient_responsibility_cents: 0,
+      }),
+    );
+    expect(d).toEqual({ eligible: false, reason: "no_balance" });
+  });
+
   it("rejects when there is no patient-responsibility balance", () => {
     const d = deriveSecondaryCob(
       paidPrimary({ patient_responsibility_cents: 0 }),
@@ -132,5 +174,23 @@ describe("filterSecondaryEligible", () => {
       primaryPaidCents: 12000,
       patientResponsibilityCents: 3000,
     });
+  });
+
+  it("includes a denied primary when residual remains", () => {
+    const out = filterSecondaryEligible(
+      [
+        candidate({
+          id: "denied",
+          status: "denied",
+          total_paid_cents: 0,
+          patient_responsibility_cents: 0,
+          total_billed_cents: 15000,
+        }),
+      ],
+      new Set(),
+    );
+    expect(out).toHaveLength(1);
+    expect(out[0]!.claimId).toBe("denied");
+    expect(out[0]!.patientResponsibilityCents).toBe(15000);
   });
 });
