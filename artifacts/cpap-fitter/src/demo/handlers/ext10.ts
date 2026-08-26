@@ -31,7 +31,8 @@ import { daysAgo, dateOnly } from "../fixtures/dates";
 
 export const ext10Handlers: DemoHandler[] = [
   // ── Public identity: company info (footer / "call us" / chat) ──────
-  // GET /api/company-info — see routes/storefront/company-info.ts.
+  // GET /api/company-info (+ /api/storefront-company-info) — see
+  // routes/storefront/company-info.ts.
   // The demo represents the CareMetric **platform** (an unconfigured
   // tenant), NOT the Penn tenant, so it must read the CareMetric platform
   // identity — including the platform-default assistant names
@@ -45,6 +46,28 @@ export const ext10Handlers: DemoHandler[] = [
       // company-info drives checkout, contact, order and provider pages — so
       // when they disagreed a demo visitor saw two different businesses
       // fulfilling one order.
+      name: DEMO_STOREFRONT_NAME,
+      legalName: DEMO_LEGAL_NAME,
+      phoneE164: "+18005550100",
+      phoneDisplay: "(800) 555-0100",
+      supportEmail: DEMO_SUPPORT_EMAIL,
+      generalEmail: DEMO_GENERAL_EMAIL,
+      supportHours: "Mon–Fri 8am–7pm ET · Sat 9am–2pm ET",
+      websiteUrl: DEMO_BASE_URL,
+      address: {
+        line1: "100 Innovation Way",
+        line2: "Suite 200",
+        city: "Austin",
+        state: "TX",
+        postalCode: "78701",
+        country: "US",
+      },
+      assistantStorefrontName: DEMO_ASSISTANT_STOREFRONT_NAME,
+      assistantAdminName: DEMO_ASSISTANT_ADMIN_NAME,
+    }),
+  ),
+  route("GET", "/api/storefront-company-info", () =>
+    json({
       name: DEMO_STOREFRONT_NAME,
       legalName: DEMO_LEGAL_NAME,
       phoneE164: "+18005550100",

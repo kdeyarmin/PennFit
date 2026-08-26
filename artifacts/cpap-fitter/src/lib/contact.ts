@@ -4,8 +4,10 @@
 //
 // The constants below are compile-time fallbacks that ship with the
 // static SPA bundle, so the first paint never waits on the network.
-// At runtime the module fetches GET /api/company-info once (the
-// values the admin saved on /admin/company-information) and
+// At runtime the module fetches GET /api/storefront-company-info once
+// (the values the admin saved on /admin/company-information) and
+// publishes them to every subscriber. `/api/company-info` remains as a
+// back-compat alias on the API.
 // components using `useCompanyContact()` re-render with the live
 // values. A fetch failure just leaves the fallbacks in place.
 
@@ -82,8 +84,9 @@ function nonEmpty(v: unknown): v is string {
 function startCompanyContactFetch(): void {
   if (fetchStarted || typeof window === "undefined") return;
   fetchStarted = true;
-  void fetch("/api/company-info", {
+  void fetch("/api/storefront-company-info", {
     headers: { Accept: "application/json" },
+    cache: "no-store",
   })
     .then((res) => (res.ok ? (res.json() as Promise<unknown>) : null))
     .then((data) => {

@@ -222,7 +222,7 @@ describe("GET /company-info — per-tenant assistant names", () => {
     });
 
     const res = await request(makeApp())
-      .get("/company-info")
+      .get("/storefront-company-info")
       .set("Host", "pennpaps.com");
     expect(res.status).toBe(200);
     expect(res.body.name).toBe("Penn Home Medical Supply");

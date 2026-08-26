@@ -4,11 +4,14 @@
 // "call us" links so the values an admin saves on the Company
 // information page reach the customer-facing site without a frontend
 // redeploy. Strictly public business identity — never identifiers like
-// the tax id, PTAN, or any patient data. Served from the process-level
-// company-info cache plus an edge/browser Cache-Control, so it adds no
-// per-page DB load.
+// the tax id, PTAN, or any patient data.
+//
+// Also mounted at GET /api/storefront-company-info (same handler). The
+// SPA reads that path so Host-keyed edge caches that pinned a stale
+// CareMetric body on /company-info cannot keep serving it after the
+// host-brand overlay fix. Keep /company-info for older clients.
 
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type Request, type Response } from "express";
 
 import {
   getCompanyInfo,
@@ -28,7 +31,7 @@ const PLATFORM_SUPPORT_EMAIL = "support@cmbreathe.com";
 
 const router: IRouter = Router();
 
-router.get("/company-info", async (req, res) => {
+async function handleCompanyInfo(req: Request, res: Response): Promise<void> {
   // Branding resolver — NOT resolveOrgIdByHost. The data-plane resolver
   // fails soft to the seed (Penn) org on the platform host / unbound
   // domains; that leaked the seed tenant's phone/email/name onto
@@ -104,6 +107,9 @@ router.get("/company-info", async (req, res) => {
     assistantStorefrontName: assistantNames.assistantStorefrontName,
     assistantAdminName: assistantNames.assistantAdminName,
   });
-});
+}
+
+router.get("/company-info", handleCompanyInfo);
+router.get("/storefront-company-info", handleCompanyInfo);
 
 export default router;
