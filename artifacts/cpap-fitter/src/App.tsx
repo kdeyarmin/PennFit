@@ -885,7 +885,11 @@ function LoginAliasRedirect() {
   return null;
 }
 
-function AccountHashRedirect({ hash }: { hash: "insights" | "orders" }) {
+function AccountHashRedirect({
+  hash,
+}: {
+  hash: "insights" | "messages" | "orders";
+}) {
   const [, setLocation] = useLocation();
   useEffect(() => {
     const search = typeof window !== "undefined" ? window.location.search : "";
