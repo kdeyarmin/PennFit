@@ -65,7 +65,9 @@ export function Home() {
               Your CPAP, made{" "}
               <span className="hero-headline-italic">simple</span>.
               <br />
-              <span className="hero-headline-swoosh">Fit. Order. Resupply.</span>
+              <span className="hero-headline-swoosh">
+                Fit. Order. Resupply.
+              </span>
             </h1>
 
             <p className="text-base sm:text-lg md:text-xl text-muted-foreground leading-relaxed mb-9 md:mb-11 max-w-2xl mx-auto">

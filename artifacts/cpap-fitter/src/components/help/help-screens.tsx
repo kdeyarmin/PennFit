@@ -700,7 +700,13 @@ export function CartShot() {
               fill={C.blueSoft}
             />
             <ellipse cx={93} cy={y + 28} rx="22" ry="15" fill="#cdd9e8" />
-            <text x={146} y={y + 24} fontSize="12" fontWeight="700" fill={C.navy}>
+            <text
+              x={146}
+              y={y + 24}
+              fontSize="12"
+              fontWeight="700"
+              fill={C.navy}
+            >
               {labels[i]}
             </text>
             <Line x={146} y={y + 38} w={120} color={C.line} />

@@ -234,8 +234,8 @@ const sections: FaqSection[] = [
             Yes. Once you&apos;re an established patient, we&apos;ll reach out
             by SMS, email, or phone when you&apos;re due for new cushions,
             headgear, filters, and tubing, verify your benefits, and bill
-            insurance on the standard replacement schedule. You can also start an
-            order any time on our{" "}
+            insurance on the standard replacement schedule. You can also start
+            an order any time on our{" "}
             <Link
               href="/insurance"
               className="text-primary underline-offset-4 hover:underline"
@@ -271,8 +271,8 @@ const sections: FaqSection[] = [
           <>
             Let our team know as soon as your insurance changes. We'll re-verify
             coverage with the new plan before your next order so there are no
-            surprise charges. If a plan change disrupts coverage, our team
-            will walk you through the next best option.
+            surprise charges. If a plan change disrupts coverage, our team will
+            walk you through the next best option.
           </>
         ),
       },

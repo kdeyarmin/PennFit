@@ -528,10 +528,10 @@ function DataExportSection() {
     >
       <h2 className="font-semibold">Your data</h2>
       <p className="text-sm text-muted-foreground">
-        Download every record we hold for your account — orders,
-        communication preferences, and profile details. The download is a JSON
-        file; clinical / insurance data isn&apos;t included (those live in a
-        separate system — email{" "}
+        Download every record we hold for your account — orders, communication
+        preferences, and profile details. The download is a JSON file; clinical
+        / insurance data isn&apos;t included (those live in a separate system —
+        email{" "}
         <SupportEmailLink className="font-medium text-[hsl(var(--penn-navy))] underline-offset-2 hover:underline" />{" "}
         for that).
       </p>

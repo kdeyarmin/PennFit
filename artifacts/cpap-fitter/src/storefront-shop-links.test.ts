@@ -1,6 +1,9 @@
 // Drift guard: the cash-pay storefront is retired. Patient-facing pages
 // must not link to /shop/* (legacy redirects exist, but copy should point
 // patients at insurance ordering, account orders, or the mask catalog).
+//
+// allow-source-read: structural scan across every patient page/component —
+// no single runtime mount covers the corpus.
 
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";

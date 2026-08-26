@@ -30,7 +30,11 @@ import {
 import { InsuranceLeadForm } from "@/components/insurance-lead-form";
 import { openPennBot } from "@/lib/chat-events";
 import { useCompanyContact } from "@/lib/contact";
-import { BrandName, LegalName, SupportPhoneLink } from "@/components/company-contact";
+import {
+  BrandName,
+  LegalName,
+  SupportPhoneLink,
+} from "@/components/company-contact";
 
 type Step = {
   Icon: React.ComponentType<{ className?: string }>;

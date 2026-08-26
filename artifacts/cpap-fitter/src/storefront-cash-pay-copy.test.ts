@@ -1,6 +1,9 @@
 // Drift guard: patient-facing storefront pages must not advertise cash-pay
 // shopping after the insurance-only cutover. Admin / platform marketing
 // surfaces are out of scope.
+//
+// allow-source-read: structural scan across every patient page/component —
+// no single runtime mount covers the corpus.
 
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";

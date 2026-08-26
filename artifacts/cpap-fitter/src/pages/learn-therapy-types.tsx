@@ -371,8 +371,8 @@ export function LearnTherapyTypes() {
               Order PAP equipment
             </h3>
             <p className="text-sm text-muted-foreground leading-relaxed">
-              Start an insurance order for CPAP, APAP, BiPAP, and the accessories{" "}
-              <BrandName /> stocks today.
+              Start an insurance order for CPAP, APAP, BiPAP, and the
+              accessories <BrandName /> stocks today.
             </p>
           </div>
           <ArrowRight className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors mt-1" />

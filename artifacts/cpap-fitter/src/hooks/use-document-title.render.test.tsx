@@ -69,9 +69,7 @@ beforeEach(() => {
 describe("useDocumentTitle — tenant-branded landing metadata", () => {
   it("replaces the shell's platform title/description with the resolved tenant", () => {
     render(<Page title="" />);
-    expect(document.title).toBe(
-      "Acme Home Medical — CPAP Fitter & Resupply",
-    );
+    expect(document.title).toBe("Acme Home Medical — CPAP Fitter & Resupply");
     expect(metaContent('meta[name="description"]')).toContain(
       "Acme Home Medical",
     );
@@ -114,8 +112,6 @@ describe("useDocumentTitle — /breathe/* pins the platform identity", () => {
   it("treats the /breathe root itself as platform surface", () => {
     window.history.pushState({}, "", "/breathe");
     render(<Page title="" />);
-    expect(document.title).toBe(
-      `${PLATFORM_NAME} — CPAP Fitter & Resupply`,
-    );
+    expect(document.title).toBe(`${PLATFORM_NAME} — CPAP Fitter & Resupply`);
   });
 });
