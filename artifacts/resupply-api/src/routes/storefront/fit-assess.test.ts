@@ -247,11 +247,15 @@ const VALID_PROFILE = {
   minimalContactPreference: "no_preference" as const,
 };
 
-function post(body: object, token = signFitterInviteToken(INVITE_ID)) {
+function post(body: Record<string, unknown>, token = signFitterInviteToken(INVITE_ID)) {
+  // Most fixtures exercise the happy path on the adult service line. Tests
+  // that deliberately omit population pass `population: undefined` so the
+  // helper does not inject a default.
+  const payload = "population" in body ? body : { population: "adult", ...body };
   return request(makeApp())
     .post("/fit/assess")
     .set("x-fitter-invite-token", token)
-    .send(body);
+    .send(payload);
 }
 
 describe("POST /fit/assess — invitation gate", () => {
@@ -667,7 +671,7 @@ describe("POST /api/fit/assess — structured recommendation columns", () => {
     const res = await request(makeApp())
       .post("/fit/assess")
       .set("x-fitter-invite-token", signFitterInviteToken(INVITE_ID))
-      .send({ measurements: VALID_MEASUREMENTS, profile: {} });
+      .send({ measurements: VALID_MEASUREMENTS, profile: {}, population: "adult" });
 
     expect(res.status).toBe(200);
     const session = db.inserts.find((i) => i.table === "fit_sessions");
@@ -698,6 +702,7 @@ describe("POST /api/fit/assess — structured recommendation columns", () => {
       .send({
         measurements: VALID_MEASUREMENTS,
         profile: {},
+        population: "adult",
         safety: {
           screenVersion: "magnetic_implant@v1",
           attestedAt: new Date().toISOString(),
@@ -732,7 +737,7 @@ describe("POST /api/fit/assess — structured recommendation columns", () => {
     const res = await request(makeApp())
       .post("/fit/assess")
       .set("x-fitter-invite-token", signFitterInviteToken(INVITE_ID))
-      .send({ measurements: VALID_MEASUREMENTS, profile: {} });
+      .send({ measurements: VALID_MEASUREMENTS, profile: {}, population: "adult" });
 
     expect(res.status).toBe(200);
     const row = db.inserts.find((i) => i.table === "fit_sessions")!
@@ -819,6 +824,7 @@ describe("POST /api/fit/assess — the invite records the fitting", () => {
       .send({
         measurements: VALID_MEASUREMENTS,
         profile: VALID_PROFILE,
+        population: "adult",
         safety: {
           screenVersion: "magnetic_implant@v1",
           attestedAt: new Date().toISOString(),
@@ -930,6 +936,7 @@ describe("POST /api/fit/assess — the invite records the fitting", () => {
       .send({
         measurements: VALID_MEASUREMENTS,
         profile: VALID_PROFILE,
+        population: "adult",
         safety: {
           screenVersion: "magnetic_implant@v1",
           attestedAt: new Date().toISOString(),
@@ -1010,17 +1017,43 @@ describe("POST /fit/assess — population", () => {
     ).not.toBe("fit_profile_v2");
   });
 
-  it("still defaults to adult when the field is omitted", async () => {
-    db.persistOk = true;
+  it("rejects when population is omitted and the chart cannot supply it", async () => {
     const res = await post({
       measurements: VALID_MEASUREMENTS,
       profile: VALID_PROFILE,
+      population: undefined,
     });
-    expect(res.status).toBe(200);
-    const session = db.inserts.find((i) => i.table === "fit_sessions");
-    expect((session!.payload as Record<string, unknown>).population).toBe(
-      "adult",
+    expect(res.status).toBe(400);
+    expect(res.body.details).toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(/population: required/i),
+      ]),
     );
+  });
+
+  it("accepts a chart-linked invite without body population when DOB supplies it", async () => {
+    db.persistOk = true;
+    db.rows.patients = {
+      location_id: null,
+      date_of_birth: new Date(Date.now() - 30 * 365 * 86_400_000)
+        .toISOString()
+        .slice(0, 10),
+    };
+    db.invite = {
+      patient_id: "66666666-6666-4666-8666-666666666666",
+      status: "opened",
+      expires_at: null,
+    };
+
+    const res = await request(makeApp())
+      .post("/fit/assess")
+      .set("x-fitter-invite-token", signFitterInviteToken(INVITE_ID))
+      .send({
+        measurements: VALID_MEASUREMENTS,
+        profile: VALID_PROFILE,
+      });
+    expect(res.status).toBe(200);
+    expect(res.body.population).toBe("adult");
   });
 
   it("rejects a population that is not a known service line", async () => {

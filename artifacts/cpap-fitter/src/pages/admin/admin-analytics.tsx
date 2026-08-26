@@ -400,7 +400,7 @@ const STUCK_STAGE_LABEL: Record<StuckEpisodeStage, string> = {
 };
 
 function StuckEpisodesPanel() {
-  const [stage, setStage] = useState<StuckEpisodeStage>("awaiting_response");
+  const [stage, setStage] = useState<StuckEpisodeStage>("outreach_pending");
   const { data, isPending, isError, error, refetch } = useQuery({
     queryKey: ["admin", "analytics", "stuck", stage],
     queryFn: () => fetchStuckEpisodes(stage),
