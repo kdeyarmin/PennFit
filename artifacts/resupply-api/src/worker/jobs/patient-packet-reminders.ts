@@ -208,7 +208,12 @@ async function patientPacketReminderSweepForOrg(
     }
     if (!claimed) continue; // raced — another run took it
 
-    const link = buildPacketSigningLink(c.id, nextVersion);
+    const link = await buildPacketSigningLink(
+      c.id,
+      nextVersion,
+      undefined,
+      orgId,
+    );
     // Automated cron text — withhold the phone (email still goes out)
     // when the patient's local time is outside the 9am–8pm TCPA send
     // window. The 19:33 UTC default cron makes this a backstop for

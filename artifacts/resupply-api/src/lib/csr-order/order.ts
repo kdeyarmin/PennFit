@@ -24,6 +24,7 @@ import { createTenantSendgridClient } from "../email/tenant-sender.js";
 import { logger } from "../logger";
 import { resolveTenantSmsClientOptions } from "../messaging/tenant-telecom";
 import { recordOutboundMessageUsage } from "../metering/usage";
+import { resolveTenantBaseUrl } from "../tenant-branding";
 import { resolveCompanyProfile } from "../patient-packet/company";
 import {
   effectiveTemplateContent,
@@ -169,13 +170,20 @@ export function parseOrderDocuments(raw: Json): CsrOrderDocumentSnapshot[] {
   });
 }
 
-export function buildCsrOrderSigningLink(
+/**
+ * Mint a patient `/order-sign` link. Prefer the tenant's verified custom
+ * domain so SMS/email invites land on the tenant host, not the platform
+ * Railway / cmbreathe fallback.
+ */
+export async function buildCsrOrderSigningLink(
   orderRequestId: string,
   linkVersion: number,
   ttlSeconds = DEFAULT_CSR_ORDER_TTL_DAYS * 24 * 60 * 60,
-): string {
+  orgId?: string | null,
+): Promise<string> {
   const token = signCsrOrderToken(orderRequestId, linkVersion, ttlSeconds);
-  const base = getAuthDeps().publicBaseUrl.replace(/\/$/, "");
+  const tenantBase = orgId ? await resolveTenantBaseUrl(orgId) : null;
+  const base = (tenantBase ?? getAuthDeps().publicBaseUrl).replace(/\/$/, "");
   return `${base}/order-sign?token=${encodeURIComponent(token)}`;
 }
 

@@ -415,10 +415,11 @@ router.post(
       );
     }
 
-    const link = buildCsrOrderSigningLink(
+    const link = await buildCsrOrderSigningLink(
       created.id,
       created.link_version,
       ttlDays * 24 * 60 * 60,
+      orgId,
     );
     let emailSent = false;
     let smsSent = false;

@@ -104,7 +104,7 @@ export interface PacketDocumentTemplate {
 // Every template carries the same date stamp in its version so a
 // coordinated content review bumps them together; individual edits
 // should bump only the touched template.
-const V = "2026-06-06.v1";
+const V = "2026-08-26.v2";
 
 // Patient-facing "reach us at …" contact channel. Pairs phone + email when
 // both are set, and degrades to whichever exists when one is blank — so the
@@ -280,7 +280,7 @@ export const PACKET_TEMPLATES: PacketDocumentTemplate[] = [
     category: "financial",
     version: V,
     summary:
-      "Patient agreement to pay deductibles, coinsurance, and non-covered amounts, with optional card-on-file authorization.",
+      "Patient agreement to pay deductibles, coinsurance, and non-covered amounts billed after insurance.",
     requiresSignature: true,
     defaultIncluded: true,
     build: (c) => [
@@ -301,12 +301,7 @@ export const PACKET_TEMPLATES: PacketDocumentTemplate[] = [
         bullets: [
           "I agree to pay patient-responsibility balances within 30 days of the statement date.",
           "I understand that returned-payment and reasonable collection costs may be added to past-due balances as permitted by law.",
-        ],
-      },
-      {
-        heading: "Optional card-on-file authorization",
-        paragraphs: [
-          `I may authorize ${c.legalName} to keep a payment card securely on file and to charge my patient-responsibility balance after my insurance processes each claim. This authorization is optional, can be revoked in writing at any time, and is handled through a PCI-compliant processor — full card numbers are never stored by ${c.legalName}. Card-on-file enrollment is completed separately and is not required to sign this packet.`,
+          `Patient-responsibility balances are billed by statement after insurance processes each claim — ${c.legalName} does not keep a payment card on file for patients.`,
         ],
       },
     ],

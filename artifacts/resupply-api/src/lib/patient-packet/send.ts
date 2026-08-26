@@ -24,6 +24,7 @@ import { createTenantSendgridClient } from "../email/tenant-sender.js";
 import { logger } from "../logger";
 import { resolveTenantSmsClientOptions } from "../messaging/tenant-telecom";
 import { recordOutboundMessageUsage } from "../metering/usage";
+import { resolveTenantBaseUrl } from "../tenant-branding";
 import { resolveCompanyProfile } from "./company";
 import {
   effectiveTemplateContent,
@@ -136,14 +137,25 @@ function signingUrl(baseUrl: string, token: string): string {
  * Mint a fresh signing link for an existing packet (used by the resend
  * route and the reminder sweep). Pass the packet's CURRENT link_version
  * after bumping it so previously-issued links are invalidated.
+ * Prefer the tenant's verified custom domain when `orgId` is known.
  */
-export function buildPacketSigningLink(
+export async function buildPacketSigningLink(
   packetId: string,
   linkVersion: number,
   ttlSeconds = DEFAULT_PACKET_TTL_DAYS * 24 * 60 * 60,
-): string {
+  orgId?: string | null,
+): Promise<string> {
   const token = signPatientPacketToken(packetId, linkVersion, ttlSeconds);
-  return signingUrl(getAuthDeps().publicBaseUrl, token);
+  const tenantBase = orgId ? await resolveTenantBaseUrl(orgId) : null;
+  return signingUrl(tenantBase ?? getAuthDeps().publicBaseUrl, token);
+}
+
+async function packetSigningUrl(
+  orgId: string | null | undefined,
+  token: string,
+): Promise<string> {
+  const tenantBase = orgId ? await resolveTenantBaseUrl(orgId) : null;
+  return signingUrl(tenantBase ?? getAuthDeps().publicBaseUrl, token);
 }
 
 export async function createAndSendPatientPacket(
@@ -635,7 +647,7 @@ async function buildAndDeliverPacket(
     packet.link_version,
     ttlDays * 24 * 60 * 60,
   );
-  const link = signingUrl(getAuthDeps().publicBaseUrl, token);
+  const link = await packetSigningUrl(supabase.orgId, token);
 
   const { emailSent, smsSent } = await deliverPacketLink({
     supabase,

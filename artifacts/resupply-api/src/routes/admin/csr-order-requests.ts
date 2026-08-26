@@ -381,10 +381,11 @@ router.post(
       .single();
     if (insertErr) throw insertErr;
 
-    const signingLink = buildCsrOrderSigningLink(
+    const signingLink = await buildCsrOrderSigningLink(
       created.id,
       created.link_version,
       ttlDays * 24 * 60 * 60,
+      orgId,
     );
     const { emailSent, smsSent } = await deliverCsrOrderInvite({
       supabase: supabase,
@@ -469,7 +470,12 @@ router.get(
       signingLink:
         row.status === "canceled"
           ? null
-          : buildCsrOrderSigningLink(row.id, row.link_version),
+          : await buildCsrOrderSigningLink(
+              row.id,
+              row.link_version,
+              undefined,
+              orgId,
+            ),
     });
   },
 );
@@ -527,7 +533,12 @@ router.post(
       .eq("link_version", row.link_version);
     if (bumpErr) throw bumpErr;
 
-    const signingLink = buildCsrOrderSigningLink(row.id, newVersion);
+    const signingLink = await buildCsrOrderSigningLink(
+      row.id,
+      newVersion,
+      undefined,
+      orgId,
+    );
     const { emailSent, smsSent } = await deliverCsrOrderInvite({
       supabase: supabase,
       customerName: row.customer_name,

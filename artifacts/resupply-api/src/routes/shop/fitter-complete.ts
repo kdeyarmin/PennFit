@@ -35,7 +35,10 @@ import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import { requestHost } from "../../lib/request-host";
-import { resolveBrandOrgIdByHost } from "../../lib/tenant-branding";
+import {
+  resolveBrandOrgIdByHost,
+  resolveTenantBaseUrl,
+} from "../../lib/tenant-branding";
 import { resolveOrgIdForSignedRecord } from "../../lib/storefront/signed-link-org";
 
 type FitterLeadsUpdate =
@@ -893,8 +896,12 @@ function verifyClickTrackingToken(
   return { valid: true, leadId, touchIndex, linkKey, variantKey };
 }
 
-function publicBaseUrl(): string {
+/** Platform / env fallback origin. Prefer a tenant override so tracked
+ *  campaign clicks land on the tenant host (e.g. pennpaps.com), not
+ *  Railway / cmbreathe.com. */
+function publicBaseUrl(override?: string): string {
   return (
+    override ??
     process.env.SHOP_PUBLIC_BASE_URL ??
     process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL ??
     (process.env.RAILWAY_PUBLIC_DOMAIN
@@ -903,12 +910,30 @@ function publicBaseUrl(): string {
   ).replace(/\/$/, "");
 }
 
+/** Prefer the lead's tenant custom domain for CTA redirects. Fail-soft
+ *  to the platform env base when the lead/org lookup fails. */
+async function resolveClickBaseUrl(leadId: string): Promise<string> {
+  try {
+    const orgId = await resolveOrgIdForSignedRecord("fitter_leads", leadId);
+    if (orgId) {
+      const tenantBase = await resolveTenantBaseUrl(orgId);
+      if (tenantBase) return publicBaseUrl(tenantBase);
+    }
+  } catch (err) {
+    logger.warn(
+      { err: redactDbErr(err), leadId },
+      "shop/track/c: tenant base resolve failed",
+    );
+  }
+  return publicBaseUrl();
+}
+
 /** Fallback destination when verification fails — we still 302 the
  *  user somewhere (a broken CTA mid-marketing-email is a worse UX
  *  than a redirect to the storefront), but we don't record the
  *  click. */
-function fallbackDestination(): string {
-  return `${publicBaseUrl()}/insurance`;
+function fallbackDestination(base = publicBaseUrl()): string {
+  return `${base}/insurance`;
 }
 
 router.get("/shop/track/c", clickTrackRateLimiter, async (req, res) => {
@@ -931,13 +956,16 @@ router.get("/shop/track/c", clickTrackRateLimiter, async (req, res) => {
     return;
   }
 
+  // Resolve tenant BEFORE the redirect so pennpaps.com campaign emails
+  // do not bounce patients onto the platform host.
+  const base = await resolveClickBaseUrl(verify.leadId);
+
   // Compute the destination from our server-side allowlist.
   // CTA_DESTINATIONS has been narrowed by verifyClickTrackingToken
   // (verify.linkKey is guaranteed to be a key), but the optional-
   // chain guard is belt-and-suspenders.
   const dest =
-    CTA_DESTINATIONS[verify.linkKey]?.(publicBaseUrl()) ??
-    fallbackDestination();
+    CTA_DESTINATIONS[verify.linkKey]?.(base) ?? fallbackDestination(base);
 
   // Best-effort: record the click + bump engagement_score by 5.
   // We don't await this — the redirect is the patient's primary

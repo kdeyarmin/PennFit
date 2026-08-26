@@ -630,13 +630,13 @@ class Impl implements VoiceToolDispatcher {
   private async getShopCustomerChart(
     call: DispatchToolCall<"get_customer_chart">,
   ): Promise<DispatchToolResult<"get_customer_chart">> {
-    // Storefront snapshot: first name + last order date + active-
-    // subscription flag + open-followup flag. No supplies_due (cash-pay
-    // customers have no clinical prescriptions). Dates + booleans only —
-    // never order contents, addresses, payment details, or email.
+    // Storefront snapshot: first name + last order date + open-followup
+    // flag. Subscribe & Save is retired — never read shop_subscriptions
+    // or report an active subscription. Dates + booleans only — never
+    // order contents, addresses, payment details, or email.
     const customerId = this.requireShopCustomerId();
     const supabase = await this.db();
-    const [customerRes, orderRes, subRes, followupRes] = await Promise.all([
+    const [customerRes, orderRes, followupRes] = await Promise.all([
       supabase
         .from("shop_customers")
         .select("display_name")
@@ -651,12 +651,6 @@ class Impl implements VoiceToolDispatcher {
         .limit(1)
         .maybeSingle(),
       supabase
-        .from("shop_subscriptions")
-        .select("status")
-        .eq("customer_id", customerId)
-        .in("status", ["active", "trialing"])
-        .limit(1),
-      supabase
         .from("shop_customer_followups")
         .select("id")
         .eq("customer_id", customerId)
@@ -665,7 +659,6 @@ class Impl implements VoiceToolDispatcher {
     ]);
     if (customerRes.error) throw customerRes.error;
     if (orderRes.error) throw orderRes.error;
-    if (subRes.error) throw subRes.error;
     if (followupRes.error) throw followupRes.error;
 
     const lastOrderAt =
@@ -682,7 +675,7 @@ class Impl implements VoiceToolDispatcher {
         supplies_due: [],
         recent_order_summary: {
           last_order_at: lastOrderAt,
-          open_subscription: (subRes.data ?? []).length > 0,
+          open_subscription: false,
         },
         has_open_followups: (followupRes.data ?? []).length > 0,
       },

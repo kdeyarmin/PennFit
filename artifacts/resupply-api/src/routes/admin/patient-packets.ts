@@ -34,6 +34,7 @@ import { getAuthDeps } from "../../lib/auth-deps";
 import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import { resolveCompanyProfile } from "../../lib/patient-packet/company";
+import { resolveTenantBaseUrl } from "../../lib/tenant-branding";
 import {
   defaultTemplateSections,
   effectiveTemplateContent,
@@ -198,6 +199,11 @@ const resendBody = z.object({ channels: channelsSchema }).strict();
 
 function signingUrl(baseUrl: string, token: string): string {
   return `${baseUrl.replace(/\/$/, "")}/patient-packet-sign?token=${encodeURIComponent(token)}`;
+}
+
+async function tenantSigningUrl(orgId: string, token: string): Promise<string> {
+  const tenantBase = await resolveTenantBaseUrl(orgId);
+  return signingUrl(tenantBase ?? getAuthDeps().publicBaseUrl, token);
 }
 
 // ── Document catalog (with effective, editable content) ──────────
@@ -984,7 +990,7 @@ router.get(
     let signingLink: string | null = null;
     if (packet.status === "sent" || packet.status === "viewed") {
       const token = signPatientPacketToken(packet.id, packet.link_version);
-      signingLink = signingUrl(getAuthDeps().publicBaseUrl, token);
+      signingLink = await tenantSigningUrl(orgId, token);
     }
 
     res.json({
@@ -1221,7 +1227,7 @@ router.post(
     }
 
     const token = signPatientPacketToken(packet.id, nextVersion);
-    const link = signingUrl(getAuthDeps().publicBaseUrl, token);
+    const link = await tenantSigningUrl(orgId, token);
 
     const { emailSent, smsSent } = await deliverPacketLink({
       supabase: supabase,

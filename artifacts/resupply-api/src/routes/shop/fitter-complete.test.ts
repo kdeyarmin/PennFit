@@ -69,8 +69,18 @@ const supabaseMock = installSupabaseMock();
 const resolveBrandOrgIdByHostMock = vi.hoisted(() =>
   vi.fn<() => Promise<string | null>>(async () => "org-from-host"),
 );
+const resolveTenantBaseUrlMock = vi.hoisted(() =>
+  vi.fn<() => Promise<string | null>>(async () => null),
+);
+const resolveOrgIdForSignedRecordMock = vi.hoisted(() =>
+  vi.fn<() => Promise<string | null>>(async () => "org-from-lead"),
+);
 vi.mock("../../lib/tenant-branding", () => ({
   resolveBrandOrgIdByHost: resolveBrandOrgIdByHostMock,
+  resolveTenantBaseUrl: resolveTenantBaseUrlMock,
+}));
+vi.mock("../../lib/storefront/signed-link-org", () => ({
+  resolveOrgIdForSignedRecord: resolveOrgIdForSignedRecordMock,
 }));
 vi.mock("../../lib/request-host", () => ({
   requestHost: () => "tenant.example.com",
@@ -140,6 +150,10 @@ beforeEach(() => {
   supabaseMock.reset();
   supabaseMockLegacy.mockReset();
   resolveBrandOrgIdByHostMock.mockReset().mockResolvedValue("org-from-host");
+  resolveTenantBaseUrlMock.mockReset().mockResolvedValue(null);
+  resolveOrgIdForSignedRecordMock
+    .mockReset()
+    .mockResolvedValue("org-from-lead");
   _resetFitterCompleteRateBucketForTests();
 
   // Default: no-op chain that records the read/update but returns
@@ -708,6 +722,16 @@ describe("GET /shop/track/c — click tracking redirect", () => {
       .query({ t: token });
     expect(res.status).toBe(302);
     expect(res.headers.location).toContain("/contact");
+  });
+
+  it("redirects onto the tenant custom domain when one is configured", async () => {
+    resolveTenantBaseUrlMock.mockResolvedValueOnce("https://pennpaps.com");
+    const token = signClickTrackingToken("lead-1", 1, "consent");
+    const res = await request(makeApp())
+      .get("/resupply-api/shop/track/c")
+      .query({ t: token });
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toBe("https://pennpaps.com/consent");
   });
 
   it("routes each link_key to its own allowlisted destination", async () => {

@@ -999,7 +999,7 @@ describe("VoiceToolDispatcher — shop_customer flow", () => {
       supplies_due: [],
       recent_order_summary: {
         last_order_at: "2026-05-02T00:00:00.000Z",
-        open_subscription: true,
+        open_subscription: false,
       },
       has_open_followups: true,
     });
