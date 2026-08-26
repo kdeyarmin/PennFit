@@ -382,10 +382,10 @@ const RT: StaffRoleProfile = {
   ],
   extraSections: [
     {
-      heading: "Screens you can see but not load",
+      heading: "What your role does not cover",
       paragraphs: [
-        "The Therapy monitoring menu also lists population dashboards — Therapy Fleet, Setup Adherence, Resupply Opportunities — plus Recalls, Asset Recovery, and the printable Therapy Report. Those read from the reporting, returns, and case permissions, which your role does not hold, so they will not load for you even though the menu shows them.",
-        "That is expected, not a fault to report. Ask an Owner or Admin to pull the population view you need, or to widen your access if the work has become part of your job.",
+        "The population dashboards — Therapy Fleet, Setup Adherence, Resupply Opportunities — along with Recalls, Asset Recovery, and the printable Therapy Report, read from the reporting, returns, and case permissions, which your role does not hold. They are not in your menu, so you will not find them there.",
+        "That is by design, not something missing from your account. If you need a population view, ask an Owner or Admin to pull it — or to widen your access if that work has become part of your job.",
       ],
     },
   ],
