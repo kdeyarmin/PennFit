@@ -464,14 +464,14 @@ export const OPENAI_TOOL_DESCRIPTORS: readonly OpenAiToolDescriptor[] = [
     type: "function",
     name: "verify_shop_customer_identity",
     description:
-      "Verify a storefront (cash-pay) caller's identity by matching the last four digits of the card on file. MUST be called and succeed before any other tool for a storefront caller. If no card is on file, or it fails three times, hand off to a human.",
+      "Legacy storefront identity check against a cash-pay card last-four. Cash-pay checkout is retired — do NOT call this for insurance-era callers. Prefer request_human_handoff after collecting name and email.",
     parameters: {
       type: "object",
       properties: {
         last_four: {
           type: "string",
           description:
-            "The last four digits of the caller's payment card (exactly four digits, e.g. 4242).",
+            "Legacy: last four digits of a payment card that may no longer be on file (exactly four digits, e.g. 4242).",
         },
       },
       required: ["last_four"],

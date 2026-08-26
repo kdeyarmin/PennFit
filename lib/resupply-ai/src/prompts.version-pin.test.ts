@@ -191,6 +191,13 @@ const PROMPT_VERSION_HASHES: Readonly<Record<string, string>> = {
   // sales variant moves in BREATHE_SALES_PROMPT_HASH below.
   "2026-08-25.v24":
     "8d7fb4c7ff77bb8e7b7aa65a2b2db91973b2de48b3096a2c2b243170b225cff0",
+  // v25 retires cash-pay card last-4 identity for shop_customer callers
+  // (insurance-only: collect name+email and hand off; do not call
+  // verify_shop_customer_identity / get_customer_chart). Patient render is
+  // unchanged from v24. Shop + sales hashes move below (sales also absorbs
+  // the earlier B2B knowledge edit that dropped the patient-pay shop pitch).
+  "2026-08-26.v25":
+    "8d7fb4c7ff77bb8e7b7aa65a2b2db91973b2de48b3096a2c2b243170b225cff0",
 };
 
 function renderCanonicalPrompt(): string {
@@ -217,7 +224,7 @@ function hashStrippingVersionLine(prompt: string, version: string): string {
  * Update the same way: render, take the printed hash, record it here.
  */
 const SHOP_PROMPT_HASH =
-  "ee8f0f4cd032fa72596ef8582602e4e240a4e89db1aaffb3a85a46b9ff6e59bc";
+  "7d01356197fc5ef4df90d8e5fb82ccbca2028c9afe56d81405b79842ff6610f6";
 
 /**
  * The CareMetric Breathe sales (breathe_prospect) variant renders its own
@@ -249,7 +256,7 @@ const SHOP_PROMPT_HASH =
  * agent must not pitch e-commerce — changing it again.
  */
 const BREATHE_SALES_PROMPT_HASH =
-  "17434d4cc1d0ccacfa3e9810517ce3b3b84cddb5e33a71992ac382d0611b90a7";
+  "e5a53e411a135b499027cd9a9f58adfba9cb3e60fb1278f272350a07b87579fe";
 
 describe("PROMPT_VERSION drift detector", () => {
   it("has a recorded hash for the currently-shipped PROMPT_VERSION", () => {
