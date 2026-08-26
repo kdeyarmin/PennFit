@@ -17,7 +17,7 @@ vi.mock("@workspace/resupply-email", async () => {
 
 vi.mock("../tenant-branding.js", () => ({
   resolveTenantLinkBaseUrl: vi.fn(
-    async (_orgId: string, platform: string) => `https://tenant.example`,
+    async (_orgId: string, _platform: string) => `https://tenant.example`,
   ),
 }));
 
