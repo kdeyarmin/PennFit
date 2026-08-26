@@ -339,7 +339,7 @@ export function buildMessagePreviews(brand: PreviewBrand): MessagePreview[] {
         "What's in this shipment:",
         itemsText(),
         "",
-        `Track your order: ${baseUrl}/account/orders`,
+        `Track your order: ${baseUrl}/track-order`,
       ].join("\n"),
       html: shell(
         brand,
@@ -379,7 +379,7 @@ export function buildMessagePreviews(brand: PreviewBrand): MessagePreview[] {
         "",
         "If you can't find the parcel, reply to this email and we'll chase it with the carrier.",
         "",
-        `View your order: ${baseUrl}/account/orders`,
+        `View your order: ${baseUrl}/track-order`,
       ].join("\n"),
       html: shell(
         brand,

@@ -223,8 +223,8 @@ router.get(
           kind: "shop_order",
           id: order.id,
           label: `Shop order · ${order.status}${order.amount_total_cents ? ` · $${(order.amount_total_cents / 100).toFixed(2)}` : ""}`,
-          href: `/admin/shop/returns?orderId=${order.id}`,
-          hint: order.stripe_session_id.slice(-12),
+          href: "/admin/patients",
+          hint: "Historical cash-pay order",
         });
       }
     } else if (HEX_TAIL_RE.test(q) && !UUID_RE.test(q) && !q.includes("@")) {
@@ -242,7 +242,9 @@ router.get(
           kind: "shop_order",
           id: order.id,
           label: `Shop order · ${order.status}`,
-          href: `/admin/shop/returns?orderId=${order.id}`,
+          // Returns/customer detail pages retired with cash-pay —
+          // same posture as shop_customer hits above.
+          href: "/admin/patients",
           hint: order.stripe_session_id.slice(-12),
         });
       }

@@ -156,7 +156,9 @@ describe("account — sections grouped into tabs", () => {
   it("keeps deep links working via hashToAccountTab + a hashchange listener", () => {
     expect(SRC).toContain("function hashToAccountTab");
     expect(SRC).toContain('if (h === "insights") return "overview"');
-    expect(SRC).toContain('if (h === "messages") return "messages"');
+    expect(SRC).toContain(
+      'if (h === "messages" || h === "chat" || h === "returns") return "messages"',
+    );
     expect(SRC).toContain('addEventListener("hashchange"');
   });
 
@@ -231,9 +233,10 @@ describe("hashToAccountTab", () => {
     const h = hash.replace(/^#/, "");
     if (h === "insights") return "overview";
     if (h === "overview") return "overview";
-    if (h === "messages") return "messages";
+    if (h === "messages" || h === "chat" || h === "returns") return "messages";
     if (h === "therapy") return "therapy";
-    if (h === "account") return "account";
+    if (h === "account" || h === "comm-prefs" || h === "caregiver")
+      return "account";
     return null;
   }
 
@@ -243,6 +246,16 @@ describe("hashToAccountTab", () => {
 
   it("maps #messages → Messages tab", () => {
     expect(hashToAccountTab("#messages")).toBe("messages");
+  });
+
+  it("maps support aliases #chat / #returns → Messages", () => {
+    expect(hashToAccountTab("#chat")).toBe("messages");
+    expect(hashToAccountTab("#returns")).toBe("messages");
+  });
+
+  it("maps #comm-prefs / #caregiver → Account tab", () => {
+    expect(hashToAccountTab("#comm-prefs")).toBe("account");
+    expect(hashToAccountTab("#caregiver")).toBe("account");
   });
 
   it("ignores retired cash-pay #autoship / #orders hashes", () => {

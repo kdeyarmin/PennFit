@@ -492,9 +492,9 @@ describe("App.tsx — legacy /shop/* redirects", () => {
     expect(SRC).toContain("<LegacyShopRedirect");
   });
 
-  it("forwards order history to /account/orders", () => {
+  it("forwards order history to /track-order", () => {
     expect(SRC).toContain('normalized === "orders"');
-    expect(SRC).toContain("/account/orders");
+    expect(SRC).toContain('path = "/track-order"');
   });
 
   it("forwards cart/checkout receipts to /track-order", () => {

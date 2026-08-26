@@ -125,7 +125,7 @@ describe("sendRefundNotificationEmail", () => {
     expect(arg.html).toContain("$10.00");
   });
 
-  it("falls back to /account/orders when there is no session id", async () => {
+  it("links to /track-order when there is no session id", async () => {
     process.env.SENDGRID_API_KEY = "SG.test";
     process.env.SENDGRID_FROM_EMAIL = "no-reply@penn.example";
     sendEmailMock.mockResolvedValueOnce({ messageId: "msg_nosess" });
@@ -138,7 +138,8 @@ describe("sendRefundNotificationEmail", () => {
       isPartial: false,
     });
     const arg = sendEmailMock.mock.calls[0]![0];
-    expect(arg.html).toContain("https://test.example.com/account/orders");
+    expect(arg.html).toContain("https://test.example.com/track-order");
+    expect(arg.html).not.toContain("/account/orders");
     // No stripe_session_id customArg when the session is unknown.
     expect(arg.customArgs).toEqual({ kind: "shop_refund_notification_v1" });
   });

@@ -98,9 +98,7 @@ export async function sendRefundNotificationEmail(
       (await resolveTenantBaseUrl(input.orgId)) ??
       undefined,
   );
-  const orderUrl = stripeSessionId
-    ? `${base}/track-order`
-    : `${base}/account/orders`;
+  const orderUrl = `${base}/track-order`;
 
   const lead = isPartial
     ? `We've issued a partial refund of ${amount} to your original payment method.`

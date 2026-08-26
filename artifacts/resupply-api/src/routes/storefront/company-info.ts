@@ -60,8 +60,7 @@ router.get("/company-info", async (req, res) => {
       info = {
         ...info,
         name: branding.storefrontName.trim(),
-        legalName:
-          branding.legalName.trim() || branding.storefrontName.trim(),
+        legalName: branding.legalName.trim() || branding.storefrontName.trim(),
         websiteUrl: tenantBase || info.websiteUrl,
         ...(useEmail
           ? {

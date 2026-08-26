@@ -475,7 +475,7 @@ async function tryNotifyCustomerOfReply(input: {
   void sendPushToCustomer(orgId, row.customerId, {
     title: `New message from ${brandName}`,
     body: "Customer service replied. Tap to read.",
-    url: "/account/messages",
+    url: "/account#messages",
     tag: `csr_reply:${input.conversationId}`,
   }).catch((err) => {
     logger.warn(

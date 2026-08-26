@@ -120,8 +120,8 @@ export async function sendDeliveryFollowupEmail(
       (await resolveTenantBaseUrl(input.orgId)) ??
       undefined,
   );
-  const orderUrl = `${base}/account/orders`;
-  const returnsUrl = `${base}/account#returns`;
+  const orderUrl = `${base}/track-order`;
+  const returnsUrl = `${base}/contact`;
   const reviewUrl = `${base}/contact?utm_campaign=delivery_followup`;
 
   // NPS-rating links — 0..10 buttons rendered inline. Each carries an

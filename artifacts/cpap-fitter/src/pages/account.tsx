@@ -67,14 +67,17 @@ type AccountTabId = (typeof ACCOUNT_TABS)[number]["id"];
 // in the app keep working now that the sections live behind tabs:
 //   /account#messages  → Messages
 //   /account#insights  → Overview (InsightsSection lives on the Overview tab)
+//   /account#comm-prefs / #caregiver → Account (prefs + caregiver live there)
+//   /account#chat / #returns → Messages (support / help conversation)
 // Legacy #autoship / #orders hashes no longer map (cash-pay orders tab retired).
 export function hashToAccountTab(hash: string): AccountTabId | null {
   const h = hash.replace(/^#/, "");
   if (h === "insights") return "overview";
   if (h === "overview") return "overview";
-  if (h === "messages") return "messages";
+  if (h === "messages" || h === "chat" || h === "returns") return "messages";
   if (h === "therapy") return "therapy";
-  if (h === "account") return "account";
+  if (h === "account" || h === "comm-prefs" || h === "caregiver")
+    return "account";
   return null;
 }
 

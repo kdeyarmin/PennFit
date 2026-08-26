@@ -132,7 +132,7 @@ export async function sendEobExplainerEmail(
       undefined,
   );
   const accountUrl = `${base}/account`;
-  const supportUrl = `${base}/account#chat`;
+  const supportUrl = `${base}/account#messages`;
   const greeting = input.firstName
     ? `Hi ${escapeHtml(input.firstName)},`
     : "Hi there,";

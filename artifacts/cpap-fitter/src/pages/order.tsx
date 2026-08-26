@@ -955,10 +955,10 @@ export function Order() {
               No surprise bills.
             </p>
             <p className="text-muted-foreground mt-0.5">
-              Submitting this form does not charge you.{" "}
-              {company.legalName} will verify your insurance benefit and
-              prescription first, then contact you to confirm before anything
-              ships. You'll know your out-of-pocket — usually
+              Submitting this form does not charge you. {company.legalName} will
+              verify your insurance benefit and prescription first, then contact
+              you to confirm before anything ships. You'll know your
+              out-of-pocket — usually
               <span className="font-semibold"> $0 with prescription</span> —
               before they fulfill the order.
             </p>

@@ -123,7 +123,7 @@ function SignedInBanner() {
             <div className="flex flex-wrap gap-2 pt-1">
               {data.pendingOrders > 0 && (
                 <Link
-                  href="/account/orders"
+                  href="/track-order"
                   className="inline-flex items-center gap-1.5 rounded-full bg-[hsl(var(--penn-gold)/0.18)] px-3 py-1 text-xs font-medium text-[hsl(var(--penn-navy))] hover:bg-[hsl(var(--penn-gold)/0.28)]"
                 >
                   <Truck className="w-3.5 h-3.5" />
@@ -172,7 +172,7 @@ function OrderTile({
   }
 
   return (
-    <Link href="/account/orders">
+    <Link href="/track-order">
       <div className="rounded-xl border bg-background/70 p-4 hover:border-[hsl(var(--penn-gold))] transition-colors cursor-pointer h-full">
         <div className="flex items-start gap-3">
           <div className="h-9 w-9 rounded-lg bg-[hsl(var(--penn-gold)/0.18)] flex items-center justify-center shrink-0">

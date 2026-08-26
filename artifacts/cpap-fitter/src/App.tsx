@@ -832,7 +832,7 @@ function LegacyResupplyRedirect({ rest }: { rest: string }) {
  * links, and in-app CTAs still point at /shop/*, so forward them to
  * living insurance-era surfaces while preserving query strings and
  * hashes:
- *   - order history → /account/orders
+ *   - order history → /track-order
  *   - cart / checkout / success receipts → /track-order (or /contact)
  *   - everything else (product pages, generic /shop) → /insurance
  */
@@ -844,7 +844,7 @@ function LegacyShopRedirect({ rest }: { rest: string }) {
     const normalized = rest.replace(/^\/+/, "").toLowerCase();
     let path = "/insurance";
     if (normalized === "orders" || normalized.startsWith("orders/")) {
-      path = `/account/orders${normalized.slice("orders".length)}`;
+      path = "/track-order";
     } else if (
       normalized === "cart" ||
       normalized.startsWith("cart/") ||
@@ -1275,12 +1275,15 @@ function PatientRouter() {
             <Route path="/account/insights">
               {() => <AccountHashRedirect hash="insights" />}
             </Route>
+            <Route path="/account/messages">
+              {() => <AccountHashRedirect hash="messages" />}
+            </Route>
             {/* Legacy deep link: the retail Orders tab retired with
-                cash-pay, but pushes sent before this deploy still carry
-                the URL. Land them on the account rather than a hash that
-                resolves to nothing. */}
+                cash-pay, but pushes/emails sent before this deploy still
+                carry the URL. Land them on track-order (lookup by ref)
+                rather than an empty account overview. */}
             <Route path="/account/orders">
-              {() => <Redirect to="/account" />}
+              {() => <Redirect to="/track-order" />}
             </Route>
             <Route path="/account" component={GuardedAccount} />
             <Route path="/account/billing" component={GuardedAccountBilling} />
