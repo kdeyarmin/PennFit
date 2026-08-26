@@ -599,9 +599,9 @@ export function DeviceSetup() {
           <ArrowRight className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors mt-1" />
         </Link>
         <Link
-          href="/shop"
+          href="/insurance"
           className="glass-card lift-on-hover rounded-2xl p-6 flex items-start gap-4 group"
-          data-testid="setup-link-shop"
+          data-testid="setup-link-insurance"
         >
           <div className="shrink-0 h-11 w-11 rounded-xl icon-halo-navy flex items-center justify-center">
             <Sparkles className="w-5 h-5" />

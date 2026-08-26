@@ -381,7 +381,7 @@ function SingleFrameCapture() {
             className="rounded-full glass-panel border-0 px-6"
             data-testid="capture-camera-fallback-shop"
           >
-            <Link href="/shop">Skip for now — browse the shop</Link>
+            <Link href="/masks">Skip for now — browse the mask catalog</Link>
           </Button>
           {/* Camera-blocked patients (older users, locked-down devices) are
               exactly the cohort who need the insurance / in-person path the
@@ -543,7 +543,7 @@ function SingleFrameCapture() {
             className="rounded-full glass-panel border-0 px-6"
             data-testid="capture-degraded-fallback-shop"
           >
-            <Link href="/shop">Skip for now — browse the shop</Link>
+            <Link href="/masks">Skip for now — browse the mask catalog</Link>
           </Button>
           <Button
             asChild

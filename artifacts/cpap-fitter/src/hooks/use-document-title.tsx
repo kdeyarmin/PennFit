@@ -100,8 +100,8 @@ export function useDocumentTitle(
   // site default" (empty pageTitle / no description). See the module doc:
   // the static shell's values are platform placeholders, never a brand a
   // tenant's patient should see.
-  const siteDefaultTitle = `${brandName} — CPAP Fitter, Shop & Resupply`;
-  const siteDefaultDescription = `Get fitted for a CPAP mask in minutes with ${brandName}: shop cushions, filters, and tubing direct, and let us handle insurance and resupply. Privacy-first, on-device fitting.`;
+  const siteDefaultTitle = `${brandName} — CPAP Fitter & Resupply`;
+  const siteDefaultDescription = `Get fitted for a CPAP mask in minutes with ${brandName}: order cushions, filters, and tubing through insurance, and let us handle resupply reminders. Privacy-first, on-device fitting.`;
 
   useEffect(() => {
     const previousTitle = document.title;

@@ -49,7 +49,7 @@ const brands: Brand[] = [
     name: "React Health",
     tagline: "Our flagship line. Best-in-class fit, comfort, and value.",
     positioning:
-      "US-engineered, lightweight, ultra-quiet, and priced so insurance and cash-pay patients alike get a clinically excellent mask without the import-tier markup. Our top recommendation for most new CPAP users.",
+      "US-engineered, lightweight, ultra-quiet, and priced so insured patients get a clinically excellent mask without the import-tier markup. Our top recommendation for most new CPAP users.",
     flagship: "Rio II Nasal Pillow · Numa Full Face",
     image: nasalPillowImg,
     href: "/cpap-masks/react-health",
@@ -597,7 +597,7 @@ export function CpapMasks() {
             Before you pick a brand.
           </h2>
           <p className="text-muted-foreground leading-relaxed">
-            The questions we hear most often when shoppers are comparing React
+            The questions we hear most often when patients are comparing React
             Health, ResMed, and Fisher &amp; Paykel.
           </p>
         </div>
@@ -607,7 +607,7 @@ export function CpapMasks() {
             {[
               {
                 q: "Why do you put React Health first?",
-                a: "Adherence data. We track which masks our patients are still wearing 90 days in, and React Health systems show up disproportionately in the still-wearing column — lighter, quieter, and meaningfully more affordable for cash-pay shoppers. None of that makes ResMed or Fisher & Paykel a worse choice for the patients who specifically need them; it just makes React Health our default recommendation for a first-time CPAP user with no specific anatomical or pressure constraint.",
+                a: "Adherence data. We track which masks our patients are still wearing 90 days in, and React Health systems show up disproportionately in the still-wearing column — lighter, quieter, and a strong value under typical insurance benefits. None of that makes ResMed or Fisher & Paykel a worse choice for the patients who specifically need them; it just makes React Health our default recommendation for a first-time CPAP user with no specific anatomical or pressure constraint.",
               },
               {
                 q: "Are all three brands covered by insurance?",
@@ -615,7 +615,7 @@ export function CpapMasks() {
               },
               {
                 q: "What if the mask I pick isn't right?",
-                a: "Our comfort guarantee covers a one-time mask exchange within 30 days of delivery if the fit doesn't work out. No re-stocking fee, no insurance impact. See /comfort-guarantee for the specifics. The whole reason we built the fitter is to make this exchange rare — but it's there if you need it.",
+                a: "Our comfort guarantee covers a one-time mask exchange within 60 days of delivery if the fit doesn't work out. No re-stocking fee, no insurance impact. See /comfort-guarantee for the specifics. The whole reason we built the fitter is to make this exchange rare — but it's there if you need it.",
               },
               {
                 q: "Do I need a prescription?",
@@ -682,19 +682,19 @@ export function CpapMasks() {
             },
             {
               Icon: CreditCard,
-              title: "Cash-pay friendly",
-              body: "HSA and FSA cards accepted. Transparent pricing with no surprise back-bills — the price at checkout is the price you pay.",
+              title: "HSA / FSA eligible",
+              body: "Any out-of-pocket share after insurance — copays, deductibles, or uncovered accessories — can usually be paid with HSA or FSA funds.",
               halo: "icon-halo-gold",
             },
             {
               Icon: Truck,
-              title: "Fast, tracked shipping",
-              body: "Same-day fulfillment on orders placed before 1pm ET. Discreet packaging, SMS + email tracking, free shipping over $49.",
+              title: "Tracked shipping",
+              body: "Orders ship with tracking by SMS and email once benefits clear. Packaging stays discreet.",
               halo: "icon-halo-navy",
             },
             {
               Icon: PackageCheck,
-              title: "30-day comfort guarantee",
+              title: "60-day comfort guarantee",
               body: "If your mask doesn't fit right, we exchange it once — no re-stocking fee, no insurance impact. Adherence is the only metric we care about.",
               halo: "icon-halo-gold",
             },

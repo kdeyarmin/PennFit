@@ -262,8 +262,8 @@ export function HelpFindYourMask() {
           a: (
             <>
               No — if you already know what you need, you can{" "}
-              <Link href="/shop" className="text-primary hover:underline">
-                shop supplies directly
+              <Link href="/insurance" className="text-primary hover:underline">
+                order through your insurance
               </Link>
               . The fitter is for finding the right mask when you&apos;re not
               sure.

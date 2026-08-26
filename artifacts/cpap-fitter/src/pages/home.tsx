@@ -65,7 +65,9 @@ export function Home() {
               Your CPAP, made{" "}
               <span className="hero-headline-italic">simple</span>.
               <br />
-              <span className="hero-headline-swoosh">Fit. Shop. Resupply.</span>
+              <span className="hero-headline-swoosh">
+                Fit. Order. Resupply.
+              </span>
             </h1>
 
             <p className="text-base sm:text-lg md:text-xl text-muted-foreground leading-relaxed mb-9 md:mb-11 max-w-2xl mx-auto">
@@ -84,7 +86,8 @@ export function Home() {
                 <>is your local DME team&rsquo;s online CPAP storefront.</>
               )}{" "}
               Get clinically matched to the right mask, order cushions, filters,
-              and tubing direct, and let us keep your resupply on schedule.
+              and tubing through your insurance plan, and let us keep your
+              resupply on schedule.
             </p>
 
             <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
@@ -101,11 +104,11 @@ export function Home() {
                 size="lg"
                 variant="outline"
                 className="h-14 px-6 text-base rounded-full gap-2"
-                data-testid="home-cta-shop"
-                onClick={() => navigate("/shop")}
+                data-testid="home-cta-insurance"
+                onClick={() => navigate("/insurance")}
               >
                 <ShoppingBag className="w-5 h-5" />
-                Shop CPAP supplies
+                Order through insurance
               </Button>
             </div>
             {/*
@@ -229,9 +232,9 @@ export function Home() {
             paths. Different visual language from the featured card. */}
           <div className="lg:col-span-2 flex flex-col gap-5">
             <Link
-              href="/shop"
+              href="/insurance"
               className="glass-card lift-on-hover rounded-2xl p-6 flex-1 flex flex-col text-left group"
-              data-testid="home-path-shop"
+              data-testid="home-path-insurance"
             >
               <div className="flex items-start gap-4 mb-3">
                 <div className="relative h-12 w-12 rounded-2xl flex items-center justify-center shrink-0 icon-halo-gold">
@@ -239,16 +242,16 @@ export function Home() {
                 </div>
                 <div className="min-w-0">
                   <h3 className="text-lg font-semibold tracking-tight mb-1">
-                    Shop direct
+                    Order through insurance
                   </h3>
                   <p className="text-sm text-muted-foreground leading-relaxed">
-                    Cushions, filters, tubing, headgear, and bundles — cash-pay,
-                    ships in 1–3 business days.
+                    Cushions, filters, tubing, and headgear billed to your plan
+                    after we verify benefits and coordinate your prescription.
                   </p>
                 </div>
               </div>
               <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-primary group-hover:gap-2 transition-all mt-auto">
-                Browse the shop
+                See how insurance works
                 <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" />
               </span>
             </Link>
@@ -267,8 +270,8 @@ export function Home() {
                     Your account
                   </h3>
                   <p className="text-sm text-muted-foreground leading-relaxed">
-                    Save shipping and cards, see past orders, and reorder in one
-                    tap.
+                    Track resupply shipments, update insurance details, and see
+                    past orders in one place.
                   </p>
                 </div>
               </div>

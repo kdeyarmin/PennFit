@@ -145,6 +145,26 @@ describe("help.tsx — hub structure", () => {
   it("provides a search box", () => {
     expect(HUB_SRC).toContain("help-search-input");
   });
+
+  it("lists quick-access links to every major patient destination", () => {
+    expect(HUB_SRC).toContain("help-quick-access");
+    for (const href of [
+      "/how-it-works",
+      "/insurance",
+      "/insurance/estimate",
+      "/masks",
+      "/cpap-masks",
+      "/account",
+      "/track-order",
+      "/reminders",
+      "/faq",
+      "/contact",
+      "/learn",
+      "/comfort-guarantee",
+    ]) {
+      expect(HUB_SRC).toContain(href);
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------

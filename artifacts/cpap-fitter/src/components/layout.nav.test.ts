@@ -1,14 +1,11 @@
 // Tests for components/layout.tsx — primary navigation structure.
 //
-// The header nav groups the three mask-discovery surfaces (Mask
-// Catalog + the brand landings) under one "Masks" dropdown, keeps
-// Virtual Mask Fitter and Shop as their own items, and nests FAQ
-// under the /help hub (so it's no longer a top-level bar item). The
-// footer still carries the "/stories" Patient stories link.
+// The header nav is a flat, task-oriented list (Get fitted, Order, Masks,
+// Track, Help) so new patients can scan it quickly. Brand mask pages, FAQ,
+// and the article library live in the footer and /help hub.
 //
-// We test the source file statically (same approach as AppShell.nav.test.ts)
-// because the node Vitest environment has no DOM and React components cannot
-// be rendered without jsdom.
+// Static source analysis (same approach as AppShell.nav.test.ts) because
+// the node Vitest environment has no DOM.
 
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -18,104 +15,78 @@ import { describe, expect, it } from "vitest";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SRC = readFileSync(path.join(__dirname, "layout.tsx"), "utf8");
 
+function navLinksBlock(): string {
+  const navStart = SRC.indexOf("const navLinks");
+  const navEnd = SRC.indexOf("];", navStart);
+  expect(navStart).toBeGreaterThanOrEqual(0);
+  expect(navEnd).toBeGreaterThan(navStart);
+  return SRC.slice(navStart, navEnd + 2);
+}
+
 // ---------------------------------------------------------------------------
 // Primary navLinks array — header navigation (desktop + mobile)
 // ---------------------------------------------------------------------------
 
 describe("layout.tsx — primary navLinks array", () => {
-  it("defines a navLinks array", () => {
-    expect(SRC).toContain("const navLinks");
+  it("defines a flat navLinks array", () => {
+    expect(SRC).toContain("const navLinks: NavLink[]");
   });
 
-  it("includes /how-it-works with label 'Virtual Mask Fitter'", () => {
-    expect(SRC).toContain('href: "/how-it-works"');
-    expect(SRC).toContain("Virtual Mask Fitter");
+  it("includes /how-it-works with label 'Get fitted'", () => {
+    const block = navLinksBlock();
+    expect(block).toContain('href: "/how-it-works"');
+    expect(block).toContain('"Get fitted"');
   });
 
-  it("includes /masks with label 'Mask Catalog' (under Masks group)", () => {
-    expect(SRC).toContain('href: "/masks"');
-    expect(SRC).toContain("Mask Catalog");
+  it("includes /insurance with label 'Order'", () => {
+    const block = navLinksBlock();
+    expect(block).toContain('href: "/insurance"');
+    expect(block).toContain('"Order"');
   });
 
-  it("includes /cpap-masks with label 'Brands' (under Masks group)", () => {
-    expect(SRC).toContain('href: "/cpap-masks"');
-    expect(SRC).toContain('"Brands"');
+  it("includes /masks with label 'Masks'", () => {
+    const block = navLinksBlock();
+    expect(block).toContain('href: "/masks"');
+    expect(block).toContain('"Masks"');
   });
 
-  it("includes /shop with label 'Shop'", () => {
-    expect(SRC).toContain('href: "/shop"');
-    expect(SRC).toContain('"Shop"');
-  });
-
-  it("includes /learn with label 'Learn'", () => {
-    expect(SRC).toContain('href: "/learn"');
-    expect(SRC).toContain('"Learn"');
+  it("includes /track-order with label 'Track'", () => {
+    const block = navLinksBlock();
+    expect(block).toContain('href: "/track-order"');
+    expect(block).toContain('"Track"');
   });
 
   it("includes /help with label 'Help'", () => {
-    expect(SRC).toContain('href: "/help"');
-    expect(SRC).toContain('"Help"');
+    const block = navLinksBlock();
+    expect(block).toContain('href: "/help"');
+    expect(block).toContain('"Help"');
   });
 
-  // FAQ was removed from the primary nav and nested under the /help
-  // hub (which carries a prominent "Browse the FAQ" card) plus the
-  // mobile "Talk to us" bar — so the top bar has one support entry.
-  it("does NOT include FAQ in the primary navLinks (nested under Help)", () => {
-    const navStart = SRC.indexOf("const navLinks");
-    const navEnd = SRC.indexOf("];", navStart);
-    expect(navStart).toBeGreaterThanOrEqual(0);
-    expect(navEnd).toBeGreaterThan(navStart);
-    const navLinksBlock = SRC.slice(navStart, navEnd + 2);
-    expect(navLinksBlock).not.toContain('"/faq"');
-    expect(navLinksBlock).not.toContain('label: "FAQ"');
+  it("does NOT use a Masks dropdown group in the primary nav", () => {
+    const block = navLinksBlock();
+    expect(block).not.toContain("children:");
+    expect(block).not.toContain("NavDropdown");
   });
 
-  it("does NOT include /stories in the primary navLinks (footer-only link)", () => {
-    // /stories should only be in the footer, not in the primary navLinks array
-    // We check the navLinks block specifically (the array before the component)
-    const navStart = SRC.indexOf("const navLinks");
-    const navEnd = SRC.indexOf("];", navStart);
-    expect(navStart).toBeGreaterThanOrEqual(0);
-    expect(navEnd).toBeGreaterThan(navStart);
-    const navLinksBlock = SRC.slice(navStart, navEnd + 2);
-    expect(navLinksBlock).not.toContain('"/stories"');
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Masks dropdown — the three mask-discovery surfaces (spec catalog +
-// brand landings) are grouped under one "Masks" menu, and the brand
-// sub-pages are surfaced in it so they're reachable from the nav (not
-// only by clicking through /cpap-masks).
-// ---------------------------------------------------------------------------
-
-describe("layout.tsx — Masks dropdown group", () => {
-  it("defines a 'Masks' group label", () => {
-    expect(SRC).toContain('label: "Masks"');
+  it("does NOT include /learn in the primary nav (footer + help hub)", () => {
+    const block = navLinksBlock();
+    expect(block).not.toContain('href: "/learn"');
   });
 
-  it("surfaces the three brand sub-pages in the dropdown", () => {
-    expect(SRC).toContain('href: "/cpap-masks/resmed"');
-    expect(SRC).toContain('href: "/cpap-masks/react-health"');
-    expect(SRC).toContain('href: "/cpap-masks/fisher-paykel"');
+  it("does NOT include FAQ in the primary nav (nested under Help)", () => {
+    const block = navLinksBlock();
+    expect(block).not.toContain('"/faq"');
+    expect(block).not.toContain('label: "FAQ"');
   });
 
-  it("renders the dropdown trigger with data-testid='nav-masks-menu'", () => {
-    expect(SRC).toContain('data-testid="nav-masks-menu"');
-  });
-
-  it("the dropdown trigger is a menu button (aria-haspopup='menu')", () => {
-    expect(SRC).toContain('aria-haspopup="menu"');
-  });
-
-  it("renders grouped entries via a NavDropdown / isNavGroup branch", () => {
-    expect(SRC).toContain("NavDropdown");
-    expect(SRC).toContain("isNavGroup");
+  it("does NOT include /stories in the primary nav (footer-only link)", () => {
+    const block = navLinksBlock();
+    expect(block).not.toContain('"/stories"');
   });
 });
 
 // ---------------------------------------------------------------------------
-// Mobile navigation — mobile nav links use navLinks array
+// Mobile navigation
 // ---------------------------------------------------------------------------
 
 describe("layout.tsx — mobile navigation", () => {
@@ -191,8 +162,10 @@ describe("layout.tsx — footer 'Learn & Resources' column", () => {
     expect(SRC).toContain("CPAP glossary");
   });
 
-  it("includes /cpap-masks footer link for 'Mask brands'", () => {
-    expect(SRC).toContain("Mask brands");
+  it("surfaces brand mask pages in the footer", () => {
+    expect(SRC).toContain('href="/cpap-masks/resmed"');
+    expect(SRC).toContain('href="/cpap-masks/react-health"');
+    expect(SRC).toContain('href="/cpap-masks/fisher-paykel"');
   });
 
   it("includes /stories link with 'Patient stories' label in footer", () => {
@@ -213,12 +186,21 @@ describe("layout.tsx — footer 'Learn & Resources' column", () => {
 describe("layout.tsx — footer 'Patient Services' column", () => {
   it("includes /how-it-works link in footer Patient Services", () => {
     const count = (SRC.match(/href="\/how-it-works"/g) ?? []).length;
-    // Appears in navLinks and in footer
     expect(count).toBeGreaterThanOrEqual(1);
   });
 
-  it("includes /shop link in footer", () => {
-    expect(SRC).toContain("Shop Supplies");
+  it("includes /masks link for 'Mask catalog'", () => {
+    expect(SRC).toContain('href="/masks"');
+    expect(SRC).toContain("Mask catalog");
+  });
+
+  it("includes /insurance link in footer", () => {
+    expect(SRC).toContain("Order through insurance");
+  });
+
+  it("includes /insurance/estimate link", () => {
+    expect(SRC).toContain('href="/insurance/estimate"');
+    expect(SRC).toContain("Insurance estimate");
   });
 
   it("includes /account link for 'My Account'", () => {
@@ -231,9 +213,24 @@ describe("layout.tsx — footer 'Patient Services' column", () => {
     expect(SRC).toContain("Track an order");
   });
 
-  it("includes /returns link", () => {
-    expect(SRC).toContain('href="/returns"');
-    expect(SRC).toContain("Returns");
+  it("includes /reminders link", () => {
+    expect(SRC).toContain('href="/reminders"');
+    expect(SRC).toContain("Resupply reminders");
+  });
+
+  it("includes /faq and /contact links", () => {
+    expect(SRC).toContain('href="/faq"');
+    expect(SRC).toContain('href="/contact"');
+  });
+
+  it("links comfort guarantee instead of a broken /returns route", () => {
+    expect(SRC).toContain('href="/comfort-guarantee"');
+    expect(SRC).not.toContain('href="/returns"');
+  });
+
+  it("uses the insurance-only footer tagline", () => {
+    expect(SRC).toContain("Fit · Order · Resupply");
+    expect(SRC).not.toContain("Fit · Shop · Resupply");
   });
 });
 
@@ -252,8 +249,6 @@ describe("layout.tsx — footer bottom bar", () => {
   });
 
   it("includes copyright text referencing the (per-tenant) legal name", () => {
-    // The company name in the footer copyright is now resolved from the
-    // live storefront branding rather than hardcoded.
     expect(SRC).toContain("{branding.legalName}");
     expect(SRC).toContain("Licensed DME");
   });

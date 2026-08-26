@@ -230,15 +230,15 @@ export function LearnDryMouth() {
               variant="outline"
               className="mb-4 chip-tier-premium border-0 font-medium"
             >
-              <Sparkles className="w-3 h-3 mr-1.5" /> Shop the fix
+              <Sparkles className="w-3 h-3 mr-1.5" /> Order the fix
             </Badge>
             <Button
               size="lg"
               className="h-12 px-7 rounded-full btn-primary-glow group"
-              onClick={() => navigate("/shop")}
-              data-testid="dry-mouth-cta-shop"
+              onClick={() => navigate("/insurance")}
+              data-testid="dry-mouth-cta-insurance"
             >
-              Shop chin straps &amp; heated tubing
+              Order chin straps &amp; heated tubing
               <ArrowRight className="w-4 h-4 ml-1.5 transition-transform group-hover:translate-x-0.5" />
             </Button>
           </div>

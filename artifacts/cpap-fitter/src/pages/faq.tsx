@@ -231,21 +231,19 @@ const sections: FaqSection[] = [
         q: "Can I order replacement supplies through this site?",
         a: (
           <>
-            Yes, two ways. (1) <strong>Resupply program</strong> — once you're
-            an established patient, we'll reach out by SMS, email, or phone when
-            you're due for new cushions, headgear, filters, and tubing, and bill
-            insurance on the standard replacement schedule. (2){" "}
-            <strong>Shop direct</strong> — you can also browse and order
-            supplies any time at the{" "}
+            Yes. Once you&apos;re an established patient, we&apos;ll reach out
+            by SMS, email, or phone when you&apos;re due for new cushions,
+            headgear, filters, and tubing, verify your benefits, and bill
+            insurance on the standard replacement schedule. You can also start
+            an order any time on our{" "}
             <Link
-              href="/shop"
+              href="/insurance"
               className="text-primary underline-offset-4 hover:underline"
             >
-              <BrandName /> shop
-            </Link>{" "}
-            on a cash-pay basis (no prescription needed for most consumables
-            like filters, tubing, and humidifier chambers). You don't need to
-            re-run the fitter for resupply unless your fit has changed.
+              insurance ordering page
+            </Link>
+            . You don&apos;t need to re-run the fitter for resupply unless your
+            fit has changed.
           </>
         ),
       },
@@ -273,8 +271,8 @@ const sections: FaqSection[] = [
           <>
             Let our team know as soon as your insurance changes. We'll re-verify
             coverage with the new plan before your next order so there are no
-            surprise charges. If a plan change disrupts coverage, we'll discuss
-            cash-pay options.
+            surprise charges. If a plan change disrupts coverage, our team will
+            walk you through the next best option.
           </>
         ),
       },
@@ -889,7 +887,7 @@ export function Faq() {
         </h2>
         <p className="text-muted-foreground max-w-xl mx-auto">
           Get fitted for a new mask in about three minutes (your photo never
-          leaves your device), or shop CPAP supplies direct.
+          leaves your device), or order replacement supplies through insurance.
         </p>
         <div className="flex flex-col sm:flex-row gap-3 justify-center pt-2">
           <Link href="/consent">
@@ -901,13 +899,13 @@ export function Faq() {
               Get fitted for a mask
             </Button>
           </Link>
-          <Link href="/shop">
+          <Link href="/insurance">
             <Button
               size="lg"
               variant="outline"
               className="w-full sm:w-auto h-12 px-8 rounded-full glass-panel border-border/60"
             >
-              Shop CPAP supplies
+              Order through insurance
             </Button>
           </Link>
         </div>

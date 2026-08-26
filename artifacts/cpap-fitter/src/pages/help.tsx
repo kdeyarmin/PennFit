@@ -241,7 +241,7 @@ export function Help() {
   const contact = useCompanyContact();
   useDocumentTitle(
     "Help Center",
-    `Step-by-step guides for every ${contact.name} feature: the Virtual Mask Fitter, ordering, the supply shop, order tracking, accounts, resupply reminders, insurance estimates, and returns.`,
+    `Step-by-step guides for every ${contact.name} feature: the Virtual Mask Fitter, insurance ordering, order tracking, accounts, resupply reminders, insurance estimates, and our comfort guarantee.`,
   );
   const [query, setQuery] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
@@ -285,9 +285,9 @@ export function Help() {
         </h1>
         <p className="text-lg text-muted-foreground max-w-2xl mx-auto leading-relaxed">
           Short, screenshot-by-screenshot guides for every part of{" "}
-          {contact.name} — the Virtual Mask Fitter, ordering and checkout,
+          {contact.name} — the Virtual Mask Fitter, ordering through insurance,
           tracking, your account, resupply reminders, insurance estimates, and
-          returns.
+          our comfort guarantee.
         </p>
         <p className="text-sm text-muted-foreground">
           Just need a quick answer?{" "}
@@ -441,6 +441,50 @@ export function Help() {
                 </div>
               </Link>
             ))}
+          </section>
+
+          {/* Direct links to every patient-facing destination */}
+          <section
+            aria-label="Quick access"
+            className="space-y-4"
+            data-testid="help-quick-access"
+          >
+            <div className="space-y-1.5">
+              <span className="text-xs font-semibold uppercase tracking-[0.28em] text-[hsl(var(--penn-gold))]">
+                Quick access
+              </span>
+              <h2 className="text-display text-2xl md:text-3xl font-bold tracking-tight text-primary">
+                Every feature, one tap away
+              </h2>
+              <p className="text-sm md:text-base text-muted-foreground max-w-2xl leading-relaxed">
+                Jump straight to a page — no hunting through menus.
+              </p>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 text-sm">
+              {[
+                { href: "/how-it-works", label: "Virtual Mask Fitter" },
+                { href: "/insurance", label: "Order through insurance" },
+                { href: "/insurance/estimate", label: "Insurance estimate" },
+                { href: "/masks", label: "Mask catalog" },
+                { href: "/cpap-masks", label: "Mask brands" },
+                { href: "/account", label: "My account" },
+                { href: "/track-order", label: "Track an order" },
+                { href: "/reminders", label: "Resupply reminders" },
+                { href: "/faq", label: "FAQ" },
+                { href: "/contact", label: "Contact us" },
+                { href: "/learn", label: "Learn library" },
+                { href: "/comfort-guarantee", label: "Comfort guarantee" },
+              ].map(({ href, label }) => (
+                <Link
+                  key={href}
+                  href={href}
+                  className="glass-panel rounded-xl px-4 py-3 font-medium text-foreground/85 hover:text-primary hover:border-primary/30 transition-colors"
+                  data-testid={`help-quick-${href.replace(/\//g, "-").replace(/^-/, "")}`}
+                >
+                  {label}
+                </Link>
+              ))}
+            </div>
           </section>
 
           {/* Categories */}

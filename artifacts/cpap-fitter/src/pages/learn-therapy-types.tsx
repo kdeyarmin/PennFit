@@ -38,7 +38,7 @@ const modes: TherapyMode[] = [
       "Straightforward moderate OSA",
       "Stable pressure requirements",
       "Patients who don't want auto-adjust complexity",
-      "Tightest cash-pay budgets",
+      "Straightforward coverage under most plans",
     ],
     examples: "ResMed AirSense 11 CPAP · React Health Luna G3 CPAP",
   },
@@ -360,7 +360,7 @@ export function LearnTherapyTypes() {
           <ArrowRight className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors mt-1" />
         </Link>
         <Link
-          href="/shop"
+          href="/insurance"
           className="glass-card lift-on-hover rounded-2xl p-6 flex items-start gap-4 group"
         >
           <div className="shrink-0 h-11 w-11 rounded-xl icon-halo-navy flex items-center justify-center">
@@ -368,11 +368,11 @@ export function LearnTherapyTypes() {
           </div>
           <div className="flex-1">
             <h3 className="font-semibold tracking-tight mb-1 group-hover:text-primary transition-colors">
-              Shop PAP machines
+              Order PAP equipment
             </h3>
             <p className="text-sm text-muted-foreground leading-relaxed">
-              Browse the CPAP, APAP, BiPAP, and accessory inventory{" "}
-              <BrandName /> stocks today.
+              Start an insurance order for CPAP, APAP, BiPAP, and the
+              accessories <BrandName /> stocks today.
             </p>
           </div>
           <ArrowRight className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors mt-1" />

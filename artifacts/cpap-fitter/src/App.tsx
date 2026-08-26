@@ -151,10 +151,10 @@ const VerifyEmailPage = lazyWithRetry(() =>
 // Help Center — task-oriented, "how do I use this feature" documentation.
 // Distinct from /learn (medical patient education) and /faq (quick clinical
 // Q&A): a category hub at /help plus step-by-step, screenshot-illustrated
-// how-to guides under /help/* for the fitter, ordering, the shop, tracking,
-// accounts, resupply reminders, insurance estimates, and returns. Lazy-loaded
-// because they're support content, not part of the fitter/checkout flow, so
-// they shouldn't bloat the initial patient-shop bundle.
+// how-to guides under /help/* for the fitter, insurance ordering, tracking,
+// accounts, resupply reminders, insurance estimates, and the comfort
+// guarantee. Lazy-loaded because they're support content, not part of the
+// fitter flow, so they shouldn't bloat the initial patient bundle.
 const Help = lazyWithRetry(() =>
   import("@/pages/help").then((m) => ({ default: m.Help })),
 );
@@ -825,6 +825,30 @@ function LegacyResupplyRedirect({ rest }: { rest: string }) {
 }
 
 /**
+ * LegacyShopRedirect
+ *
+ * The cash-pay storefront (/shop, cart, checkout, product pages) was
+ * retired when the patient path went insurance-only. Bookmarks, email
+ * links, and in-app CTAs still point at /shop/*, so forward them to
+ * the insurance explainer (or account orders for order history) while
+ * preserving query strings and hashes.
+ */
+function LegacyShopRedirect({ rest }: { rest: string }) {
+  const [, setLocation] = useLocation();
+  useEffect(() => {
+    const search = typeof window !== "undefined" ? window.location.search : "";
+    const hash = typeof window !== "undefined" ? window.location.hash : "";
+    const normalized = rest.replace(/^\/+/, "").toLowerCase();
+    const path =
+      normalized === "orders" || normalized.startsWith("orders/")
+        ? `/account/orders${normalized.slice("orders".length)}`
+        : "/insurance";
+    setLocation(`${path}${search}${hash}`, { replace: true });
+  }, [rest, setLocation]);
+  return null;
+}
+
+/**
  * `/login` and `/signin` → whichever sign-in page actually applies to the
  * host being browsed. Tenant hosts get the patient sign-in (the storefront's
  * own `/sign-in`); the platform home host has no storefront at all, so the
@@ -1393,6 +1417,17 @@ function TopRouter() {
         </Route>
         <Route path="/resupply/*">
           {(params) => <LegacyResupplyRedirect rest={params["*"] ?? ""} />}
+        </Route>
+
+        {/*
+          Legacy cash-pay shop URLs. The catalog/checkout tree is gone;
+          keep these forwarding so old links don't 404.
+        */}
+        <Route path="/shop">
+          <LegacyShopRedirect rest="" />
+        </Route>
+        <Route path="/shop/*">
+          {(params) => <LegacyShopRedirect rest={params["*"] ?? ""} />}
         </Route>
 
         {/*

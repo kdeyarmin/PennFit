@@ -173,9 +173,9 @@ export function CpapMasksFisherPaykel() {
                   variant="outline"
                   className="h-13 px-6 rounded-full btn-on-dark-outline"
                   data-testid="fp-cta-shop"
-                  onClick={() => navigate("/shop")}
+                  onClick={() => navigate("/insurance")}
                 >
-                  Shop the line
+                  Order through insurance
                 </Button>
               </div>
             </div>

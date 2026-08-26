@@ -166,13 +166,13 @@ export function HowItWorks() {
               Get fitted for a mask
             </Button>
           </Link>
-          <Link href="/shop">
+          <Link href="/insurance">
             <Button
               size="lg"
               variant="outline"
               className="w-full sm:w-auto h-12 px-8 rounded-full glass-panel border-border/60"
             >
-              Shop CPAP supplies
+              Order through insurance
             </Button>
           </Link>
         </div>
@@ -444,13 +444,13 @@ export function HowItWorks() {
               Get fitted for a mask
             </Button>
           </Link>
-          <Link href="/shop">
+          <Link href="/insurance">
             <Button
               size="lg"
               variant="outline"
               className="w-full sm:w-auto h-12 px-8 rounded-full glass-panel border-border/60"
             >
-              Shop CPAP supplies
+              Order through insurance
             </Button>
           </Link>
           <Button

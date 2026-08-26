@@ -87,7 +87,7 @@ export function HelpOrderByPhone() {
   const contact = useCompanyContact();
   return (
     <HelpArticleShell
-      eyebrow="Shopping & Orders"
+      eyebrow="Orders & Delivery"
       title="Order by phone with the voice assistant"
       Icon={Phone}
       minutes="2 min"

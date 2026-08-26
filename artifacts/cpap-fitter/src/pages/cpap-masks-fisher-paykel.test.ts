@@ -182,8 +182,8 @@ describe("cpap-masks-fisher-paykel — CTAs", () => {
     expect(SRC).toContain('navigate("/consent")');
   });
 
-  it("navigates to /shop when shop CTA is clicked", () => {
-    expect(SRC).toContain('navigate("/shop")');
+  it("navigates to /insurance when order CTA is clicked", () => {
+    expect(SRC).toContain('navigate("/insurance")');
   });
 });
 

@@ -143,7 +143,8 @@ export function Screenshot({
 /** The storefront top bar drawn inside a screen mock-up. */
 function AppHeader({ active }: { active?: string }) {
   const brandName = useCompanyContact().name;
-  const items = ["Fitter", "Masks", "Shop", "Learn", "Help"];
+  // Matches the live patient header: Get fitted · Order · Masks · Track · Help
+  const items = ["Fitted", "Order", "Masks", "Track", "Help"];
   return (
     <g>
       <rect x="0" y="0" width="800" height="44" fill={C.panel} />
@@ -571,20 +572,22 @@ export function OrderFormShot() {
   );
 }
 
-/** The supply shop grid. */
+/** Insurance ordering hub (replaces the retired retail catalog grid). */
 export function ShopShot() {
   return (
     <svg viewBox="0 0 800 460" role="img" {...svgProps}>
-      <title>The CPAP supply shop with product cards and a cart icon</title>
+      <title>
+        The insurance ordering page with supply categories and a request button
+      </title>
       <rect width="800" height="460" fill={C.bg} />
-      <AppHeader active="Shop" />
+      <AppHeader active="Order" />
       <text x="40" y="82" fontSize="16" fontWeight="800" fill={C.navy}>
-        Shop CPAP supplies
+        Order through insurance
       </text>
       <rect
         x={40}
         y={98}
-        width={300}
+        width={360}
         height={28}
         rx="14"
         fill={C.panel}
@@ -601,21 +604,21 @@ export function ShopShot() {
       <text x={74} y={116} fontSize="10" fill={C.faint}>
         Search cushions, filters, tubing…
       </text>
-      {/* cart pill */}
-      <rect x={690} y={98} width={70} height={28} rx="14" fill={C.gold} />
+      <rect x={640} y={98} width={120} height={28} rx="14" fill={C.gold} />
       <text
-        x={725}
+        x={700}
         y={116}
         fontSize="11"
         fontWeight="800"
         fill={C.navyDeep}
         textAnchor="middle"
       >
-        Cart · 2
+        Start order
       </text>
       {[0, 1, 2, 3].map((i) => {
         const col = i % 4;
         const x = 40 + col * 185;
+        const labels = ["Cushion", "Filter", "Tubing", "Headgear"];
         return (
           <g key={i}>
             <rect
@@ -645,14 +648,14 @@ export function ShopShot() {
               fontWeight="800"
               fill={C.navy}
             >
-              ${18 + i * 6}.00
+              {labels[i]}
             </text>
             <Btn
               x={x + 14}
               y={356}
               w={137}
               h={28}
-              label="Add to cart"
+              label="Request via insurance"
               variant="outline"
             />
           </g>
@@ -662,15 +665,17 @@ export function ShopShot() {
   );
 }
 
-/** The cart / checkout review. */
+/** Insurance order review before submitting to the care team. */
 export function CartShot() {
   return (
     <svg viewBox="0 0 800 440" role="img" {...svgProps}>
-      <title>The shopping cart with line items and a checkout button</title>
+      <title>
+        An insurance order review with supply line items and a submit button
+      </title>
       <rect width="800" height="440" fill={C.bg} />
-      <AppHeader active="Shop" />
+      <AppHeader active="Order" />
       <text x="40" y="82" fontSize="16" fontWeight="800" fill={C.navy}>
-        Your cart
+        Review your order
       </text>
       <rect
         x={40}
@@ -683,6 +688,7 @@ export function CartShot() {
       />
       {[0, 1, 2].map((i) => {
         const y = 124 + i * 88;
+        const labels = ["Nasal cushion", "Disposable filter", "Tubing"];
         return (
           <g key={i}>
             <rect
@@ -694,36 +700,25 @@ export function CartShot() {
               fill={C.blueSoft}
             />
             <ellipse cx={93} cy={y + 28} rx="22" ry="15" fill="#cdd9e8" />
-            <Line x={146} y={y + 12} w={180} color={C.line} />
-            <Line x={146} y={y + 28} w={120} color={C.line} />
-            {/* qty stepper */}
-            <rect
-              x={146}
-              y={y + 38}
-              width={70}
-              height={20}
-              rx="10"
-              fill={C.bg}
-              stroke={C.line}
-            />
             <text
-              x={181}
-              y={y + 52}
-              fontSize="10"
-              fill={C.ink}
-              textAnchor="middle"
+              x={146}
+              y={y + 24}
+              fontSize="12"
+              fontWeight="700"
+              fill={C.navy}
             >
-              − 1 +
+              {labels[i]}
             </text>
+            <Line x={146} y={y + 38} w={120} color={C.line} />
             <text
               x={482}
               y={y + 30}
-              fontSize="13"
-              fontWeight="800"
-              fill={C.navy}
+              fontSize="12"
+              fontWeight="700"
+              fill={C.sub}
               textAnchor="end"
             >
-              ${(18 + i * 6).toFixed(2)}
+              Covered
             </text>
             {i < 2 ? (
               <rect x={58} y={y + 74} width={424} height={1} fill={C.line} />
@@ -742,7 +737,7 @@ export function CartShot() {
         stroke={C.line}
       />
       <text x={540} y={132} fontSize="12" fontWeight="800" fill={C.navy}>
-        Summary
+        Benefits check
       </text>
       <Line x={540} y={158} w={90} color={C.line} />
       <Line x={690} y={158} w={50} color={C.line} />
@@ -750,7 +745,7 @@ export function CartShot() {
       <Line x={700} y={186} w={40} color={C.line} />
       <rect x={540} y={214} width={200} height={1} fill={C.line} />
       <text x={540} y={244} fontSize="12" fontWeight="800" fill={C.ink}>
-        Total
+        Est. out-of-pocket
       </text>
       <text
         x={740}
@@ -760,15 +755,22 @@ export function CartShot() {
         fill={C.navy}
         textAnchor="end"
       >
-        $60.00
+        $0
       </text>
-      <Btn x={540} y={266} w={200} h={34} label="Checkout" variant="gold" />
+      <Btn
+        x={540}
+        y={266}
+        w={200}
+        h={34}
+        label="Submit to care team"
+        variant="gold"
+      />
       <Btn
         x={540}
         y={310}
         w={200}
         h={30}
-        label="Continue shopping"
+        label="Estimate benefits"
         variant="outline"
       />
     </svg>
@@ -1334,15 +1336,15 @@ export function InsuranceEstimateShot() {
   );
 }
 
-/** Returns request. */
+/** Comfort-guarantee exchange request. */
 export function ReturnsShot() {
   return (
     <svg viewBox="0 0 800 400" role="img" {...svgProps}>
-      <title>The returns and refunds request screen</title>
+      <title>The comfort-guarantee mask exchange request screen</title>
       <rect width="800" height="400" fill={C.bg} />
       <AppHeader />
       <text x="40" y="82" fontSize="16" fontWeight="800" fill={C.navy}>
-        Returns &amp; refunds
+        Comfort guarantee
       </text>
       <rect
         x={40}
@@ -1370,7 +1372,7 @@ export function ReturnsShot() {
         Exchange your mask if the fit isn&apos;t right.
       </text>
       <text x={60} y={210} fontSize="11" fontWeight="600" fill={C.sub}>
-        Which order?
+        Which delivery?
       </text>
       <rect
         x={60}
@@ -1382,7 +1384,7 @@ export function ReturnsShot() {
         stroke={C.line}
       />
       <text x={60} y={272} fontSize="11" fontWeight="600" fill={C.sub}>
-        Reason for return
+        Why is the fit not working?
       </text>
       <rect
         x={60}
@@ -1398,7 +1400,7 @@ export function ReturnsShot() {
         y={210}
         w={320}
         h={48}
-        label="Start a return"
+        label="Request an exchange"
         variant="gold"
       />
     </svg>
@@ -1468,24 +1470,31 @@ export function PasswordResetShot() {
   );
 }
 
-/** Wishlist with saved items and a reorder/add affordance. */
+/** Saved mask picks from a prior fitting (replaces the retired wishlist). */
 export function WishlistShot() {
   return (
     <svg viewBox="0 0 800 440" role="img" {...svgProps}>
-      <title>Your saved wishlist items, each with an add-to-cart button</title>
+      <title>
+        Saved mask recommendations, each with an order-through-insurance button
+      </title>
       <rect width="800" height="440" fill={C.bg} />
-      <AppHeader active="Shop" />
+      <AppHeader active="Masks" />
       <g>
         <path
           d="M52 78c-4-5-12-5-12 2 0 6 12 12 12 12s12-6 12-12c0-7-8-7-12-2z"
           fill={C.gold}
         />
         <text x="74" y="84" fontSize="16" fontWeight="800" fill={C.navy}>
-          Your wishlist
+          Your saved masks
         </text>
       </g>
       {[0, 1, 2].map((i) => {
         const y = 110 + i * 100;
+        const labels = [
+          "React Health Rio II",
+          "ResMed AirFit N30i",
+          "F&P Evora Nasal",
+        ];
         return (
           <g key={i}>
             <rect
@@ -1506,29 +1515,23 @@ export function WishlistShot() {
               fill={C.blueSoft}
             />
             <ellipse cx={92} cy={y + 42} rx="24" ry="16" fill="#cdd9e8" />
-            <Line x={148} y={y + 24} w={220} color={C.line} />
-            <Line x={148} y={y + 42} w={160} color={C.line} />
             <text
               x={148}
-              y={y + 66}
+              y={y + 36}
               fontSize="13"
               fontWeight="800"
               fill={C.navy}
             >
-              ${18 + i * 7}.00
+              {labels[i]}
             </text>
+            <Line x={148} y={y + 52} w={160} color={C.line} />
             <Btn
-              x={560}
+              x={520}
               y={y + 28}
-              w={180}
+              w={220}
               h={30}
-              label="Add to cart"
+              label="Order through insurance"
               variant="gold"
-            />
-            {/* remove (heart) */}
-            <path
-              d={`M540 ${y + 38}c-3-4-9-4-9 1.5 0 4.5 9 9 9 9s9-4.5 9-9c0-5.5-6-5.5-9-1.5z`}
-              fill={C.gold}
             />
           </g>
         );

@@ -257,9 +257,8 @@ describe("results — the page ends in a REQUEST, not an order", () => {
   it("no longer bridges the fitting into the cash-pay shop cart", () => {
     // Removed with the self-serve order form: a fitting that ends in a
     // checkout is still a patient placing their own order, just a paid
-    // one. The shop is unchanged and reachable on its own at /shop.
-    // These assertions are the guard against it drifting back in without
-    // a decision.
+    // checkout is still a patient placing their own order. Insurance ordering
+    // and fit requests are the supported paths.
     expect(SRC).not.toContain("cashPay");
     expect(SRC).not.toContain("shopByModelNumber");
     expect(SRC).not.toContain("handleCashPayAdd");

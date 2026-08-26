@@ -66,7 +66,7 @@ const FAIL_HINTS: Record<ExtractionFailReason, string[]> = {
   ],
   model_load_timeout: [
     "The measurement model took too long to download. Check your connection — Wi-Fi helps — and try again.",
-    "If this keeps happening, you can browse the shop and get fitted in person instead.",
+    "If this keeps happening, you can browse the mask catalog or ask our team for help instead.",
   ],
   unknown: [
     "Try retaking the photo with even lighting and your face centered.",
@@ -603,7 +603,7 @@ export function Measure() {
             className="rounded-full glass-panel border-0 px-6"
             data-testid="measure-error-fallback-shop"
           >
-            <Link href="/shop">Skip for now — browse the shop</Link>
+            <Link href="/masks">Skip for now — browse the mask catalog</Link>
           </Button>
         </div>
       </div>

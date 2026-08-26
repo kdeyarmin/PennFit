@@ -110,7 +110,7 @@ const sections: Section[] = [
     Icon: ShieldCheck,
     eyebrow: "Coverage & cost",
     title: "Paying for it.",
-    body: "Medicare, Medicaid, and most commercial plans cover CPAP and replacement supplies. HSA and FSA cards work for cash-pay. The catch is the adherence threshold and the prior-authorization paperwork.",
+    body: "Medicare, Medicaid, and most commercial plans cover CPAP and replacement supplies. HSA and FSA dollars can cover any out-of-pocket share. The catch is the adherence threshold and the prior-authorization paperwork.",
     links: [
       { href: "/learn/insurance-guide", label: "Insurance & coverage guide" },
       { href: "/insurance/estimate", label: "Estimate your benefits" },

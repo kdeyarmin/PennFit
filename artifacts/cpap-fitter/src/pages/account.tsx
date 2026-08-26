@@ -528,10 +528,10 @@ function DataExportSection() {
     >
       <h2 className="font-semibold">Your data</h2>
       <p className="text-sm text-muted-foreground">
-        Download every record we hold for your account on the cash-pay shop —
-        orders, subscriptions, returns, reviews, communication preferences. The
-        download is a JSON file; clinical / insurance data isn&apos;t included
-        (those live in a separate system — email{" "}
+        Download every record we hold for your account — orders, communication
+        preferences, and profile details. The download is a JSON file; clinical
+        / insurance data isn&apos;t included (those live in a separate system —
+        email{" "}
         <SupportEmailLink className="font-medium text-[hsl(var(--penn-navy))] underline-offset-2 hover:underline" />{" "}
         for that).
       </p>
@@ -551,7 +551,7 @@ function DataExportSection() {
 /**
  * Render the "Saved card" section on the Account page and provide a control to open Stripe's billing portal.
  *
- * Displays card brand, masked number, and expiry when `card` is present; otherwise shows a prompt to browse the shop.
+ * Displays card brand, masked number, and expiry when `card` is present; otherwise shows a prompt to order through insurance.
  *
  * @param card - The saved payment card information, or `null` when no card is on file
  * @returns A React element representing the saved card section with update and fallback UI
@@ -648,10 +648,10 @@ function SavedCardSection({ card }: { card: SavedCard | null }) {
             future orders are one tap.
           </p>
           <Link
-            href="/shop"
+            href="/insurance"
             className="text-sm text-primary font-medium hover:underline inline-flex items-center gap-1"
           >
-            Browse the shop <ShoppingBag className="h-4 w-4" />
+            Order through insurance <ShoppingBag className="h-4 w-4" />
           </Link>
         </div>
       )}
@@ -672,11 +672,11 @@ function KeepShoppingCard() {
       </p>
       <div className="flex flex-col gap-2">
         <Link
-          href="/shop"
+          href="/insurance"
           className="text-sm font-medium text-primary hover:underline"
-          data-testid="account-link-shop"
+          data-testid="account-link-insurance"
         >
-          → Browse supplies
+          → Order resupply through insurance
         </Link>
         <Link
           href="/learn/replacement-schedule"

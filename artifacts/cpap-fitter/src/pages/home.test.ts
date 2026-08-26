@@ -83,9 +83,9 @@ describe("home — h1 headline", () => {
     expect(italicMatch?.[0] ?? "").toContain("simple");
   });
 
-  it("still contains the hero-headline-swoosh span for 'Fit. Shop. Resupply.'", () => {
+  it("still contains the hero-headline-swoosh span for 'Fit. Order. Resupply.'", () => {
     expect(SRC).toContain("hero-headline-swoosh");
-    expect(SRC).toContain("Fit. Shop. Resupply.");
+    expect(SRC).toContain("Fit. Order. Resupply.");
   });
 });
 
@@ -140,7 +140,7 @@ describe("home — hero CTA buttons", () => {
     expect(SRC).not.toContain("btn-gold-glow");
   });
 
-  it("secondary 'Shop' button does NOT carry the btn-on-dark-outline class", () => {
+  it("secondary 'Order' button does NOT carry the btn-on-dark-outline class", () => {
     // btn-on-dark-outline was a dark-background-specific override; removed
     // on the light editorial card.
     expect(SRC).not.toContain("btn-on-dark-outline");
@@ -150,16 +150,16 @@ describe("home — hero CTA buttons", () => {
     expect(SRC).toContain('"home-cta-fit"');
   });
 
-  it("secondary button retains its data-testid 'home-cta-shop'", () => {
-    expect(SRC).toContain('"home-cta-shop"');
+  it("secondary button retains its data-testid 'home-cta-insurance'", () => {
+    expect(SRC).toContain('"home-cta-insurance"');
   });
 
   it("primary button still navigates to /consent", () => {
     expect(SRC).toContain('navigate("/consent")');
   });
 
-  it("secondary button still navigates to /shop", () => {
-    expect(SRC).toContain('navigate("/shop")');
+  it("secondary button still navigates to /insurance", () => {
+    expect(SRC).toContain('navigate("/insurance")');
   });
 });
 

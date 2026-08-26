@@ -347,7 +347,7 @@ export function ReplacementSchedule() {
         </div>
       </section>
 
-      {/* Two paths: insurance vs out-of-pocket */}
+      {/* Two paths: insurance resupply vs urgent help */}
       <section className="space-y-5">
         <div className="flex items-center gap-3">
           <div className="h-px flex-1 bg-border/60" />
@@ -357,7 +357,7 @@ export function ReplacementSchedule() {
           <div className="h-px flex-1 bg-border/60" />
         </div>
         <div className="grid md:grid-cols-2 gap-5">
-          <article className="glass-card rounded-2xl p-6 space-y-3">
+          <article className="glass-card rounded-2xl p-6 space-y-3 flex flex-col">
             <div className="flex items-center gap-3">
               <div className="h-11 w-11 rounded-xl icon-halo-navy flex items-center justify-center">
                 <ShieldCheck className="w-5 h-5" />
@@ -375,6 +375,18 @@ export function ReplacementSchedule() {
             <p className="text-xs text-muted-foreground/80 italic">
               Best for: routine resupply on the standard cycle.
             </p>
+            <div className="pt-2 mt-auto">
+              <Link href="/insurance">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  data-testid="schedule-insurance-cta"
+                >
+                  Order through insurance{" "}
+                  <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
+                </Button>
+              </Link>
+            </div>
           </article>
           <article className="glass-card rounded-2xl p-6 space-y-3 flex flex-col">
             <div className="flex items-center gap-3">
@@ -382,25 +394,25 @@ export function ReplacementSchedule() {
                 <Wallet className="w-5 h-5" />
               </div>
               <h3 className="font-semibold tracking-tight text-primary">
-                Pay direct &amp; ship now
+                Need something sooner?
               </h3>
             </div>
             <p className="text-sm text-muted-foreground leading-relaxed">
-              Need a replacement before your insurance cycle resets? Ran out on
-              a trip? Want extras your plan won't cover? Pay by card and we'll
-              ship — no prescription, no insurance paperwork.
+              Traveling, lost a part, or not sure what your plan covers this
+              month? Our care team can review your benefits and help you reorder
+              on the right path.
             </p>
             <p className="text-xs text-muted-foreground/80 italic">
-              Best for: mid-cycle replacements, accessories, and travel kits.
+              Best for: mid-cycle questions, travel kits, and urgent fit issues.
             </p>
             <div className="pt-2 mt-auto">
-              <Link href="/shop">
+              <Link href="/contact">
                 <Button
                   variant="outline"
                   size="sm"
-                  data-testid="schedule-shop-cta"
+                  data-testid="schedule-contact-cta"
                 >
-                  Browse the shop <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
+                  Talk to our team <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
                 </Button>
               </Link>
             </div>

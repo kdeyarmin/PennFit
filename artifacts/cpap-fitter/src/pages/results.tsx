@@ -657,8 +657,8 @@ export function Results() {
           </AlertDescription>
         </Alert>
         <div className="mt-6">
-          <Button variant="outline" onClick={() => setLocation("/shop")}>
-            Browse the shop instead
+          <Button variant="outline" onClick={() => setLocation("/insurance")}>
+            Order through insurance instead
           </Button>
         </div>
       </div>

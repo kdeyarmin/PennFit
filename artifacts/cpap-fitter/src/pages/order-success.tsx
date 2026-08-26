@@ -348,13 +348,13 @@ export function OrderSuccess() {
             <Home className="w-4 h-4 mr-2" /> Back to Home
           </Button>
         </Link>
-        <Link href="/shop">
+        <Link href="/insurance">
           <Button
             variant="outline"
             className="w-full sm:w-auto rounded-full glass-panel border-0 px-6"
-            data-testid="button-shop"
+            data-testid="button-insurance"
           >
-            Shop supplies
+            Order supplies
           </Button>
         </Link>
         <Button

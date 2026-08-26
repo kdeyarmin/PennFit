@@ -178,9 +178,9 @@ export function CpapMasksReactHealth() {
                   variant="outline"
                   className="h-13 px-6 rounded-full btn-on-dark-outline"
                   data-testid="rh-cta-shop"
-                  onClick={() => navigate("/shop")}
+                  onClick={() => navigate("/insurance")}
                 >
-                  Shop the line
+                  Order through insurance
                 </Button>
               </div>
             </div>
@@ -449,16 +449,17 @@ export function CpapMasksReactHealth() {
             Know what you want?
           </h3>
           <p className="text-sm text-muted-foreground leading-relaxed mb-5">
-            Jump straight to the shop — Rio II, Viva, and Numa systems plus
-            replacement cushions and headgear, ready to ship.
+            Already know your React Health mask or cushion size? Start an
+            insurance order for Rio II, Viva, and Numa systems plus replacement
+            parts.
           </p>
           <Button
             variant="outline"
             className="self-start h-11 px-6 rounded-full glass-panel hover:border-primary/40"
-            data-testid="rh-bottom-cta-shop"
-            onClick={() => navigate("/shop")}
+            data-testid="rh-bottom-cta-insurance"
+            onClick={() => navigate("/insurance")}
           >
-            Shop React Health
+            Order React Health supplies
           </Button>
         </div>
       </div>

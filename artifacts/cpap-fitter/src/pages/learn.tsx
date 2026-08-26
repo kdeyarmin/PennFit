@@ -897,7 +897,7 @@ export function Learn() {
               href: "/learn/insurance-guide",
               Icon: ShieldCheck,
               title: "The insurance & coverage guide",
-              body: "Medicare, Medicaid, commercial, HSA/FSA, cash-pay. What's covered, what's required, what's cheaper.",
+              body: "Medicare, Medicaid, commercial, HSA/FSA. What's covered, what's required, and how to estimate your cost.",
               testid: "learn-link-deep-insurance",
               tone: "icon-halo-navy",
             },
@@ -1168,7 +1168,7 @@ export function Learn() {
         <p className="text-muted-foreground max-w-xl mx-auto">
           New to CPAP? Get matched to the right mask with our on-device fitter.
           Already have your machine? Reorder cushions, filters, and tubing
-          direct from the shop.
+          through your insurance plan.
         </p>
         <div className="flex flex-col sm:flex-row gap-3 justify-center pt-2">
           <Link href="/consent">
@@ -1180,13 +1180,13 @@ export function Learn() {
               Get fitted for a mask
             </Button>
           </Link>
-          <Link href="/shop">
+          <Link href="/insurance">
             <Button
               size="lg"
               variant="outline"
               className="w-full sm:w-auto h-12 px-8 rounded-full glass-panel border-border/60"
             >
-              Shop CPAP supplies
+              Order through insurance
             </Button>
           </Link>
         </div>
