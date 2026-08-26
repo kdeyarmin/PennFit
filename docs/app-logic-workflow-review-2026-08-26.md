@@ -33,8 +33,8 @@ Two structural gaps dominate:
 
 1. **The resupply automation funnel has no production writer for
    `episodes`.** Reminders, escalations, SMS/email/voice confirm, and
-   PacWare "ready to sync" all *consume* episodes. Nothing in app code
-   *creates* them (patient create, prescription create, CSV import,
+   PacWare "ready to sync" all _consume_ episodes. Nothing in app code
+   _creates_ them (patient create, prescription create, CSV import,
    PacWare import, workers). New tenants / new patients never enter the
    ladder unless rows are inserted out of band.
 2. **Several multi-tenant and status-derivation mismatches** leave
@@ -47,12 +47,12 @@ from the cash-pay removal.
 
 ### Severity counts (this pass)
 
-| Sev | Count | Theme |
-| --- | ----- | ----- |
-| Critical | 2 | Episode lifecycle incomplete |
-| High | 10 | Cross-tenant / broken handoffs / status machines |
-| Med | 12 | Dead ends, residue, soft fail-open |
-| Low / Info | many | Comment drift, intentional fail-soft |
+| Sev        | Count | Theme                                            |
+| ---------- | ----- | ------------------------------------------------ |
+| Critical   | 2     | Episode lifecycle incomplete                     |
+| High       | 10    | Cross-tenant / broken handoffs / status machines |
+| Med        | 12    | Dead ends, residue, soft fail-open               |
+| Low / Info | many  | Comment drift, intentional fail-soft             |
 
 ---
 
@@ -77,13 +77,13 @@ pediatric catalog seed exists.
 
 **Broken / incomplete:**
 
-| Sev | Finding | Evidence |
-| --- | ------- | -------- |
-| High | Admin can close with empty `closed_outcome` → dispense stamp never runs | `admin-fitter-requests.tsx` (~498–503); stamp gated on `fulfilled` in `fitter-requests.ts` (~378–420) |
-| High | Legacy `/api/recommend` clears `fitSessionId` → fulfilled close cannot stamp | `results.tsx` (~325–332); `markFitSessionDispensedById` requires `fit_session_id` |
-| Med | Stamp failures swallowed; CSR sees successful close | `fitter-requests.ts` (~389–402) `.catch(() => ({ stamped: false }))` |
-| Med | API defaults omitted `population` to `"adult"` (SPA guards mitigate) | `recommend.ts`, `fitter-request.ts` Zod `.default("adult")` |
-| Low | Stale comment in `refit-campaign.ts` claims dispense columns are never written | Writers exist since 0519 |
+| Sev  | Finding                                                                        | Evidence                                                                                              |
+| ---- | ------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------- |
+| High | Admin can close with empty `closed_outcome` → dispense stamp never runs        | `admin-fitter-requests.tsx` (~498–503); stamp gated on `fulfilled` in `fitter-requests.ts` (~378–420) |
+| High | Legacy `/api/recommend` clears `fitSessionId` → fulfilled close cannot stamp   | `results.tsx` (~325–332); `markFitSessionDispensedById` requires `fit_session_id`                     |
+| Med  | Stamp failures swallowed; CSR sees successful close                            | `fitter-requests.ts` (~389–402) `.catch(() => ({ stamped: false }))`                                  |
+| Med  | API defaults omitted `population` to `"adult"` (SPA guards mitigate)           | `recommend.ts`, `fitter-request.ts` Zod `.default("adult")`                                           |
+| Low  | Stale comment in `refit-campaign.ts` claims dispense columns are never written | Writers exist since 0519                                                                              |
 
 ### 2. Resupply automation (due → remind → confirm → fulfill → claim)
 
@@ -105,16 +105,16 @@ confirm; MessageSid replay guard on inbound SMS.
 
 **Broken / incomplete:**
 
-| Sev | Finding | Evidence |
-| --- | ------- | -------- |
-| **Critical** | **No production `.insert` into `episodes`** anywhere under `artifacts/` / `lib/` / `scripts/` (non-test). Patient create, prescription create, CSV import, PacWare import do not open episodes. Reminder scan only considers existing in-funnel rows. | Repo-wide grep; `reminders.ts` (~557–563); `prescriptions-create.ts` |
-| **Critical** | Confirm flips episode to `confirmed` and never opens a next-cycle `outreach_pending` episode → automation is one-shot | `order-flow.ts` (~450–456); `IN_PROGRESS_EPISODE_STATUSES` in `reminders.ts` |
-| High | SMS (and implied voice) **decline** closes the *conversation* only; episode stays `outreach_pending` / `awaiting_response` → re-enters ladder after quiet period. Docs claim decline removes the episode. | `sms/inbound.ts` (~1167–1176); `docs/resupply-reminder-algorithm.md` §decline |
-| High | Voice `placeResupplyOrder` calls `placeResupplyOrderForConversation` **without `orgId`** → seed-org fallback; non-seed tenant voice confirm fails with `conversation_not_found` | `voice/tools-impl.ts` (~826–839); `order-flow.ts` (~194–196) |
-| High | Due math uses `MAX(shipped_at)`; resupply only writes fulfillments as `queued` and PacWare never callbacks ship → cadence anchors on `prescription.created_at` | `reminders.ts` (~604–635, ~752–754); `order-flow.ts` (~678–686) |
-| Med | Documented `awaiting_response` status is never written in production | status filter lists it; no writer |
-| Med | Entitlement/coverage/refill guards fail open on read errors (intentional "don't strand patient", tension with claim correctness) | `order-flow.ts` (~271–441) |
-| Med | Claim creation is manual after confirm (correct for insurance, easy to misread as "confirmed = billed") | `create-claim-from-fulfillment` / OA batch |
+| Sev          | Finding                                                                                                                                                                                                                                               | Evidence                                                                      |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| **Critical** | **No production `.insert` into `episodes`** anywhere under `artifacts/` / `lib/` / `scripts/` (non-test). Patient create, prescription create, CSV import, PacWare import do not open episodes. Reminder scan only considers existing in-funnel rows. | Repo-wide grep; `reminders.ts` (~557–563); `prescriptions-create.ts`          |
+| **Critical** | Confirm flips episode to `confirmed` and never opens a next-cycle `outreach_pending` episode → automation is one-shot                                                                                                                                 | `order-flow.ts` (~450–456); `IN_PROGRESS_EPISODE_STATUSES` in `reminders.ts`  |
+| High         | SMS (and implied voice) **decline** closes the _conversation_ only; episode stays `outreach_pending` / `awaiting_response` → re-enters ladder after quiet period. Docs claim decline removes the episode.                                             | `sms/inbound.ts` (~1167–1176); `docs/resupply-reminder-algorithm.md` §decline |
+| High         | Voice `placeResupplyOrder` calls `placeResupplyOrderForConversation` **without `orgId`** → seed-org fallback; non-seed tenant voice confirm fails with `conversation_not_found`                                                                       | `voice/tools-impl.ts` (~826–839); `order-flow.ts` (~194–196)                  |
+| High         | Due math uses `MAX(shipped_at)`; resupply only writes fulfillments as `queued` and PacWare never callbacks ship → cadence anchors on `prescription.created_at`                                                                                        | `reminders.ts` (~604–635, ~752–754); `order-flow.ts` (~678–686)               |
+| Med          | Documented `awaiting_response` status is never written in production                                                                                                                                                                                  | status filter lists it; no writer                                             |
+| Med          | Entitlement/coverage/refill guards fail open on read errors (intentional "don't strand patient", tension with claim correctness)                                                                                                                      | `order-flow.ts` (~271–441)                                                    |
+| Med          | Claim creation is manual after confirm (correct for insurance, easy to misread as "confirmed = billed")                                                                                                                                               | `create-claim-from-fulfillment` / OA batch                                    |
 
 ### 3. CSR order + signature
 
@@ -132,11 +132,11 @@ path back-links and creates queued fulfillments + stock adjust.
 
 **Gaps:**
 
-| Sev | Finding | Evidence |
-| --- | ------- | -------- |
-| Med | Ad-hoc (hand-built) CSR orders stop at `signed` — no patient_id/SKU → no fulfillment/claim by design | `dispense-on-sign.ts` (~14–26) |
-| Med | Therapy-resupply / Orders UI still says "sign & pay" / "pay by card" | `admin-therapy-resupply.tsx`, `fitter-orders.tsx` |
-| Low | Marketing pages still describe plans/autopay/checkout | `breathe-features.tsx`, revenue-cycle pages |
+| Sev | Finding                                                                                              | Evidence                                          |
+| --- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| Med | Ad-hoc (hand-built) CSR orders stop at `signed` — no patient_id/SKU → no fulfillment/claim by design | `dispense-on-sign.ts` (~14–26)                    |
+| Med | Therapy-resupply / Orders UI still says "sign & pay" / "pay by card"                                 | `admin-therapy-resupply.tsx`, `fitter-orders.tsx` |
+| Low | Marketing pages still describe plans/autopay/checkout                                                | `breathe-features.tsx`, revenue-cycle pages       |
 
 ### 4. Billing / RCM
 
@@ -153,23 +153,23 @@ Stripe is SaaS-only (`STRIPE_PLATFORM_*`, single platform webhook).
 
 **Broken / incomplete:**
 
-| Sev | Finding | Evidence |
-| --- | ------- | -------- |
+| Sev  | Finding                                                                                                                                                        | Evidence                                                                                                                  |
+| ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
 | High | Secondary COB worklist/auto-workflow select `paid` **and** `partially_paid`, but `deriveSecondaryCob` requires exact `paid` → typical ERA outcomes never draft | `secondary-claims.ts` (~62–64); `auto-workflow-engine.ts` (~437–438); `lib/resupply-domain/src/secondary-cob.ts` (~80–82) |
-| High | Claim status machine / ERA map omit live `submitting` → crash mid-upload leaves claims stuck; admin PATCH cannot release | DB admits `submitting` (0298); `insurance-claims.ts` `STATUS_VALUES` / `VALID_TRANSITIONS`; `era-reconciler.ts` |
-| Med | `eligibility-verifier` / `era-reconciler` default `orgId` to seed if caller omits (live callers pass it; footgun for new sites) | `eligibility-verifier.ts` (~123–125); `era-reconciler.ts` (~116–118) |
-| Low | Denied-primary COB explicitly unfinished | `secondary-cob.ts` comments |
+| High | Claim status machine / ERA map omit live `submitting` → crash mid-upload leaves claims stuck; admin PATCH cannot release                                       | DB admits `submitting` (0298); `insurance-claims.ts` `STATUS_VALUES` / `VALID_TRANSITIONS`; `era-reconciler.ts`           |
+| Med  | `eligibility-verifier` / `era-reconciler` default `orgId` to seed if caller omits (live callers pass it; footgun for new sites)                                | `eligibility-verifier.ts` (~123–125); `era-reconciler.ts` (~116–118)                                                      |
+| Low  | Denied-primary COB explicitly unfinished                                                                                                                       | `secondary-cob.ts` comments                                                                                               |
 
 ### 5. Multi-tenant branding, fax, messaging, platform billing
 
-| Sev | Finding | Evidence |
-| --- | ------- | -------- |
+| Sev  | Finding                                                                                                                                                                                          | Evidence                                                                         |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------- |
 | High | Platform host (`cmbreathe.com`) `GET /api/company-info` and storefront `/api/chat` use `resolveOrgIdByHost` → **seed (Penn) brand**. Auth email already avoids this via `resolveBrandingByHost`. | `company-info.ts` (~28–29); `chat.ts` (~478–484); contrast `auth-email-brand.ts` |
-| High | Fax barcode auto-file checks `isFeatureEnabled("fax.auto_file_signed")` with **no orgId** (seed flag only) while ingest is per dialed-number tenant | `ingest-inbound.ts` (~233–234) vs referral review which passes `orgId` (~271) |
-| High | `autoMatchInboundFaxToPaperwork` matches outstanding paperwork by fax E.164 with **no `org_id` filter** → cross-tenant bill-hold release risk | `bill-hold.ts` (~587–591); call at `ingest-inbound.ts` (~259) |
-| Med | Provider MFA TOTP issuer always `resolveSeedOrgId()` despite comment claiming tenant scope | `provider/mfa.ts` (~141, ~206) |
-| Med | Payment wall is one-shot unlock; `invoice.payment_failed` / subscription deleted do not re-set `billing_required`; wall only wraps `requireAdmin` (storefront/workers ungated) | `platform-billing/stripe.ts`; `requireAdmin.ts` / `product-scope.ts` |
-| Med | Chatbot PII scrub covers phone/email/SSN/DOB/ids only — names, addresses, clinical free text still reach the model | `chatbotPii.ts` (~12–18) |
+| High | Fax barcode auto-file checks `isFeatureEnabled("fax.auto_file_signed")` with **no orgId** (seed flag only) while ingest is per dialed-number tenant                                              | `ingest-inbound.ts` (~233–234) vs referral review which passes `orgId` (~271)    |
+| High | `autoMatchInboundFaxToPaperwork` matches outstanding paperwork by fax E.164 with **no `org_id` filter** → cross-tenant bill-hold release risk                                                    | `bill-hold.ts` (~587–591); call at `ingest-inbound.ts` (~259)                    |
+| Med  | Provider MFA TOTP issuer always `resolveSeedOrgId()` despite comment claiming tenant scope                                                                                                       | `provider/mfa.ts` (~141, ~206)                                                   |
+| Med  | Payment wall is one-shot unlock; `invoice.payment_failed` / subscription deleted do not re-set `billing_required`; wall only wraps `requireAdmin` (storefront/workers ungated)                   | `platform-billing/stripe.ts`; `requireAdmin.ts` / `product-scope.ts`             |
+| Med  | Chatbot PII scrub covers phone/email/SSN/DOB/ids only — names, addresses, clinical free text still reach the model                                                                               | `chatbotPii.ts` (~12–18)                                                         |
 
 **Intact:** `NON_INHERITABLE_TENANT_KEYS` for assistant names; email
 auto-reply confidence gate; Stripe Connect/patient webhooks removed;
@@ -178,17 +178,17 @@ row-owned.
 
 ### 6. Hard rules & boot contract
 
-| Rule | Status |
-| ---- | ------ |
-| No image logging | Pass |
-| No order `req.body` logging | Pass (`pino-http` serializers omit body) |
-| No column encryption / pepper / audit_log readers | Pass (comments/tests only) |
-| Email via shared SendGrid client | Pass |
-| Admin theme scoped (no global `@theme`) | Pass |
-| Health check = `/resupply-api/healthz` | Pass |
-| Stock via `adjustStock` only | Pass |
-| Patients insurance-only (route layer) | Pass; copy/schema residue remains |
-| `fitter.lead_capture_only` fail-closed | Pass |
+| Rule                                              | Status                                   |
+| ------------------------------------------------- | ---------------------------------------- |
+| No image logging                                  | Pass                                     |
+| No order `req.body` logging                       | Pass (`pino-http` serializers omit body) |
+| No column encryption / pepper / audit_log readers | Pass (comments/tests only)               |
+| Email via shared SendGrid client                  | Pass                                     |
+| Admin theme scoped (no global `@theme`)           | Pass                                     |
+| Health check = `/resupply-api/healthz`            | Pass                                     |
+| Stock via `adjustStock` only                      | Pass                                     |
+| Patients insurance-only (route layer)             | Pass; copy/schema residue remains        |
+| `fitter.lead_capture_only` fail-closed            | Pass                                     |
 
 ---
 
@@ -254,12 +254,12 @@ row-owned.
 
 ## Appendix — key file index
 
-| Domain | Entry points |
-| ------ | ------------ |
-| Fitter | `artifacts/cpap-fitter/src/pages/{questionnaire,results,fit-request}.tsx`, `routes/storefront/{recommend,fit-assess,orders}.ts`, `routes/shop/fitter-request.ts`, `routes/admin/fitter-requests.ts`, `lib/fitting/order-link.ts` |
-| Resupply | `worker/jobs/{reminders,reminder-escalation}.ts`, `lib/messaging/order-flow.ts`, `routes/sms/inbound.ts`, `routes/email/click.ts`, `lib/voice/tools-impl.ts`, `lib/catalog/{dispense,store}.ts` |
-| CSR | `routes/storefront/csr-orders.ts`, `lib/csr-order/*` |
-| Billing | `lib/billing/{eligibility-verifier,office-ally-batch,era-reconciler,auto-workflow-engine}.ts`, `lib/resupply-domain/src/secondary-cob.ts` |
-| Fax | `lib/fax/ingest-inbound.ts`, `lib/billing/bill-hold.ts` |
-| Brand / chat | `routes/storefront/{company-info,chat,storefront-branding}.ts`, `lib/auth-email-brand.ts` |
-| Platform pay | `lib/platform-billing/stripe.ts`, `middlewares/requireAdmin.ts`, `lib/product-scope.ts` |
+| Domain       | Entry points                                                                                                                                                                                                                     |
+| ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Fitter       | `artifacts/cpap-fitter/src/pages/{questionnaire,results,fit-request}.tsx`, `routes/storefront/{recommend,fit-assess,orders}.ts`, `routes/shop/fitter-request.ts`, `routes/admin/fitter-requests.ts`, `lib/fitting/order-link.ts` |
+| Resupply     | `worker/jobs/{reminders,reminder-escalation}.ts`, `lib/messaging/order-flow.ts`, `routes/sms/inbound.ts`, `routes/email/click.ts`, `lib/voice/tools-impl.ts`, `lib/catalog/{dispense,store}.ts`                                  |
+| CSR          | `routes/storefront/csr-orders.ts`, `lib/csr-order/*`                                                                                                                                                                             |
+| Billing      | `lib/billing/{eligibility-verifier,office-ally-batch,era-reconciler,auto-workflow-engine}.ts`, `lib/resupply-domain/src/secondary-cob.ts`                                                                                        |
+| Fax          | `lib/fax/ingest-inbound.ts`, `lib/billing/bill-hold.ts`                                                                                                                                                                          |
+| Brand / chat | `routes/storefront/{company-info,chat,storefront-branding}.ts`, `lib/auth-email-brand.ts`                                                                                                                                        |
+| Platform pay | `lib/platform-billing/stripe.ts`, `middlewares/requireAdmin.ts`, `lib/product-scope.ts`                                                                                                                                          |
