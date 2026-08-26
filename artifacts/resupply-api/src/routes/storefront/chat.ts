@@ -75,10 +75,7 @@ import { logger } from "../../lib/logger.js";
 import { withRetry } from "../../lib/with-retry.js";
 import { getLlmBreaker } from "../../lib/llm-circuit-breaker.js";
 import { requestHost } from "../../lib/request-host.js";
-import {
-  resolveBrandOrgIdByHost,
-  resolveOrgIdByHost,
-} from "../../lib/tenant-branding.js";
+import { resolveBrandOrgIdByHost } from "../../lib/tenant-branding.js";
 import { loadCatalogVisibility } from "../../lib/fitting/catalog-store.js";
 import {
   recordAiTokenUsage,
@@ -490,15 +487,13 @@ router.post("/chat", chatRateLimit, async (req, res) => {
   // matches the existing unconfigured-LLM branch below so the
   // widget doesn't have to special-case anything.
   //
-  // Public route — no auth middleware populates req.orgId. Branding must
-  // use the brand-host resolver (platform identity on cmbreathe.com), NOT
-  // resolveOrgIdByHost which fails soft to the seed (Penn) org. Feature
-  // flags / catalog / metering still use a data-plane org with seed
-  // fallback so the platform host chatbot keeps working.
+  // Public route — no auth middleware populates req.orgId. Branding, feature
+  // flags, catalog visibility, and metering all key off the brand-host
+  // resolver (platform identity on cmbreathe.com). Never
+  // resolveOrgIdByHost — it fails soft to the seed (Penn) org and would
+  // apply Penn's flags, formulary hides, and COGS to platform-host chat.
   const brandOrgId =
     req.orgId ?? (await resolveBrandOrgIdByHost(requestHost(req))) ?? undefined;
-  const orgId =
-    brandOrgId ?? (await resolveOrgIdByHost(requestHost(req))) ?? undefined;
 
   // Resolve THIS host tenant's company identity once so every patient-
   // facing string below (the feature-off + offline + degraded fallbacks
@@ -509,7 +504,11 @@ router.post("/chat", chatRateLimit, async (req, res) => {
     : getPlatformIdentity();
   const degradedReply = degradedFallbackReply(companyInfo);
 
-  if (!(await isFeatureEnabled("storefront.chatbot", orgId))) {
+  const chatbotEnabled = brandOrgId
+    ? await isFeatureEnabled("storefront.chatbot", brandOrgId)
+    : true;
+
+  if (!chatbotEnabled) {
     // Build from the resolved tenant identity directly (not the
     // source==="database"-gated applyCompanyIdentityToText) so an
     // unconfigured non-seed tenant names ITS brand, never the literal seed
@@ -589,7 +588,7 @@ router.post("/chat", chatRateLimit, async (req, res) => {
   // prompt, and every catalog tool via `toolCtx` below. Filtering only
   // one of the two is worse than filtering neither — the model would
   // describe a mask its own tools then refuse to look up.
-  const visibility = await loadCatalogVisibility(orgId);
+  const visibility = await loadCatalogVisibility(brandOrgId);
 
   const systemPrompt = brandChatText(
     getSystemPrompt(visibility.hiddenSlugs),
@@ -599,11 +598,13 @@ router.post("/chat", chatRateLimit, async (req, res) => {
   // Past every offline/feature/budget gate — this turn WILL hit a model,
   // so meter it as one AI text interaction for the host tenant (G12).
   // Fire-and-forget + fail-soft: never blocks or fails the chat reply.
-  void recordTenantUsage({
-    orgId,
-    metricKey: "aiTextInteractionsPerMonth",
-    source: "storefront.chat",
-  });
+  if (brandOrgId) {
+    void recordTenantUsage({
+      orgId: brandOrgId,
+      metricKey: "aiTextInteractionsPerMonth",
+      source: "storefront.chat",
+    });
+  }
 
   const { messages: initial, redactionCounts } = buildInitialMessages(
     messages,
@@ -652,7 +653,7 @@ router.post("/chat", chatRateLimit, async (req, res) => {
             messages.length,
             toolCtx,
             degradedReply,
-            orgId,
+            brandOrgId,
             companyInfo,
           )
         : handleAnthropicJson(
@@ -662,7 +663,7 @@ router.post("/chat", chatRateLimit, async (req, res) => {
             messages.length,
             toolCtx,
             degradedReply,
-            orgId,
+            brandOrgId,
             companyInfo,
           );
     }
@@ -697,7 +698,7 @@ router.post("/chat", chatRateLimit, async (req, res) => {
         messages.length,
         toolCtx,
         degradedReply,
-        orgId,
+        brandOrgId,
         companyInfo,
       )
     : handleJson(
@@ -707,7 +708,7 @@ router.post("/chat", chatRateLimit, async (req, res) => {
         messages.length,
         toolCtx,
         degradedReply,
-        orgId,
+        brandOrgId,
         companyInfo,
       );
 });

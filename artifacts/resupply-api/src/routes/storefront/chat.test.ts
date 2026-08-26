@@ -2,7 +2,26 @@ import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import express from "express";
 import request from "supertest";
 
+const resolveBrandOrgIdByHostMock = vi.hoisted(() =>
+  vi.fn(async () => null as string | null),
+);
+const resolveOrgIdByHostMock = vi.hoisted(() =>
+  vi.fn(async () => "org-seed-penn" as string | null),
+);
+
+vi.mock("../../lib/tenant-branding.js", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("../../lib/tenant-branding.js")>();
+  return {
+    ...actual,
+    resolveBrandOrgIdByHost: resolveBrandOrgIdByHostMock,
+    resolveOrgIdByHost: resolveOrgIdByHostMock,
+  };
+});
+
 import chatRouter, { __setChatFetchForTests } from "./chat";
+import * as catalogStore from "../../lib/fitting/catalog-store.js";
+import * as metering from "../../lib/metering/usage.js";
 import { __resetLlmBreakersForTests } from "../../lib/llm-circuit-breaker";
 import { resetChatBudgetForTests } from "../../lib/storefront/chat-budget";
 import { __resetRateLimitsForTests } from "../../middlewares/rate-limit";
@@ -19,6 +38,10 @@ describe("POST /chat", () => {
 
   beforeEach(() => {
     process.env.OPENAI_API_KEY = "test-openai-key";
+    resolveBrandOrgIdByHostMock.mockReset();
+    resolveBrandOrgIdByHostMock.mockResolvedValue(null);
+    resolveOrgIdByHostMock.mockReset();
+    resolveOrgIdByHostMock.mockResolvedValue("org-seed-penn");
     // The OpenAI circuit breaker is a module-level singleton; clear it so
     // failure-path tests don't trip it and short-circuit later cases.
     __resetLlmBreakersForTests();
@@ -175,11 +198,6 @@ describe("POST /chat", () => {
   });
 
   it("brands the system prompt with platform identity on an unbound host even when seed env says PennBot", async () => {
-    // Regression: cmbreathe.com resolves brandOrgId=null but data-plane
-    // orgId falls back to the seed. Branding via applyPlatformBrandingForOrg
-    // (seed) or applyPlatformBranding() (sync cache / env) left "PennBot"
-    // and Penn geography in the prompt. The route must brand with
-    // getPlatformIdentity() / host companyInfo instead.
     process.env.RESUPPLY_ASSISTANT_STOREFRONT_NAME = "PennBot";
     process.env.RESUPPLY_ASSISTANT_ADMIN_NAME = "PennPilot";
     const fetchMock = vi.fn().mockResolvedValue({
@@ -238,6 +256,35 @@ describe("POST /chat", () => {
     expect(res.body.reply).toContain("CareMetric Breathe");
     expect(res.body.reply).not.toContain("PennBot");
     expect(res.body.reply).not.toContain("Penn Home Medical Supply");
+  });
+
+  it("does not key catalog visibility or metering off the seed org on an unbound host", async () => {
+    resolveBrandOrgIdByHostMock.mockResolvedValueOnce(null);
+    resolveOrgIdByHostMock.mockResolvedValueOnce("org-seed-penn");
+    const visibilitySpy = vi.spyOn(catalogStore, "loadCatalogVisibility");
+    const usageSpy = vi
+      .spyOn(metering, "recordTenantUsage")
+      .mockImplementation(async () => {});
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        choices: [{ message: { content: "Happy to help." } }],
+      }),
+      text: async () => "",
+    });
+    __setChatFetchForTests(fetchMock as unknown as typeof fetch);
+
+    const res = await request(makeApp())
+      .post("/chat")
+      .send({ messages: [{ role: "user", content: "Hi" }] });
+
+    expect(res.status).toBe(200);
+    expect(resolveOrgIdByHostMock).not.toHaveBeenCalled();
+    expect(visibilitySpy).toHaveBeenCalledWith(undefined);
+    expect(usageSpy).not.toHaveBeenCalled();
+    visibilitySpy.mockRestore();
+    usageSpy.mockRestore();
   });
 
   it("retries a transient 500 once and then returns the reply", async () => {
