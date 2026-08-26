@@ -333,11 +333,15 @@ export async function cancelShopSubscription(
  * Retired with patient cash-pay. Endpoints no longer exist on the API;
  * these client helpers hard-fail so a reintroduced UI cannot 404 silently.
  */
-export async function pauseShopSubscription(_id: string): Promise<{ ok: true }> {
+export async function pauseShopSubscription(
+  _id: string,
+): Promise<{ ok: true }> {
   throw new Error(SUBSCRIPTIONS_RETIRED);
 }
 
-export async function resumeShopSubscription(_id: string): Promise<{ ok: true }> {
+export async function resumeShopSubscription(
+  _id: string,
+): Promise<{ ok: true }> {
   throw new Error(SUBSCRIPTIONS_RETIRED);
 }
 
