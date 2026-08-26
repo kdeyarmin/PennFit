@@ -1170,6 +1170,32 @@ async function dispatchIntent(input: DispatchInput): Promise<string> {
         .update({ status: "closed", updated_at: nowIso })
         .eq("id", input.conversationId);
       if (declineErr) throw declineErr;
+
+      // Mark the bound episode declined so the reminder ladder stops.
+      // Conversation-only close left the episode in outreach_pending /
+      // awaiting_response and re-pinged after the quiet period — contrary
+      // to docs/resupply-reminder-algorithm.md. Re-confirming a declined
+      // episode is still allowed by order-flow (patient typed NO by
+      // accident). Best-effort: a missing episode_id (in-app thread) is a
+      // no-op.
+      const { data: convRow } = await supabase
+        .from("conversations")
+        .select("episode_id")
+        .eq("id", input.conversationId)
+        .limit(1)
+        .maybeSingle();
+      const episodeId =
+        typeof convRow?.episode_id === "string" ? convRow.episode_id : null;
+      if (episodeId) {
+        const { error: epErr } = await supabase
+          .from("episodes")
+          .update({ status: "declined", updated_at: nowIso })
+          .eq("id", episodeId)
+          .eq("patient_id", input.patientId)
+          .in("status", ["outreach_pending", "awaiting_response"]);
+        if (epErr) throw epErr;
+      }
+
       return (
         input.aiReply ??
         "No problem. We will not ship anything right now. Reply YES any time you are ready, or HELP if you need us."

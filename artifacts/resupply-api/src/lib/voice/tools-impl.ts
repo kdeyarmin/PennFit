@@ -825,6 +825,10 @@ class Impl implements VoiceToolDispatcher {
       this.deps.placeOrderForConversation ?? placeResupplyOrderForConversation;
     const placed = await placeOrder({
       conversationId: this.deps.conversationId,
+      // Multi-tenant: the dispatcher already scopes every other DB read
+      // through deps.orgId. Omitting it here fell back to the seed org and
+      // made non-seed voice confirms fail with conversation_not_found.
+      orgId: this.deps.orgId,
       // The caller's spoken confirmation (the agent reads back the
       // refill attestation before calling this tool) is the recorded
       // Medicare/payer refill attestation. No IP/UA on a phone call.

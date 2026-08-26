@@ -65,6 +65,7 @@ import {
 } from "../entitlement/resolve-sku-entitlement";
 import { isFeatureEnabled } from "../feature-flags";
 import { recordDispense } from "../catalog/dispense";
+import { openOutreachEpisode } from "../episodes/open-outreach-episode";
 import { logger } from "../logger";
 
 export interface NotEligibleEntitlement {
@@ -257,7 +258,7 @@ export async function placeResupplyOrderForConversation(
   if (!episode.prescription_id) return { status: "no_active_prescription" };
   const { data: rx, error: rxErr } = await supabase
     .from("prescriptions")
-    .select("id, item_sku")
+    .select("id, item_sku, cadence_days")
     .eq("id", episode.prescription_id)
     .limit(1)
     .maybeSingle();
@@ -521,6 +522,31 @@ export async function placeResupplyOrderForConversation(
       affirmation: input.affirmation,
       entitlement: resolvedEntitlement,
     });
+  }
+
+  // Open the NEXT cycle so the ladder continues after this confirm.
+  // Best-effort: the ship already happened; a failed next-episode write
+  // is logged for ops, never turns a successful confirm into a failure.
+  try {
+    await openOutreachEpisode({
+      orgId,
+      patientId: episode.patient_id,
+      prescriptionId: episode.prescription_id,
+      cadenceDays:
+        typeof rx.cadence_days === "number" && rx.cadence_days > 0
+          ? rx.cadence_days
+          : 90,
+    });
+  } catch (err) {
+    logger.warn(
+      {
+        event: "resupply.next_episode_open_failed",
+        episodeId: episode.id,
+        prescriptionId: episode.prescription_id,
+        errName: err instanceof Error ? err.name : "unknown",
+      },
+      "resupply: next-cycle episode open failed after confirm",
+    );
   }
 
   return {
