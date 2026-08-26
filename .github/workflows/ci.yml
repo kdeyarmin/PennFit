@@ -1,5 +1,6 @@
 name: CI
 
+# Retrigger registration for PR #1330 after missed pull_request events.
 on:
   push:
     branches: [main]
