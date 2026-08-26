@@ -451,7 +451,7 @@ export function AdminBillingHubPage() {
               <DollarRow
                 label="Patient responsibility — open"
                 amount={data?.dollars?.patientResponsibilityCents ?? 0}
-                hint="Eligible for statement / card-on-file"
+                hint="Eligible for patient statement"
               />
             </ul>
           )}

@@ -127,10 +127,11 @@ router.get(
           kind: "shop_customer",
           id: r.customer_id,
           label: r.display_name ?? r.email_lower ?? r.customer_id,
-          // Customers don't have an admin detail page yet; deep-link to
-          // the abandoned-cart list filtered on the user (close enough).
-          href: `/admin/shop/abandoned-carts?customerId=${encodeURIComponent(r.customer_id)}`,
-          hint: "Cash-pay shop customer",
+          // Cash-pay customer detail pages retired with the storefront
+          // checkout. Point operators at the patient roster (they can
+          // search by name/email) rather than a dead abandoned-cart URL.
+          href: "/admin/patients",
+          hint: "Historical storefront account",
         });
       }
     }
