@@ -1,20 +1,21 @@
 -- 0526: Retire "update your payment method" wording on payment_failed.
 --
--- Patient cash-pay / card-on-file was removed. The alert library entry and
+-- Patient cash-pay / card-on-file was removed. The alert catalog entry and
 -- channel templates still told patients to open an update-payment URL. Rewrite
 -- to insurance-balance language and point them at /account/billing (or a
--- contact CTA) instead. Variables keep `update_payment_url` for back-compat
--- with any admin-sent overrides that still pass that key; new default copy
--- uses `billing_url`.
+-- contact CTA) instead. Variables keep billing_url for the new default copy.
 --
--- Idempotent: UPDATE … WHERE alert_key = 'payment_failed'.
+-- Tables are alert_definitions + alert_messages (migration 0179), not the
+-- historical filename's "alert_library" nickname.
+--
+-- Idempotent: UPDATE … WHERE key / alert_key = 'payment_failed'.
 
-UPDATE "resupply"."alert_library"
+UPDATE "resupply"."alert_definitions"
 SET
   "name" = 'Billing balance notice',
   "description" =
     'Alert a patient about an insurance billing balance that needs attention.',
-  "variables" =
+  "allowed_variables" =
     '["first_name","practice_name","amount","billing_url"]'::jsonb,
   "updated_at" = NOW()
 WHERE "key" = 'payment_failed';
