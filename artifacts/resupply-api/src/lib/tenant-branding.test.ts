@@ -24,7 +24,7 @@ import {
 const SEED_ROW = {
   name: "Penn Home Medical Supply",
   storefront_name: "Penn Home Medical Supply",
-  tagline: "Your CPAP, made simple. Fit. Shop. Resupply.",
+  tagline: "Your CPAP, made simple. Fit. Order. Resupply.",
   logo_url: null,
 };
 

@@ -250,7 +250,9 @@ const SHOP_PROMPT_HASH =
  * changing it again. v24 removes the claim that patient payments run through
  * Stripe and says the platform is insurance-billing rather than retail —
  * patients are supplied against their plan and never charged a card, so the
- * agent must not pitch e-commerce — changing it again.
+ * agent must not pitch e-commerce — changing it again. A follow-up knowledge
+ * edit drops Subscribe & Save / guest checkout / patient-pay shop pitch from
+ * the spoken sales blocks (hash moves again while PROMPT_VERSION stays v25).
  */
 const BREATHE_SALES_PROMPT_HASH =
   "e5a53e411a135b499027cd9a9f58adfba9cb3e60fb1278f272350a07b87579fe";

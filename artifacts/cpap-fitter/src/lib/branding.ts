@@ -75,7 +75,7 @@ export interface StorefrontBranding {
 export const DEFAULT_BRANDING: StorefrontBranding = {
   storefrontName: "CareMetric Breathe",
   legalName: "CareMetric Breathe",
-  tagline: "Your CPAP, made simple. Fit. Shop. Resupply.",
+  tagline: "Your CPAP, made simple. Fit. Order. Resupply.",
   logoUrl: null,
   resolved: false,
 };
