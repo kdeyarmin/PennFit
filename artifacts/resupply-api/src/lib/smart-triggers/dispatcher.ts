@@ -36,7 +36,7 @@ import {
 import { getCompanyInfo } from "../company-info.js";
 import {
   resolveBrandingByOrgId,
-  resolveTenantBaseUrl,
+  resolveTenantLinkBaseUrl,
 } from "../tenant-branding.js";
 import { createTenantSendgridClient } from "../email/tenant-sender.js";
 import {
@@ -217,9 +217,26 @@ export async function runSmartTriggerSendDue(
     process.env.SHOP_PUBLIC_BASE_URL?.replace(/\/+$/, "") ||
     "https://cmbreathe.com"
   ).trim();
-  const tenantBaseUrl =
-    (await resolveTenantBaseUrl(orgId))?.replace(/\/+$/, "") || platformBaseUrl;
-  const accountUrl = `${tenantBaseUrl}/account`;
+  // Email bodies deep-link to /account — refuse the platform host for
+  // non-seed tenants without a verified domain. SMS copy has no absolute
+  // account URL, so SMS continues.
+  const tenantBaseUrl = await resolveTenantLinkBaseUrl(orgId, platformBaseUrl);
+  if (channel === "email" && !tenantBaseUrl) {
+    logger.info(
+      { org_id: orgId, channel },
+      "smart-triggers: skipped (no tenant domain)",
+    );
+    return {
+      status: "ok",
+      channel,
+      attempted: 0,
+      sent: 0,
+      failed: 0,
+      skippedNoContact: 0,
+      remaining: 0,
+    };
+  }
+  const accountUrl = tenantBaseUrl ? `${tenantBaseUrl}/account` : "";
 
   let sg: ReturnType<typeof createSendgridClient> | null = null;
   let sms: ReturnType<typeof createTwilioSmsClient> | null = null;

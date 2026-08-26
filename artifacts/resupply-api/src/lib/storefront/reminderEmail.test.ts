@@ -44,7 +44,14 @@ vi.mock("../tenant-branding.js", async (importOriginal) => ({
     tagline: "tagline",
     logoUrl: null,
   })),
-  resolveTenantBaseUrl: vi.fn(async () => null),
+  // Explicit orgId → tenant domain; unset orgId falls through to the
+  // platform reminder base inside resolveReminderLinkBase.
+  resolveTenantLinkBaseUrl: vi.fn(
+    async (orgId?: string, platformFallback?: string) =>
+      orgId?.trim()
+        ? "https://acme.example"
+        : (platformFallback ?? "https://cmbreathe.com").replace(/\/$/, ""),
+  ),
 }));
 
 import {
