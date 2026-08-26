@@ -4,7 +4,8 @@
 // patient-packet template catalog) and the customer receives a secure
 // link to review and e-sign. The order is billed to insurance — nothing
 // is charged on the link. The panel lists recent requests with a derived
-// lifecycle badge (Sent → Viewed → Signed) plus resend / cancel actions.
+// lifecycle badge (Sent → Viewed → Signed / Signed — needs follow-up)
+// plus resend / cancel actions.
 //
 // Backend: /resupply-api/admin/csr-order-requests* (returns.manage);
 // public twin: /order-sign (token-gated).
@@ -38,15 +39,23 @@ function formatUsd(cents: number): string {
   return `$${(cents / 100).toFixed(2)}`;
 }
 
-type DerivedStatus = "sent" | "viewed" | "signed" | "canceled" | "expired";
+type DerivedStatus =
+  | "sent"
+  | "viewed"
+  | "signed"
+  | "signed_needs_followup"
+  | "canceled"
+  | "expired";
 
 function deriveStatus(r: CsrOrderRequestSummary): DerivedStatus {
   if (r.status === "canceled") return "canceled";
-  // Signed is terminal for the patient link: nothing is charged. Draft-backed
-  // orders auto-dispense into fulfillments; ad-hoc ones stay Signed for staff.
-  // A signed order is never "expired" — expiry only gates whether it can
-  // still BE signed.
-  if (r.signedAt) return "signed";
+  // Signed is terminal for the patient link: nothing is charged.
+  // Only label "queued" when a fulfillment actually exists — a linked
+  // draft alone is not enough (dispense-on-sign fails soft on
+  // no_patient / no_sku / error and leaves the request signed).
+  if (r.signedAt) {
+    return r.hasQueuedFulfillment ? "signed" : "signed_needs_followup";
+  }
   if (r.expiresAt && new Date(r.expiresAt).getTime() < Date.now()) {
     return "expired";
   }
@@ -57,7 +66,8 @@ function deriveStatus(r: CsrOrderRequestSummary): DerivedStatus {
 const STATUS_LABEL: Record<DerivedStatus, string> = {
   sent: "Sent",
   viewed: "Viewed",
-  signed: "Signed",
+  signed: "Signed — queued",
+  signed_needs_followup: "Signed — needs follow-up",
   canceled: "Canceled",
   expired: "Expired",
 };
@@ -69,6 +79,7 @@ const STATUS_TONE: Record<
   sent: "outline",
   viewed: "secondary",
   signed: "default",
+  signed_needs_followup: "secondary",
   canceled: "destructive",
   expired: "destructive",
 };
@@ -230,6 +241,7 @@ export function CsrOrderRequestsPanel() {
                       status === "sent" ||
                       status === "viewed" ||
                       status === "signed" ||
+                      status === "signed_needs_followup" ||
                       status === "expired";
                     return (
                       <tr key={r.id} className="border-t border-border/40">
@@ -254,6 +266,13 @@ export function CsrOrderRequestsPanel() {
                           <Badge variant={STATUS_TONE[status]}>
                             {STATUS_LABEL[status]}
                           </Badge>
+                          {status === "signed_needs_followup" ? (
+                            <div className="text-muted-foreground mt-1 text-xs max-w-[14rem]">
+                              {r.hasLinkedDraft
+                                ? "Signature captured, but fulfillment did not queue — check patient/SKU on the draft."
+                                : "Ad-hoc order — attach a patient and SKU before fulfillment can queue."}
+                            </div>
+                          ) : null}
                         </td>
                         <td className="py-3 px-4 text-muted-foreground whitespace-nowrap">
                           {formatAppDateTime(r.sentAt)}

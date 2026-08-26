@@ -137,16 +137,9 @@ import { BREATHE_SALES_KNOWLEDGE } from "./breathe-sales-knowledge";
  * CareMetric Breathe. This prompt is the one AI surface with no downstream
  * brand normalization (see breathe-sales-knowledge.brand.test.ts), so the
  * literal here is what the agent says. Only the breathe_prospect render
- * changes — the patient and shop_customer renders are byte-for-byte unchanged
- * from v18.
- *
- * v25 retires cash-pay card-last-four identity for the shop_customer
- * storefront voice path. Patients are insurance-only now — almost no
- * caller has a card on file, so asking for "the last four of the card
- * on file" was a dead end that burned the call before handoff. The
- * agent now collects name + email and hands off to a human for any
- * account-specific lookup. Only the shop_customer render changes —
- * patient and breathe_prospect are byte-for-byte unchanged from v24.
+ * changes — the patient render is byte-for-byte unchanged from v18.
+ * v25 rewrites shop_customer identity off card-on-file onto email (insurance-
+ * only; cash-pay verify is gone).
  */
 export const PROMPT_VERSION = "2026-08-26.v25" as const;
 
@@ -248,10 +241,11 @@ const buildSystemPromptInputSchema = z.object({
   /**
    * Which kind of caller this prompt is for. "patient" (default) runs the
    * clinical resupply flow and verifies by date of birth; "shop_customer"
-   * is a storefront/account caller who must be handed to a human for any
-   * account-specific lookup (cash-pay card verification is retired);
-   * "breathe_prospect" is a prospective DME business that dialed the
-   * CareMetric Breathe B2B platform sales line (no patient PHI in scope).
+   * is a legacy storefront caller who verifies by the email on file and
+   * can only review their account or reach a human (no card verify —
+   * patients are insurance-only); "breathe_prospect" is a prospective
+   * DME business that dialed the CareMetric Breathe B2B platform sales
+   * line (no patient PHI in scope).
    */
   callerKind: z
     .enum(["patient", "shop_customer", "breathe_prospect"])
@@ -331,19 +325,18 @@ export function buildSystemPrompt(input: BuildSystemPromptInput): string {
   const greetingClause = `Greeting (use as the FIRST thing you say, lightly varied so it doesn't sound recorded): "${greetingText}"`;
   const versionClause = `Prompt version: ${PROMPT_VERSION}.`;
 
-  // Storefront / account caller: cash-pay card verification is retired
-  // (patients order through insurance). The agent may answer general
-  // questions, but any account-specific lookup goes to a human after
-  // collecting name + email for the handoff note.
+  // Legacy storefront caller: verifies by email on file and may only REVIEW
+  // their account (read-only) or reach a human — no DOB, no resupply
+  // inventory, no order placement. Never ask for a card (insurance-only).
   if ((callerKind ?? "patient") === "shop_customer") {
     return [
       `You are ${agentName}, a real-sounding phone assistant for ${practiceName}. You're talking to a customer on the phone — be warm, clear, and patient, and sound like a thoughtful, well-trained human, not a robot reading a script.`,
       howToSpeak,
       serviceExcellence,
-      `Scope: account help for a storefront caller. You can answer general questions about how ordering through insurance works, replacement schedules, and how to reach the team. You CANNOT look up, confirm, place, change, or cancel a specific order or payment by phone — for ANY account-specific question, hand off to a human. You do NOT give medical advice, dosing advice, or interpret symptoms.`,
-      `Identity: cash-pay cards are no longer on file, so do NOT ask for card digits or call verify_shop_customer_identity. For any account-specific question, collect the caller's full name and the email on their account, then call request_human_handoff with reason "identity_verification_failed" so a teammate can look them up. Say something natural like: "I can't pull accounts up on this line anymore — if you share the name and email on the account, I'll get a teammate right over."`,
-      `Privacy: never read a full address, phone number, or email aloud verbatim. You may CONFIRM small fragments the caller supplies. If a caller asks you to read their full info back, politely refuse: "For your privacy I can only confirm pieces you read to me — does that sound okay?"`,
-      `Tools: the only things you can do are call tools. Prefer request_human_handoff for account lookups. Do not call get_customer_chart or verify_shop_customer_identity. When you're done, call end_call with outcome "completed" (or "handed_off" after a handoff).`,
+      `Scope: storefront account help only — confirming the caller's identity, then reviewing their recent order and account status. You CANNOT place new orders, change an order, or take payment by phone; for ANY change the caller wants, hand off to a human. You do NOT give medical advice, dosing advice, or interpret symptoms. Supplies are billed to insurance — never ask for a card.`,
+      `Identity verification is mandatory and comes first. Before sharing ANY account information, you MUST call the verify_shop_customer_identity tool with the email address on their account, and that call MUST succeed. If it fails three times — or there is no email on file — apologise and call request_human_handoff with reason "identity_verification_failed". Ask naturally: "Can I confirm the email address on your account so I can pull it up?"`,
+      `Privacy: never read a full order details, or the customer's full address, phone number, or email aloud verbatim. You may CONFIRM small fragments the caller supplies (for example, "yes, the one ending in example.com"). If a caller asks you to read their full info back, politely refuse: "For your privacy I can only confirm pieces you read to me — does that sound okay?"`,
+      `Tools: the only things you can do are call tools. Right after verifying, call get_customer_chart for a safe-to-read snapshot — their first name, whether they have a recent order, whether a subscription is active, and whether anything is still open — and read it back conversationally. Never read full order contents, addresses, or email aloud. You cannot place or change orders; if the caller wants to order, change, or cancel anything, call request_human_handoff with the most fitting reason. When you're done, call end_call with outcome "completed".`,
       handoff,
       hangup,
       contextClause,

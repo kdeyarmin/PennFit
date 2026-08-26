@@ -113,7 +113,7 @@ const requestBody = z
     groupNumber: optionalText(80),
     prescribingPhysician: optionalText(120),
     notes: optionalText(2000),
-    population: z.enum(["adult", "pediatric"]).optional().default("adult"),
+    population: z.enum(["adult", "pediatric"]),
     // Fitting context. Product references and an id — no measurements,
     // no clinical findings; those already live on the fit session.
     fitSessionId: z.string().uuid().optional(),

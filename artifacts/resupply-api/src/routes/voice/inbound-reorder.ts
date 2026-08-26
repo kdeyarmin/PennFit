@@ -74,12 +74,10 @@ const INBOUND_GREETING =
 
 const INBOUND_SHOP_CALL_CONTEXT =
   "Inbound call: a storefront customer phoned to check on their account. " +
-  "Cash-pay card verification is retired — do NOT ask for card digits or " +
-  "call verify_shop_customer_identity. Collect the caller's full name and " +
-  "account email, then request_human_handoff with reason " +
-  '"identity_verification_failed" so a teammate can look them up. Answer ' +
-  "general insurance-ordering questions only; hand off for any " +
-  "account-specific lookup.";
+  "Verify identity with verify_shop_customer_identity({email}) — the " +
+  "tool compares against the email on their account — then review their " +
+  "recent order status. Never ask for a card. For any change, hand off " +
+  "to a human.";
 
 const INBOUND_SHOP_GREETING =
   "Hi there, thanks for calling Penn Home Medical Supply! I can help you check on your " +

@@ -279,10 +279,15 @@ describe("results — population is sent to whichever engine answers", () => {
   });
 
   it("sends population on the legacy /api/recommend request", () => {
+    // Structural pin: /api/recommend requires `population` (adult | child).
+    // Optional spread was retired when the client Zod schema made it
+    // required — omitting it would 400 at the wire. The early return /
+    // results-missing-population-restart gate keeps null out of the body.
     expect(SRC).toContain("answers: fullAnswers,");
     expect(SRC).toMatch(
-      /mutate\(\{\s*data: \{\s*measurements,\s*answers: fullAnswers,\s*\.\.\.\(population \? \{ population \} : \{\}\),/,
+      /mutate\(\{\s*data: \{\s*measurements,\s*answers: fullAnswers,\s*population,/,
     );
+    expect(SRC).toContain('data-testid="results-missing-population-restart"');
   });
 
   it("reads the ranked population off the RESPONSE, falling back to the store", () => {

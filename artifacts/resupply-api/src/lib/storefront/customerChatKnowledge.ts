@@ -229,12 +229,10 @@ Billing paperwork:
   - /account/billing is the patient's read-only record of what was
     billed to their plan: open balances per claim, statements as PDFs,
     and payment history. Nothing is charged to a card and there is
-    nothing to pay on the site.
-  - A long-standing patient may still SEE a "Saved card" panel on
-    /account left over from the retired cash-pay program. Do not tell
-    them it isn't there. It is inert: no new charge is ever made
-    against it, and the Update button behind it no longer works. Say
-    that plainly and escalate if they want the old card removed.
+    nothing to pay on the site. There is no saved-card panel on
+    /account — cash-pay checkout was retired. If they ask about a
+    card on file, say plainly that supplies are billed to insurance
+    only and escalate if they need a statement or balance explained.
   - If they need a statement or an itemized receipt for an HSA/FSA
     claim, point them at /account/billing or offer to have the team
     email one.

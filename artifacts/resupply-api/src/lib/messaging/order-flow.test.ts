@@ -511,7 +511,8 @@ describe("placeResupplyOrderForConversation — coverage guard", () => {
 // The guard only holds an order when the patient's own therapy data
 // AFFIRMATIVELY shows non-use: ≥21 reported nights in the 30-day
 // window AND fewer than half of them at 4+ hours. No data, sparse
-// data, healthy data, and lookup errors all proceed (fail open).
+// data, healthy data proceed (fail open by omission); lookup errors
+// hold when the flag is ON (fail closed).
 
 describe("placeResupplyOrderForConversation — continued-use guard", () => {
   const CONV_ID = "00000000-0000-4000-8000-0000000000c1";
@@ -734,21 +735,33 @@ describe("placeResupplyOrderForConversation — continued-use guard", () => {
     expect(result.status).toBe("ok");
   });
 
-  it("proceeds when the therapy-nights lookup errors (fail open)", async () => {
+  it("holds when the therapy-nights lookup errors (fail closed)", async () => {
     stageLookupChain();
     stageSupabaseResponse("patient_therapy_nights", "select", {
       data: null,
       error: { message: "boom" },
     });
-    stageClaimAndFulfillment();
+    // raiseGuardLookupAlert: existing-open probe then insert.
+    stageSupabaseResponse("csr_compliance_alerts", "select", {
+      data: null,
+      error: null,
+    });
+    stageSupabaseResponse("csr_compliance_alerts", "insert", {
+      data: { id: "alert-lookup" },
+      error: null,
+    });
 
     const result = await placeResupplyOrderForConversation({
       conversationId: CONV_ID,
       orgId: ORG_ID,
     });
 
-    expect(result.status).toBe("ok");
-    expect(supabaseMock.callCount("csr_compliance_alerts", "insert")).toBe(0);
+    expect(result.status).toBe("guard_lookup_error");
+    if (result.status === "guard_lookup_error") {
+      expect(result.guard).toBe("usage");
+    }
+    expect(supabaseMock.callCount("csr_compliance_alerts", "insert")).toBe(1);
+    expect(supabaseMock.callCount("episodes", "update")).toBe(0);
   });
 
   it("skips the lookup entirely when the flag is OFF", async () => {

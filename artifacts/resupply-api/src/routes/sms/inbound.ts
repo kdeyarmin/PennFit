@@ -1202,6 +1202,32 @@ async function dispatchIntent(input: DispatchInput): Promise<string> {
         });
         return "Thanks. It is a little early to resend this under your plan. A team member will check and get back to you. Nothing ships until then.";
       }
+      if (result.status === "guard_lookup_error") {
+        // An enforcement flag is ON but the check itself failed. Held for
+        // CSR — do not reuse input.aiReply ("on its way").
+        const { error: lookupErr } = await supabase
+          .from("conversations")
+          .update({ status: "awaiting_admin", updated_at: nowIso })
+          .eq("id", input.conversationId);
+        if (lookupErr) throw lookupErr;
+        await safeAudit({
+          action: "messaging.order.blocked_guard_lookup",
+          adminEmail: null,
+          adminUserId: null,
+          targetTable: "episodes",
+          targetId: result.episodeId,
+          metadata: {
+            channel: "sms",
+            conversation_id: input.conversationId,
+            patient_id: input.patientId,
+            episode_id: result.episodeId,
+            guard: result.guard,
+          },
+          ip: input.ip,
+          userAgent: input.userAgent,
+        });
+        return "Thanks. A team member will review this and get back to you. Nothing ships until then.";
+      }
       return "Thanks. A team member will review this and get back to you.";
     }
     case "decline": {
