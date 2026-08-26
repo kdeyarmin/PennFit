@@ -185,7 +185,7 @@ describe("GET /company-info — per-tenant assistant names", () => {
     expect(res.body.supportEmail).toBe("info@pennpaps.com");
     expect(res.body.assistantStorefrontName).toBe("PennBot");
     expect(resolveBrandingByHostMock).toHaveBeenCalled();
-    expect(res.headers["cache-control"]).toMatch(/max-age=60/);
+    expect(res.headers["cache-control"]).toMatch(/no-store/);
   });
 
   it("overlays host branding when company-info name disagrees for any reason", async () => {

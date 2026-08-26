@@ -79,16 +79,16 @@ router.get("/company-info", async (req, res) => {
         assistantStorefrontName: info.assistantStorefrontName,
         assistantAdminName: info.assistantAdminName,
       };
-  // Cacheable for 5 min, but the body varies by HOST (tenant identity +
-  // assistant names resolve from the brand host). A shared/edge cache
-  // keyed only on the URL path would serve one tenant's contact info to
-  // another tenant's storefront. `Vary` makes any conformant cache key on
-  // the host — byte-for-byte matching storefront-branding.ts.
+  // Body varies by host (tenant identity + assistant names). `Vary` keeps
+  // shared caches from serving one tenant's contact info to another.
+  //
+  // `private, no-store` (+ CDN-Cache-Control): Railway Hikari kept serving a
+  // stale Host-keyed CareMetric body for pennpaps.com after deploys that
+  // fixed the overlay (identical etag / max-age=300). Brand identity must
+  // not lag a deploy or an admin save behind an edge TTL.
   res.set("Vary", "X-Forwarded-Host, Host");
-  // Short TTL: brand overlays must show up quickly after an admin save or
-  // a deploy that fixes host/company-info drift. storefront-branding keeps
-  // its own cache; keeping these aligned matters more than edge hit rate.
-  res.set("Cache-Control", "public, max-age=60, must-revalidate");
+  res.set("Cache-Control", "private, no-store");
+  res.set("CDN-Cache-Control", "no-store");
   res.json({
     name: info.name,
     // Registered legal name — the storefront legal pages ("operated by …")
