@@ -473,15 +473,12 @@ export async function getCompanyInfo(orgId?: string): Promise<CompanyInfo> {
           const needsNameOverlay =
             !!explicitOrgId && fromDb.name === DEFAULTS.name;
           const needsEmailOverlay =
-            !!explicitOrgId &&
-            fromDb.supportEmail === DEFAULTS.supportEmail;
+            !!explicitOrgId && fromDb.supportEmail === DEFAULTS.supportEmail;
           if (needsNameOverlay || needsEmailOverlay) {
             const dir = await orgDirectoryFallbackInfo(explicitOrgId!);
-            const useName =
-              needsNameOverlay && dir.name !== DEFAULTS.name;
+            const useName = needsNameOverlay && dir.name !== DEFAULTS.name;
             const useEmail =
-              needsEmailOverlay &&
-              dir.supportEmail !== DEFAULTS.supportEmail;
+              needsEmailOverlay && dir.supportEmail !== DEFAULTS.supportEmail;
             if (useName || useEmail) {
               info = {
                 ...fromDb,
@@ -490,15 +487,9 @@ export async function getCompanyInfo(orgId?: string): Promise<CompanyInfo> {
                 websiteUrl: useName
                   ? dir.websiteUrl || fromDb.websiteUrl
                   : fromDb.websiteUrl,
-                supportEmail: useEmail
-                  ? dir.supportEmail
-                  : fromDb.supportEmail,
-                generalEmail: useEmail
-                  ? dir.generalEmail
-                  : fromDb.generalEmail,
-                billingEmail: useEmail
-                  ? dir.billingEmail
-                  : fromDb.billingEmail,
+                supportEmail: useEmail ? dir.supportEmail : fromDb.supportEmail,
+                generalEmail: useEmail ? dir.generalEmail : fromDb.generalEmail,
+                billingEmail: useEmail ? dir.billingEmail : fromDb.billingEmail,
               };
             } else {
               info = fromDb;

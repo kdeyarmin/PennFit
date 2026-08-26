@@ -44,7 +44,10 @@ const resolveTenantBaseUrlMock = vi.hoisted(() =>
   vi.fn(async (_orgId: string): Promise<string | null> => null),
 );
 const resolveTenantSenderMock = vi.hoisted(() =>
-  vi.fn(async (_orgId: string | undefined) => ({}) as { fromEmail?: string; fromName?: string }),
+  vi.fn(
+    async (_orgId: string | undefined) =>
+      ({}) as { fromEmail?: string; fromName?: string },
+  ),
 );
 vi.mock("./tenant-branding.js", () => ({
   resolveBrandingByOrgId: resolveBrandingByOrgIdMock,

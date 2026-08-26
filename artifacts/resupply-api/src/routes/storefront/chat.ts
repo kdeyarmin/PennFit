@@ -200,10 +200,7 @@ function offlineFallbackReplyFor(info: CompanyInfo): string {
  * request.
  */
 function brandChatText(text: string, info: CompanyInfo): string {
-  return applyPlatformBranding(
-    applyCompanyIdentityToText(text, info),
-    info,
-  );
+  return applyPlatformBranding(applyCompanyIdentityToText(text, info), info);
 }
 
 const chatMessageSchema = z.object({
@@ -835,10 +832,7 @@ async function handleJson(
         continue;
       }
 
-      const reply = brandChatText(
-        (message?.content ?? "").trim(),
-        companyInfo,
-      );
+      const reply = brandChatText((message?.content ?? "").trim(), companyInfo);
       if (reply.length === 0) {
         logger.warn(
           { event: "chat_empty_reply", round },
