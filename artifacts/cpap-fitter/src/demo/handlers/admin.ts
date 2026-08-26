@@ -21,12 +21,20 @@ import {
   demoShopCustomers,
   demoCustomerDetail,
   demoFitterLeads,
+  demoFitRequests,
+  demoPatchFitRequest,
   demoBillingDirectorSummary,
   demoAdminOrders,
   demoAdminOrderDetail,
   demoSystemInfo,
 } from "../fixtures/admin";
-import { findDemoProduct } from "../fixtures/products";
+import {
+  demoAdminCatalog,
+  demoAdjustCatalogStock,
+  demoUpsertCatalogProduct,
+  findDemoProduct,
+  SUPPLY_CATEGORIES,
+} from "../fixtures/products";
 import {
   demoSelectableAddons,
   demoSelectablePlans,
@@ -178,6 +186,104 @@ export const adminHandlers: DemoHandler[] = [
   // ── leads + billing + orders ─────────────────────────────────────
   route("GET", "/resupply-api/admin/fitter-leads", () =>
     json(demoFitterLeads()),
+  ),
+  // Fit-request queue + product catalog: these are the three pages the
+  // user-manual capture retargeted after Front Desk / cash-pay shop
+  // were removed. Without fixtures they fall through to empty counts
+  // and "No SKUs yet", which is a worse screenshot than the retired
+  // pages they replaced.
+  route("GET", "/resupply-api/admin/fitter-requests", (req) =>
+    json(
+      demoFitRequests(req.query.get("status"), req.query.get("requestType")),
+    ),
+  ),
+  route("PATCH", "/resupply-api/admin/fitter-requests/:id", (req, { id }) => {
+    const body =
+      req.json<{
+        status?: string;
+        csrNote?: string | null;
+        closedOutcome?: string | null;
+      }>() ?? {};
+    const row = demoPatchFitRequest(id, body);
+    if (!row) return json({ error: "not_found" }, 404);
+    const fulfilled =
+      row.status === "closed" && row.closedOutcome === "fulfilled";
+    return json({
+      id: row.id,
+      status: row.status,
+      csrNote: row.csrNote,
+      contactedAt: row.contactedAt,
+      contactedBy: row.contactedBy,
+      closedAt: row.closedAt,
+      closedOutcome: row.closedOutcome,
+      updatedAt: row.updatedAt,
+      dispenseStamped: Boolean(fulfilled && row.fitSessionId),
+      dispenseCleared: false,
+    });
+  }),
+  route("GET", "/resupply-api/admin/catalog/low-stock", () =>
+    json({ products: demoAdminCatalog({ lowStockOnly: true }).products }),
+  ),
+  route("GET", "/resupply-api/admin/catalog/products", (req) =>
+    json(
+      demoAdminCatalog({
+        q: req.query.get("q"),
+        category: req.query.get("category"),
+        lowStockOnly:
+          req.query.get("lowStockOnly") === "1" ||
+          req.query.get("lowStockOnly") === "true",
+        limit: intParam(req, "limit", 200),
+        offset: intParam(req, "offset", 0),
+      }),
+    ),
+  ),
+  route("POST", "/resupply-api/admin/catalog/products", (req) => {
+    const result = demoUpsertCatalogProduct(
+      req.json<{
+        sku?: string;
+        name?: string;
+        description?: string | null;
+        category?: string | null;
+        manufacturer?: string | null;
+        modelNumber?: string | null;
+        unitOfMeasure?: string;
+        lowStockThreshold?: number | null;
+        active?: boolean;
+        openingStock?: number | null;
+      }>() ?? {},
+    );
+    if (!result.ok) {
+      if (result.error === "invalid_category") {
+        return json(
+          { error: "invalid_category", allowed: SUPPLY_CATEGORIES },
+          400,
+        );
+      }
+      return json({ error: "invalid_body" }, 400);
+    }
+    return json({ product: result.product }, result.created ? 201 : 200);
+  }),
+  route(
+    "POST",
+    "/resupply-api/admin/catalog/products/:sku/stock",
+    (req, { sku }) => {
+      const body =
+        req.json<{
+          delta?: number;
+          reason?: string;
+        }>() ?? {};
+      const result = demoAdjustCatalogStock(sku, body);
+      if (!result.ok) {
+        if (result.error === "not_found") {
+          return json({ error: "not_found" }, 404);
+        }
+        if (result.error === "insufficient_stock") {
+          return json({ error: "insufficient_stock" }, 409);
+        }
+        return json({ error: "invalid_body" }, 400);
+      }
+      return json({ sku: result.sku, stockCount: result.stockCount });
+    },
   ),
   route("GET", "/resupply-api/admin/billing/director-summary", () =>
     json(demoBillingDirectorSummary()),

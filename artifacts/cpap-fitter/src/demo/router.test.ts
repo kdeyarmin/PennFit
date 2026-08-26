@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import { SUPPLY_CATEGORIES } from "@/lib/admin/catalog-api";
+
 import { routeDemoRequest } from "./router";
 
 async function get(url: string, init?: RequestInit) {
@@ -8,6 +10,13 @@ async function get(url: string, init?: RequestInit) {
 async function post(url: string, body?: unknown, init?: RequestInit) {
   return routeDemoRequest(url, {
     method: "POST",
+    body: body === undefined ? undefined : JSON.stringify(body),
+    ...init,
+  });
+}
+async function patch(url: string, body?: unknown, init?: RequestInit) {
+  return routeDemoRequest(url, {
+    method: "PATCH",
     body: body === undefined ? undefined : JSON.stringify(body),
     ...init,
   });
@@ -350,6 +359,153 @@ describe("demo router", () => {
     expect(typeof body.order.orderReference).toBe("string");
     expect(body.order.payload).toBeTypeOf("object");
     expect(body.order.payload).not.toBeNull();
+  });
+
+  it("seeds the fit-request queue the user-manual screenshot captures", async () => {
+    const res = await get("/resupply-api/admin/fitter-requests?status=new");
+    expect(res).not.toBeNull();
+    const body = (await res!.json()) as {
+      rows: Array<{ status: string; email: string }>;
+      counts: Record<string, number>;
+    };
+    expect(body.rows.length).toBeGreaterThan(0);
+    expect(body.rows.every((r) => r.status === "new")).toBe(true);
+    expect(body.counts.new).toBeGreaterThan(0);
+    expect(body.rows[0]!.email).toMatch(/@caremetric\.example$/);
+  });
+
+  it("seeds the product catalog the user-manual screenshot captures", async () => {
+    const res = await get("/resupply-api/admin/catalog/products");
+    expect(res).not.toBeNull();
+    const body = (await res!.json()) as {
+      products: Array<{ sku: string; stockCount: number | null }>;
+      total: number;
+      categories: string[];
+    };
+    expect(body.products.length).toBeGreaterThan(0);
+    expect(body.total).toBeGreaterThanOrEqual(body.products.length);
+    expect(body.categories.length).toBeGreaterThan(0);
+    // NULL stock is untracked, not zero — at least one seeded SKU
+    // keeps that distinction visible.
+    expect(body.products.some((p) => p.stockCount === null)).toBe(true);
+
+    // `total` is the unpaginated match count. Pin that contract with an
+    // explicit page size so a later catalog growth past the default
+    // limit=200 cannot make `total === products.length` fail a still-
+    // correct handler.
+    const pagedRes = await get("/resupply-api/admin/catalog/products?limit=2");
+    const paged = (await pagedRes!.json()) as {
+      products: unknown[];
+      total: number;
+    };
+    expect(paged.products).toHaveLength(2);
+    expect(paged.total).toBe(body.total);
+    expect(paged.total).toBeGreaterThan(2);
+  });
+
+  it("returns the canonical admin catalog categories, not shop leftovers", async () => {
+    const res = await get("/resupply-api/admin/catalog/products");
+    const body = (await res!.json()) as {
+      products: Array<{ sku: string; category: string | null }>;
+      categories: string[];
+    };
+    expect(body.categories).toEqual([...SUPPLY_CATEGORIES]);
+    expect(body.categories).not.toContain("chamber");
+    expect(body.categories).not.toContain("bundle");
+    const allowed = new Set<string>(SUPPLY_CATEGORIES);
+    expect(
+      body.products.every((p) => p.category == null || allowed.has(p.category)),
+    ).toBe(true);
+    // Storefront `chamber` maps onto the admin `humidifier` value.
+    expect(body.products.find((p) => p.sku === "37299")?.category).toBe(
+      "humidifier",
+    );
+  });
+
+  it("persists a fit-request status and CSR note across refetch", async () => {
+    // The queue invalidates after every PATCH. A response-only handler
+    // made the row, counts, and note snap back to the seed.
+    const note = "Called; waiting on the Rx.";
+    const patchRes = await patch(
+      "/resupply-api/admin/fitter-requests/demo-fitreq-1",
+      { status: "contacted", csrNote: note },
+    );
+    expect(patchRes!.status).toBe(200);
+    const patched = (await patchRes!.json()) as {
+      status: string;
+      csrNote: string;
+    };
+    expect(patched.status).toBe("contacted");
+    expect(patched.csrNote).toBe(note);
+
+    const list = await get(
+      "/resupply-api/admin/fitter-requests?status=contacted",
+    );
+    const body = (await list!.json()) as {
+      rows: Array<{ id: string; status: string; csrNote: string | null }>;
+      counts: Record<string, number>;
+    };
+    expect(body.rows.find((r) => r.id === "demo-fitreq-1")).toMatchObject({
+      status: "contacted",
+      csrNote: note,
+    });
+    expect(body.counts.contacted).toBeGreaterThan(0);
+  });
+
+  it("persists a catalog stock movement across refetch", async () => {
+    const sku = "62932"; // AirFit P10 pillows — seeded with on-hand 2
+    const beforeRes = await get("/resupply-api/admin/catalog/products");
+    const before = (await beforeRes!.json()) as {
+      products: Array<{ sku: string; stockCount: number | null }>;
+    };
+    const prior = before.products.find((p) => p.sku === sku);
+    expect(prior?.stockCount).toBeTypeOf("number");
+
+    const move = await post(
+      `/resupply-api/admin/catalog/products/${sku}/stock`,
+      { delta: 12, reason: "receipt" },
+    );
+    expect(move!.status).toBe(200);
+    const moved = (await move!.json()) as { sku: string; stockCount: number };
+    expect(moved.stockCount).toBe((prior!.stockCount as number) + 12);
+
+    const afterRes = await get("/resupply-api/admin/catalog/products");
+    const after = (await afterRes!.json()) as {
+      products: Array<{ sku: string; stockCount: number | null }>;
+    };
+    expect(after.products.find((p) => p.sku === sku)?.stockCount).toBe(
+      moved.stockCount,
+    );
+  });
+
+  it("rejects a shop leftover category on Add SKU and accepts machine", async () => {
+    const rejected = await post("/resupply-api/admin/catalog/products", {
+      sku: "BAD-CHAMBER",
+      name: "Should not land",
+      category: "chamber",
+    });
+    expect(rejected!.status).toBe(400);
+    const err = (await rejected!.json()) as {
+      error: string;
+      allowed: string[];
+    };
+    expect(err.error).toBe("invalid_category");
+    expect(err.allowed).toEqual([...SUPPLY_CATEGORIES]);
+
+    const created = await post("/resupply-api/admin/catalog/products", {
+      sku: "AIR11-DEMO",
+      name: "AirSense 11",
+      category: "machine",
+      openingStock: 4,
+    });
+    expect(created!.status).toBe(201);
+    const listed = await get(
+      "/resupply-api/admin/catalog/products?category=machine",
+    );
+    const body = (await listed!.json()) as {
+      products: Array<{ sku: string; category: string }>;
+    };
+    expect(body.products.some((p) => p.sku === "AIR11-DEMO")).toBe(true);
   });
 
   it("falls back to an empty-collections shape for unmatched API GETs", async () => {

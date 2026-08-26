@@ -2378,6 +2378,9 @@ def make_story(toc_entries):
     story += shot("storefront-how-it-works",
                   "The storefront walks a patient from mask fitting to a "
                   "request your team works — one front door for fit and resupply.")
+    story += shot("storefront-masks",
+                  "The mask catalog — every mask the tenant carries. "
+                  "Fitting still ends in a request, not a cart.")
     for name, para in STOREFRONT_JOURNEY:
         story.append(Paragraph(
             "<b><font color=\"%s\">%s.</font></b> %s"
@@ -2385,6 +2388,9 @@ def make_story(toc_entries):
     story += shot("csr-fitter-orders",
                   "The order queue — approved orders ready to fulfill, ship, "
                   "and track, all in the same system that bills them.")
+    story += shot("csr-catalog",
+                  "The product catalog — SKUs you dispense and on-hand counts. "
+                  "A blank count means untracked, not zero.")
     story.append(PageBreak())
 
     # ---- Paperless paperwork: referrals, eFax, e-signature ----

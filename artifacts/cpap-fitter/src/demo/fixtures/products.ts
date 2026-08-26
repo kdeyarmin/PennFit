@@ -3,7 +3,14 @@
 // at the real assets in public/products so the demo shop looks like
 // the live one. Prices are in cents.
 
+import {
+  SUPPLY_CATEGORIES,
+  type CatalogProduct,
+  type StockReason,
+} from "@/lib/admin/catalog-api";
 import type { ShopProductView } from "@/lib/shop-api";
+
+export { SUPPLY_CATEGORIES };
 
 type Category = ShopProductView["category"];
 
@@ -328,4 +335,231 @@ export function demoProductsResponse() {
 
 export function findDemoProduct(id: string): ShopProductView | undefined {
   return DEMO_PRODUCTS.find((p) => p.id === id);
+}
+
+/**
+ * Storefront shop categories that are not admin catalog values. The
+ * retired cash-pay shop used `chamber` / `bundle`; the warehouse
+ * catalog uses `humidifier` / `other` (see SUPPLY_CATEGORIES).
+ */
+const STOREFRONT_CATEGORY_TO_SUPPLY: Record<
+  string,
+  (typeof SUPPLY_CATEGORIES)[number]
+> = {
+  chamber: "humidifier",
+  bundle: "other",
+};
+
+function toSupplyCategory(
+  category: string,
+): (typeof SUPPLY_CATEGORIES)[number] {
+  if ((SUPPLY_CATEGORIES as readonly string[]).includes(category)) {
+    return category as (typeof SUPPLY_CATEGORIES)[number];
+  }
+  return STOREFRONT_CATEGORY_TO_SUPPLY[category] ?? "other";
+}
+
+function isLowStock(p: {
+  stockCount: number | null;
+  lowStockThreshold: number | null;
+}): boolean {
+  return (
+    p.stockCount != null &&
+    p.lowStockThreshold != null &&
+    p.stockCount <= p.lowStockThreshold
+  );
+}
+
+/**
+ * GET /admin/catalog/products — warehouse SKU list. Mapped from the
+ * storefront demo catalog so the admin Catalog page (and its user-manual
+ * screenshot) shows real rows. NULL stock stays untracked, not zero.
+ *
+ * Stock movements and Add-SKU writes live in a reload-scoped store so
+ * the page's invalidate-and-refetch after a mutation does not rebuild
+ * the seed and revert the change.
+ */
+function seedAdminCatalog(): CatalogProduct[] {
+  return DEMO_PRODUCTS.map((p, i) => {
+    const stockCount = p.stockCount;
+    const lowStockThreshold = p.lowStockThreshold;
+    return {
+      sku: p.modelNumber ?? p.id,
+      name: p.name,
+      description: p.description,
+      category: toSupplyCategory(p.category),
+      manufacturer: p.manufacturer,
+      modelNumber: p.modelNumber,
+      unitOfMeasure: "each",
+      stockCount,
+      lowStockThreshold,
+      lowStock: isLowStock({ stockCount, lowStockThreshold }),
+      active: true,
+      updatedAt: new Date(Date.now() - i * 3600_000).toISOString(),
+    };
+  });
+}
+
+let adminCatalog: CatalogProduct[] | null = null;
+
+function getAdminCatalog(): CatalogProduct[] {
+  if (!adminCatalog) adminCatalog = seedAdminCatalog();
+  return adminCatalog;
+}
+
+export function demoAdminCatalog(
+  opts: {
+    q?: string | null;
+    category?: string | null;
+    lowStockOnly?: boolean;
+    limit?: number;
+    offset?: number;
+  } = {},
+) {
+  const products = getAdminCatalog();
+  let filtered = products;
+  const q = opts.q?.trim().toLowerCase();
+  if (q) {
+    filtered = filtered.filter(
+      (p) =>
+        p.sku.toLowerCase().includes(q) ||
+        p.name.toLowerCase().includes(q) ||
+        (p.manufacturer ?? "").toLowerCase().includes(q),
+    );
+  }
+  if (opts.category) {
+    filtered = filtered.filter((p) => p.category === opts.category);
+  }
+  if (opts.lowStockOnly) {
+    filtered = filtered.filter((p) => p.lowStock);
+  }
+  const offset = opts.offset ?? 0;
+  const limit = opts.limit ?? 200;
+  return {
+    products: filtered.slice(offset, offset + limit),
+    total: filtered.length,
+    // Always the canonical set — not "categories we happen to stock"
+    // — so Add SKU offers `machine` / `other` and never `chamber` /
+    // `bundle`, which the live create endpoint rejects.
+    categories: [...SUPPLY_CATEGORIES],
+  };
+}
+
+const STOCK_REASONS: readonly StockReason[] = [
+  "receipt",
+  "dispense",
+  "return",
+  "count",
+  "adjustment",
+];
+
+export function demoAdjustCatalogStock(
+  sku: string,
+  input: {
+    delta?: number;
+    reason?: string;
+  },
+):
+  | { ok: true; sku: string; stockCount: number | null }
+  | {
+      ok: false;
+      error: "not_found" | "insufficient_stock" | "invalid_body";
+    } {
+  const delta = input.delta;
+  if (
+    typeof delta !== "number" ||
+    !Number.isInteger(delta) ||
+    delta === 0 ||
+    !STOCK_REASONS.includes(input.reason as StockReason)
+  ) {
+    return { ok: false, error: "invalid_body" };
+  }
+  const row = getAdminCatalog().find((p) => p.sku === sku);
+  if (!row) return { ok: false, error: "not_found" };
+  const next = (row.stockCount ?? 0) + delta;
+  if (next < 0) return { ok: false, error: "insufficient_stock" };
+  // A movement on an untracked SKU starts tracking, so the next GET
+  // shows the new balance instead of staying "Not tracked".
+  row.stockCount = next;
+  row.lowStock = isLowStock(row);
+  row.updatedAt = new Date().toISOString();
+  return { ok: true, sku: row.sku, stockCount: row.stockCount };
+}
+
+export function demoUpsertCatalogProduct(input: {
+  sku?: string;
+  name?: string;
+  description?: string | null;
+  category?: string | null;
+  manufacturer?: string | null;
+  modelNumber?: string | null;
+  unitOfMeasure?: string;
+  lowStockThreshold?: number | null;
+  active?: boolean;
+  openingStock?: number | null;
+}):
+  | { ok: true; created: boolean; product: CatalogProduct }
+  | { ok: false; error: "invalid_body" | "invalid_category" } {
+  const sku = input.sku?.trim() ?? "";
+  const name = input.name?.trim() ?? "";
+  if (!sku || !name) return { ok: false, error: "invalid_body" };
+  if (
+    input.category != null &&
+    input.category !== "" &&
+    !(SUPPLY_CATEGORIES as readonly string[]).includes(input.category)
+  ) {
+    return { ok: false, error: "invalid_category" };
+  }
+
+  const catalog = getAdminCatalog();
+  const existing = catalog.find((p) => p.sku === sku);
+  const now = new Date().toISOString();
+  if (existing) {
+    existing.name = name;
+    if (input.description !== undefined) {
+      existing.description = input.description;
+    }
+    if (input.category !== undefined) {
+      existing.category = input.category || null;
+    }
+    if (input.manufacturer !== undefined) {
+      existing.manufacturer = input.manufacturer;
+    }
+    if (input.modelNumber !== undefined) {
+      existing.modelNumber = input.modelNumber;
+    }
+    if (input.unitOfMeasure) existing.unitOfMeasure = input.unitOfMeasure;
+    if (input.lowStockThreshold !== undefined)
+      existing.lowStockThreshold = input.lowStockThreshold;
+    if (input.active !== undefined) existing.active = input.active;
+    existing.lowStock = isLowStock(existing);
+    existing.updatedAt = now;
+    return { ok: true, created: false, product: existing };
+  }
+
+  const stockCount = input.openingStock ?? null;
+  const product: CatalogProduct = {
+    sku,
+    name,
+    description: input.description ?? null,
+    category: input.category || null,
+    manufacturer: input.manufacturer ?? null,
+    modelNumber: input.modelNumber ?? null,
+    unitOfMeasure: input.unitOfMeasure ?? "each",
+    stockCount,
+    lowStockThreshold: input.lowStockThreshold ?? null,
+    lowStock: isLowStock({
+      stockCount,
+      lowStockThreshold: input.lowStockThreshold ?? null,
+    }),
+    active: input.active ?? true,
+    updatedAt: now,
+  };
+  catalog.unshift(product);
+  return { ok: true, created: true, product };
+}
+
+/** Test-only reset. */
+export function resetDemoAdminCatalog(): void {
+  adminCatalog = null;
 }

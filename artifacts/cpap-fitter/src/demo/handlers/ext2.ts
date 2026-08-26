@@ -306,7 +306,7 @@ function csrMacroById(id: string, patch: Record<string, unknown>) {
 const CSR_ORDER_REQUESTS = [
   {
     id: "demo-csro-0001",
-    orderReference: "PHM-DEMO-1001",
+    orderReference: "CMB-DEMO-1001",
     status: "signed" as const,
     customerName: "Avery Sample",
     customerEmail: "avery.sample@example.com",
@@ -349,7 +349,7 @@ const CSR_ORDER_REQUESTS = [
   },
   {
     id: "demo-csro-0002",
-    orderReference: "PHM-DEMO-1002",
+    orderReference: "CMB-DEMO-1002",
     status: "sent" as const,
     customerName: "Demo Patient",
     customerEmail: "demo.patient@example.com",
@@ -377,7 +377,7 @@ const CSR_ORDER_REQUESTS = [
   },
   {
     id: "demo-csro-0003",
-    orderReference: "PHM-DEMO-1003",
+    orderReference: "CMB-DEMO-1003",
     status: "viewed" as const,
     customerName: "Quinn Mockton",
     customerEmail: "quinn.mockton@example.com",
@@ -666,7 +666,7 @@ export const ext2Handlers: DemoHandler[] = [
     json(
       {
         id: "demo-csro-00ff",
-        orderReference: "PHM-DEMO-1099",
+        orderReference: "CMB-DEMO-1099",
         status: "sent",
         signingLink:
           "https://demo.example/order/demo-csro-00ff?v=1&sig=demo-signature",
