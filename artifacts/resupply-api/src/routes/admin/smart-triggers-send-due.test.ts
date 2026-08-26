@@ -101,6 +101,21 @@ vi.mock("../../lib/web-push", () => ({
   isPushConfigured: () => false,
 }));
 
+vi.mock("../../lib/tenant-branding.js", () => ({
+  resolveBrandingByOrgId: vi.fn(async () => ({
+    storefrontName: "Penn Home Medical Supply",
+    legalName: "Penn Home Medical Supply",
+    tagline: "tagline",
+    logoUrl: null,
+  })),
+  // Email dispatch deep-links to /account — pin a tenant base so
+  // regression tests exercise SendGrid, not the no-domain skip path.
+  resolveTenantLinkBaseUrl: vi.fn(
+    async (_orgId: string, platformFallback: string) =>
+      platformFallback.replace(/\/$/, ""),
+  ),
+}));
+
 import smartTriggersRouter from "./smart-triggers";
 
 const ADMIN_EMAIL = "ops@penn.example.com";
