@@ -288,7 +288,7 @@ export function buildChecklistItems(
       group: "Payments",
       title: "Stripe",
       description:
-        "Cash-pay storefront checkout and refunds. Strongly recommended before opening the shop.",
+        "Platform SaaS billing for this tenant (CareMetric Breathe subscription). Not used for patient checkout — patients are insurance-only.",
       status: stripeConfigured ? "complete" : "incomplete",
       detail: stripeDetail,
       docHref: null,

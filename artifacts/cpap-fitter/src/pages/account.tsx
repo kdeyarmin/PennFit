@@ -1,22 +1,9 @@
-// /account — patient self-service account page.
+// /account — patient self-service account page (insurance-only).
 //
-//   * Profile (name + shipping address) — editable inline. Persists
-//     to /shop/me PUT. Works in preview mode (no Stripe needed).
-//   * Saved card — read-only display ("Visa •••• 4242"). Update CTA
-//     starts a $0 setup-intent-style flow via /shop/me/quick-checkout
-//     with a placeholder $0 cart… not yet — for v1 we send the user
-//     into the standard checkout to update card on next purchase.
-//     We surface the message instead of pretending an "Update card"
-//     button works in isolation.
-//   * Order history — last N orders with "Buy this again" buttons.
-//     The button fetches the past order's line items via
-//     /shop/orders/:sessionId, drops them into the local cart with
-//     useCart().replaceItems, and navigates to /shop/cart so the
-//     customer can review (and adjust) before paying. The cart page
-//     reads a `pennpaps_reorder_from` sessionStorage flag to render
-//     a "Loaded from your order on …" banner. We deliberately do
-//     NOT bounce straight to Stripe — older patients want to see
-//     what they're buying before a card form appears.
+//   * Profile (name + shipping address) — editable inline via /shop/me.
+//   * Therapy, messages, documents, communication prefs — no patient
+//     card capture. Cash-pay checkout / saved-card / billing portal
+//     were retired; supplies move through insurance resupply.
 //
 // Auth gating: rendered behind <SignedIn>. Wouter-level redirect to
 // /sign-in?redirect=/account when not signed in.
@@ -30,24 +17,16 @@ import { confirmDiscardUnsavedChanges } from "@/hooks/use-unsaved-changes-warnin
 import { SignedIn, useShopIdentity } from "@/lib/identity";
 import {
   AlertCircle,
-  CreditCard,
   HeartPulse,
   Loader2,
   MessageSquare,
   Package,
   Settings,
-  ShoppingBag,
   UserCircle2,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import {
-  AccountApiError,
-  fetchShopMe,
-  type ShopMeResponse,
-  type SavedCard,
-} from "@/lib/account-api";
-import { fetchShopProducts } from "@/lib/shop-api";
+import { fetchShopMe, type ShopMeResponse } from "@/lib/account-api";
 import { DocumentsSection } from "@/components/account/DocumentsSection";
 import { ProfileSection } from "@/components/account/ProfileSection";
 import { SecuritySection } from "@/components/account/SecuritySection";
@@ -87,9 +66,8 @@ type AccountTabId = (typeof ACCOUNT_TABS)[number]["id"];
 // Map a URL hash to the tab that should open, so deep links from elsewhere
 // in the app keep working now that the sections live behind tabs:
 //   /account#messages  → Messages
-//   /account#autoship  → Orders & returns (SubscriptionsSection has id="autoship")
-//   /account#orders    → Orders & returns (push notifications deep-link here)
 //   /account#insights  → Overview (InsightsSection lives on the Overview tab)
+// Legacy #autoship / #orders hashes no longer map (cash-pay orders tab retired).
 export function hashToAccountTab(hash: string): AccountTabId | null {
   const h = hash.replace(/^#/, "");
   if (h === "insights") return "overview";
@@ -213,14 +191,13 @@ function AccountInner() {
   const { displayName, isLoaded: isUserLoaded } = useShopIdentity();
   const [data, setData] = useState<ShopMeResponse | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [previewMode, setPreviewMode] = useState<boolean | null>(null);
   const unreadMessages = useShopMessagesUnread();
   const [profileDirty, setProfileDirty] = useState(false);
   const [commPrefsDirty, setCommPrefsDirty] = useState(false);
 
   // Which account tab is open. Honour a deep-link hash on first paint
-  // (/account#messages, /account#autoship), then keep listening so a
-  // hash click while already on the page still switches tabs.
+  // (/account#messages), then keep listening so a hash click while already
+  // on the page still switches tabs.
   const [activeTab, setActiveTab] = useState<AccountTabId>(() =>
     typeof window !== "undefined"
       ? (hashToAccountTab(window.location.hash) ?? "overview")
@@ -272,27 +249,6 @@ function AccountInner() {
     },
     [guardedAccountTab],
   );
-
-  // Probe preview mode the same way the cart does so we can disable
-  // payment actions cleanly when Stripe isn't configured.
-  useEffect(() => {
-    let active = true;
-    fetchShopProducts()
-      .then((r) => {
-        if (!active) return;
-        if ("unavailable" in r) {
-          setPreviewMode(true);
-        } else {
-          setPreviewMode(r.previewMode);
-        }
-      })
-      .catch(() => {
-        if (active) setPreviewMode(false);
-      });
-    return () => {
-      active = false;
-    };
-  }, []);
 
   const reload = React.useCallback(async () => {
     try {
@@ -408,11 +364,10 @@ function AccountInner() {
           Welcome back, {greeting}.
         </h1>
         <p className="text-muted-foreground">
-          Saved info means one-tap reorders. Card details stay with Stripe.
+          Saved info keeps insurance resupply simple — profile, therapy, and
+          messages in one place.
         </p>
       </div>
-
-      {previewMode === true && <PreviewBanner />}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2">
@@ -487,7 +442,6 @@ function AccountInner() {
           </div>
         </div>
         <aside className="space-y-6">
-          <SavedCardSection card={data.savedCard ?? null} />
           <KeepShoppingCard />
         </aside>
       </div>
@@ -495,28 +449,8 @@ function AccountInner() {
   );
 }
 
-function PreviewBanner() {
-  return (
-    <div
-      className="glass-card rounded-xl p-4 mb-6 border-l-4 border-l-[hsl(var(--penn-gold))] flex gap-3"
-      data-testid="account-preview-banner"
-    >
-      <AlertCircle className="h-5 w-5 text-[hsl(var(--penn-navy))] shrink-0 mt-0.5" />
-      <div className="text-sm">
-        <p className="font-semibold text-[hsl(var(--penn-navy))]">
-          Preview mode — payments not yet enabled
-        </p>
-        <p className="text-muted-foreground mt-1">
-          You can edit your saved info now. Reorder + Express checkout will
-          enable as soon as Stripe is connected.
-        </p>
-      </div>
-    </div>
-  );
-}
-
 // Self-service data export. Hits /shop/me/export which streams a
-// JSON file with every cash-pay record we hold for the user. No PHI
+// JSON file with account records we hold for the user. No PHI
 // (clinical data lives in a separate system); the section copy
 // surfaces that explicitly so customers know to file a separate
 // request for the resupply side if needed.
@@ -544,117 +478,6 @@ function DataExportSection() {
           Download my data (JSON)
         </a>
       </div>
-    </section>
-  );
-}
-
-/**
- * Render the "Saved card" section on the Account page and provide a control to open Stripe's billing portal.
- *
- * Displays card brand, masked number, and expiry when `card` is present; otherwise shows a prompt to order through insurance.
- *
- * @param card - The saved payment card information, or `null` when no card is on file
- * @returns A React element representing the saved card section with update and fallback UI
- */
-function SavedCardSection({ card }: { card: SavedCard | null }) {
-  const [opening, setOpening] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function openPortal() {
-    setOpening(true);
-    setError(null);
-    try {
-      const { openBillingPortal } = await import("@/lib/account-api");
-      const { url } = await openBillingPortal("/account");
-      // Hard navigate so we leave the SPA. Stripe will bounce us back
-      // to /account when the customer closes the portal.
-      window.location.href = url;
-    } catch (err) {
-      if (err instanceof AccountApiError && err.status === 503) {
-        setError("Billing isn't available in this environment yet.");
-      } else {
-        setError(
-          "We couldn't open the billing portal. Please try again in a moment.",
-        );
-      }
-      setOpening(false);
-    }
-  }
-
-  return (
-    <section
-      className="glass-card rounded-2xl p-6"
-      data-testid="account-card-section"
-    >
-      <div className="flex items-center gap-2 mb-4">
-        <CreditCard className="h-5 w-5 text-muted-foreground" />
-        <h2 className="font-semibold">Saved card</h2>
-      </div>
-      {card && card.last4 ? (
-        <div>
-          <div className="rounded-xl bg-gradient-to-br from-[hsl(var(--penn-navy))] to-[hsl(var(--penn-navy)/0.85)] text-white p-5 mb-3">
-            <p className="text-xs uppercase tracking-[0.16em] opacity-80 mb-2">
-              {card.brand ?? "Card"} on file
-            </p>
-            <p
-              className="font-semibold text-lg tracking-wider tabular-nums"
-              data-testid="account-card-last4"
-            >
-              •••• •••• •••• {card.last4}
-            </p>
-            {card.expMonth && card.expYear && (
-              <p className="text-xs opacity-80 mt-2">
-                Expires {String(card.expMonth).padStart(2, "0")}/
-                {String(card.expYear).slice(-2)}
-              </p>
-            )}
-          </div>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={openPortal}
-            disabled={opening}
-            data-testid="account-card-update"
-            className="w-full mb-2"
-          >
-            {opening ? (
-              <>
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Opening…
-              </>
-            ) : (
-              <>Update card or billing details</>
-            )}
-          </Button>
-          <p className="text-xs text-muted-foreground">
-            We never see your card number. The update opens Stripe&apos;s secure
-            billing portal in this tab and brings you back here when you&apos;re
-            done.
-          </p>
-          {error && (
-            <p
-              className="text-xs text-destructive mt-2"
-              data-testid="account-card-error"
-              role="alert"
-            >
-              {error}
-            </p>
-          )}
-        </div>
-      ) : (
-        <div>
-          <p className="text-sm text-muted-foreground mb-3">
-            No card saved yet. Your next checkout can save the card you use, so
-            future orders are one tap.
-          </p>
-          <Link
-            href="/insurance"
-            className="text-sm text-primary font-medium hover:underline inline-flex items-center gap-1"
-          >
-            Order through insurance <ShoppingBag className="h-4 w-4" />
-          </Link>
-        </div>
-      )}
     </section>
   );
 }

@@ -90,21 +90,20 @@ describe("account — account-doc-upload-error no longer has role=alert", () => 
 });
 
 // ---------------------------------------------------------------------------
-// role="alert" removed — account-card-error
+// Saved card / patient billing portal removed (insurance-only)
 // ---------------------------------------------------------------------------
 
-describe("account — account-card-error no longer has role=alert", () => {
-  it("still renders data-testid account-card-error", () => {
-    expect(SRC).toContain('data-testid="account-card-error"');
+describe("account — no patient card / Stripe billing portal UI", () => {
+  it("does not render SavedCardSection or account-card testids", () => {
+    expect(SRC).not.toContain("SavedCardSection");
+    expect(SRC).not.toContain("account-card-");
+    expect(SRC).not.toContain("openBillingPortal");
   });
 
-  it("account-card-error element does not carry role=alert", () => {
-    const idx = SRC.indexOf('data-testid="account-card-error"');
-    expect(idx).toBeGreaterThan(-1);
-    // Look at the 150 characters before the testid attribute to cover the
-    // opening <p and any attributes that precede it.
-    const elementContext = SRC.slice(idx - 150, idx + 50);
-    expect(elementContext).not.toContain('role="alert"');
+  it("does not advertise Stripe card capture on the account page", () => {
+    expect(SRC).not.toContain("Card details stay with Stripe");
+    expect(SRC).not.toContain("Express checkout");
+    expect(SRC).not.toContain("Saved card");
   });
 });
 
@@ -120,48 +119,15 @@ describe("account — Field helper is not defined in account.tsx (moved to Profi
 });
 
 // ---------------------------------------------------------------------------
-// PR change: formatMoneyCents removed from @/lib/shop-api import
+// shop-api import retired with cash-pay preview probe
 // ---------------------------------------------------------------------------
 
-describe("account — formatMoneyCents no longer imported from @/lib/shop-api", () => {
-  it("does not import formatMoneyCents from shop-api", () => {
-    // formatMoneyCents was removed from the shop-api import in this PR
-    // because it is not used anywhere in account.tsx.
-    expect(SRC).not.toContain("formatMoneyCents");
+describe("account — no shop-api product probe", () => {
+  it("does not import fetchShopProducts", () => {
+    expect(SRC).not.toContain("fetchShopProducts");
   });
 
-  it("still imports fetchShopProducts from @/lib/shop-api", () => {
-    // fetchShopProducts remains in use (preview-mode probe).
-    expect(SRC).toContain('import { fetchShopProducts } from "@/lib/shop-api"');
-  });
-
-  it("shop-api import does not list formatMoneyCents alongside fetchShopProducts", () => {
-    // Ensure the import declaration is a clean single-name import.
-    const shopApiImport = SRC.match(
-      /import\s*\{[^}]*\}\s*from\s*["']@\/lib\/shop-api["']/,
-    );
-    expect(shopApiImport).not.toBeNull();
-    expect(shopApiImport![0]).not.toContain("formatMoneyCents");
-  });
-
-  it("shop-api import contains exactly one exported name (fetchShopProducts only)", () => {
-    // After the PR the brace-group must contain only fetchShopProducts —
-    // no trailing comma or second identifier.
-    const shopApiImport = SRC.match(
-      /import\s*\{([^}]*)\}\s*from\s*["']@\/lib\/shop-api["']/,
-    );
-    expect(shopApiImport).not.toBeNull();
-    const names = shopApiImport![1]
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean);
-    expect(names).toHaveLength(1);
-    expect(names[0]).toBe("fetchShopProducts");
-  });
-
-  it("formatMoneyCents does not appear anywhere in account.tsx (not used, not re-exported)", () => {
-    // Belt-and-suspenders: the identifier must be absent from the whole file,
-    // not just the import line, to confirm it was completely removed.
+  it("does not import formatMoneyCents", () => {
     expect(SRC).not.toContain("formatMoneyCents");
   });
 });
@@ -257,15 +223,17 @@ describe("account — dirty tab changes require confirmation", () => {
   });
 });
 
-// Pure-logic mirror of hashToAccountTab (kept verbatim with account.tsx).
+// Pure-logic mirror of hashToAccountTab (kept in sync with account.tsx).
 describe("hashToAccountTab", () => {
   function hashToAccountTab(
     hash: string,
-  ): "overview" | "messages" | "orders" | null {
+  ): "overview" | "messages" | "therapy" | "account" | null {
     const h = hash.replace(/^#/, "");
     if (h === "insights") return "overview";
+    if (h === "overview") return "overview";
     if (h === "messages") return "messages";
-    if (h === "autoship" || h === "orders") return "orders";
+    if (h === "therapy") return "therapy";
+    if (h === "account") return "account";
     return null;
   }
 
@@ -277,12 +245,9 @@ describe("hashToAccountTab", () => {
     expect(hashToAccountTab("#messages")).toBe("messages");
   });
 
-  it("maps #autoship → Orders & returns tab", () => {
-    expect(hashToAccountTab("#autoship")).toBe("orders");
-  });
-
-  it("maps #orders to Orders & returns tab", () => {
-    expect(hashToAccountTab("#orders")).toBe("orders");
+  it("ignores retired cash-pay #autoship / #orders hashes", () => {
+    expect(hashToAccountTab("#autoship")).toBeNull();
+    expect(hashToAccountTab("#orders")).toBeNull();
   });
 
   it("returns null for empty / unknown hashes (defaults to Overview)", () => {

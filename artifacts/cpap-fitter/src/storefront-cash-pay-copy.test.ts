@@ -40,12 +40,19 @@ function walk(dir: string): string[] {
     }
     if (!/\.(tsx|ts)$/.test(entry)) continue;
     if (entry.endsWith(".test.ts") || entry.endsWith(".test.tsx")) continue;
-    // Platform marketing pages still describe historical product modules.
+    // Platform marketing pages — scanned separately for insurance-only claims.
     if (entry.startsWith("breathe")) continue;
     out.push(full);
   }
   return out;
 }
+
+const FORBIDDEN_ACCOUNT = [
+  "Saved card",
+  "Express checkout",
+  "Card details stay with Stripe",
+  "openBillingPortal",
+] as const;
 
 describe("storefront — no patient-facing cash-pay shopping copy", () => {
   const files = SCAN_DIRS.flatMap(walk).filter((f) => {
@@ -59,7 +66,7 @@ describe("storefront — no patient-facing cash-pay shopping copy", () => {
       "storefront-shop-links.test.ts",
       "storefront-cash-pay-copy.test.ts",
       "reminders.tsx", // comment only: documents the retired shop CTA
-      "account.tsx", // comment only: historical export endpoint notes
+      "account.tsx", // header comment notes cash-pay retirement; UI guarded below
       "clinical-results.tsx", // comment only: no retail checkout
     ].includes(base);
   });
@@ -77,4 +84,28 @@ describe("storefront — no patient-facing cash-pay shopping copy", () => {
       }
     });
   }
+});
+
+describe("account page — no patient card / Stripe portal UI", () => {
+  const src = readFileSync(path.join(SRC_ROOT, "pages", "account.tsx"), "utf8");
+
+  for (const needle of FORBIDDEN_ACCOUNT) {
+    it(`does not contain ${needle}`, () => {
+      expect(src).not.toContain(needle);
+    });
+  }
+});
+
+describe("breathe FAQ — insurance-only patient payments answer", () => {
+  const src = readFileSync(
+    path.join(SRC_ROOT, "pages", "breathe-faq.tsx"),
+    "utf8",
+  );
+
+  it("does not advertise Stripe patient checkout or autopay", () => {
+    expect(src).not.toContain(
+      "Stripe for checkout, subscriptions, and autopay",
+    );
+    expect(src).toContain("patients are insurance-only");
+  });
 });

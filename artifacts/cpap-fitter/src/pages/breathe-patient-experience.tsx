@@ -27,7 +27,7 @@ import "./breathe.css";
  * patients stay on therapy and reorder. Every surface maps to shipped
  * functionality (branded storefront + virtual mask fitter, patient portal /
  * account + statements + order tracking, storefront chatbot + email
- * auto-reply, sleep coach + coaching plans, payment plans/autopay, reviews +
+ * auto-reply, sleep coach + coaching plans, statements after ERA, reviews +
  * NPS).
  *
  * Reuses the shared chrome and `.bx-*` design system — no new CSS, inherits
@@ -51,8 +51,8 @@ const EXPERIENCE: Cap[] = [
     summary: "Your brand, your domain — not a generic portal.",
     points: [
       "A modern shop with your logo, colors, and your own web address",
-      "Catalog, cart, and checkout patients can use without calling in",
-      "Live insurance benefit estimates before they ever pay",
+      "Mask fitter and insurance resupply patients can complete without calling in",
+      "Live insurance benefit estimates before they confirm a refill",
     ],
   },
   {
@@ -74,7 +74,7 @@ const EXPERIENCE: Cap[] = [
     summary: "Self-service that cuts your inbound calls.",
     points: [
       "Order history, upcoming refills, and reorder in a couple of taps",
-      "Clear billing statements and a one-tap link to pay or plan",
+      "Clear billing statements after insurance posts — no patient card checkout",
       "Live order tracking, so “where's my order?” answers itself",
     ],
   },
@@ -101,12 +101,12 @@ const EXPERIENCE: Cap[] = [
   },
   {
     icon: <CreditCard size={20} />,
-    title: "Easy ways to pay",
-    summary: "Convenience that lifts conversion.",
+    title: "Insurance-first resupply",
+    summary: "Confirm and ship — no patient card on file.",
     points: [
-      "Card checkout, subscriptions, and autopay for refills",
-      "Payment plans that split a high balance into installments",
-      "Saved details mean reordering is friction-free next time",
+      "One-tap signed reorder links from text, email, or AI voice",
+      "Benefits verified before fulfillment queues",
+      "Saved profile details make the next confirmation friction-free",
     ],
   },
 ];
@@ -122,9 +122,9 @@ function Experience() {
           <h2 className="bx-h2">An experience patients actually like</h2>
           <p className="bx-lede">
             Every patient-facing surface carries your brand and removes a reason
-            to call: a real online shop, a self-serve mask fitter, one account
-            for orders and bills, always-on answers, and coaching through the
-            weeks patients are most likely to quit.
+            to call: a branded storefront, a self-serve mask fitter, one account
+            for therapy and messages, always-on answers, and coaching through
+            the weeks patients are most likely to quit.
           </p>
         </div>
         <div className="bx-caps">
@@ -175,7 +175,7 @@ const RETENTION: {
     metric: "Reorder",
     metricSub: "without friction",
     title: "Easy is what gets reordered",
-    body: "A one-tap signed reorder link, a saved card, and a shop they already trust turn the most predictable revenue in DME — resupply — into something patients complete themselves.",
+    body: "A one-tap signed reorder link and a branded storefront they already trust turn the most predictable revenue in DME — insurance resupply — into something patients complete themselves.",
   },
   {
     icon: <Star size={22} />,

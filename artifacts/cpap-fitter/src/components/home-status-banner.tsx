@@ -3,7 +3,6 @@ import { Link } from "wouter";
 import {
   Truck,
   CalendarClock,
-  Package,
   ShoppingCart,
   CheckCircle2,
   ArrowRight,
@@ -22,10 +21,10 @@ import { formatAppDate } from "@/lib/utils";
  * customers. Single round-trip to /shop/me/dashboard, which aggregates
  * the digest the patient most wants to see on a home visit:
  *
- *   * Next subscription ship date.
- *   * Latest paid order's tracking / delivery status.
- *   * Pending order backlog count + active subscription count pills.
- *   * "You left items in your cart on another device" nudge.
+ *   * Next insurance resupply / shipment date.
+ *   * Latest order tracking / delivery status.
+ *   * Pending order backlog count.
+ *   * Optional nudge toward insurance reorder when items are ready.
  *
  * Self-contained: <SignedIn> wraps it, so it returns nothing for
  * guests. Failures degrade silently — a network blip shouldn't
@@ -120,18 +119,8 @@ function SignedInBanner() {
             {data.abandonedCart && <CartTile cart={data.abandonedCart} />}
           </div>
 
-          {(data.activeSubscriptions > 0 || data.pendingOrders > 0) && (
+          {data.pendingOrders > 0 && (
             <div className="flex flex-wrap gap-2 pt-1">
-              {data.activeSubscriptions > 0 && (
-                <Link
-                  href="/account#autoship"
-                  className="inline-flex items-center gap-1.5 rounded-full bg-[hsl(var(--penn-navy)/0.08)] px-3 py-1 text-xs font-medium text-[hsl(var(--penn-navy))] hover:bg-[hsl(var(--penn-navy)/0.12)]"
-                >
-                  <Package className="w-3.5 h-3.5" />
-                  {data.activeSubscriptions} auto-ship
-                  {data.activeSubscriptions === 1 ? "" : "s"}
-                </Link>
-              )}
               {data.pendingOrders > 0 && (
                 <Link
                   href="/account/orders"
@@ -210,12 +199,12 @@ function ShipmentTile({
     month: "short",
     day: "numeric",
   });
-  const itemLabel = shipment.firstItemName ?? "Auto-ship";
+  const itemLabel = shipment.firstItemName ?? "Resupply";
   const subtitle = shipment.cancelAtPeriodEnd
-    ? "Final shipment — auto-ship ending"
+    ? "Final shipment in this cycle"
     : `Next: ${itemLabel}`;
   return (
-    <Link href="/account#autoship">
+    <Link href="/insurance">
       <div className="rounded-xl border bg-background/70 p-4 hover:border-[hsl(var(--penn-gold))] transition-colors cursor-pointer h-full">
         <div className="flex items-start gap-3">
           <div className="h-9 w-9 rounded-lg bg-[hsl(var(--penn-navy)/0.10)] flex items-center justify-center shrink-0">

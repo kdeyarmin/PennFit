@@ -106,8 +106,8 @@ export function SignUpPage() {
         <div>
           <h1 className="text-xl font-semibold">Create your account</h1>
           <p className="text-sm text-muted-foreground">
-            Save your shipping info, view past orders, and manage your
-            subscriptions.
+            Save your shipping info, view therapy details, and message our team
+            about insurance resupply.
           </p>
         </div>
 
