@@ -129,31 +129,31 @@ function copyFor(
   if (kind === "renewing_soon") {
     const when = date ? `on ${date}` : "soon";
     return {
-      subject: `Your ${brandName} subscription renews ${date ? date : "soon"}`,
-      banner: "Renewing soon",
+      subject: `Your ${brandName} supply schedule (${when})`,
+      banner: "Supply schedule",
       intro:
-        `Heads up — your ${brandName} auto-ship subscription renews ${when}. ` +
-        `We'll charge ${amount} to the card on file and send your next supplies automatically. ` +
-        `No action is needed if everything looks right.`,
-      cta: "Manage subscription or update card",
+        `Cash-pay Subscribe & Save is retired at ${brandName}. ` +
+        `If you previously had an auto-ship plan that was set to renew ${when} (${amount}), ` +
+        `reply or call and we'll move you onto an insurance resupply schedule instead. ` +
+        `We will not charge a patient card for supplies.`,
+      cta: "Contact us about resupply",
       accent: "#1d4ed8",
       footer:
-        "Need to update your card, change quantities, skip a shipment, or pause? " +
-        "Use the button above any time before the renewal date.",
+        "Need help with coverage, quantities, or timing? Use the button above and a team member will help.",
     };
   }
-  // receipt
+  // receipt — historical cash-pay renewals only; no new patient charges.
   const when = date ? ` on ${date}` : "";
   return {
-    subject: `Your ${brandName} subscription payment receipt`,
-    banner: "Payment received",
+    subject: `About a past ${brandName} supply payment`,
+    banner: "Past payment notice",
     intro:
-      `Thanks — we received your ${amount} ${brandName} auto-ship payment${when}. ` +
-      `Your next supply order is on its way; you'll get a shipping notice with tracking when it leaves our warehouse.`,
-    cta: "View billing & subscription",
+      `We recorded a ${amount} payment${when} on a retired cash-pay auto-ship plan at ${brandName}. ` +
+      `New supplies ship through insurance — reply if you need a statement or want to set up reminders.`,
+    cta: "Contact us",
     accent: "#1f8a4c",
     footer:
-      "Questions about this charge? Just reply to this message and we'll help.",
+      "Questions about this notice? Just reply to this message and we'll help.",
   };
 }
 
@@ -182,10 +182,9 @@ export async function sendSubscriptionBillingEmail(
       (await resolveTenantBaseUrl(input.orgId)) ??
       undefined,
   );
-  // Durable link (not a short-lived Stripe portal URL — the email may be
-  // opened hours later): the signed-in /account-billing page opens the
-  // Stripe Customer Portal on demand.
-  const manageUrl = `${base}/account-billing`;
+  // Durable contact link — cash-pay Subscribe & Save / Stripe Customer
+  // Portal are retired; patients finish through insurance with staff help.
+  const manageUrl = `${base}/contact`;
 
   const amount = formatBillingAmount(input.amountCents, input.currency);
   const date = formatBillingDate(input.chargeDateIso);
