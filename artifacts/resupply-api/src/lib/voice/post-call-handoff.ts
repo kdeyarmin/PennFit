@@ -66,9 +66,8 @@ export interface RouteVoiceHandoffInput {
   conversationId: string;
   /**
    * The call's tenant (pending.orgId). The escalation read/update is
-   * org-scoped, so without the real tenant a non-seed call's handoff
-   * matched no conversation and was silently dropped. Undefined →
-   * seed fallback (legacy single-tenant posture).
+   * org-scoped; missing/blank orgId skips the handoff (never invent
+   * the seed org).
    */
   orgId: string | undefined;
   /**

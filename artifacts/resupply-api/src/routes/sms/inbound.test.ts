@@ -60,10 +60,25 @@ vi.mock("../../lib/messaging/ingest-mms", () => ({
   ingestInboundMmsMedia: (...a: unknown[]) => ingestMmsMock(...a),
 }));
 
+const resolveOrgIdByCalledNumberMock = vi.fn().mockResolvedValue(null);
+const resolveOrgIdByPatientPhoneMock = vi.fn().mockResolvedValue(null);
+vi.mock("../../lib/messaging/tenant-telecom", async () => {
+  const actual = await vi.importActual<
+    typeof import("../../lib/messaging/tenant-telecom")
+  >("../../lib/messaging/tenant-telecom");
+  return {
+    ...actual,
+    resolveOrgIdByCalledNumber: (...a: unknown[]) =>
+      resolveOrgIdByCalledNumberMock(...a),
+    resolveOrgIdByPatientPhone: (...a: unknown[]) =>
+      resolveOrgIdByPatientPhoneMock(...a),
+  };
+});
+
 import inboundRouter, { __setAiFallbackAdapterForTests } from "./inbound";
 import { invalidateTenantTelecomCache } from "../../lib/messaging/tenant-telecom";
 
-const SEED_ORG = "00000000-0000-4000-8000-000000000000"; // matches the mock's resolveSeedOrgId
+const SEED_ORG = "00000000-0000-4000-8000-000000000000";
 const PATIENT_ID = "11111111-1111-4111-8111-111111111111";
 const EPISODE_ID = "22222222-2222-4222-8222-222222222222";
 const CONVERSATION_ID = "33333333-3333-4333-8333-333333333333";
@@ -106,7 +121,7 @@ const FROM_PHONE = "+12155551212";
 
 // Stage the standard "known patient → existing conversation"
 // supabase response sequence the dispatch path expects:
-//   1. patients SELECT (phone_lookup hit)
+//   1. patients SELECT (phone_lookup hit in the resolved tenant)
 //   2. messages SELECT (sid_dedup miss)
 //   3. conversations SELECT (open thread)
 //   4. messages INSERT (inbound)
@@ -115,10 +130,8 @@ const FROM_PHONE = "+12155551212";
 // AI thread fetch) is unstaged so the mock returns the default
 // { data: null, error: null } envelope, which the route tolerates.
 function stageKnownPatientFlow(): void {
-  // The shared To number isn't tenant-owned, so the handler first runs the
-  // cross-org patient-phone resolver. Returning no cross-org rows makes it
-  // fall back to the seed org, where the main lookup below finds the patient.
-  stageSupabaseResponse("patients", "select", { data: [] });
+  // Shared platform To number → route by patient phone (mocked).
+  resolveOrgIdByPatientPhoneMock.mockResolvedValue(SEED_ORG);
   stageSupabaseResponse("patients", "select", { data: [{ id: PATIENT_ID }] });
   stageSupabaseResponse("messages", "select", { data: null });
   stageSupabaseResponse("conversations", "select", {
@@ -137,6 +150,8 @@ describe("POST /sms/inbound", () => {
     // The tenant-telecom resolvers cache by phone number at module scope;
     // clear it so a prior test's routing result doesn't leak into the next.
     invalidateTenantTelecomCache();
+    resolveOrgIdByCalledNumberMock.mockReset().mockResolvedValue(null);
+    resolveOrgIdByPatientPhoneMock.mockReset().mockResolvedValue(null);
     logAuditMock.mockReset().mockResolvedValue(undefined);
     placeOrderMock.mockReset();
     pausePatientMock.mockReset().mockResolvedValue(undefined);
@@ -175,9 +190,10 @@ describe("POST /sms/inbound", () => {
     expect(res.text).toContain("Service temporarily unavailable");
   });
 
-  it("audits unknown_phone and replies with opt-out boilerplate", async () => {
+  it("audits tenant_unmatched when shared number has no patient phone match", async () => {
     setMessagingEnv();
-    stageSupabaseResponse("patients", "select", { data: [] });
+    // Fail-closed: never invent the seed org for an unknown phone on the
+    // shared platform number (no called-number tenant, no patient match).
     const res = await request(makeApp())
       .post("/resupply-api/sms/inbound")
       .type("form")
@@ -189,19 +205,39 @@ describe("POST /sms/inbound", () => {
         NumMedia: "0",
       });
     expect(res.status).toBe(200);
-    expect(res.text).toContain("This number isn't set up");
+    expect(res.text).toBe("<Response/>");
     expect(logAuditMock).toHaveBeenCalledTimes(1);
     const audit = logAuditMock.mock.calls[0][0];
     expect(audit.action).toBe("messaging.inbound.received");
-    expect(audit.metadata.outcome).toBe("unknown_phone");
+    expect(audit.metadata.outcome).toBe("tenant_unmatched");
     expect(JSON.stringify(audit.metadata)).not.toContain(FROM_PHONE);
+  });
+
+  it("audits unknown_phone when called-number tenant is known but patient is missing", async () => {
+    setMessagingEnv();
+    resolveOrgIdByCalledNumberMock.mockResolvedValue(SEED_ORG);
+    stageSupabaseResponse("patients", "select", { data: [] });
+    const res = await request(makeApp())
+      .post("/resupply-api/sms/inbound")
+      .type("form")
+      .send({
+        From: FROM_PHONE,
+        To: "+12158675309",
+        Body: "yes please",
+        MessageSid: "SM_unknown_tenant",
+        NumMedia: "0",
+      });
+    expect(res.status).toBe(200);
+    expect(res.text).toContain("This number isn't set up");
+    expect(logAuditMock).toHaveBeenCalledTimes(1);
+    expect(logAuditMock.mock.calls[0][0].metadata.outcome).toBe(
+      "unknown_phone",
+    );
   });
 
   it("audits ambiguous_phone and replies with router-guard boilerplate when two patients share a phone", async () => {
     setMessagingEnv();
-    // Cross-org resolver finds nothing → seed; the seed lookup then returns
-    // two patients on one phone → ambiguous.
-    stageSupabaseResponse("patients", "select", { data: [] });
+    resolveOrgIdByPatientPhoneMock.mockResolvedValue(SEED_ORG);
     stageSupabaseResponse("patients", "select", {
       data: [
         { id: PATIENT_ID },
@@ -231,24 +267,13 @@ describe("POST /sms/inbound", () => {
 
   it("shared number: routes a reply to the tenant that owns the patient (even when the seed org also has that phone)", async () => {
     // The reply lands on the SHARED platform number (To not owned by any
-    // tenant). The phone exists in BOTH the seed org and ORG_B, so the
-    // cross-org resolver — which is authoritative for shared numbers — picks
-    // ORG_B (most recent conversation) and the message is processed THERE,
-    // NOT in the seed org. This is the duplicate-phone case that a seed-first
-    // lookup would have misrouted.
+    // tenant). The phone exists in BOTH the seed org and ORG_B; the
+    // patient-phone resolver (mocked here) picks ORG_B and the message is
+    // processed THERE, NOT in the seed org.
     const ORG_B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
     setMessagingEnv();
-    // Resolver: phone in seed + ORG_B → tie-break via conversations → ORG_B.
-    stageSupabaseResponse("patients", "select", {
-      data: [
-        { id: "seed-patient", org_id: SEED_ORG },
-        { id: PATIENT_ID, org_id: ORG_B },
-      ],
-    });
-    stageSupabaseResponse("conversations", "select", {
-      data: { org_id: ORG_B, last_message_at: "2026-06-20T00:00:00.000Z" },
-    });
-    // Main lookup, now scoped to ORG_B, then the known-patient dispatch flow.
+    resolveOrgIdByPatientPhoneMock.mockResolvedValue(ORG_B);
+    // Main lookup, scoped to ORG_B, then the known-patient dispatch flow.
     stageSupabaseResponse("patients", "select", { data: [{ id: PATIENT_ID }] });
     stageSupabaseResponse("messages", "select", { data: null });
     stageSupabaseResponse("conversations", "select", {
@@ -758,9 +783,8 @@ describe("POST /sms/inbound", () => {
   // CARRIER COMPLIANCE — STOP/HELP must be honored even when we
   // can't map the inbound number to a patient.
 
-  it("STOP from unknown phone replies with STOP boilerplate + audits unknown_phone_stop", async () => {
+  it("STOP from unmatched phone replies with platform STOP boilerplate + audits unknown_phone_stop_no_tenant", async () => {
     setMessagingEnv();
-    stageSupabaseResponse("patients", "select", { data: [] });
     const res = await request(makeApp())
       .post("/resupply-api/sms/inbound")
       .type("form")
@@ -779,13 +803,12 @@ describe("POST /sms/inbound", () => {
     expect(logAuditMock).toHaveBeenCalledTimes(1);
     const audit = logAuditMock.mock.calls[0][0];
     expect(audit.action).toBe("messaging.inbound.received");
-    expect(audit.metadata.outcome).toBe("unknown_phone_stop");
+    expect(audit.metadata.outcome).toBe("unknown_phone_stop_no_tenant");
     expect(JSON.stringify(audit.metadata)).not.toContain(FROM_PHONE);
   });
 
-  it("HELP from unknown phone replies with HELP boilerplate + audits unknown_phone_help", async () => {
+  it("HELP from unmatched phone replies with platform HELP boilerplate + audits unknown_phone_help_no_tenant", async () => {
     setMessagingEnv();
-    stageSupabaseResponse("patients", "select", { data: [] });
     const res = await request(makeApp())
       .post("/resupply-api/sms/inbound")
       .type("form")
@@ -802,7 +825,7 @@ describe("POST /sms/inbound", () => {
     expect(pausePatientMock).not.toHaveBeenCalled();
     expect(logAuditMock).toHaveBeenCalledTimes(1);
     expect(logAuditMock.mock.calls[0][0].metadata.outcome).toBe(
-      "unknown_phone_help",
+      "unknown_phone_help_no_tenant",
     );
   });
 

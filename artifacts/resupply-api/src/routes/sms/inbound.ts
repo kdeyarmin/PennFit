@@ -47,7 +47,6 @@ import { Router, type IRouter } from "express";
 import { normalizeE164 } from "@workspace/resupply-domain";
 import {
   getOrgScopedClient,
-  resolveSeedOrgId,
   tryUpsertPatientLatestMessageSb,
   type Database,
   type Json,
@@ -293,20 +292,61 @@ router.post(
     // Webhook: no req.orgId. Resolve the owning tenant:
     //   * If the CALLED number (Twilio `To`) is owned by a tenant
     //     (per-tenant-number case, G7), that tenant is authoritative.
-    //   * Otherwise it's the SHARED platform number, which no single tenant
-    //     owns, so route by the PATIENT: the tenant that has this phone (and,
-    //     when the phone exists in more than one tenant — INCLUDING the seed
-    //     org — the one with the most recent conversation). This must run even
-    //     when the seed org has the patient, or a phone duplicated across the
-    //     seed org and another tenant would always misroute to seed.
-    //   * Fall back to the seed org only when the phone is unknown everywhere,
-    //     so STOP/HELP and unknown-number handling still work.
+    //   * Otherwise it's the SHARED platform number — route by the PATIENT
+    //     phone (most-recent conversation wins when the phone exists in
+    //     more than one tenant, INCLUDING seed).
+    //   * Never invent the seed org for an unknown phone: that would park
+    //     STOP/HELP audits and unknown-number PHI under Penn. CTIA STOP/HELP
+    //     still get a platform-branded reply with no DB write.
     const calledOrgId = await resolveOrgIdByCalledNumber(parsed.To);
     const orgId = calledOrgId
       ? calledOrgId
-      : ((await resolveOrgIdByPatientPhone(normalizedFrom)) ??
-        (await resolveSeedOrgId()));
+      : await resolveOrgIdByPatientPhone(normalizedFrom);
     if (!orgId) {
+      if (earlyRouted.intent === "stop" || earlyRouted.intent === "help") {
+        await safeAudit({
+          action: "messaging.inbound.received",
+          adminEmail: null,
+          adminUserId: null,
+          targetTable: null,
+          targetId: null,
+          metadata: {
+            channel: "sms",
+            outcome:
+              earlyRouted.intent === "stop"
+                ? "unknown_phone_stop_no_tenant"
+                : "unknown_phone_help_no_tenant",
+            twilio_message_sid: parsed.MessageSid,
+          },
+          ip: req.ip ?? null,
+          userAgent: req.get("user-agent") ?? null,
+        });
+        res
+          .status(200)
+          .type("text/xml")
+          .send(
+            twimlMessage(
+              earlyRouted.intent === "stop"
+                ? `Done. You will not get any more texts from ${PLATFORM_NAME}. Reply START if you want them back on.`
+                : `This is ${PLATFORM_NAME}. We text you when your CPAP supplies are due. Reply YES to ship. NO to skip. EDIT to fix your address. STOP to opt out. Message and data rates may apply.`,
+            ),
+          );
+        return;
+      }
+      await safeAudit({
+        action: "messaging.inbound.received",
+        adminEmail: null,
+        adminUserId: null,
+        targetTable: null,
+        targetId: null,
+        metadata: {
+          channel: "sms",
+          outcome: "tenant_unmatched",
+          twilio_message_sid: parsed.MessageSid,
+        },
+        ip: req.ip ?? null,
+        userAgent: req.get("user-agent") ?? null,
+      });
       res.status(200).type("text/xml").send("<Response/>");
       return;
     }

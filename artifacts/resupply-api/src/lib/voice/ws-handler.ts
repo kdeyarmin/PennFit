@@ -1598,7 +1598,7 @@ async function persistTranscript(
     body: turn.text,
     direction,
     messageAt: sentAt,
-    // Voice WS (no auth tenant context): seed-org bridge.
+    // Voice WS: tenant comes from the org-scoped client on the session.
     orgId: supabase.orgId,
   });
 }

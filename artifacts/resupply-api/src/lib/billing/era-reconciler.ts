@@ -42,7 +42,6 @@ import {
   type Database,
   getOrgScopedClient,
   type OrgScopedClient,
-  resolveSeedOrgId,
 } from "@workspace/resupply-db";
 import type {
   Adjustment,
@@ -93,9 +92,8 @@ export interface ReconcileEraOptions {
   fileName: string;
   /** Payer-supplied check / EFT number. */
   checkOrEftNumber: string | null;
-  /** Tenant whose claims this remittance posts against. Defaults to the
-   *  seed org (single-tenant bridge) when omitted. */
-  orgId?: string;
+  /** Tenant whose claims this remittance posts against. Required. */
+  orgId: string;
 }
 
 const TERMINAL_STATUSES: readonly ClaimRow["status"][] = ["closed"];
@@ -114,8 +112,8 @@ export async function reconcileEra(
   opts: ReconcileEraOptions,
 ): Promise<ReconciliationSummary> {
   // ERA posts against tenant-scoped claims; route every read/write through
-  // the org-scoped chokepoint, defaulting to the seed org.
-  const orgId = opts.orgId ?? (await resolveSeedOrgId());
+  // the org-scoped chokepoint. Never invent the seed org.
+  const orgId = opts.orgId?.trim();
   if (!orgId) {
     throw new Error("era-reconciler: no org resolved for remittance posting");
   }

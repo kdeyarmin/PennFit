@@ -762,10 +762,8 @@ export async function dispatch835(
     actorEmail: SYSTEM_ACTOR_EMAIL,
     fileName,
     checkOrEftNumber: parsed.checkOrEftNumber,
-    // Reconcile within the SAME tenant whose 835 this is. Without this,
-    // reconcileEra falls back to resolveSeedOrgId() and would read/write the
-    // SEED tenant's claims for a non-seed tenant's remittance — leaving their
-    // paid/denied claims unmatched. The org-scoped client carries the tenant.
+    // Reconcile within the SAME tenant whose 835 this is. orgId is required
+    // (reconcileEra no longer invents the seed org).
     orgId: supabase.orgId,
   });
 

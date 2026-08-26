@@ -26,7 +26,6 @@ import { z } from "zod";
 
 import {
   getOrgScopedClient,
-  resolveSeedOrgId,
   type Json,
   type OrgScopedClient,
 } from "@workspace/resupply-db";
@@ -133,19 +132,17 @@ router.post("/voice/inbound-reorder", signatureMiddleware, async (req, res) => {
 
   // Webhook: no req.orgId. Route by the CALLED number to the tenant that
   // owns it (G7). On a shared platform number, route by the CALLER's patient
-  // phone (same ladder as SMS inbound) so a second tenant's patient is not
-  // mis-attributed to the seed org. Fall back to seed only when the phone is
-  // unknown everywhere. On total miss, Hangup so a tenant-context gap never
-  // retry-storms Twilio.
+  // phone (same ladder as SMS inbound). Never invent the seed org for an
+  // unknown caller — Hangup so we don't open a voice session under Penn.
   const calledNumber = parsed.data.Called ?? parsed.data.To;
   const callerRaw = parsed.data.From ?? parsed.data.Caller;
   const calledOrgId = await resolveOrgIdByCalledNumber(calledNumber);
   const normalizedCaller = normalizeE164(callerRaw);
   const orgId = calledOrgId
     ? calledOrgId
-    : ((normalizedCaller
-        ? await resolveOrgIdByPatientPhone(normalizedCaller)
-        : null) ?? (await resolveSeedOrgId()));
+    : normalizedCaller
+      ? await resolveOrgIdByPatientPhone(normalizedCaller)
+      : null;
   if (!orgId) {
     res
       .status(200)

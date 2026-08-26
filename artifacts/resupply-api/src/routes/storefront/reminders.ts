@@ -350,8 +350,9 @@ function resolveManageLookup(
 /**
  * Tenant for manage lookups.
  *
- * - Email/session path: verified custom domain / subdomain only (never
- *   invent seed — same email can exist under multiple tenants).
+ * - Email/session path: prefer verified custom domain / subdomain brand,
+ *   then fall back to `req.orgId` from `attachSignedIn` (session tenant).
+ *   Never invent seed — same email can exist under multiple tenants.
  * - Token path: manage_token is a global capability secret; we only need
  *   *some* service-role client for `.raw()`. Prefer the brand org when
  *   known; otherwise bootstrap via seed solely for the unscoped query
@@ -363,7 +364,12 @@ async function resolveManageOrgContext(
 ): Promise<{ filterOrgId: string | null; clientOrgId: string | null }> {
   const brandOrgId = await resolveBrandOrgIdByHost(requestHost(req));
   if (lookupColumn === "email") {
-    return { filterOrgId: brandOrgId, clientOrgId: brandOrgId };
+    const sessionOrgId =
+      typeof req.orgId === "string" && req.orgId.trim().length > 0
+        ? req.orgId.trim()
+        : null;
+    const filterOrgId = brandOrgId ?? sessionOrgId;
+    return { filterOrgId, clientOrgId: filterOrgId };
   }
   const clientOrgId = brandOrgId ?? (await resolveSeedOrgId());
   return { filterOrgId: null, clientOrgId };
