@@ -1,11 +1,12 @@
-// POST /api/newsletter/subscribe — anonymous marketing email capture.
+// POST /newsletter/subscribe — anonymous marketing email capture.
 //
 // Covers: happy-path upsert (lowercased email + source + cleared
 // unsubscribed_at), validation, honeypot fake-success, and an honest
 // 500 when the upsert fails (the old frontend faked success — the
-// backend must never do the same).
+// backend must never do the same). The list is global (public schema),
+// so the route uses the service-role client — no brand-org requirement.
 
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach } from "vitest";
 import express, { type Express } from "express";
 import request from "supertest";
 
@@ -18,16 +19,6 @@ import {
 
 const supabaseMock = installSupabaseMock();
 
-const resolveBrandOrgIdByHostMock = vi.hoisted(() =>
-  vi.fn<() => Promise<string | null>>(async () => "org-from-host"),
-);
-vi.mock("../../lib/tenant-branding.js", () => ({
-  resolveBrandOrgIdByHost: resolveBrandOrgIdByHostMock,
-}));
-vi.mock("../../lib/request-host.js", () => ({
-  requestHost: () => "tenant.example.com",
-}));
-
 import newsletterRouter from "./newsletter.js";
 
 function buildApp(): Express {
@@ -39,7 +30,6 @@ function buildApp(): Express {
 
 beforeEach(() => {
   supabaseMock.reset();
-  resolveBrandOrgIdByHostMock.mockReset().mockResolvedValue("org-from-host");
 });
 
 describe("POST /api/newsletter/subscribe", () => {
@@ -93,6 +83,6 @@ describe("POST /api/newsletter/subscribe", () => {
       .post("/api/newsletter/subscribe")
       .send({ email: "reader@example.com" });
     expect(res.status).toBe(500);
-    expect(res.body).toHaveProperty("error");
+    expect(res.body.error).toMatch(/try again/i);
   });
 });

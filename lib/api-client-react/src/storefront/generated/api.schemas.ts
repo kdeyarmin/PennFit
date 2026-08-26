@@ -104,10 +104,10 @@ export interface RecommendationRequest {
    * Adult or child, from the questionnaire's population gate. Sits
    * alongside `answers` rather than inside it because every other
    * consumer of the 11-answer shape speaks that shape verbatim.
-   * Optional for back-compat; the server reads an omitted value as
-   * "adult", which is what it assumed before the question existed.
+   * Required — population is asked, never assumed. Omitting used to
+   * silently size children against adult bands.
    */
-  population?: FittingPopulation;
+  population: FittingPopulation;
 }
 
 export type MaskRecommendationType =

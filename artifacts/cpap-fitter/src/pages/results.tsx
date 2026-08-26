@@ -540,6 +540,10 @@ export function Results() {
     // legacy answer first, then swap it — a worse experience than a
     // slightly longer skeleton.
     if (clinicalState !== "legacy") return;
+    // Population is required by /api/recommend — never assume adult.
+    // An in-flight tab that predates the gate must re-answer rather
+    // than get a permanent 400.
+    if (!population) return;
     if (!hasRequested.current) {
       hasRequested.current = true;
       // P4 — the questionnaire intentionally lets the user skip questions
@@ -552,13 +556,43 @@ export function Results() {
         data: {
           measurements,
           answers: fullAnswers,
-          ...(population ? { population } : {}),
+          population,
         },
       });
     }
   }, [measurements, fullAnswers, population, mutate, clinicalState]);
 
   if (!measurements) return null;
+
+  // Population is asked, never assumed. A tab that somehow reaches
+  // /results without answering the adult/child gate cannot get a
+  // valid recommendation — send them back to retake.
+  if (!population) {
+    return (
+      <div className="container max-w-2xl mx-auto px-4 py-12">
+        <Alert>
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>One more question needed</AlertTitle>
+          <AlertDescription>
+            We need to know whether this fitting is for an adult or a child
+            before we can recommend a mask. Please start over and answer that
+            first question.
+          </AlertDescription>
+        </Alert>
+        <div className="mt-6">
+          <Button
+            onClick={() => {
+              resetForNewFitting();
+              setLocation("/");
+            }}
+            data-testid="results-missing-population-restart"
+          >
+            Start Over
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   // The engine declined to name a mask. This is confidence gating doing
   // its job, not a failure: showing a "best guess" here is exactly what
@@ -699,7 +733,7 @@ export function Results() {
                   data: {
                     measurements,
                     answers: fullAnswers,
-                    ...(population ? { population } : {}),
+                    population,
                   },
                 })
               }

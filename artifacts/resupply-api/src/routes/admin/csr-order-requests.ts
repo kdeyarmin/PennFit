@@ -111,7 +111,10 @@ const LIST_COLUMNS =
 
 function projectRequest(
   row: OrderRequestRow,
-  opts: { hasLinkedDraft: boolean } = { hasLinkedDraft: false },
+  opts: {
+    hasLinkedDraft: boolean;
+    hasQueuedFulfillment: boolean;
+  } = { hasLinkedDraft: false, hasQueuedFulfillment: false },
 ) {
   const documents = parseOrderDocuments(row.documents);
   return {
@@ -138,38 +141,79 @@ function projectRequest(
     canceledAt: row.canceled_at,
     createdByEmail: row.created_by_email,
     createdAt: row.created_at,
-    // True when a resupply_order_drafts row points at this request —
-    // those auto-queue fulfillments on sign. False for ad-hoc (hand-
-    // built) orders that stay Signed for staff follow-up.
+    // True when a resupply_order_drafts row points at this request.
     hasLinkedDraft: opts.hasLinkedDraft,
+    // True when at least one fulfillment exists for the linked draft
+    // (dispense-on-sign keys fulfillments.episode_id = draft.id). A
+    // draft that failed soft (no_patient / no_sku / error) stays signed
+    // without fulfillments — UI must not label those "queued".
+    hasQueuedFulfillment: opts.hasQueuedFulfillment,
   };
 }
 
 /**
- * Batch-resolve which csr_order_request ids have a linked resupply draft.
- * Fail-soft: a draft lookup error returns an empty set (UI falls back to
- * treating every row as ad-hoc — safer than hiding the follow-up cue).
+ * Batch-resolve linked drafts + whether each request already has
+ * fulfillments queued. Fail-soft: lookup errors return empty maps (UI
+ * falls back to "needs follow-up" — safer than claiming queued).
  */
-async function loadLinkedDraftIds(
+async function loadDraftAndFulfillmentHints(
   orgId: string,
   requestIds: string[],
-): Promise<Set<string>> {
-  if (requestIds.length === 0) return new Set();
+): Promise<{
+  linkedDraftIds: Set<string>;
+  queuedFulfillmentIds: Set<string>;
+}> {
+  const empty = {
+    linkedDraftIds: new Set<string>(),
+    queuedFulfillmentIds: new Set<string>(),
+  };
+  if (requestIds.length === 0) return empty;
   const supabase = getOrgScopedClient(orgId);
-  const { data, error } = await supabase
+  const { data: drafts, error: draftErr } = await supabase
     .from("resupply_order_drafts")
-    .select("csr_order_request_id")
+    .select("id, csr_order_request_id")
     .in("csr_order_request_id", requestIds)
     .not("csr_order_request_id", "is", null)
     .limit(requestIds.length);
-  if (error) return new Set();
-  const out = new Set<string>();
-  for (const row of data ?? []) {
-    const id = (row as { csr_order_request_id: string | null })
-      .csr_order_request_id;
-    if (id) out.add(id);
+  if (draftErr) return empty;
+
+  const linkedDraftIds = new Set<string>();
+  const draftIdByRequest = new Map<string, string>();
+  for (const row of drafts ?? []) {
+    const r = row as { id: string; csr_order_request_id: string | null };
+    if (!r.csr_order_request_id) continue;
+    linkedDraftIds.add(r.csr_order_request_id);
+    draftIdByRequest.set(r.csr_order_request_id, r.id);
   }
-  return out;
+
+  const draftIds = [...draftIdByRequest.values()];
+  if (draftIds.length === 0) {
+    return { linkedDraftIds, queuedFulfillmentIds: new Set() };
+  }
+
+  // dispenseSignedCsrOrder keys fulfillments on episode_id = draft.id.
+  const { data: fulfills, error: fulErr } = await supabase
+    .from("fulfillments")
+    .select("episode_id")
+    .in("episode_id", draftIds)
+    .limit(draftIds.length * 5);
+  if (fulErr) {
+    return { linkedDraftIds, queuedFulfillmentIds: new Set() };
+  }
+
+  const draftsWithFulfillment = new Set<string>();
+  for (const f of fulfills ?? []) {
+    const episodeId = (f as { episode_id: string | null }).episode_id;
+    if (episodeId) draftsWithFulfillment.add(episodeId);
+  }
+
+  const queuedFulfillmentIds = new Set<string>();
+  for (const [requestId, draftId] of draftIdByRequest) {
+    if (draftsWithFulfillment.has(draftId)) {
+      queuedFulfillmentIds.add(requestId);
+    }
+  }
+  return { linkedDraftIds, queuedFulfillmentIds };
 }
 
 async function loadRequest(
@@ -223,13 +267,16 @@ router.get(
     if (error) throw error;
 
     const rows = (data ?? []) as OrderRequestRow[];
-    const linked = await loadLinkedDraftIds(
+    const hints = await loadDraftAndFulfillmentHints(
       orgId,
       rows.map((r) => r.id),
     );
     res.json({
       requests: rows.map((r) =>
-        projectRequest(r, { hasLinkedDraft: linked.has(r.id) }),
+        projectRequest(r, {
+          hasLinkedDraft: hints.linkedDraftIds.has(r.id),
+          hasQueuedFulfillment: hints.queuedFulfillmentIds.has(r.id),
+        }),
       ),
       total: count ?? 0,
       page,
@@ -412,9 +459,12 @@ router.get(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const linked = await loadLinkedDraftIds(orgId, [row.id]);
+    const hints = await loadDraftAndFulfillmentHints(orgId, [row.id]);
     res.json({
-      request: projectRequest(row, { hasLinkedDraft: linked.has(row.id) }),
+      request: projectRequest(row, {
+        hasLinkedDraft: hints.linkedDraftIds.has(row.id),
+        hasQueuedFulfillment: hints.queuedFulfillmentIds.has(row.id),
+      }),
       // A copyable link for the CURRENT version — only while open.
       signingLink:
         row.status === "canceled"

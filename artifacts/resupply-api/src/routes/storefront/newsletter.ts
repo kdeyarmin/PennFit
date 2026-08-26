@@ -17,11 +17,9 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import { getOrgScopedClient } from "@workspace/resupply-db";
+import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger.js";
-import { requestHost } from "../../lib/request-host.js";
-import { resolveBrandOrgIdByHost } from "../../lib/tenant-branding.js";
 
 const router: IRouter = Router();
 
@@ -48,26 +46,18 @@ router.post("/newsletter/subscribe", async (req, res) => {
   }
   const { email, source } = parsed.data;
 
-  // This route is mounted before attachSignedIn, so guest requests may
-  // not have req.orgId yet; resolve by host as a fallback.
-  const orgId = req.orgId ?? (await resolveBrandOrgIdByHost(requestHost(req)));
-  if (!orgId) {
-    res.status(500).json({ error: "tenant_context_missing" });
-    return;
-  }
-
   // DELIBERATE DESIGN: newsletter_subscribers is a single GLOBAL (public-
   // schema) marketing list keyed by email alone (migration 0354) — NOT a
   // per-tenant list. This is intentionally different from reminder_
   // subscriptions, which migration 0378 re-keyed to UNIQUE(org_id, email)
-  // because those are tenant-scoped resupply reminders. We resolve orgId
-  // above only to gate access; the upsert conflict target is `email` (not
-  // `org_id,email`) on purpose, so the same address is one platform-wide
-  // marketing record. If product ever wants per-tenant newsletter lists,
-  // that's a schema change (add org_id + (org_id,email) uniqueness, mirroring
-  // 0378) — not a silent edit here. Until then this asymmetry is by design,
-  // not the 0378 cross-tenant bug.
-  const supabase = getOrgScopedClient(orgId).raw();
+  // because those are tenant-scoped resupply reminders. Use the service-
+  // role client (same as newsletter-unsubscribe) so signup works on the
+  // platform host / Railway fallback / local where resolveBrandOrgIdByHost
+  // returns null. The upsert conflict target is `email` (not
+  // `org_id,email`) on purpose. If product ever wants per-tenant newsletter
+  // lists, that's a schema change (add org_id + (org_id,email) uniqueness,
+  // mirroring 0378) — not a silent edit here.
+  const supabase = getSupabaseServiceRoleClient();
   const { error } = await supabase
     .schema("public")
     .from("newsletter_subscribers")

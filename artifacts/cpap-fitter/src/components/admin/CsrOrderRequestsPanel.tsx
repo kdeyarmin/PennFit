@@ -49,12 +49,12 @@ type DerivedStatus =
 
 function deriveStatus(r: CsrOrderRequestSummary): DerivedStatus {
   if (r.status === "canceled") return "canceled";
-  // Signed is terminal for the patient link: nothing is charged. Draft-
-  // backed orders auto-dispense into fulfillments; ad-hoc ones stay
-  // Signed for staff. Surface that dead-end as its own status so it is
-  // not mistaken for a completed insurance queue.
+  // Signed is terminal for the patient link: nothing is charged.
+  // Only label "queued" when a fulfillment actually exists — a linked
+  // draft alone is not enough (dispense-on-sign fails soft on
+  // no_patient / no_sku / error and leaves the request signed).
   if (r.signedAt) {
-    return r.hasLinkedDraft ? "signed" : "signed_needs_followup";
+    return r.hasQueuedFulfillment ? "signed" : "signed_needs_followup";
   }
   if (r.expiresAt && new Date(r.expiresAt).getTime() < Date.now()) {
     return "expired";
@@ -268,8 +268,9 @@ export function CsrOrderRequestsPanel() {
                           </Badge>
                           {status === "signed_needs_followup" ? (
                             <div className="text-muted-foreground mt-1 text-xs max-w-[14rem]">
-                              Ad-hoc order — attach a patient and SKU before
-                              fulfillment can queue.
+                              {r.hasLinkedDraft
+                                ? "Signature captured, but fulfillment did not queue — check patient/SKU on the draft."
+                                : "Ad-hoc order — attach a patient and SKU before fulfillment can queue."}
                             </div>
                           ) : null}
                         </td>
