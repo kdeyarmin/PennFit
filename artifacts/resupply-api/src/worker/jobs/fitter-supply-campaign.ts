@@ -85,7 +85,7 @@ import { logger } from "../../lib/logger";
 import { createTenantSendgridClient } from "../../lib/email/tenant-sender.js";
 import {
   resolveBrandingByOrgId,
-  resolveTenantBaseUrl,
+  resolveTenantLinkBaseUrl,
 } from "../../lib/tenant-branding.js";
 import { resolveTenantSmsClientOptions } from "../../lib/messaging/tenant-telecom.js";
 import { recordOutboundMessageUsage } from "../../lib/metering/usage.js";
@@ -950,10 +950,16 @@ async function fitterSupplyCampaignSweepForOrg(
   const practiceName = brand.storefrontName;
   // Build patient links from the tenant's own storefront origin (its verified
   // custom domain) when it has one; the seed tenant falls through to the env/
-  // default, so single-tenant is unchanged. Resolved once per tenant sweep.
-  const baseUrl = publicBaseUrl(
-    (await resolveTenantBaseUrl(orgId)) ?? undefined,
-  );
+  // default. Non-seed tenants without a domain are skipped entirely — never
+  // send nurture CTAs that land on the platform host / wrong org.
+  const baseUrl = await resolveTenantLinkBaseUrl(orgId, publicBaseUrl());
+  if (!baseUrl) {
+    logger.info(
+      { org_id: orgId },
+      "fitter-supply-campaign: skipped (no tenant domain)",
+    );
+    return;
+  }
   const resumeUrl = `${baseUrl}/consent`;
   const shopUrl = `${baseUrl}/contact`;
   // Tracking + unsubscribe are API routes mounted under /resupply-api.

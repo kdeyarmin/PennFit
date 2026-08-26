@@ -24,7 +24,7 @@ import { createTenantSendgridClient } from "../email/tenant-sender.js";
 import { logger } from "../logger";
 import { resolveTenantSmsClientOptions } from "../messaging/tenant-telecom";
 import { recordOutboundMessageUsage } from "../metering/usage";
-import { resolveTenantBaseUrl } from "../tenant-branding";
+import { resolveTenantLinkBaseUrl } from "../tenant-branding";
 import { resolveCompanyProfile } from "./company";
 import {
   effectiveTemplateContent,
@@ -126,6 +126,7 @@ export interface SendPatientPacketSuccess {
 export type CreateAndSendPatientPacketResult =
   | SendPatientPacketSuccess
   | { ok: false; code: "patient_not_found" }
+  | { ok: false; code: "tenant_domain_required" }
   | { ok: false; code: "invalid_document_keys"; invalidKeys: string[] }
   | { ok: false; code: "invalid_document_overrides"; invalidKeys: string[] };
 
@@ -134,28 +135,36 @@ function signingUrl(baseUrl: string, token: string): string {
 }
 
 /**
+ * Resolve the public origin for a packet signing link.
+ * Verified custom domain preferred; seed may fall back to platform;
+ * non-seed without a domain returns null (never mint a wrong-org link).
+ * When `orgId` is unset, fall back to the platform public base (legacy /
+ * test callers that do not have tenant context).
+ */
+export async function resolvePacketSigningBaseUrl(
+  orgId?: string | null,
+): Promise<string | null> {
+  const platform = getAuthDeps().publicBaseUrl;
+  if (!orgId?.trim()) return platform.replace(/\/$/, "");
+  return resolveTenantLinkBaseUrl(orgId, platform);
+}
+
+/**
  * Mint a fresh signing link for an existing packet (used by the resend
  * route and the reminder sweep). Pass the packet's CURRENT link_version
  * after bumping it so previously-issued links are invalidated.
- * Prefer the tenant's verified custom domain when `orgId` is known.
+ * Returns null when a non-seed tenant has no verified custom domain.
  */
 export async function buildPacketSigningLink(
   packetId: string,
   linkVersion: number,
   ttlSeconds = DEFAULT_PACKET_TTL_DAYS * 24 * 60 * 60,
   orgId?: string | null,
-): Promise<string> {
+): Promise<string | null> {
+  const base = await resolvePacketSigningBaseUrl(orgId);
+  if (!base) return null;
   const token = signPatientPacketToken(packetId, linkVersion, ttlSeconds);
-  const tenantBase = orgId ? await resolveTenantBaseUrl(orgId) : null;
-  return signingUrl(tenantBase ?? getAuthDeps().publicBaseUrl, token);
-}
-
-async function packetSigningUrl(
-  orgId: string | null | undefined,
-  token: string,
-): Promise<string> {
-  const tenantBase = orgId ? await resolveTenantBaseUrl(orgId) : null;
-  return signingUrl(tenantBase ?? getAuthDeps().publicBaseUrl, token);
+  return signingUrl(base, token);
 }
 
 export async function createAndSendPatientPacket(
@@ -217,6 +226,7 @@ export async function createAndSendPatientPacket(
     createdByEmail: opts.createdByEmail ?? null,
     reminder: opts.reminder,
   });
+  if (!built.ok) return built;
   return { ...built, matchedPatientId: patientId };
 }
 
@@ -255,6 +265,7 @@ export type SendPatientPacketToContactResult =
     })
   | { ok: false; code: "no_recipient" }
   | { ok: false; code: "invalid_phone" }
+  | { ok: false; code: "tenant_domain_required" }
   | { ok: false; code: "invalid_document_keys"; invalidKeys: string[] }
   | { ok: false; code: "invalid_document_overrides"; invalidKeys: string[] };
 
@@ -317,6 +328,7 @@ export async function createAndSendPatientPacketToContact(
     expiresInDays: opts.expiresInDays,
     createdByEmail: opts.createdByEmail ?? null,
   });
+  if (!built.ok) return built;
 
   return {
     ...built,
@@ -562,21 +574,27 @@ function snapshotDocumentContent(
   };
 }
 
-interface BuildAndDeliverPacketResult {
-  ok: true;
-  packetId: string;
-  signingLink: string;
-  emailSent: boolean;
-  smsSent: boolean;
-  recipientEmail: string | null;
-  recipientPhone: string | null;
-  documentCount: number;
-}
+type BuildAndDeliverPacketResult =
+  | {
+      ok: true;
+      packetId: string;
+      signingLink: string;
+      emailSent: boolean;
+      smsSent: boolean;
+      recipientEmail: string | null;
+      recipientPhone: string | null;
+      documentCount: number;
+    }
+  | { ok: false; code: "tenant_domain_required" };
 
 async function buildAndDeliverPacket(
   input: BuildAndDeliverPacketInput,
 ): Promise<BuildAndDeliverPacketResult> {
   const { supabase, uniqueKeys } = input;
+  const linkBase = await resolvePacketSigningBaseUrl(supabase.orgId);
+  if (!linkBase) {
+    return { ok: false, code: "tenant_domain_required" };
+  }
   const ttlDays = input.expiresInDays ?? DEFAULT_PACKET_TTL_DAYS;
 
   const nowIso = new Date().toISOString();
@@ -647,7 +665,7 @@ async function buildAndDeliverPacket(
     packet.link_version,
     ttlDays * 24 * 60 * 60,
   );
-  const link = await packetSigningUrl(supabase.orgId, token);
+  const link = signingUrl(linkBase, token);
 
   const { emailSent, smsSent } = await deliverPacketLink({
     supabase,

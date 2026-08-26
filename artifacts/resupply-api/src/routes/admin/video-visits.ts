@@ -42,7 +42,7 @@ import { readSmsConfigOrNull } from "../../lib/messaging/messaging-config";
 import { resolveTenantSmsClientOptions } from "../../lib/messaging/tenant-telecom";
 import {
   resolveBrandingByOrgId,
-  resolveTenantBaseUrl,
+  resolveTenantLinkBaseUrl,
 } from "../../lib/tenant-branding.js";
 import { resolveIceServers } from "../../lib/video/ice-servers";
 import { signVideoVisitToken } from "../../lib/video/video-visit-token";
@@ -75,7 +75,8 @@ const inviteLimiter = expressRateLimit({
 
 /** Public origin patient join links are built against. Prefer the
  *  tenant's verified custom domain so invites land on the tenant host
- *  (e.g. pennpaps.com), not the platform Railway / cmbreathe fallback. */
+ *  (e.g. pennpaps.com). Seed may fall back to platform; non-seed without
+ *  a verified domain returns null. */
 function publicBaseUrl(override?: string): string {
   return (
     override ??
@@ -91,8 +92,9 @@ async function patientJoinUrl(
   orgId: string,
   visitId: string,
   linkVersion: number,
-): Promise<string> {
-  const base = publicBaseUrl((await resolveTenantBaseUrl(orgId)) ?? undefined);
+): Promise<string | null> {
+  const base = await resolveTenantLinkBaseUrl(orgId, publicBaseUrl());
+  if (!base) return null;
   const token = signVideoVisitToken(visitId, "patient", linkVersion);
   return `${base}/video-visit?token=${encodeURIComponent(token)}`;
 }
@@ -405,6 +407,16 @@ async function createVisitAndRespond(
     res.status(500).json({ error: "tenant_context_missing" });
     return;
   }
+  // Gate before insert so we never leave a visit with no deliverable join URL.
+  const joinBase = await resolveTenantLinkBaseUrl(orgId, publicBaseUrl());
+  if (!joinBase) {
+    res.status(422).json({
+      error: "tenant_domain_required",
+      message:
+        "Verify a custom domain for this tenant before creating video visits. Without one, the join link would open on the platform host and land on the wrong portal.",
+    });
+    return;
+  }
   const supabase = getOrgScopedClient(orgId);
   const { data: created, error: insertErr } = await supabase
     .from("video_visits")
@@ -426,6 +438,14 @@ async function createVisitAndRespond(
   const visit = created as unknown as VisitListRow;
 
   const joinUrl = await patientJoinUrl(orgId, visit.id, visit.link_version);
+  if (!joinUrl) {
+    res.status(422).json({
+      error: "tenant_domain_required",
+      message:
+        "Verify a custom domain for this tenant before creating video visits. Without one, the join link would open on the platform host and land on the wrong portal.",
+    });
+    return;
+  }
 
   const greetingName =
     subject.kind === "patient"
@@ -741,6 +761,14 @@ router.post(
     }
 
     const joinUrl = await patientJoinUrl(orgId, visit.id, visit.link_version);
+    if (!joinUrl) {
+      res.status(422).json({
+        error: "tenant_domain_required",
+        message:
+          "Verify a custom domain for this tenant before inviting patients to video visits. Without one, the join link would open on the platform host and land on the wrong portal.",
+      });
+      return;
+    }
     const delivery = await deliverInvite({
       visitId: visit.id,
       channel: body.channel,

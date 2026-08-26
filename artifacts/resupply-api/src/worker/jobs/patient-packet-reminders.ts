@@ -214,6 +214,13 @@ async function patientPacketReminderSweepForOrg(
       undefined,
       orgId,
     );
+    if (!link) {
+      logger.info(
+        { packet_id: c.id, org_id: orgId },
+        "patient-packet.reminders: skipped (no tenant domain)",
+      );
+      continue;
+    }
     // Automated cron text — withhold the phone (email still goes out)
     // when the patient's local time is outside the 9am–8pm TCPA send
     // window. The 19:33 UTC default cron makes this a backstop for
