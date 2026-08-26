@@ -99,7 +99,7 @@ export async function sendRefundNotificationEmail(
       undefined,
   );
   const orderUrl = stripeSessionId
-    ? `${base}/shop/checkout-success?session_id=${encodeURIComponent(stripeSessionId)}`
+    ? `${base}/track-order`
     : `${base}/account/orders`;
 
   const lead = isPartial

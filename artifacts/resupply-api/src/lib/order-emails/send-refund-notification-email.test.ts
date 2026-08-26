@@ -99,7 +99,7 @@ describe("sendRefundNotificationEmail", () => {
     expect(arg.html).toContain("Refund issued");
     expect(arg.html).toContain("$49.99");
     expect(arg.html).toContain(
-      "https://test.example.com/shop/checkout-success?session_id=cs_full",
+      "https://test.example.com/track-order",
     );
     expect(arg.customArgs).toEqual({
       kind: "shop_refund_notification_v1",

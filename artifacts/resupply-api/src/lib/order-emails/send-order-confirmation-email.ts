@@ -199,7 +199,7 @@ export async function sendOrderConfirmationEmail(
       (await resolveTenantBaseUrl(input.orgId)) ??
       undefined,
   );
-  const orderUrl = `${base}/shop/checkout-success?session_id=${encodeURIComponent(stripeSessionId)}`;
+  const orderUrl = `${base}/track-order`;
   const browseUrl = `${base}/shop`;
 
   // ---------- text body ----------

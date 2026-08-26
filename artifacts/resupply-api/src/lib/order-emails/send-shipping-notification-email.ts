@@ -183,7 +183,7 @@ export async function sendShippingNotificationEmail(
       (await resolveTenantBaseUrl(input.orgId)) ??
       undefined,
   );
-  const orderUrl = `${base}/shop/checkout-success?session_id=${encodeURIComponent(stripeSessionId)}`;
+  const orderUrl = `${base}/track-order`;
   const trackingUrl = getCarrierTrackingUrl(carrier, trackingNumber);
 
   // ---------- text body ----------

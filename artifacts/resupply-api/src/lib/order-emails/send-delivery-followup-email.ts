@@ -120,9 +120,9 @@ export async function sendDeliveryFollowupEmail(
       (await resolveTenantBaseUrl(input.orgId)) ??
       undefined,
   );
-  const orderUrl = `${base}/shop/orders`;
+  const orderUrl = `${base}/account/orders`;
   const returnsUrl = `${base}/account#returns`;
-  const reviewUrl = `${base}/shop/orders?leave_review=${encodeURIComponent(stripeSessionId)}`;
+  const reviewUrl = `${base}/contact?utm_campaign=delivery_followup`;
 
   // NPS-rating links — 0..10 buttons rendered inline. Each carries an
   // HMAC-signed token that binds the score to this specific order +
