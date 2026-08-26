@@ -21,7 +21,11 @@
 // SMS configs — Twilio status-callback signatures must stay on the
 // platform host.
 
-import { resolveTenantBaseUrl } from "../tenant-branding";
+import { resolveTenantLinkBaseUrl } from "../tenant-branding";
+import {
+  isPatientEmailClickBaseReady,
+  platformPublicBaseUrl,
+} from "../order-emails/link-base";
 import { resolveTenantSender } from "./tenant-sender";
 
 /** The subset of EmailSendConfig this helper rewrites. */
@@ -39,8 +43,9 @@ interface EmailFromConfig {
  * lookup error) the platform-default From already on `cfg` is preserved,
  * so single-tenant behavior is unchanged.
  *
- * Also rewrites `publicBaseUrl` to the tenant custom domain when present
- * on `cfg` and `resolveTenantBaseUrl` returns one.
+ * Also rewrites `publicBaseUrl` via `resolveTenantLinkBaseUrl` (seed may
+ * use the platform host; non-seed without a verified domain gets an empty
+ * string so callers refuse to mint platform click links).
  */
 export async function applyTenantEmailSender<T extends EmailFromConfig>(
   orgId: string | undefined,
@@ -59,13 +64,16 @@ export async function applyTenantEmailSender<T extends EmailFromConfig>(
     };
   }
   if (orgId && typeof next.publicBaseUrl === "string") {
-    const tenantBase = await resolveTenantBaseUrl(orgId);
-    if (tenantBase) {
-      next = {
-        ...next,
-        publicBaseUrl: tenantBase.replace(/\/$/, ""),
-      };
-    }
+    const linkBase = await resolveTenantLinkBaseUrl(
+      orgId,
+      platformPublicBaseUrl(next.publicBaseUrl),
+    );
+    next = {
+      ...next,
+      publicBaseUrl: linkBase ?? "",
+    };
   }
   return next;
 }
+
+export { isPatientEmailClickBaseReady };

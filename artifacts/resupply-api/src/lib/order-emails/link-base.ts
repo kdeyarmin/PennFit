@@ -31,3 +31,10 @@ export async function resolvePatientEmailLinkBase(
 }
 
 export const TENANT_DOMAIN_REQUIRED = "tenant_domain_required" as const;
+
+/** True when a tenant-scoped email cfg has a safe click-link origin. */
+export function isPatientEmailClickBaseReady(
+  publicBaseUrl: string | undefined,
+): boolean {
+  return Boolean(publicBaseUrl?.trim());
+}

@@ -90,7 +90,10 @@ import { hasLinkHmacKey } from "@workspace/resupply-secrets";
 import { getCompanyInfo } from "../../lib/company-info.js";
 import { markEpisodeAwaitingResponse } from "../../lib/episodes/mark-awaiting-response.js";
 import { logger } from "../../lib/logger.js";
-import { applyTenantEmailSender } from "../../lib/email/apply-tenant-email-sender.js";
+import {
+  applyTenantEmailSender,
+  isPatientEmailClickBaseReady,
+} from "../../lib/email/apply-tenant-email-sender.js";
 import { applyTenantSmsFrom } from "../../lib/messaging/tenant-telecom.js";
 import { forEachActiveOrg } from "../lib/for-each-active-org.js";
 import { recordOutboundMessageUsage } from "../../lib/metering/usage.js";
@@ -1134,6 +1137,22 @@ export async function registerReminderJobs(boss: PgBoss): Promise<void> {
     );
     if (!proceed) return;
     const actor: SendActor = { kind: "system", jobId: j.id };
+    const emailCfg = {
+      ...(await applyTenantEmailSender(orgId, cfg.email)),
+      practiceName: (await getCompanyInfo(orgId)).name,
+    };
+    if (!isPatientEmailClickBaseReady(emailCfg.publicBaseUrl)) {
+      logger.warn(
+        {
+          job_id: j.id,
+          org_id: orgId,
+          reason: "tenant_domain_required",
+        },
+        "reminders.send-email: skipped (no tenant domain for click links)",
+      );
+      return;
+    }
+
     let outcome: Awaited<ReturnType<typeof sendReminderEmail>>;
     try {
       outcome = await sendReminderEmail({
@@ -1143,10 +1162,7 @@ export async function registerReminderJobs(boss: PgBoss): Promise<void> {
         // falls back to the platform default when it isn't. Also brand the
         // BODY with the tenant's own name (see the SMS job above) — seed copy
         // is unchanged since getCompanyInfo(seed).name === RESUPPLY_PRACTICE_NAME.
-        cfg: {
-          ...(await applyTenantEmailSender(orgId, cfg.email)),
-          practiceName: (await getCompanyInfo(orgId)).name,
-        },
+        cfg: emailCfg,
         patientId: j.data.patientId,
         episodeId: j.data.episodeId,
         variant: j.data.variant,

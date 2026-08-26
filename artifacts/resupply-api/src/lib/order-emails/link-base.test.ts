@@ -14,6 +14,7 @@ import {
   platformPublicBaseUrl,
   resolvePatientEmailLinkBase,
   TENANT_DOMAIN_REQUIRED,
+  isPatientEmailClickBaseReady,
 } from "./link-base";
 
 describe("resolvePatientEmailLinkBase", () => {
@@ -56,6 +57,12 @@ describe("resolvePatientEmailLinkBase", () => {
       "00000000-0000-4000-8000-000000000099",
       "https://cmbreathe.com",
     );
+  });
+
+  it("isPatientEmailClickBaseReady rejects blank origins", () => {
+    expect(isPatientEmailClickBaseReady("https://acme.example")).toBe(true);
+    expect(isPatientEmailClickBaseReady("")).toBe(false);
+    expect(isPatientEmailClickBaseReady(undefined)).toBe(false);
   });
 
   it("exports tenant_domain_required sentinel", () => {
