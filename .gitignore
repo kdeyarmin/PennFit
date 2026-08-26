@@ -58,3 +58,8 @@ playwright-report/
 # Python bytecode (docs/user-manual build script)
 __pycache__/
 *.pyc
+
+# Agent session planning (local only)
+findings.md
+progress.md
+task_plan.md
