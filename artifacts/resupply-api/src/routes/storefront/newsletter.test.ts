@@ -5,7 +5,7 @@
 // 500 when the upsert fails (the old frontend faked success — the
 // backend must never do the same).
 
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import express, { type Express } from "express";
 import request from "supertest";
 
@@ -18,6 +18,16 @@ import {
 
 const supabaseMock = installSupabaseMock();
 
+const resolveBrandOrgIdByHostMock = vi.hoisted(() =>
+  vi.fn<() => Promise<string | null>>(async () => "org-from-host"),
+);
+vi.mock("../../lib/tenant-branding.js", () => ({
+  resolveBrandOrgIdByHost: resolveBrandOrgIdByHostMock,
+}));
+vi.mock("../../lib/request-host.js", () => ({
+  requestHost: () => "tenant.example.com",
+}));
+
 import newsletterRouter from "./newsletter.js";
 
 function buildApp(): Express {
@@ -29,6 +39,7 @@ function buildApp(): Express {
 
 beforeEach(() => {
   supabaseMock.reset();
+  resolveBrandOrgIdByHostMock.mockReset().mockResolvedValue("org-from-host");
 });
 
 describe("POST /api/newsletter/subscribe", () => {
