@@ -133,11 +133,13 @@ describe("PATCH /admin/fitter-requests/:id — recording the outcome", () => {
     expect(res.body.closedOutcome).toBe("fulfilled");
   });
 
-  it("leaves the outcome UNRECORDED when a close does not state one", async () => {
-    // NULL reads honestly as "closed, we didn't say how". Defaulting to
-    // 'fulfilled' would inflate the dispense rate with every tidy-up.
-    await patch({ status: "closed" });
-    expect(db.updates.at(-1)).not.toHaveProperty("closed_outcome");
+  it("rejects a close that does not state an outcome", async () => {
+    // Closing without an outcome used to leave closed_outcome NULL and
+    // skip the dispense stamp — which silently zeroed the outcomes
+    // dashboard. Closing now requires a non-null closedOutcome.
+    const res = await patch({ status: "closed" });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("invalid_body");
   });
 
   it("accepts an outcome on its own, so a CSR can record it after the fact", async () => {

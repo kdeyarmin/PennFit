@@ -110,6 +110,15 @@ const patchBody = z
       b.csrNote !== undefined ||
       b.closedOutcome !== undefined,
     { message: "must include status, csrNote or closedOutcome" },
+  )
+  .refine(
+    (b) =>
+      b.status !== "closed" ||
+      (b.closedOutcome !== undefined && b.closedOutcome !== null),
+    {
+      message: "closing a request requires closedOutcome",
+      path: ["closedOutcome"],
+    },
   );
 
 function toView(r: FitRequestRow) {
@@ -440,6 +449,8 @@ router.patch(
       closedAt: row.closed_at,
       closedOutcome: row.closed_outcome,
       updatedAt: row.updated_at,
+      dispenseStamped,
+      dispenseCleared,
     });
   },
 );

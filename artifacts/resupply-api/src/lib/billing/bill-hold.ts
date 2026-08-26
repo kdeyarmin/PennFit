@@ -574,6 +574,7 @@ export async function autoMatchInboundFaxToPaperwork(
   faxId: string,
   fromE164: string | null,
   injected?: SupabaseClient,
+  orgId?: string | null,
 ): Promise<{ matched: boolean; requirementId: string | null }> {
   try {
     if (!fromE164) return { matched: false, requirementId: null };
@@ -583,12 +584,19 @@ export async function autoMatchInboundFaxToPaperwork(
     const supabase = injected ?? (await resolveDefaultClient());
     if (!supabase) return { matched: false, requirementId: null };
 
-    const { data, error } = await supabase
+    let query = supabase
       .schema("resupply")
       .from("claim_paperwork_requirements")
       .select(REQUIREMENT_COLUMNS)
       .eq("expected_return_fax_e164", normalized)
       .eq("status", "outstanding");
+    // Scope to the fax's tenant when known — a shared provider return fax
+    // must not satisfy another tenant's outstanding paperwork (cross-
+    // tenant bill-hold release).
+    if (orgId) {
+      query = query.eq("org_id", orgId);
+    }
+    const { data, error } = await query;
     if (error) throw error;
     const candidates = (data ?? []) as PaperworkRequirementRow[];
     const { matched, ambiguous } = pickFaxMatch(candidates);

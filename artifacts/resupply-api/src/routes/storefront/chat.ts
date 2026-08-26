@@ -68,13 +68,17 @@ import {
   brandToolDescriptors,
   getCompanyInfo,
   getCompanyInfoSync,
+  getPlatformIdentity,
   type CompanyInfo,
 } from "../../lib/company-info.js";
 import { logger } from "../../lib/logger.js";
 import { withRetry } from "../../lib/with-retry.js";
 import { getLlmBreaker } from "../../lib/llm-circuit-breaker.js";
 import { requestHost } from "../../lib/request-host.js";
-import { resolveOrgIdByHost } from "../../lib/tenant-branding.js";
+import {
+  resolveBrandOrgIdByHost,
+  resolveOrgIdByHost,
+} from "../../lib/tenant-branding.js";
 import { loadCatalogVisibility } from "../../lib/fitting/catalog-store.js";
 import {
   recordAiTokenUsage,
@@ -471,17 +475,23 @@ router.post("/chat", chatRateLimit, async (req, res) => {
   // matches the existing unconfigured-LLM branch below so the
   // widget doesn't have to special-case anything.
   //
-  // Public route — no auth middleware populates req.orgId, so resolve the
-  // tenant from the request host so a tenant's storefront.chatbot toggle
-  // gates THIS storefront.
+  // Public route — no auth middleware populates req.orgId. Branding must
+  // use the brand-host resolver (platform identity on cmbreathe.com), NOT
+  // resolveOrgIdByHost which fails soft to the seed (Penn) org. Feature
+  // flags / catalog / metering still use a data-plane org with seed
+  // fallback so the platform host chatbot keeps working.
+  const brandOrgId =
+    req.orgId ?? (await resolveBrandOrgIdByHost(requestHost(req))) ?? undefined;
   const orgId =
-    req.orgId ?? (await resolveOrgIdByHost(requestHost(req))) ?? undefined;
+    brandOrgId ?? (await resolveOrgIdByHost(requestHost(req))) ?? undefined;
 
   // Resolve THIS host tenant's company identity once so every patient-
   // facing string below (the feature-off + offline + degraded fallbacks
   // and the system prompt's contact/brand details) carries the host
-  // tenant's brand, not the seed's. Cached ~30s; fail-soft to seed.
-  const companyInfo = await getCompanyInfo(orgId);
+  // tenant's brand, or the platform's — never the seed's by accident.
+  const companyInfo = brandOrgId
+    ? await getCompanyInfo(brandOrgId)
+    : getPlatformIdentity();
   const degradedReply = degradedFallbackReply(companyInfo);
 
   if (!(await isFeatureEnabled("storefront.chatbot", orgId))) {
@@ -577,7 +587,7 @@ router.post("/chat", chatRateLimit, async (req, res) => {
       getSystemPrompt(visibility.hiddenSlugs),
       companyInfo,
     ),
-    orgId,
+    brandOrgId,
   );
 
   // Past every offline/feature/budget gate — this turn WILL hit a model,

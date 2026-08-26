@@ -230,7 +230,7 @@ export async function ingestInboundFax(
   let barcodeFiled = false;
   if (media.persisted && media.bytes && media.contentType) {
     try {
-      if (await isFeatureEnabled("fax.auto_file_signed")) {
+      if (await isFeatureEnabled("fax.auto_file_signed", orgId)) {
         const outcome = await autoFileSignedFax(
           {
             faxId: rowId,
@@ -256,7 +256,12 @@ export async function ingestInboundFax(
   // run after a barcode match could release an UNRELATED requirement's hold
   // with the same fax. Best-effort + never throws.
   if (!barcodeFiled) {
-    await autoMatchInboundFaxToPaperwork(rowId, input.fromE164, supabase.raw());
+    await autoMatchInboundFaxToPaperwork(
+      rowId,
+      input.fromE164,
+      supabase.raw(),
+      orgId,
+    );
   }
 
   // Step 5: referral review (opt-in). When `fax.referral_review` is on and

@@ -494,12 +494,12 @@ function RequestRow({
                 <div className="flex gap-2 mt-1">
                   <button
                     type="button"
-                    disabled={pending}
+                    disabled={pending || outcomeDraft === ""}
                     onClick={() => {
+                      if (outcomeDraft === "") return;
                       onPatch({
                         status: "closed",
-                        closedOutcome:
-                          outcomeDraft === "" ? null : outcomeDraft,
+                        closedOutcome: outcomeDraft,
                       });
                       setClosing(false);
                     }}
