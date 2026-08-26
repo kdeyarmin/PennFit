@@ -1809,7 +1809,7 @@ specialist via the child's pediatrician.
 const PRACTICE_SECTION = `
 # About Penn Home Medical Supply
 
-pennpaps.com is the online CPAP storefront for Penn Home Medical Supply,
+pennpaps.com is the patient site for Penn Home Medical Supply,
 a licensed durable medical equipment provider. Three offerings:
   1. Virtual mask fitter (on-device facial measurements, never uploads
      images) at /how-it-works that recommends masks tailored to the
