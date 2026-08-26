@@ -36,7 +36,7 @@ import {
 import { logger } from "../../lib/logger";
 import { rateLimit } from "../../middlewares/rate-limit";
 import { requireProvider } from "../../middlewares/requireProvider";
-import { getCompanyInfo, PLATFORM_NAME } from "../../lib/company-info";
+import { PLATFORM_NAME } from "../../lib/company-info";
 
 const router: IRouter = Router();
 
@@ -73,13 +73,14 @@ const verifyBody = z
   .strict();
 
 /**
- * The issuer an authenticator app shows beside the code, scoped to the
- * provider's own tenant. See the note on the admin counterpart: the
- * process-global this replaced carried the SEED tenant's name.
+ * The issuer an authenticator app shows beside the code. Provider portal
+ * accounts are cross-tenant (one login can refer into many orgs), so the
+ * authenticator label is the platform identity — never the seed tenant's
+ * brand (getCompanyInfo(resolveSeedOrgId()) used to leak Penn's name onto
+ * every provider enrollment).
  */
-async function getIssuerLabel(orgId: string | undefined): Promise<string> {
-  if (!orgId) return PLATFORM_NAME;
-  return (await getCompanyInfo(orgId)).name;
+function getIssuerLabel(): string {
+  return PLATFORM_NAME;
 }
 
 router.get(
@@ -203,7 +204,7 @@ router.post(
       if (insErr) throw insErr;
     }
 
-    const issuer = await getIssuerLabel(orgId);
+    const issuer = getIssuerLabel();
     const otpauthUri = buildOtpauthUri({
       label: account.emailLower,
       issuer,

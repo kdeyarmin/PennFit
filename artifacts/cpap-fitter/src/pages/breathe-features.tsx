@@ -215,10 +215,10 @@ const CAPABILITIES: Capability[] = [
     title: "Branded storefront",
     summary: "A shop that converts shoppers into patients.",
     points: [
-      "Catalog, cart, Stripe checkout, subscriptions, returns and reviews",
-      "Live insurance benefit estimates before a patient ever pays",
-      "Your brand, your domain — patient accounts, tracking and POD photos",
-      "Cash-pay checkout straight from a fitting result, insurance path alongside it",
+      "Catalog and patient accounts on your brand and domain",
+      "Live insurance benefit estimates before supplies ship",
+      "Fitting results feed insurance requests — no retail checkout",
+      "Order tracking and POD photos under your storefront",
     ],
   },
   {

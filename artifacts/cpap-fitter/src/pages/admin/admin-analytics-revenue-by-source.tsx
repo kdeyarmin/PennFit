@@ -61,10 +61,10 @@ export function AdminAnalyticsRevenueBySourcePage() {
             Revenue by source
           </h1>
           <p className="text-sm mt-1" style={{ color: "hsl(var(--ink-3))" }}>
-            Order volume and cash revenue split across the three channels orders
-            arrive through. Only the cash-pay storefront carries a dollar
-            amount; insurance resupply and clinical-form orders are counted by
-            volume.
+            Order volume split across insurance resupply, clinical-form, and
+            any remaining historical storefront rows. Dollar amounts only
+            appear on legacy storefront rows; insurance and clinical orders
+            are counted by volume.
           </p>
         </div>
         <div className="flex items-center gap-3">

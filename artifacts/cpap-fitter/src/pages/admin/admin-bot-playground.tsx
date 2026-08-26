@@ -342,7 +342,7 @@ export function AdminBotPlaygroundPage() {
             >
               {k === "patient"
                 ? "Patient (clinical)"
-                : "Shop customer (cash-pay)"}
+                : "Shop customer (legacy)"}
             </Button>
           ))}
         </div>

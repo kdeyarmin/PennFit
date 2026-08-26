@@ -476,7 +476,7 @@ function DraftsReviewCard({
   return (
     <Card
       title="Draft review queue"
-      subtitle="Proposals staged from opportunities (manually or by the daily auto-draft job). Review, then approve into a sign-&-pay checkout link the patient pays — nothing is charged until they do."
+      subtitle="Proposals staged from opportunities (manually or by the daily auto-draft job). Review, then approve into a signature link the patient reviews and e-signs — the order is billed to their insurance, not charged at checkout."
     >
       {isPending ? (
         <Spinner />
@@ -693,8 +693,9 @@ function ApproveDraftModal({
         ) : (
           <>
             <p className="text-sm" style={{ color: "hsl(var(--ink-3))" }}>
-              Confirm the line item and where to send the sign-&-pay link. The
-              patient is charged only when they complete checkout.
+              Confirm the line item and where to send the signature link. The
+              patient e-signs paperwork; the order is billed to their
+              insurance.
             </p>
             <Field label="Customer name">
               <input

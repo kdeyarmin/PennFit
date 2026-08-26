@@ -1,13 +1,13 @@
-// "Sign & pay orders" panel on the admin Orders page.
+// Signature-orders panel on the admin Orders page.
 //
-// A CSR builds an order here (free-form line items priced in dollars,
-// optional standalone paperwork from the patient-packet template catalog) and the
-// customer receives a secure link to review, e-sign, and pay via
-// Stripe. The panel lists recent requests with a derived lifecycle
-// badge (Sent → Viewed → Signed → Paid) plus resend / cancel actions.
+// A CSR builds an order here (line items + optional paperwork from the
+// patient-packet template catalog) and the customer receives a secure
+// link to review and e-sign. The order is billed to insurance — nothing
+// is charged on the link. The panel lists recent requests with a derived
+// lifecycle badge (Sent → Viewed → Signed) plus resend / cancel actions.
 //
 // Backend: /resupply-api/admin/csr-order-requests* (returns.manage);
-// public twin: /order-pay (token-gated).
+// public twin: /order-sign (token-gated).
 
 import { useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -171,11 +171,12 @@ export function CsrOrderRequestsPanel() {
         <div className="flex items-end justify-between flex-wrap gap-3">
           <div>
             <h2 className="text-display text-xl font-bold tracking-tight">
-              Sign &amp; pay orders
+              Signature orders
             </h2>
             <p className="text-muted-foreground mt-1 text-sm">
               Build an order for a customer and send them a secure link to
-              review, sign paperwork, and pay by card.
+              review and e-sign paperwork. Billed to their insurance — nothing
+              is charged on the link.
             </p>
           </div>
           <Button
@@ -215,8 +216,8 @@ export function CsrOrderRequestsPanel() {
                         colSpan={7}
                         className="py-10 text-center text-muted-foreground"
                       >
-                        No sign &amp; pay orders yet. Create one to send a
-                        customer a secure sign-and-pay link.
+                        No signature orders yet. Create one to send a
+                        customer a secure signature link.
                       </td>
                     </tr>
                   )}
@@ -287,7 +288,7 @@ export function CsrOrderRequestsPanel() {
             </div>
             {error && (
               <div className="p-4 text-sm text-destructive border-t border-border/40">
-                Could not load sign &amp; pay orders: {error.message}
+                Could not load signature orders: {error.message}
               </div>
             )}
           </CardContent>
@@ -476,7 +477,7 @@ function CreateCsrOrderModal({
 
   return (
     <AdminModal
-      title="Create a sign & pay order"
+      title="Create a signature order"
       description="The customer gets a secure link to review the order and e-sign the required paperwork. Nothing is charged — the order is billed to their insurance."
       onClose={onClose}
       className="max-w-3xl"
