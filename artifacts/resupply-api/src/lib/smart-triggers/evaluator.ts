@@ -16,11 +16,7 @@
 // when called from the pg-boss worker.
 
 import { logAudit } from "@workspace/resupply-audit";
-import {
-  type Database,
-  getOrgScopedClient,
-  resolveSeedOrgId,
-} from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../logger";
 import { evaluateAll } from "./index";
@@ -55,14 +51,12 @@ export interface EvaluatorResult {
 export async function runSmartTriggerEvaluator(
   actor: EvaluatorActor,
   /**
-   * Tenant to scan. The daily cron fans out across every active tenant
-   * (worker/jobs/smart-trigger-evaluator.ts) and ALWAYS passes an explicit
-   * orgId. Left optional only for the admin "Run now" route, which has no
-   * tenant context and falls back to the seed org for back-compat.
+   * Tenant to scan. Required — the daily cron and admin "Run now" both
+   * pass an explicit orgId. Never invents the seed org.
    */
-  explicitOrgId?: string,
+  explicitOrgId: string,
 ): Promise<EvaluatorResult> {
-  const orgId = explicitOrgId ?? (await resolveSeedOrgId());
+  const orgId = explicitOrgId?.trim() ?? "";
   if (!orgId) {
     // Tenant context missing — no roster to scan. Return the same
     // all-zero counters an empty-candidate run produces.

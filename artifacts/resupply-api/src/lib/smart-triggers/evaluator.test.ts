@@ -42,6 +42,8 @@ vi.mock("./index", () => ({ evaluateAll: evaluateAllMock }));
 
 import { runSmartTriggerEvaluator } from "./evaluator";
 
+const TEST_ORG = "00000000-0000-4000-8000-000000000001";
+
 const ACTOR = {
   adminEmail: "ops@penn.example.com",
   adminUserId: "u_admin",
@@ -60,7 +62,7 @@ describe("runSmartTriggerEvaluator", () => {
   it("returns zero counts when no candidate patients exist", async () => {
     // Initial candidate roster is empty.
     stageSupabaseResponse("patient_therapy_nights", "select", { data: [] });
-    const result = await runSmartTriggerEvaluator(ACTOR);
+    const result = await runSmartTriggerEvaluator(ACTOR, TEST_ORG);
     expect(result).toEqual({
       scanned: 0,
       proposed: 0,
@@ -87,7 +89,7 @@ describe("runSmartTriggerEvaluator", () => {
     });
     evaluateAllMock.mockReturnValue([]);
 
-    const result = await runSmartTriggerEvaluator(ACTOR);
+    const result = await runSmartTriggerEvaluator(ACTOR, TEST_ORG);
 
     expect(result).toEqual({
       scanned: 2,
@@ -113,7 +115,7 @@ describe("runSmartTriggerEvaluator", () => {
     });
     evaluateAllMock.mockReturnValue([]);
 
-    await runSmartTriggerEvaluator(ACTOR);
+    await runSmartTriggerEvaluator(ACTOR, TEST_ORG);
 
     const orderCalls = getSupabaseFilterCalls(
       "patient_therapy_nights",
@@ -155,7 +157,7 @@ describe("runSmartTriggerEvaluator", () => {
       data: { id: "evt_new_1" },
     });
 
-    const result = await runSmartTriggerEvaluator(ACTOR);
+    const result = await runSmartTriggerEvaluator(ACTOR, TEST_ORG);
 
     expect(result).toEqual({
       scanned: 1,
@@ -171,7 +173,7 @@ describe("runSmartTriggerEvaluator", () => {
         kind: "leak_rising",
         window_start_date: "2026-04-01",
         window_end_date: "2026-04-14",
-        org_id: "00000000-0000-4000-8000-000000000000",
+        org_id: TEST_ORG,
       },
     ]);
     expect(logAuditMock).toHaveBeenCalledTimes(1);
@@ -213,7 +215,7 @@ describe("runSmartTriggerEvaluator", () => {
       error: { code: "23505", message: "duplicate key value" },
     });
 
-    const result = await runSmartTriggerEvaluator(ACTOR);
+    const result = await runSmartTriggerEvaluator(ACTOR, TEST_ORG);
 
     expect(result).toEqual({
       scanned: 1,
@@ -251,7 +253,7 @@ describe("runSmartTriggerEvaluator", () => {
       data: { id: "evt_phi_1" },
     });
 
-    await runSmartTriggerEvaluator(ACTOR);
+    await runSmartTriggerEvaluator(ACTOR, TEST_ORG);
 
     const audit = logAuditMock.mock.calls[0]?.[0];
     const auditJson = JSON.stringify(audit);
@@ -335,7 +337,7 @@ describe("runSmartTriggerEvaluator — multi-page roster (behavioural)", () => {
     // unstaged default ({ data: null }), so each patient has 0 nights and
     // evaluateAll fires with an empty array → no proposals.
 
-    const result = await runSmartTriggerEvaluator(ACTOR);
+    const result = await runSmartTriggerEvaluator(ACTOR, TEST_ORG);
 
     expect(result.scanned).toBe(PAGE_SIZE);
     // No events were produced (empty nights).
@@ -355,7 +357,7 @@ describe("runSmartTriggerEvaluator — multi-page roster (behavioural)", () => {
     stageSupabaseResponse("patient_therapy_nights", "select", { data: page2 });
     // Per-patient night selects (unstaged → empty nights)
 
-    const result = await runSmartTriggerEvaluator(ACTOR);
+    const result = await runSmartTriggerEvaluator(ACTOR, TEST_ORG);
 
     // After de-duplication: 1000 from page1 + 0 new from page2 (all overlap)
     // = exactly PAGE_SIZE unique candidates.

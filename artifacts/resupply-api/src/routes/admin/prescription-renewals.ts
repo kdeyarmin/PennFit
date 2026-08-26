@@ -61,12 +61,21 @@ router.post(
     }
     const channel = channelParse.data;
 
-    const outcome = await runRxRenewalSendDue(channel, {
-      adminEmail: req.adminEmail ?? null,
-      adminUserId: req.adminUserId ?? null,
-      ip: req.ip ?? null,
-      userAgent: req.get("user-agent") ?? null,
-    });
+    if (!req.orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+
+    const outcome = await runRxRenewalSendDue(
+      channel,
+      {
+        adminEmail: req.adminEmail ?? null,
+        adminUserId: req.adminUserId ?? null,
+        ip: req.ip ?? null,
+        userAgent: req.get("user-agent") ?? null,
+      },
+      req.orgId,
+    );
 
     if (outcome.status === "not_configured") {
       res.status(503).json({

@@ -27,11 +27,7 @@
 //      tick can retry the row.
 
 import { logAudit } from "@workspace/resupply-audit";
-import {
-  type Database,
-  getOrgScopedClient,
-  resolveSeedOrgId,
-} from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 import {
   createSendgridClient,
   EmailApiError,
@@ -157,14 +153,14 @@ export async function runSmartTriggerSendDue(
   channel: "email" | "sms",
   actor: DispatcherActor,
   renderers: SmartTriggerRenderers,
-  // The tenant whose flags + events this run operates on. The admin
-  // "Run now" route passes req.orgId; the worker cron passes none and
-  // falls back to the seed org (single-tenant-correct).
-  orgIdInput?: string,
+  // The tenant whose flags + events this run operates on. Required —
+  // admin "Run now" and the worker cron both pass an explicit orgId.
+  // Never invents the seed org.
+  orgIdInput: string,
 ): Promise<DispatcherOutcome> {
   // Resolve the tenant up front so the Control Center gates below honor
   // the caller's org rather than always reading the seed tenant.
-  const orgId = orgIdInput ?? (await resolveSeedOrgId());
+  const orgId = orgIdInput?.trim() ?? "";
   if (!orgId) {
     // Tenant context missing — no events to sweep. Return the same
     // "ok, did nothing" shape a zero-candidate run produces.

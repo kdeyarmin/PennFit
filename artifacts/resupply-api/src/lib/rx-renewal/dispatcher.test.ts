@@ -30,6 +30,8 @@ void getSupabaseServiceRoleClient; // mock registration ordering
 
 import { runRxRenewalSendDue } from "./dispatcher";
 
+const TEST_ORG = "00000000-0000-4000-8000-000000000001";
+
 const ACTOR = {
   adminEmail: "system:test",
   adminUserId: null,
@@ -86,7 +88,7 @@ describe("runRxRenewalSendDue — consent + send-window gating", () => {
       error: null,
     });
 
-    const outcome = await runRxRenewalSendDue("sms", ACTOR);
+    const outcome = await runRxRenewalSendDue("sms", ACTOR, TEST_ORG);
 
     expect(outcome.status).toBe("ok");
     if (outcome.status === "ok") {
@@ -108,7 +110,7 @@ describe("runRxRenewalSendDue — consent + send-window gating", () => {
     });
     stageOneDueRx();
 
-    const outcome = await runRxRenewalSendDue("sms", ACTOR);
+    const outcome = await runRxRenewalSendDue("sms", ACTOR, TEST_ORG);
 
     expect(sendSmsMock).not.toHaveBeenCalled();
     // Not claimed → the next in-window run picks the row up.
@@ -128,7 +130,7 @@ describe("runRxRenewalSendDue — consent + send-window gating", () => {
     });
     stageOneDueRx({ timezone: "America/Los_Angeles" });
 
-    const outcome = await runRxRenewalSendDue("sms", ACTOR);
+    const outcome = await runRxRenewalSendDue("sms", ACTOR, TEST_ORG);
 
     expect(sendSmsMock).not.toHaveBeenCalled();
     if (outcome.status === "ok") {

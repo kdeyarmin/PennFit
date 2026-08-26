@@ -12,7 +12,6 @@
 
 import {
   getOrgScopedClient,
-  resolveSeedOrgId,
   type Database,
   type OrgScopedClient,
 } from "@workspace/resupply-db";
@@ -21,9 +20,9 @@ type ShopCustomerRow = Database["resupply"]["Tables"]["shop_customers"]["Row"];
 
 export async function readShopCustomer(
   customerId: string,
-  orgId?: string,
+  orgId: string,
 ): Promise<ShopCustomerRow | null> {
-  const oid = orgId ?? (await resolveSeedOrgId());
+  const oid = orgId?.trim() ?? "";
   if (!oid) {
     // Tenant context missing — treat as "no row" (same null outcome
     // readRow returns when no shop_customers row exists).
@@ -38,18 +37,15 @@ export async function readShopCustomer(
  * calls don't have to handle the missing-row case.
  */
 export async function ensureShopCustomerRow(args: {
-  /** Tenant the request operates on (req.orgId). Falls back to the seed
-   *  org when omitted — single-tenant behavior, and a safe degrade. */
-  orgId?: string;
+  /** Tenant the request operates on (req.orgId). Required. */
+  orgId: string;
   customerId: string;
   email: string | null;
   displayName?: string | null;
 }): Promise<ShopCustomerRow> {
-  const orgId = args.orgId ?? (await resolveSeedOrgId());
+  const orgId = args.orgId?.trim() ?? "";
   if (!orgId) {
-    throw new Error(
-      "ensureShopCustomerRow: tenant context missing (no orgId / seed org).",
-    );
+    throw new Error("ensureShopCustomerRow: tenant context missing");
   }
   const supabase = getOrgScopedClient(orgId);
   const existing = await readRow(supabase, args.customerId);

@@ -19,6 +19,8 @@ const supabaseMock = installSupabaseMock();
 
 import { resolveSmsRecipientForShopOrder } from "./shop-orders-sms-resolver";
 
+const TEST_ORG = "00000000-0000-4000-8000-000000000001";
+
 const optedInPrefs = { smsTransactional: true };
 
 const OPTED_IN_CUSTOMER = {
@@ -47,6 +49,7 @@ describe("resolveSmsRecipientForShopOrder", () => {
     const result = await resolveSmsRecipientForShopOrder({
       customerId: "cust-1",
       customerEmailFromOrder: null,
+      orgId: TEST_ORG,
     });
 
     expect(result).toEqual({
@@ -57,10 +60,8 @@ describe("resolveSmsRecipientForShopOrder", () => {
     });
   });
 
-  it("resolves in the provided tenant org when orgId is passed", async () => {
-    // The new delivered-SMS path passes the order's orgId so the recipient
-    // resolves in that tenant (matching the tenant-scoped sender) instead of
-    // falling back to the seed org. The orgId branch must still resolve.
+  it("resolves in the provided tenant org", async () => {
+    // Recipient resolution is always org-scoped to the order's tenant.
     stageSupabaseResponse("shop_customers", "select", {
       data: OPTED_IN_CUSTOMER,
     });
@@ -78,6 +79,15 @@ describe("resolveSmsRecipientForShopOrder", () => {
       timezone: "America/New_York",
       zip: "19104",
     });
+  });
+
+  it("returns null when orgId is blank", async () => {
+    const result = await resolveSmsRecipientForShopOrder({
+      customerId: "cust_1",
+      customerEmailFromOrder: null,
+      orgId: "  ",
+    });
+    expect(result).toBeNull();
   });
 
   it("returns null when the email matches more than one patient", async () => {
@@ -107,6 +117,7 @@ describe("resolveSmsRecipientForShopOrder", () => {
     const result = await resolveSmsRecipientForShopOrder({
       customerId: "cust-1",
       customerEmailFromOrder: null,
+      orgId: TEST_ORG,
     });
 
     expect(result).toBeNull();
@@ -125,6 +136,7 @@ describe("resolveSmsRecipientForShopOrder", () => {
     const result = await resolveSmsRecipientForShopOrder({
       customerId: "cust_1",
       customerEmailFromOrder: null,
+      orgId: TEST_ORG,
     });
     expect(result).toBeNull();
   });
@@ -140,6 +152,7 @@ describe("resolveSmsRecipientForShopOrder", () => {
     const result = await resolveSmsRecipientForShopOrder({
       customerId: "cust_1",
       customerEmailFromOrder: null,
+      orgId: TEST_ORG,
     });
     expect(result).toBeNull();
   });
@@ -155,6 +168,7 @@ describe("resolveSmsRecipientForShopOrder", () => {
     const result = await resolveSmsRecipientForShopOrder({
       customerId: "cust_1",
       customerEmailFromOrder: null,
+      orgId: TEST_ORG,
     });
     expect(result).toBeNull();
   });

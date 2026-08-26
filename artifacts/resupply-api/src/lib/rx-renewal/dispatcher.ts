@@ -9,11 +9,7 @@
 // 503 on "not_configured" while the cron logs+skips.
 
 import { logAudit } from "@workspace/resupply-audit";
-import {
-  type Database,
-  getOrgScopedClient,
-  resolveSeedOrgId,
-} from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 import {
   createSendgridClient,
   EmailConfigError,
@@ -77,14 +73,12 @@ export async function runRxRenewalSendDue(
   channel: "email" | "sms",
   actor: RxRenewalActor,
   /**
-   * Tenant to sweep. The daily cron fans out across every active tenant
-   * (worker/jobs/rx-renewal-send.ts) and ALWAYS passes an explicit orgId.
-   * Left optional only for the admin "Run now" route, which has no tenant
-   * context and falls back to the seed org for back-compat.
+   * Tenant to sweep. Required — the daily cron and admin "Run now" both
+   * pass an explicit orgId. Never invents the seed org.
    */
-  explicitOrgId?: string,
+  explicitOrgId: string,
 ): Promise<RxRenewalOutcome> {
-  const orgId = explicitOrgId ?? (await resolveSeedOrgId());
+  const orgId = explicitOrgId?.trim() ?? "";
   if (!orgId) {
     // Tenant context missing — no patients to sweep. Return the same
     // "ok, did nothing" shape a zero-eligible run produces.

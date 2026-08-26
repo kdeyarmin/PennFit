@@ -264,8 +264,11 @@ router.post(
         // never reach /account or admin Customer 360. Use the same
         // upsert helper the rest of the shop surface uses so we
         // share the email/displayName invariants.
+        if (!orgId) {
+          throw new Error("tenant_context_missing");
+        }
         await ensureShopCustomerRow({
-          orgId: orgId ?? undefined,
+          orgId,
           customerId: req.userCustomerId,
           email: order.patient.email ?? null,
           displayName:

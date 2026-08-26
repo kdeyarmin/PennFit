@@ -388,7 +388,7 @@ export async function sendReminderSms(
     body: messageBody,
     direction: "outbound",
     messageAt: sentAt,
-    orgId: orgId || undefined,
+    orgId,
   });
 
   await safeAuditFromActor({

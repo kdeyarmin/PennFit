@@ -25,10 +25,11 @@ describe("inbound-reorder actionable episode filter", () => {
     expect(SRC).not.toMatch(/card on file/i);
   });
 
-  it("routes shared-number calls by caller patient phone before seed", () => {
+  it("routes shared-number calls by caller patient phone; never invents seed", () => {
     expect(SRC).toContain("resolveOrgIdByPatientPhone");
     expect(SRC).toMatch(
-      /resolveOrgIdByCalledNumber[\s\S]*resolveOrgIdByPatientPhone[\s\S]*resolveSeedOrgId/,
+      /resolveOrgIdByCalledNumber[\s\S]*resolveOrgIdByPatientPhone/,
     );
+    expect(SRC).not.toMatch(/resolveSeedOrgId/);
   });
 });

@@ -366,7 +366,7 @@ export async function sendReminderEmail(
     body: rendered.text,
     direction: "outbound",
     messageAt: sentAt,
-    orgId: orgId || undefined,
+    orgId,
   });
 
   await safeAuditFromActor({
