@@ -44,6 +44,12 @@
 // 5xx releases the claim and the next cron run retries. Any
 // throw during recipient lookup releases the claim then re-throws
 // so pg-boss marks the job failed for ops visibility.
+//
+// Feature flag
+// ------------
+// Off by default. Set `RESUPPLY_SHOP_DELIVERY_FOLLOWUP_CRON_ENABLED=1`
+// to turn it on. Targets historical cash-pay shop_orders only; a
+// credentialed staging deploy must not auto-email post-delivery surveys.
 
 import type PgBoss from "pg-boss";
 
@@ -437,6 +443,16 @@ async function deliveryFollowupSweepForOrg(
 export async function registerShopOrderDeliveryFollowupJob(
   boss: PgBoss,
 ): Promise<void> {
+  if (process.env.RESUPPLY_SHOP_DELIVERY_FOLLOWUP_CRON_ENABLED !== "1") {
+    logger.info(
+      { event: "shop-order.delivery-followup.disabled" },
+      "shop-order.delivery-followup: not registered (RESUPPLY_SHOP_DELIVERY_FOLLOWUP_CRON_ENABLED!=1)",
+    );
+    if (typeof boss.unschedule === "function") {
+      await boss.unschedule(FOLLOWUP_JOB).catch(() => undefined);
+    }
+    return;
+  }
   await createQueueWithDlq(boss, FOLLOWUP_JOB, VENDOR_SEND_QUEUE_OPTS);
 
   await boss.work(FOLLOWUP_JOB, async () => {
