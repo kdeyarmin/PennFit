@@ -109,15 +109,27 @@ const SESSION_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const EPISODE_ID = "22222222-2222-4222-8222-222222222222";
 const CONVERSATION_ID = "33333333-3333-4333-8333-333333333333";
 
+function stageTenantSupportPhone(e164 = "+18144710627"): void {
+  stageSupabaseResponse("dme_organization", "select", {
+    data: {
+      legal_name: "Penn Home Medical Supply",
+      dba_name: null,
+      support_phone_e164: e164,
+    },
+  });
+}
+
 /** Stage the minimal DB calls for a single inbound reorder request. */
 function stagePatientFound(): void {
+  stageTenantSupportPhone();
   stageSupabaseResponse("patients", "select", { data: [{ id: PATIENT_ID }] });
   stageSupabaseResponse("voice_reorder_sessions", "insert", {
     data: { id: SESSION_ID },
   });
 }
 
-function stagePatientNotFound(): void {
+function stagePatientNotFound(withSupportDial = true): void {
+  if (withSupportDial) stageTenantSupportPhone();
   stageSupabaseResponse("patients", "select", { data: [] });
   stageSupabaseResponse("voice_reorder_sessions", "insert", {
     data: { id: SESSION_ID },
@@ -232,6 +244,7 @@ describe("POST /voice/inbound-reorder — unidentified caller paths", () => {
 
   it("treats an unparseable From (e.g. 4-digit number) as unidentified without querying patients", async () => {
     // normalizeE164("1234") → null (too few digits) → skip DB query
+    stageTenantSupportPhone();
     stageSupabaseResponse("voice_reorder_sessions", "insert", {
       data: { id: SESSION_ID },
     });
@@ -318,6 +331,7 @@ describe("POST /voice/inbound-reorder — identified caller path", () => {
     // Two patients share the caller-ID number. We must NOT auto-bind the
     // patient-scoped AI reorder agent to an arbitrary one — mirror the SMS
     // handler's ambiguous-phone guard and route to a human instead.
+    stageTenantSupportPhone();
     stageSupabaseResponse("patients", "select", {
       data: [
         { id: PATIENT_ID },
@@ -373,10 +387,11 @@ describe("POST /voice/inbound-reorder — per-tenant human-transfer number", () 
     expect(res.text).not.toContain("+18144710627");
   });
 
-  it("falls back to the platform support number when the tenant has none on file", async () => {
+  it("hangs up politely when the tenant has no support number on file", async () => {
     // No dme_organization row staged → getCompanyInfo degrades to the env
-    // fallback (blank support phone) → the route uses the platform constant.
-    stagePatientNotFound();
+    // fallback (blank support phone) → the route must NOT dial the seed Penn
+    // line for an unconfigured tenant.
+    stagePatientNotFound(false);
 
     const res = await request(makeApp())
       .post("/voice/inbound-reorder")
@@ -384,7 +399,9 @@ describe("POST /voice/inbound-reorder — per-tenant human-transfer number", () 
       .send({ From: "+12155559999", CallSid: "CA_fallback_dial" });
 
     expect(res.status).toBe(200);
-    expect(res.text).toContain('<Dial timeout="20">+18144710627</Dial>');
+    expect(res.text).toContain("<Hangup");
+    expect(res.text).not.toContain("<Dial");
+    expect(res.text).not.toContain("+18144710627");
   });
 });
 
@@ -425,6 +442,7 @@ describe("POST /voice/inbound-reorder — identified caller → realtime bridge"
   beforeEach(() => setVoiceEnv());
 
   function stageIdentifiedWithEpisode(flagEnabled: boolean): void {
+    stageTenantSupportPhone();
     stageSupabaseResponse("patients", "select", { data: [{ id: PATIENT_ID }] });
     stageSupabaseResponse("voice_reorder_sessions", "insert", {
       data: { id: SESSION_ID },
@@ -493,6 +511,7 @@ describe("POST /voice/inbound-reorder — identified caller → realtime bridge"
   });
 
   it("transfers to a human when the patient has no actionable episode", async () => {
+    stageTenantSupportPhone();
     stageSupabaseResponse("patients", "select", { data: [{ id: PATIENT_ID }] });
     stageSupabaseResponse("voice_reorder_sessions", "insert", {
       data: { id: SESSION_ID },
@@ -518,6 +537,7 @@ describe("POST /voice/inbound-reorder — storefront caller resolution", () => {
   beforeEach(() => setVoiceEnv());
 
   it("records the matched storefront customer id on the session when only a shop_customer matches", async () => {
+    stageTenantSupportPhone();
     // No patient on this number, but a cash-pay storefront customer is.
     // The resolver falls through to shop_customers; the session row must
     // capture the match (shop_customer_id) with patient_id left null.
@@ -545,19 +565,14 @@ describe("POST /voice/inbound-reorder — storefront caller resolution", () => {
     });
   });
 
-  it("connects a matched storefront caller to the bridge when the voice agent is enabled", async () => {
+  it("transfers a matched storefront caller to a human (cash-pay voice agent retired)", async () => {
+    stageTenantSupportPhone();
     stageSupabaseResponse("patients", "select", { data: [] });
     stageSupabaseResponse("shop_customers", "select", {
       data: [{ customer_id: "cust_store_1" }],
     });
     stageSupabaseResponse("voice_reorder_sessions", "insert", {
       data: { id: SESSION_ID },
-    });
-    stageSupabaseResponse("feature_flags", "select", {
-      data: { enabled: true },
-    });
-    stageSupabaseResponse("conversations", "insert", {
-      data: { id: CONVERSATION_ID },
     });
 
     const res = await request(makeApp())
@@ -566,37 +581,19 @@ describe("POST /voice/inbound-reorder — storefront caller resolution", () => {
       .send({ From: "+12155557777", CallSid: "CA_shop_bridge" });
 
     expect(res.status).toBe(200);
-    expect(res.text).toContain("<Connect");
-    expect(res.text).toContain("<Stream");
-    expect(res.text).toContain(CONVERSATION_ID);
+    expect(res.text).toContain("<Dial");
+    expect(res.text).not.toContain("<Connect");
+    expect(res.text).not.toContain("<Stream");
+    expect(supabaseMock.callCount("conversations", "insert")).toBe(0);
+    expect(await getPendingSessions().peek(CONVERSATION_ID)).toBeNull();
 
-    // A customer-bound voice conversation was created (no patient/episode),
-    // satisfying the conversations subject-XOR constraint.
-    const convInserts = supabaseMock.writePayloads(
-      "conversations",
-      "insert",
-    ) as Array<Record<string, unknown>>;
-    expect(convInserts).toHaveLength(1);
-    expect(convInserts[0]).toMatchObject({
-      customer_id: "cust_store_1",
-      channel: "voice",
-      patient_id: null,
-      episode_id: null,
-    });
-
-    // The pending session is registered in shop_customer mode.
-    const pending = await getPendingSessions().peek(CONVERSATION_ID);
-    expect(pending).not.toBeNull();
-    expect(pending!.callerKind).toBe("shop_customer");
-    expect(pending!.shopCustomerId).toBe("cust_store_1");
-
-    // The session is marked in_progress (not left patient_not_identified)
-    // for a routed storefront caller, so ops/analytics classify it right.
     const sessionUpdates = supabaseMock.writePayloads(
       "voice_reorder_sessions",
       "update",
     ) as Array<Record<string, unknown>>;
-    expect(sessionUpdates.some((u) => u.status === "in_progress")).toBe(true);
+    expect(sessionUpdates.some((u) => u.status === "transferred_to_human")).toBe(
+      true,
+    );
   });
 
   it("returns a 500 hangup when caller resolution hits a DB error (no silent mis-route)", async () => {

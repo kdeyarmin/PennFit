@@ -21,8 +21,18 @@ describe("inbound-reorder actionable episode filter", () => {
     );
   });
 
+  it("does not hard-code the seed Penn support dial target", () => {
+    expect(SRC).not.toContain("+18144710627");
+    expect(SRC).not.toContain("SUPPORT_DIAL_E164");
+  });
+
   it("does not ask shop callers for a card on file", () => {
     expect(SRC).not.toMatch(/card on file/i);
+  });
+
+  it("does not run the retired cash-pay shop_customer voice agent", () => {
+    expect(SRC).not.toContain('callerKind: "shop_customer"');
+    expect(SRC).not.toContain("INBOUND_SHOP_CALL_CONTEXT");
   });
 
   it("routes shared-number calls by caller patient phone; never invents seed", () => {
