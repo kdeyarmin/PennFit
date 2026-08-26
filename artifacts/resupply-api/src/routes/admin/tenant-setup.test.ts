@@ -17,6 +17,9 @@ const EMPTY: TenantSetupSnapshot = {
   fromEmail: null,
   activeAdminCount: 1,
   patientCount: 0,
+  resupplyRemindersEnabled: false,
+  activePrescriptionCount: 0,
+  activeFrequencyRuleCount: 0,
 };
 
 function byId(items: ReturnType<typeof buildTenantSetupItems>, id: string) {
@@ -101,6 +104,34 @@ describe("buildTenantSetupItems", () => {
     // until they provision their own (they do that as they grow).
     expect(required).toEqual(["branding", "email-sender"].sort());
     expect(byId(items, "sms-number").required).toBe(false);
+  });
+
+  it("surfaces resupply automation items with live status", () => {
+    const off = buildTenantSetupItems(EMPTY);
+    expect(byId(off, "resupply-automation").status).toBe("action");
+    expect(byId(off, "resupply-cadences").status).toBe("action");
+    expect(byId(off, "resupply-prescriptions").status).toBe("action");
+
+    const ready = buildTenantSetupItems({
+      ...EMPTY,
+      resupplyRemindersEnabled: true,
+      activeFrequencyRuleCount: 12,
+      activePrescriptionCount: 48,
+    });
+    expect(byId(ready, "resupply-automation").status).toBe("complete");
+    expect(byId(ready, "resupply-cadences").status).toBe("complete");
+    expect(byId(ready, "resupply-prescriptions").status).toBe("complete");
+  });
+
+  it("nudges prescriptions when patients exist but no Rx lines yet", () => {
+    const items = buildTenantSetupItems({
+      ...EMPTY,
+      patientCount: 5,
+      activePrescriptionCount: 0,
+    });
+    expect(byId(items, "resupply-prescriptions").detail).toContain(
+      "no active prescriptions",
+    );
   });
 
   it("gives every item a configuration href", () => {

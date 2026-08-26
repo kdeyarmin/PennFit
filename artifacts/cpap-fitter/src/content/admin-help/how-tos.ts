@@ -81,6 +81,10 @@ export const HOW_TO_GUIDES: readonly HowToGuide[] = [
         title: "Turn on only the modules you need",
         body: "Control Center /admin/control-center holds the app-module switches that show or hide whole sections of the sidebar, plus the feature flags. Turning off a module you do not use makes the console noticeably easier for your staff to learn.",
       },
+      {
+        title: "Stand up resupply automation",
+        body: "The setup checklist includes a Resupply automation section: turn on reminder switches, review Frequency rules /admin/rules (Medicare defaults ship preloaded), and add an active prescription per supply line. Importing a patient roster alone does not start reminders.",
+      },
     ],
     troubleshooting: [
       {
@@ -1113,20 +1117,25 @@ export const HOW_TO_GUIDES: readonly HowToGuide[] = [
     title: "Run the resupply reminder program",
     category: "outreach",
     summary:
-      'Cadence lives in Frequency rules /admin/rules, the copy in Automated messages /admin/templates, the subscriber list and a manual "send due now" in Reminders /admin/fitter/reminders, and the results in Reorder Reminders /admin/reorder-reminders. Four surfaces, one program.',
+      "Turn on reminder automation in Control Center, set cadence in Frequency rules /admin/rules, add an active prescription per supply line, and read results in Reorder Reminders /admin/reorder-reminders. Escalation timing lives in System Configuration → Resupply reminders.",
     audience: "Admin",
     timeEstimate: "About 30 minutes to set up",
-    primaryPath: "/admin/rules",
+    primaryPath: "/admin/setup",
     featured: true,
     prerequisites: [
       "The Outreach module is on.",
       "Your phone number and email sender are configured, so reminders come from your brand.",
       "Patient records carry current contact details.",
+      "Each patient has at least one active prescription for the supplies you resupply.",
     ],
     steps: [
       {
+        title: "Turn on the core switches",
+        body: "Control Center /admin/control-center holds the on/off switches. Apply the recommended preset for your billing plan — it enables SMS reminders, email reminders, and the daily escalation sweep. You can still fine-tune individual flags afterward.",
+      },
+      {
         title: "Set the cadence in Frequency rules",
-        body: "Frequency rules /admin/rules is where reminder cadence and channel are decided — the defaults by therapy type, payer, and how long someone has been a customer. A per-patient override always beats the rule, so the rules are the baseline rather than the last word.",
+        body: "Frequency rules /admin/rules is where reminder cadence and channel are decided — the defaults by therapy type, payer, and how long someone has been a customer. Medicare LCD intervals ship preloaded (filters every 15 days, cushions every 30, masks every 90, etc.). A per-patient override always beats the rule, so the rules are the baseline rather than the last word.",
       },
       {
         title: "Simulate before you rely on it",
@@ -1137,16 +1146,20 @@ export const HOW_TO_GUIDES: readonly HowToGuide[] = [
         },
       },
       {
+        title: "Add prescriptions — importing patients is not enough",
+        body: 'Reminders run per supply line. Each active prescription opens an outreach episode when that item is due. Importing a PacWare roster fills demographics, but it does not start reminders until you record what each person is entitled to resupply — from the patient chart, or when a patient confirms an order.',
+        callout: {
+          tone: "warning",
+          text: "If patients exist but nobody is getting reminders, check for active prescriptions first. The setup checklist at /admin/setup turns green on this row once at least one Rx line is on file.",
+        },
+      },
+      {
         title: "Read the copy that will go out",
         body: "Automated messages /admin/templates holds the system-sent wording. Read it before it goes live and preview it with sample data at Message previews /admin/message-previews — a merge field that fails to resolve is invisible in the editor and obvious to the patient.",
       },
       {
-        title: "Know what the Reminders page does",
-        body: "Reminders /admin/fitter/reminders lists the storefront reminder subscribers and gives you one action: send the reminders that are currently due. It is a roster plus a manual trigger — it is not where the schedule is configured, so do not go looking for cadence controls there.",
-        callout: {
-          tone: "note",
-          text: 'The routine sends happen on their own. The manual "send due" button is for catching up after a pause or verifying a change, not for daily use.',
-        },
+        title: "Tune escalation spacing (optional)",
+        body: 'System Configuration /admin/system/configuration → Resupply reminders controls how many days pass between ladder steps (default 3) and when to stop nagging (default 21). Leave the defaults unless your team wants a slower or faster follow-up cadence.',
       },
       {
         title: "Understand the patient's side",
@@ -1159,8 +1172,12 @@ export const HOW_TO_GUIDES: readonly HowToGuide[] = [
     ],
     troubleshooting: [
       {
+        symptom: "Nobody is getting reminders even though patients are on file.",
+        fix: "Confirm each patient has an active prescription for the supply you resupply, that Control Center has SMS/email reminders and escalation dispatch on, and that the episode is past due in Episodes /admin/episodes.",
+      },
+      {
         symptom: "I can't find where to set the reminder interval.",
-        fix: "It is in Frequency rules /admin/rules, not on the Reminders page. /admin/fitter/reminders only lists subscribers and sends what is due.",
+        fix: "Cadence lives in Frequency rules /admin/rules. Step spacing (days between SMS, email, and call) lives in System Configuration /admin/system/configuration under Resupply reminders.",
       },
       {
         symptom: "A patient is getting reminders too often.",

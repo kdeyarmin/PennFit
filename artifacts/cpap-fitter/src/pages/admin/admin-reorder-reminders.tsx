@@ -75,17 +75,40 @@ export function AdminReorderRemindersPage() {
         <h1 className="text-2xl font-semibold">Reorder reminders</h1>
         <p className="text-sm mt-1" style={{ color: "hsl(var(--ink-3))" }}>
           How the SMS → email → call reminder ladder converts due episodes into
-          shipped reorders, and which channel is doing the work.
+          shipped reorders, and which channel is doing the work. Tune step
+          spacing under{" "}
+          <Link
+            href="/admin/system/configuration"
+            className="font-medium underline decoration-dotted"
+            style={{ color: "hsl(var(--penn-navy))" }}
+          >
+            System Configuration → Resupply reminders
+          </Link>
+          .
         </p>
-        {/* This board reports the funnel; act on the supplies that are due
-            in the Resupply Opportunities worklist. */}
-        <Link
-          href="/admin/therapy-resupply"
-          className="mt-1 inline-block text-xs font-medium underline decoration-dotted"
-          style={{ color: "hsl(var(--penn-navy))" }}
-        >
-          Work resupply opportunities →
-        </Link>
+        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs font-medium">
+          <Link
+            href="/admin/episodes"
+            className="underline decoration-dotted"
+            style={{ color: "hsl(var(--penn-navy))" }}
+          >
+            Work open episodes →
+          </Link>
+          <Link
+            href="/admin/rules"
+            className="underline decoration-dotted"
+            style={{ color: "hsl(var(--penn-navy))" }}
+          >
+            Edit cadences →
+          </Link>
+          <Link
+            href="/admin/therapy-resupply"
+            className="underline decoration-dotted"
+            style={{ color: "hsl(var(--penn-navy))" }}
+          >
+            Device-reported opportunities →
+          </Link>
+        </div>
       </header>
 
       <Card

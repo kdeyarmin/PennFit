@@ -19,6 +19,7 @@ import { Router, type IRouter } from "express";
 
 import { getOrgScopedClient } from "@workspace/resupply-db";
 
+import { isFeatureEnabled } from "../../lib/feature-flags.js";
 import { logger } from "../../lib/logger.js";
 import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit.js";
 import { requireAdmin } from "../../middlewares/requireAdmin.js";
@@ -56,6 +57,12 @@ export interface TenantSetupSnapshot {
   /** Count of patients in the tenant's workspace (drives the "add/import
    *  patients" item). 0 for a brand-new tenant. */
   patientCount: number;
+  /** True when SMS, email, and escalation dispatch are all enabled. */
+  resupplyRemindersEnabled: boolean;
+  /** Active prescriptions — reminders run one episode per Rx line. */
+  activePrescriptionCount: number;
+  /** Active frequency_rules rows (Medicare defaults ship seeded). */
+  activeFrequencyRuleCount: number;
 }
 
 /**
@@ -167,13 +174,58 @@ export function buildTenantSetupItems(
       group: "Your patients",
       title: "Add or import your patients",
       description:
-        "Bring your patient roster in. Migrating from another system? Import a CSV — your PacWare Patient List, or any CSV with column mapping. It's a fill-only sync that never overwrites existing data. Starting fresh? Patients populate automatically as orders and fittings come in.",
+        "Bring your patient roster in. Migrating from another system? Import a CSV — your PacWare Patient List, or any CSV with column mapping. It's a fill-only sync that never overwrites existing data. New patients also appear as you take orders and fittings.",
       status: s.patientCount > 0 ? "complete" : "action",
       detail:
         s.patientCount > 0
           ? `${s.patientCount}${s.patientCount >= 1000 ? "+" : ""} patient${s.patientCount === 1 ? "" : "s"} in your workspace.`
-          : "No patients yet — import your existing list from PacWare, or they'll populate as you take orders.",
+          : "No patients yet — import your existing list from PacWare, or add them as orders come in.",
       href: "/admin/pacware",
+      required: false,
+    },
+
+    // ── Resupply automation ──────────────────────────────────────────
+    {
+      id: "resupply-automation",
+      group: "Resupply automation",
+      title: "Turn on automated resupply reminders",
+      description:
+        "SMS and email reminders escalate across channels until the patient confirms or opts out. Apply your plan's recommended preset in Control Center, or verify SMS reminders, email reminders, and escalation dispatch are all on.",
+      status: s.resupplyRemindersEnabled ? "complete" : "action",
+      detail: s.resupplyRemindersEnabled
+        ? "Core reminder switches are on — patients due for supplies will be contacted automatically."
+        : "Reminder automation is off or partially off — apply the recommended preset or flip the switches in Control Center.",
+      href: "/admin/control-center",
+      required: false,
+    },
+    {
+      id: "resupply-cadences",
+      group: "Resupply automation",
+      title: "Review supply cadences",
+      description:
+        "Medicare LCD defaults are preloaded (disposable filters every 15 days, cushions every 30, masks every 90, tubing every 90, etc.). Review them and add payer-specific rules if your contracts differ.",
+      status: s.activeFrequencyRuleCount > 0 ? "complete" : "action",
+      detail:
+        s.activeFrequencyRuleCount > 0
+          ? `${s.activeFrequencyRuleCount} active frequency rule${s.activeFrequencyRuleCount === 1 ? "" : "s"}. Simulate a patient in Rule Tester before you go live.`
+          : "No active cadence rules — add defaults or confirm your migration seed ran.",
+      href: "/admin/rules",
+      required: false,
+    },
+    {
+      id: "resupply-prescriptions",
+      group: "Resupply automation",
+      title: "Add prescriptions for active patients",
+      description:
+        "Reminders run per supply line — each active prescription opens an outreach episode when that item is due. Importing a patient roster alone does not start reminders; add a prescription (or confirm a resupply order) for each item you replace.",
+      status: s.activePrescriptionCount > 0 ? "complete" : "action",
+      detail:
+        s.activePrescriptionCount > 0
+          ? `${s.activePrescriptionCount} active prescription${s.activePrescriptionCount === 1 ? "" : "s"} on file.`
+          : s.patientCount > 0
+            ? "Patients are on file but no active prescriptions yet — add one from each patient's chart."
+            : "Add patients first, then record what each person is entitled to resupply.",
+      href: "/admin/patients",
       required: false,
     },
 
@@ -208,6 +260,9 @@ async function loadSnapshot(orgId: string): Promise<TenantSetupSnapshot> {
     fromEmail: null,
     activeAdminCount: 0,
     patientCount: 0,
+    resupplyRemindersEnabled: false,
+    activePrescriptionCount: 0,
+    activeFrequencyRuleCount: 0,
   };
 
   try {
@@ -267,6 +322,48 @@ async function loadSnapshot(orgId: string): Promise<TenantSetupSnapshot> {
     logger.warn(
       { event: "tenant_setup_patient_count_failed", err },
       "tenant-setup: patient count probe failed",
+    );
+  }
+
+  try {
+    const [sms, email, escalation] = await Promise.all([
+      isFeatureEnabled("sms.reminders", orgId),
+      isFeatureEnabled("email.reminders", orgId),
+      isFeatureEnabled("reminder_escalation.dispatcher", orgId),
+    ]);
+    base.resupplyRemindersEnabled = sms && email && escalation;
+  } catch (err) {
+    logger.warn(
+      { event: "tenant_setup_resupply_flags_failed", err },
+      "tenant-setup: resupply flag probe failed",
+    );
+  }
+
+  try {
+    const { count, error } = await getOrgScopedClient(orgId)
+      .from("prescriptions")
+      .select("*", { count: "exact", head: true })
+      .eq("status", "active");
+    if (error) throw error;
+    base.activePrescriptionCount = count ?? 0;
+  } catch (err) {
+    logger.warn(
+      { event: "tenant_setup_prescription_count_failed", err },
+      "tenant-setup: prescription count probe failed",
+    );
+  }
+
+  try {
+    const { count, error } = await getOrgScopedClient(orgId)
+      .from("frequency_rules")
+      .select("*", { count: "exact", head: true })
+      .eq("active", true);
+    if (error) throw error;
+    base.activeFrequencyRuleCount = count ?? 0;
+  } catch (err) {
+    logger.warn(
+      { event: "tenant_setup_frequency_rule_count_failed", err },
+      "tenant-setup: frequency rule count probe failed",
     );
   }
 

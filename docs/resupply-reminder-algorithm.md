@@ -65,7 +65,7 @@ or the order ships, the episode leaves the ladder and is never touched again.
 | —    | 21    | **Stop**                               | `reminders.escalation-scan`                          | Past the max-age cap, stop nagging entirely.                            |
 
 \* Days are approximate. Two timers govern spacing (both **admin-tunable** per
-tenant from Control Center → Resupply reminders, falling back to the defaults):
+tenant from System Configuration → Resupply reminders, falling back to the defaults):
 
 - **Minimum spacing (`RESUPPLY_ESCALATION_DELAY_DAYS`, default 3)** — measured
   from the **most recent** touch. A patient texted on day 0 and emailed on day 3
@@ -263,8 +263,8 @@ episode.
 | `patients.cadence_override_days` | column                      | null            | Per-patient cadence.                                                        |
 | `patients.channel_preference`    | column                      | null            | Per-patient first-touch channel.                                            |
 | `frequency_rules`                | table                       | —               | SKU/payer/tenure-scoped cadence + channel.                                  |
-| `RESUPPLY_ESCALATION_DELAY_DAYS` | app_config (Control Center) | 3               | Min days between ladder steps (clamped 1–30).                               |
-| `RESUPPLY_ESCALATION_MAX_DAYS`   | app_config (Control Center) | 21              | Stop-nagging age from first touch (clamped (delay)–120).                    |
+| `RESUPPLY_ESCALATION_DELAY_DAYS` | app_config (System Configuration → Resupply reminders) | 3               | Min days between ladder steps (clamped 1–30).                               |
+| `RESUPPLY_ESCALATION_MAX_DAYS`   | app_config (System Configuration → Resupply reminders) | 21              | Stop-nagging age from first touch (clamped (delay)–120).                    |
 | `MAX_VOICE_ATTEMPTS`             | constant                    | 2               | Voice dial cap before the CSR hand-off (unanswered calls retry up to this). |
 
 The voice tier additionally requires the voice path to be configured:
