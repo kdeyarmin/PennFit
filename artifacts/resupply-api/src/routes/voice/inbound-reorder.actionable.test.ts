@@ -1,3 +1,8 @@
+// allow-source-read: ACTIONABLE_EPISODE_STATUSES is module-private and the
+// inbound Twilio handler needs a signed webhook + DB to drive end-to-end;
+// this pins the status allowlist (and no card-on-file shop copy) as a
+// structural contract with no cheap behavioral harness.
+
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";

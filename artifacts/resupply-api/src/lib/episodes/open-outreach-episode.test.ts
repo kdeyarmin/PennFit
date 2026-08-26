@@ -57,7 +57,9 @@ describe("openOutreachEpisode", () => {
     });
 
     expect(result).toEqual({ episodeId: EPISODE, created: true });
-    const [payload] = supabaseMock.writePayloads("episodes", "insert");
+    const [payload] = supabaseMock.writePayloads("episodes", "insert") as [
+      Record<string, unknown>,
+    ];
     expect(payload).toMatchObject({
       patient_id: PATIENT,
       prescription_id: RX,
@@ -85,7 +87,9 @@ describe("openOutreachEpisode", () => {
       from,
     });
 
-    const [payload] = supabaseMock.writePayloads("episodes", "insert");
+    const [payload] = supabaseMock.writePayloads("episodes", "insert") as [
+      Record<string, unknown>,
+    ];
     expect(payload.due_at).toBe("2026-06-02T00:00:00.000Z");
   });
 });
