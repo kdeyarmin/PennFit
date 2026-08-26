@@ -315,7 +315,9 @@ describe("POST /orders/track — order lookup", () => {
         order_reference: "ORD-7K3M2Q",
         customer_email: "bob@example.com",
         status: "sent",
-        items: [{ description: "N20 cushion", quantity: 1, unitAmountCents: 0 }],
+        items: [
+          { description: "N20 cushion", quantity: 1, unitAmountCents: 0 },
+        ],
         created_at: "2026-08-01T10:00:00Z",
       },
     });

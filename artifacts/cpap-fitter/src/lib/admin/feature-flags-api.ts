@@ -31,10 +31,9 @@ export interface FeatureFlag {
 // recoverable direction.
 //
 // Categories used by the confirmation flow:
-//   * storefront.checkout — blocks every NEW cash-pay order. Existing
-//     carts persist; in-flight checkouts that already redirected to
-//     Stripe still complete. But a flipped switch means zero new
-//     revenue from the storefront until it's flipped back.
+//   * storefront.checkout — RETIRED patient cash-pay flag. Kept in the
+//     high-risk list so an accidental enable still requires typing the
+//     key; enabling it does not restore a charge path.
 //   * voice.agent — hangs up every inbound voice call with a 503
 //     TwiML response. Patients who depend on the voice agent for
 //     after-hours triage lose that channel entirely.

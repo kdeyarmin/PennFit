@@ -64,11 +64,11 @@ describe("track-order — submit button not accidentally removed", () => {
 });
 
 describe("track-order — order reference client validation", () => {
-  it("accepts current PENN- mint and legacy PHM-XXX-XXX shapes", () => {
+  it("accepts PENN-/ORD- mint, bare 6, and legacy PHM-XXX-XXX shapes", () => {
     // Keep the SPA in lockstep with ORDER_REFERENCE_PATTERN on the API —
-    // a patient emailed a PHM- ref must not be blocked by client-side
-    // validation before the request leaves the browser.
+    // a patient emailed a PHM- or ORD- ref must not be blocked by
+    // client-side validation before the request leaves the browser.
     expect(SRC).toContain("PHM-[A-Za-z0-9]{3}-[A-Za-z0-9]{3}");
-    expect(SRC).toContain("(?:PENN-)?[A-Za-z0-9]{6}");
+    expect(SRC).toContain("(?:PENN-|ORD-)?[A-Za-z0-9]{6}");
   });
 });

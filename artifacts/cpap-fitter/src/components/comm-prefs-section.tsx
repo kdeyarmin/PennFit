@@ -109,8 +109,8 @@ export function CommPrefsSection({
           testId="comm-toggle-resupply"
         />
         <Toggle
-          label="Incomplete-order reminders"
-          description="One email if you started an order request and didn't finish within 24 hours."
+          label="Incomplete-request reminders"
+          description="One email if you started a fit or resupply request and didn't finish within 24 hours."
           enabled={prefs.emailAbandonedCart}
           onChange={() => toggle("emailAbandonedCart")}
           disabled={saving}

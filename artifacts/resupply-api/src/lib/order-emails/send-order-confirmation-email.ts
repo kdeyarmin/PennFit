@@ -206,7 +206,7 @@ export async function sendOrderConfirmationEmail(
 
   // ---------- text body ----------
   const textLines: string[] = [
-    `Thanks for your order at ${brandName}. Your payment was received and we're getting it ready to ship.`,
+    `Thanks for your order at ${brandName}. We've received it and we're getting it ready to ship.`,
     "",
   ];
   if (items.length > 0) {
@@ -266,7 +266,7 @@ export async function sendOrderConfirmationEmail(
     preheader: `We received your payment of ${formatMoney(amountTotalCents, currency)} and we're getting your order ready to ship.`,
     contentHtml: [
       textParagraph(
-        "Thanks for your order. Your payment was received and we're getting it ready to ship.",
+        "Thanks for your order. We've received it and we're getting it ready to ship.",
       ),
       itemsHtml,
       summaryRows([

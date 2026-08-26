@@ -1000,45 +1000,36 @@ export function AccountShot() {
         fill={C.panel}
         stroke={C.line}
       />
-      {["Overview", "Therapy", "Messages", "Account"].map(
-        (label, i) => {
-          const y = 122 + i * 44;
-          const on = i === 1;
-          return (
-            <g key={label}>
-              {on ? (
-                <rect
-                  x={52}
-                  y={y}
-                  width={156}
-                  height={30}
-                  rx="8"
-                  fill={C.blueSoft}
-                />
-              ) : null}
-              {on ? (
-                <rect
-                  x={52}
-                  y={y}
-                  width={3}
-                  height={30}
-                  rx="1.5"
-                  fill={C.gold}
-                />
-              ) : null}
-              <text
-                x={66}
-                y={y + 20}
-                fontSize="11"
-                fontWeight={on ? 800 : 500}
-                fill={on ? C.navy : C.sub}
-              >
-                {label}
-              </text>
-            </g>
-          );
-        },
-      )}
+      {["Overview", "Therapy", "Messages", "Account"].map((label, i) => {
+        const y = 122 + i * 44;
+        const on = i === 1;
+        return (
+          <g key={label}>
+            {on ? (
+              <rect
+                x={52}
+                y={y}
+                width={156}
+                height={30}
+                rx="8"
+                fill={C.blueSoft}
+              />
+            ) : null}
+            {on ? (
+              <rect x={52} y={y} width={3} height={30} rx="1.5" fill={C.gold} />
+            ) : null}
+            <text
+              x={66}
+              y={y + 20}
+              fontSize="11"
+              fontWeight={on ? 800 : 500}
+              fill={on ? C.navy : C.sub}
+            >
+              {label}
+            </text>
+          </g>
+        );
+      })}
       {/* main: therapy & supplies (matches live account tabs) */}
       <rect
         x={240}

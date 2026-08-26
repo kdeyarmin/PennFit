@@ -326,12 +326,7 @@ async function currentUsage(orgId: string) {
   // always report 0 so platform metering never bills tenants for a
   // storefront that no longer exists. Historical rows stay in the tables
   // for analytics; the snapshot SQL (0371) can be corrected separately.
-  const [
-    activePatients,
-    seats,
-    locations,
-    rollups,
-  ] = await Promise.all([
+  const [activePatients, seats, locations, rollups] = await Promise.all([
     countTable(orgId, "patients"),
     countTable(orgId, "admin_users", undefined, {
       eq: [["status", "active"]],

@@ -44,7 +44,10 @@ import { getAuthDeps } from "../../lib/auth-deps";
 import { buildInviteHelpAttachments } from "../../lib/help-docs";
 import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
-import { resolveBrandingByOrgId, resolveTenantBaseUrl } from "../../lib/tenant-branding";
+import {
+  resolveBrandingByOrgId,
+  resolveTenantBaseUrl,
+} from "../../lib/tenant-branding";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
 

@@ -188,10 +188,7 @@ async function inviteProviderUser(
   // Refuse before minting tokens when the inviting tenant has no host
   // the provider portal can resolve. Seed tenants keep the platform
   // fallback; every other tenant needs a verified custom domain.
-  const baseUrl = await resolveProviderPortalBaseUrl(
-    orgId,
-    deps.publicBaseUrl,
-  );
+  const baseUrl = await resolveProviderPortalBaseUrl(orgId, deps.publicBaseUrl);
   if (!baseUrl) {
     return { missingTenantDomain: true };
   }
