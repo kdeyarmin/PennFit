@@ -1216,14 +1216,18 @@ async function dispatchIntent(input: DispatchInput): Promise<string> {
       // awaiting_response and re-pinged after the quiet period — contrary
       // to docs/resupply-reminder-algorithm.md. Re-confirming a declined
       // episode is still allowed by order-flow (patient typed NO by
-      // accident). Best-effort: a missing episode_id (in-app thread) is a
-      // no-op.
-      const { data: convRow } = await supabase
+      // accident). A missing episode_id (in-app thread) is a no-op; a
+      // lookup ERROR must not be treated as "no episode" — that would
+      // ack the decline to the patient while leaving the episode open,
+      // and inbound MessageSid dedupe would block a webhook replay from
+      // repairing it.
+      const { data: convRow, error: convLookupErr } = await supabase
         .from("conversations")
         .select("episode_id")
         .eq("id", input.conversationId)
         .limit(1)
         .maybeSingle();
+      if (convLookupErr) throw convLookupErr;
       const episodeId =
         typeof convRow?.episode_id === "string" ? convRow.episode_id : null;
       if (episodeId) {

@@ -1144,7 +1144,11 @@ export async function handlePlatformTenantStripeEvent(
     const orgId = sub.metadata.org_id;
     const subPeriods = sub as Stripe.Subscription & SubscriptionPeriods;
     const deleted = event.type === "customer.subscription.deleted";
-    const { error } = await raw
+    // Match THIS subscription id — not "any live row for the org". A
+    // tenant that replaced their plan still gets subscription.deleted for
+    // the old id; updating by org alone would overwrite the replacement
+    // row with the canceled id and lock a still-paid tenant.
+    const { data: updatedRows, error } = await raw
       .schema("resupply")
       .from("tenant_billing_subscriptions")
       .update({
@@ -1158,7 +1162,9 @@ export async function handlePlatformTenantStripeEvent(
         current_period_end: asStripeTimestamp(subPeriods.current_period_end),
       })
       .eq("org_id", orgId)
-      .in("status", ["active", "trialing", "past_due"]);
+      .eq("stripe_subscription_id", sub.id)
+      .in("status", ["active", "trialing", "past_due"])
+      .select("id");
     if (error) {
       logger.error(
         {
@@ -1171,9 +1177,10 @@ export async function handlePlatformTenantStripeEvent(
       );
     }
     // Payment wall (migration 0427): a canceled subscription re-locks the
-    // tenant so they must checkout again. Mirror of invoice.paid clearing
-    // the flag. Best-effort — do not fail the webhook on org update errors.
-    if (deleted) {
+    // tenant so they must checkout again — but ONLY when we actually
+    // matched/canceled the row for THIS subscription id. An old-sub
+    // deletion after a replacement must not lock the still-active plan.
+    if (deleted && (updatedRows?.length ?? 0) > 0) {
       const { error: lockErr } = await raw
         .schema("resupply")
         .from("organizations")
@@ -1195,6 +1202,7 @@ export async function handlePlatformTenantStripeEvent(
             event: "platform_billing_paywall_locked",
             orgId,
             via: "subscription.deleted",
+            stripeSubscriptionId: sub.id,
           },
           "payment wall: billing_required set after subscription.deleted",
         );

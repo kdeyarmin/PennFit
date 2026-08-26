@@ -502,15 +502,20 @@ function RequestRow({
                     setOutcomeDraft(value);
                     return;
                   }
-                  // Already closed: this is a correction, applied now.
-                  onPatch({ closedOutcome: value === "" ? null : value });
+                  // Already closed: correction only — never clear to null
+                  // (placeholder). The API rejects a null outcome-only
+                  // patch on a closed row.
+                  if (value === "") return;
+                  onPatch({ closedOutcome: value });
                 }}
                 className="text-xs border rounded px-1 py-0.5 mt-1"
                 style={{ borderColor: "hsl(var(--line-1))" }}
                 data-testid={`fit-request-outcome-${row.id}`}
                 aria-label="How it turned out"
               >
-                <option value="">How did it turn out?</option>
+                <option value="" disabled={row.status === "closed" && !closing}>
+                  How did it turn out?
+                </option>
                 {CLOSED_OUTCOME_ORDER.map((o) => (
                   <option key={o} value={o}>
                     {CLOSED_OUTCOME_LABEL[o]}

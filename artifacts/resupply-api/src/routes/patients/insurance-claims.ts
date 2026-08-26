@@ -95,7 +95,11 @@ const STATUS_VALUES = [
 // outcomes. Never invent a paid path from submitting without a clearinghouse
 // signal.
 const VALID_TRANSITIONS: Record<ClaimStatus, readonly ClaimStatus[]> = {
-  draft: ["submitted", "submitting"],
+  // `submitting` is set only by the Office Ally batch submit path — never
+  // via a manual status PATCH. Exposing draft → submitting in the admin
+  // UI would lock claims out of the draft-only batch selector without
+  // creating an 837P.
+  draft: ["submitted"],
   submitting: ["draft", "submitted", "accepted", "denied", "rejected"],
   submitted: ["accepted", "denied", "rejected", "partially_paid", "paid"],
   accepted: ["paid", "denied", "partially_paid"],

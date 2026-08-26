@@ -112,7 +112,11 @@ const VALID_TRANSITIONS: Record<
   InsuranceClaimStatus,
   readonly InsuranceClaimStatus[]
 > = {
-  draft: ["submitted", "submitting"],
+  // `submitting` is an internal batch lock only — never offer a manual
+  // "Mark submitting" action from draft (that would remove the claim from
+  // the draft-only batch selector without uploading an 837P). Recovery
+  // from a stuck lock is submitting → draft.
+  draft: ["submitted"],
   submitting: ["draft", "submitted", "accepted", "denied", "rejected"],
   submitted: ["accepted", "denied", "rejected", "partially_paid", "paid"],
   accepted: ["paid", "denied", "partially_paid"],

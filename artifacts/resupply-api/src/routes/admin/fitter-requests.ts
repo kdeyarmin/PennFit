@@ -290,12 +290,19 @@ router.patch(
       // Outcome-only patch: a CSR recording (or correcting) how an
       // already-closed request turned out, without touching its status.
       //
-      // Guarded on the row still being closed further down. An open
-      // request has not turned out yet, and letting a stale closed-row
-      // UI write an outcome onto one another CSR just re-opened would
-      // leave `fulfilled` waiting on the row — so the next plain close
-      // would stamp the fitting as dispensed before anyone recorded
-      // what actually happened.
+      // Never clear the outcome to null here — a closed request must keep
+      // an outcome (the close refine already requires one), and the
+      // closed-row dropdown must not wipe fulfilled dispense attribution
+      // by selecting the placeholder. Guarded on the row still being
+      // closed further down.
+      if (parse.data.closedOutcome === null) {
+        res.status(400).json({
+          error: "invalid_body",
+          message:
+            "cannot clear closedOutcome on a closed request; pick a real outcome",
+        });
+        return;
+      }
       update.closed_outcome = parse.data.closedOutcome;
       outcomeOnly = true;
     }
