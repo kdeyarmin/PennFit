@@ -35,7 +35,8 @@ export const APP_MODULES: ReadonlyArray<AppModule> = [
   {
     key: "module.front_desk",
     label: "Front desk",
-    hides: "Walk-in capture and counter sales.",
+    hides:
+      "Legacy walk-in counter flag (no page). Use Patients, Conversations, or Fitter invites for walk-ins.",
     group: "Workspace",
   },
   {
@@ -88,7 +89,7 @@ export const APP_MODULES: ReadonlyArray<AppModule> = [
     key: "module.storefront",
     label: "Storefront & leads",
     hides:
-      "Shop customers, reviews, product Q&A, carts, leads, and fitter invites.",
+      "Insurance leads, fitter invites, fit requests, and prospects (cash-pay shop retired).",
     group: "Orders & Shop",
   },
   {
