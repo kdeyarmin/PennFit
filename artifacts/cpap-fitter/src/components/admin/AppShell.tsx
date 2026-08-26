@@ -997,7 +997,7 @@ export const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             icon: ListFilter,
             matchPrefix: "/admin/analytics/acquisition-funnel",
             requiredPermission: "reports.read",
-            hint: "Where anonymous visitors drop out of the fitter and shop checkout flows",
+            hint: "Where anonymous visitors drop out of the fitter flow (and historical storefront checkout)",
           },
           {
             href: "/admin/analytics/revenue-by-source",
@@ -1005,7 +1005,7 @@ export const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             icon: BarChart3,
             matchPrefix: "/admin/analytics/revenue-by-source",
             requiredPermission: "reports.read",
-            hint: "Order volume + cash revenue by channel (storefront / resupply / clinical form)",
+            hint: "Order volume by channel (historical storefront / resupply / clinical form)",
           },
           {
             href: "/admin/analytics/fitter-outcomes",

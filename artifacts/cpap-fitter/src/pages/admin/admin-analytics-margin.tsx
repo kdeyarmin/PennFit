@@ -219,7 +219,7 @@ function ByProductTable({ rows }: { rows: ProductMargin[] }) {
                   {/* Drill straight to the product editor — a low-margin row
                       is only useful if you can act on its price/cost. */}
                   <Link
-                    href={`/admin/shop/inventory/${r.productId}/edit`}
+                    href="/admin/catalog"
                     className="text-slate-900 underline decoration-dotted hover:text-slate-700"
                   >
                     {r.productName ?? (
