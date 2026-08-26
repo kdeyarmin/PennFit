@@ -15,13 +15,16 @@
 // PHI containment:
 //   We send THREE strings to the model per call:
 //     1. The system prompt (no PHI — just the intent menu).
-//     2. The patient's most recent inbound text.
+//     2. The patient's most recent inbound text (PII-scrubbed).
 //     3. Optional thread snippets (last N messages) to disambiguate
 //        ambiguous one-word replies. The caller is responsible for
 //        choosing the snippet set; we do not crack open the DB here.
-//   We do NOT send patient name, DOB, address, or any admin-only
-//   metadata. The system prompt instructs the model to NEVER echo PHI
-//   in its `reply` even if the patient included it inbound.
+//   Bodies are scrubbed with `redactPiiForOutbound` (same patterns as
+//   the storefront chatbot / email auto-reply) before they leave the
+//   process — phones, emails, SSN/DOB shapes, long id runs, and street
+//   lines with a house number. We deliberately do NOT scrub free-text
+//   names (too many false positives for short SMS). The system prompt
+//   also instructs the model to NEVER echo PHI in its `reply`.
 //
 // Failure mode:
 //   Any error (HTTP failure, malformed JSON, timeout, model-says-no)
@@ -46,6 +49,7 @@ import { INTENT_NAMES, clampToOneSegment } from "@workspace/resupply-messaging";
 
 import { logger } from "../logger";
 import { recordAiTokenUsage } from "../metering/usage.js";
+import { redactPiiForOutbound } from "../storefront/chatbotPii";
 
 const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
 const DEFAULT_MODEL = "gpt-4.1-mini";
@@ -407,19 +411,24 @@ export function createAiFallbackAdapter(
   return null;
 }
 
+function scrub(s: string): string {
+  return redactPiiForOutbound(s).text;
+}
+
 function buildUserPrompt(input: AiFallbackInput): string {
   const lines: string[] = [];
   if (input.thread && input.thread.length > 0) {
     lines.push("Recent thread (oldest first):");
     for (const t of input.thread) {
-      // role + body only — no timestamps, no patient ids.
+      // role + body only — no timestamps, no patient ids. Bodies are
+      // PII-scrubbed before they reach the vendor.
       const role = t.role === "patient" ? "patient" : "agent";
-      lines.push(`- ${role}: ${truncate(t.body, 200)}`);
+      lines.push(`- ${role}: ${truncate(scrub(t.body), 200)}`);
     }
     lines.push("");
   }
   lines.push("Most recent patient reply:");
-  lines.push(truncate(input.body, 500));
+  lines.push(truncate(scrub(input.body), 500));
   return lines.join("\n");
 }
 

@@ -42,9 +42,10 @@ type DerivedStatus = "sent" | "viewed" | "signed" | "canceled" | "expired";
 
 function deriveStatus(r: CsrOrderRequestSummary): DerivedStatus {
   if (r.status === "canceled") return "canceled";
-  // Signed is terminal: nothing is charged, and the order bills to the
-  // patient's insurance from here. A signed order is never "expired" — the
-  // link's expiry only governs whether it can still BE signed.
+  // Signed is terminal for the patient link: nothing is charged. Draft-backed
+  // orders auto-dispense into fulfillments; ad-hoc ones stay Signed for staff.
+  // A signed order is never "expired" — expiry only gates whether it can
+  // still BE signed.
   if (r.signedAt) return "signed";
   if (r.expiresAt && new Date(r.expiresAt).getTime() < Date.now()) {
     return "expired";
@@ -176,7 +177,9 @@ export function CsrOrderRequestsPanel() {
             <p className="text-muted-foreground mt-1 text-sm">
               Build an order for a customer and send them a secure link to
               review and e-sign paperwork. Billed to their insurance — nothing
-              is charged on the link.
+              is charged on the link. Draft-backed resupply orders queue
+              fulfillment on sign; ad-hoc orders stay Signed here for staff to
+              attach a patient and SKU.
             </p>
           </div>
           <Button
@@ -478,7 +481,7 @@ function CreateCsrOrderModal({
   return (
     <AdminModal
       title="Create a signature order"
-      description="The customer gets a secure link to review the order and e-sign the required paperwork. Nothing is charged — the order is billed to their insurance."
+      description="The customer gets a secure link to review the order and e-sign the required paperwork. Nothing is charged — the order is billed to their insurance. Without a linked resupply draft (patient + SKU), signing leaves the request Signed for you to finish."
       onClose={onClose}
       className="max-w-3xl"
     >

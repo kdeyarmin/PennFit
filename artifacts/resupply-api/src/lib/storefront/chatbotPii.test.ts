@@ -51,6 +51,27 @@ describe("redactPiiForOutbound", () => {
     expect(r.text).toContain("[redacted-dob]");
   });
 
+  it("redacts a street address with house number + suffix", () => {
+    const r = redactPiiForOutbound("Ship to 123 Main Street please.");
+    expect(r.text).not.toContain("123 Main Street");
+    expect(r.text).toContain("[redacted-address]");
+    expect(r.counts.address).toBe(1);
+  });
+
+  it("does not redact bare street names without a house number", () => {
+    const r = redactPiiForOutbound("I live near Main Street.");
+    expect(r.text).toContain("Main Street");
+    expect(r.counts.address).toBeUndefined();
+  });
+
+  it("does not redact clinical prose that mentions hours/nights", () => {
+    const r = redactPiiForOutbound(
+      "I slept 4 hours last night on the Drive setting.",
+    );
+    expect(r.text).toContain("4 hours last night");
+    expect(r.counts.address).toBeUndefined();
+  });
+
   it("preserves prose that doesn't match any pattern", () => {
     const text = "Which mask is best for side sleepers with high pressure?";
     const r = redactPiiForOutbound(text);
