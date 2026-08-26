@@ -1310,15 +1310,20 @@ function firstNameFromDisplayName(
 }
 
 /**
- * Constant-time string equality. Returns false fast for unequal
- * lengths (which itself leaks length, which is fine — the DOB shape
- * is fixed at YYYY-MM-DD so length never varies in legitimate input).
+ * Constant-time string equality for variable-length values.
+ * Compares padded equal-length buffers with `timingSafeEqual`, then
+ * gates the final result on exact length equality.
  */
 function constantTimeStringEquals(a: string, b: string): boolean {
   const ab = Buffer.from(a, "utf8");
   const bb = Buffer.from(b, "utf8");
-  if (ab.length !== bb.length) return false;
-  return timingSafeEqual(ab, bb);
+  const paddedLength = Math.max(ab.length, bb.length);
+  const ap = Buffer.alloc(paddedLength);
+  const bp = Buffer.alloc(paddedLength);
+  ab.copy(ap);
+  bb.copy(bp);
+  const sameLength = ab.length === bb.length;
+  return timingSafeEqual(ap, bp) && sameLength;
 }
 
 // ---- CareMetric Breathe sales-tool helpers --------------------------------

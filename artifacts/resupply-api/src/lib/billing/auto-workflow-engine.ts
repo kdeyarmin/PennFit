@@ -436,7 +436,7 @@ export async function runSecondaryClaimPass(
     .eq("payer_sequence", "primary")
     .in("status", ["paid", "partially_paid", "denied"])
     .not("secondary_coverage_id", "is", null)
-    .order("patient_responsibility_cents", { ascending: false })
+    .order("total_billed_cents", { ascending: false })
     .limit(MAX_PER_PASS);
   if (candErr) {
     stats.errors += 1;
