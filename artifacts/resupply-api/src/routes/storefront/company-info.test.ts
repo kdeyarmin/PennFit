@@ -228,4 +228,41 @@ describe("GET /company-info — per-tenant assistant names", () => {
     expect(res.body.name).toBe("Penn Home Medical Supply");
     expect(res.body.supportEmail).toBe("info@pennpaps.com");
   });
+
+  it("overlays tenant websiteUrl when name and email already match the host", async () => {
+    resolveBrandOrgIdByHostMock.mockResolvedValueOnce("org-penn");
+    getCompanyInfoMock.mockResolvedValueOnce({
+      name: "Penn Home Medical Supply",
+      legalName: "Penn Home Medical Supply",
+      supportPhoneE164: "+18144710627",
+      supportPhoneDisplay: "(814) 471-0627",
+      supportEmail: "info@pennpaps.com",
+      generalEmail: "info@pennpaps.com",
+      supportHours: "Mon–Fri 9a–5p ET",
+      websiteUrl: "https://cmbreathe.com",
+      address: null,
+      assistantStorefrontName: "PennBot",
+      assistantAdminName: "PennPilot",
+    });
+    resolveBrandingByHostMock.mockResolvedValueOnce({
+      storefrontName: "Penn Home Medical Supply",
+      legalName: "Penn Home Medical Supply",
+      tagline: "Your CPAP, made simple.",
+      logoUrl: "/penn/pennpaps-logo.jpeg",
+    });
+    resolveTenantBaseUrlMock.mockResolvedValueOnce("https://pennpaps.com");
+    resolveAssistantNamesForOrgMock.mockResolvedValueOnce({
+      assistantStorefrontName: "PennBot",
+      assistantAdminName: "PennPilot",
+    });
+
+    const res = await request(makeApp())
+      .get("/storefront-company-info")
+      .set("Host", "pennpaps.com");
+    expect(res.status).toBe(200);
+    expect(res.body.name).toBe("Penn Home Medical Supply");
+    expect(res.body.supportEmail).toBe("info@pennpaps.com");
+    expect(res.body.websiteUrl).toBe("https://pennpaps.com");
+    expect(resolveTenantBaseUrlMock).toHaveBeenCalledWith("org-penn");
+  });
 });

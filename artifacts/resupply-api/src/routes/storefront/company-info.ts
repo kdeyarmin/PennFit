@@ -47,13 +47,17 @@ async function handleCompanyInfo(req: Request, res: Response): Promise<void> {
 
   const hostName = branding.storefrontName.trim();
   if (orgId && hostName && hostName !== PLATFORM_NAME) {
+    const [tenantBase, sender] = await Promise.all([
+      resolveTenantBaseUrl(orgId),
+      resolveTenantSender(orgId),
+    ]);
     const needsName = info.name.trim() !== hostName;
     const needsEmail = info.supportEmail.trim() === PLATFORM_SUPPORT_EMAIL;
-    if (needsName || needsEmail) {
-      const [tenantBase, sender] = await Promise.all([
-        resolveTenantBaseUrl(orgId),
-        resolveTenantSender(orgId),
-      ]);
+    const tenantWebsite = tenantBase?.replace(/\/+$/, "") ?? "";
+    const currentWebsite = info.websiteUrl?.replace(/\/+$/, "") ?? "";
+    const needsWebsite =
+      tenantWebsite.length > 0 && currentWebsite !== tenantWebsite;
+    if (needsName || needsEmail || needsWebsite) {
       const tenantEmail = sender.fromEmail?.trim() || null;
       const useEmail = needsEmail && !!tenantEmail;
       info = {
@@ -62,9 +66,9 @@ async function handleCompanyInfo(req: Request, res: Response): Promise<void> {
           ? {
               name: hostName,
               legalName: branding.legalName.trim() || hostName,
-              websiteUrl: tenantBase || info.websiteUrl,
             }
           : {}),
+        ...(needsWebsite ? { websiteUrl: tenantWebsite } : {}),
         ...(useEmail
           ? {
               supportEmail: tenantEmail,
