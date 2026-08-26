@@ -235,8 +235,8 @@ function csrfHeader(): Record<string, string> {
 }
 
 export async function startCheckout(
-  items: CheckoutItem[],
-  options?: {
+  _items: CheckoutItem[],
+  _options?: {
     successPath?: string;
     cancelPath?: string;
     /** "ship" (default) or "pickup". Pickup requires pickupLocationId. */
@@ -255,41 +255,9 @@ export async function startCheckout(
     orderedVariantId?: string | null;
   },
 ): Promise<{ url: string; sessionId: string }> {
-  // Per-attempt idempotency key — re-clicking "Checkout" within a
-  // few seconds will hit Stripe's idempotency cache and reuse the
-  // same Session URL instead of creating a duplicate.
-  const idempotencyKey = crypto.randomUUID();
-  const res = await fetch("/resupply-api/shop/checkout", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Idempotency-Key": idempotencyKey,
-      ...csrfHeader(),
-    },
-    body: JSON.stringify({
-      items,
-      successPath: options?.successPath,
-      cancelPath: options?.cancelPath,
-      ...(options?.fulfillmentMethod
-        ? { fulfillmentMethod: options.fulfillmentMethod }
-        : {}),
-      ...(options?.pickupLocationId
-        ? { pickupLocationId: options.pickupLocationId }
-        : {}),
-      ...(options?.fitSessionId ? { fitSessionId: options.fitSessionId } : {}),
-      ...(options?.orderedMaskSlug
-        ? { orderedMaskSlug: options.orderedMaskSlug }
-        : {}),
-      ...(options?.orderedVariantId
-        ? { orderedVariantId: options.orderedVariantId }
-        : {}),
-    }),
-  });
-  if (!res.ok) {
-    const body = (await res.json().catch(() => ({}))) as { message?: string };
-    throw new Error(body.message ?? `Couldn't start checkout (${res.status})`);
-  }
-  return (await res.json()) as { url: string; sessionId: string };
+  throw new Error(
+    "checkout_retired: patient cash-pay checkout was removed; use insurance ordering.",
+  );
 }
 
 export interface PickupLocation {
