@@ -1,5 +1,7 @@
 name: CI
 
+# Nudge 2026-08-26i: forever-queued run 32984456339 still starving
+# synchronizes; bump concurrency prefix civ3 → civ4.
 # Nudge 2026-08-26h: HEAD 528f96ad6 missing full CI after provider-ui
 # test fix; touch workflow to re-register pull_request synchronize.
 # Nudge 2026-08-26g: HEAD 32cab5f97 still missing full CI; forever-queued
@@ -29,7 +31,7 @@ on:
 concurrency:
   # Per-SHA group under a fresh prefix so a forever-queued legacy run
   # cannot starve later synchronizes (PR 1330 / run 32984456339).
-  group: civ3-${{ github.workflow }}-${{ github.ref }}-${{ github.sha }}
+  group: civ4-${{ github.workflow }}-${{ github.ref }}-${{ github.sha }}
   cancel-in-progress: true
 
 permissions:
