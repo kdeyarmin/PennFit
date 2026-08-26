@@ -414,18 +414,52 @@ export async function getCompanyInfo(orgId?: string): Promise<CompanyInfo> {
       }
       info = fromDb ?? (await orgDirectoryFallbackInfo(explicitOrgId));
     } else {
-      // The seed tenant (explicit or default). Single-tenant behavior is
-      // unchanged: its DB row wins, else the env-folded practice name. The
-      // org-directory step above deliberately does NOT apply here — the seed
-      // org row is created by the migrations carrying THIS repo's tenant
-      // name, so reading it would hand a fresh, unrelated deployment the seed
-      // tenant's brand, which is the leak the platform fallback exists to
-      // prevent. An operator names a seed deployment with
-      // RESUPPLY_PRACTICE_NAME or on /admin/company-information.
+      // The seed tenant (explicit or default). Its dme_organization row
+      // wins when present. When it is missing:
+      //
+      //   * Explicit orgId (host-resolved pennpaps.com, branded mail, etc.)
+      //     falls through to the organizations directory so company-info
+      //     matches storefront-branding. Without this, a seed storefront
+      //     whose Company Information page is empty shows the platform
+      //     DEFAULTS ("CareMetric Breathe") in the footer while the logo
+      //     still reads the organizations.storefront_name ("Penn Home
+      //     Medical Supply"). An operator-set RESUPPLY_PRACTICE_NAME still
+      //     wins over the directory for that explicit path.
+      //   * Implicit / no-orgId callers (boot hydration, getCompanyInfoSync
+      //     warm path) keep envFallbackInfo() — they must NOT read the
+      //     migration-seeded organizations row, or a fresh unrelated
+      //     deployment would inherit this repo's tenant name as the
+      //     process-wide default.
       const effectiveOrgId = explicitOrgId || seedOrgId;
-      info = effectiveOrgId
-        ? ((await loadFromDb(effectiveOrgId)) ?? envFallbackInfo())
-        : envFallbackInfo();
+      if (!effectiveOrgId) {
+        info = envFallbackInfo();
+      } else {
+        let fromDb: CompanyInfo | null = null;
+        try {
+          fromDb = await loadFromDb(effectiveOrgId);
+        } catch (err) {
+          logger.warn(
+            {
+              event: "company_info_org_row_load_failed",
+              orgId: effectiveOrgId,
+              err:
+                err instanceof Error
+                  ? err
+                  : new Error(String((err as unknown) ?? "unknown")),
+            },
+            "company info: seed dme_organization read failed; falling back",
+          );
+        }
+        if (fromDb) {
+          info = fromDb;
+        } else if (explicitOrgId) {
+          info = trimmed(process.env.RESUPPLY_PRACTICE_NAME)
+            ? envFallbackInfo()
+            : await orgDirectoryFallbackInfo(explicitOrgId);
+        } else {
+          info = envFallbackInfo();
+        }
+      }
     }
   } catch (err) {
     const normalized =

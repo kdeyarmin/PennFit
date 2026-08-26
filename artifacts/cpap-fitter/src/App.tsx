@@ -1329,8 +1329,11 @@ function TopRouter() {
           tenant storefront host, `/` stays the patient storefront, so
           the explicit `/` route below falls through to PatientRouter.
           The canonical /breathe URL keeps working on every host.
+
+          Sub-routes are registered BEFORE `/breathe` so a prefix-style
+          match can never shadow `/breathe/features`, `/breathe/pricing`,
+          etc. (Wouter Switch is first-match-wins.)
         */}
-        <Route path="/breathe" component={BreatheHome} />
         <Route path="/breathe/features" component={BreatheFeatures} />
         <Route path="/breathe/integrations" component={BreatheIntegrations} />
         <Route path="/breathe/why" component={BreatheLearn} />
@@ -1377,6 +1380,7 @@ function TopRouter() {
           component={BreatheSwitchNikohealth}
         />
         <Route path="/breathe/signup" component={BreatheSignup} />
+        <Route path="/breathe" component={BreatheHome} />
         <Route path="/">
           {() => (isPlatformHomeHost() ? <BreatheHome /> : <PatientRouter />)}
         </Route>

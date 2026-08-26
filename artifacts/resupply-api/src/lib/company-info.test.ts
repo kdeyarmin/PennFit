@@ -372,13 +372,47 @@ describe("getCompanyInfo", () => {
     expect(info.websiteUrl).toBe("https://cmbreathe.com");
   });
 
-  it("does not read the org directory for the seed tenant", async () => {
-    // The seed org row is created by the migrations carrying THIS repo's
-    // tenant name, so reading it would hand an unrelated deployment the seed
-    // tenant's brand — the exact leak the platform fallback prevents.
+  it("does not read the org directory for the implicit seed path", async () => {
+    // getCompanyInfo() with no orgId is the boot/sync warm path. The seed
+    // org row is created by the migrations carrying THIS repo's tenant
+    // name, so reading it here would hand an unrelated deployment the seed
+    // tenant's brand as the process-wide default.
     stageSupabaseResponse("dme_organization", "select", { data: null });
     await getCompanyInfo();
     expect(resolveBrandingByOrgIdMock).not.toHaveBeenCalled();
+  });
+
+  it("reads the org directory for an explicit seed org when Company Information is empty", async () => {
+    // Host-resolved storefronts (pennpaps.com) call getCompanyInfo(seedOrgId).
+    // When dme_organization is empty, company-info must match
+    // storefront-branding rather than platform DEFAULTS — otherwise the
+    // footer says "CareMetric Breathe" while the logo says the tenant name.
+    // Seed id matches the supabase-mock resolveSeedOrgId stub.
+    const seedOrgId = "00000000-0000-4000-8000-000000000000";
+    stageSupabaseResponse("dme_organization", "select", { data: null });
+    resolveBrandingByOrgIdMock.mockResolvedValue({
+      storefrontName: "Penn Home Medical Supply",
+      legalName: "Penn Home Medical Supply",
+      tagline: "Your CPAP, made simple.",
+      logoUrl: "/penn/pennpaps-logo.jpeg",
+    });
+    resolveTenantBaseUrlMock.mockResolvedValue("https://pennpaps.com");
+    const info = await getCompanyInfo(seedOrgId);
+    expect(resolveBrandingByOrgIdMock).toHaveBeenCalledWith(seedOrgId);
+    expect(info.name).toBe("Penn Home Medical Supply");
+    expect(info.legalName).toBe("Penn Home Medical Supply");
+    expect(info.websiteUrl).toBe("https://pennpaps.com");
+    expect(info.source).toBe("fallback");
+  });
+
+  it("honors RESUPPLY_PRACTICE_NAME over the org directory for an explicit seed org", async () => {
+    const seedOrgId = "00000000-0000-4000-8000-000000000000";
+    process.env.RESUPPLY_PRACTICE_NAME = "Env Practice Name";
+    stageSupabaseResponse("dme_organization", "select", { data: null });
+    const info = await getCompanyInfo(seedOrgId);
+    expect(info.name).toBe("Env Practice Name");
+    expect(resolveBrandingByOrgIdMock).not.toHaveBeenCalled();
+    delete process.env.RESUPPLY_PRACTICE_NAME;
   });
 });
 
