@@ -35,33 +35,33 @@ router.get("/company-info", async (req, res) => {
   // cmbreathe.com. Auth email already avoids this via
   // resolveBrandingByHost; company-info must match that contract.
   const host = requestHost(req);
+  // Resolve host branding FIRST — same path as GET /api/storefront-branding
+  // — so the footer/chat identity cannot drift from the logo even when
+  // getCompanyInfo still carries CareMetric leftovers in dme_organization.
+  const branding = await resolveBrandingByHost(host);
   const orgId = (await resolveBrandOrgIdByHost(host)) ?? undefined;
   let info = orgId ? await getCompanyInfo(orgId) : getPlatformIdentity();
 
-  // Defense in depth: storefront-branding resolves the tenant name via
-  // the host → organizations directory path, which is what patients see
-  // in the header/logo. When Company Information still carries the
-  // platform default name (rebrand leftover / empty admin save), prefer
-  // that same host branding so the footer cannot say "CareMetric Breathe"
-  // while the logo says the tenant. getCompanyInfo already overlays via
-  // resolveBrandingByOrgId; this catches the case where the org-id
-  // branding cache was poisoned with the platform default on a transient
-  // miss while the host cache stayed correct.
-  if (orgId && info.name === PLATFORM_NAME) {
-    const branding = await resolveBrandingByHost(host);
-    if (branding.storefrontName.trim() !== PLATFORM_NAME) {
+  const hostName = branding.storefrontName.trim();
+  if (orgId && hostName && hostName !== PLATFORM_NAME) {
+    const needsName = info.name.trim() !== hostName;
+    const needsEmail = info.supportEmail.trim() === PLATFORM_SUPPORT_EMAIL;
+    if (needsName || needsEmail) {
       const [tenantBase, sender] = await Promise.all([
         resolveTenantBaseUrl(orgId),
         resolveTenantSender(orgId),
       ]);
       const tenantEmail = sender.fromEmail?.trim() || null;
-      const useEmail =
-        !!tenantEmail && info.supportEmail === PLATFORM_SUPPORT_EMAIL;
+      const useEmail = needsEmail && !!tenantEmail;
       info = {
         ...info,
-        name: branding.storefrontName.trim(),
-        legalName: branding.legalName.trim() || branding.storefrontName.trim(),
-        websiteUrl: tenantBase || info.websiteUrl,
+        ...(needsName
+          ? {
+              name: hostName,
+              legalName: branding.legalName.trim() || hostName,
+              websiteUrl: tenantBase || info.websiteUrl,
+            }
+          : {}),
         ...(useEmail
           ? {
               supportEmail: tenantEmail,
@@ -85,7 +85,10 @@ router.get("/company-info", async (req, res) => {
   // another tenant's storefront. `Vary` makes any conformant cache key on
   // the host — byte-for-byte matching storefront-branding.ts.
   res.set("Vary", "X-Forwarded-Host, Host");
-  res.set("Cache-Control", "public, max-age=300");
+  // Short TTL: brand overlays must show up quickly after an admin save or
+  // a deploy that fixes host/company-info drift. storefront-branding keeps
+  // its own cache; keeping these aligned matters more than edge hit rate.
+  res.set("Cache-Control", "public, max-age=60, must-revalidate");
   res.json({
     name: info.name,
     // Registered legal name — the storefront legal pages ("operated by …")

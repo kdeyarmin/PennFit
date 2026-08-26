@@ -200,7 +200,10 @@ export async function resolveBrandingByHost(
       { event: "tenant_branding_load_failed", err: normalized },
       "tenant branding load failed; falling back to default brand",
     );
-    branding = DEFAULT_BRANDING;
+    // Do NOT cache the platform default on failure — a transient miss
+    // would pin CareMetric on a verified tenant host for the full TTL
+    // and leave company-info / logo disagreeing across replicas.
+    return DEFAULT_BRANDING;
   }
   cache.set(key, { branding, expiresAt: now + CACHE_TTL_MS });
   return branding;

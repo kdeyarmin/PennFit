@@ -25,9 +25,9 @@
 //   * `experienced`  — 180+ days. Focus: annual review, Rx renewal
 //                      lookahead, when to upgrade hardware.
 //
-// `slug` is the path under /learn the SPA renders; an article can
-// be authored later without changing this catalog. Order within
-// a stage is the order shown — pick wisely.
+// `slug` is the path under /learn the SPA renders. Only ship slugs
+// that have a real `App.tsx` route — phantom paths 404 from the
+// account education feed.
 
 export type EducationStage = "new" | "habituating" | "steady" | "experienced";
 
@@ -41,19 +41,19 @@ export interface EducationArticle {
 const ARTICLES: Record<EducationStage, ReadonlyArray<EducationArticle>> = {
   new: [
     {
-      slug: "/learn/first-week-comfort",
-      title: "Your first week on CPAP",
+      slug: "/learn/first-two-weeks",
+      title: "Your first two weeks on CPAP",
       summary: "What to expect — and which discomforts settle on their own.",
       category: "comfort",
     },
     {
-      slug: "/learn/ramp-and-pressure",
-      title: "Ramp + pressure settings explained",
+      slug: "/learn/how-pap-works",
+      title: "How PAP therapy works",
       summary: "Why your machine starts soft. When to ask us to adjust.",
       category: "comfort",
     },
     {
-      slug: "/learn/mask-fit-basics",
+      slug: "/learn/mask-leaks",
       title: "Mask fit basics",
       summary: "Headgear tension, cushion position, the 30-second seal check.",
       category: "troubleshooting",
@@ -61,19 +61,19 @@ const ARTICLES: Record<EducationStage, ReadonlyArray<EducationArticle>> = {
   ],
   habituating: [
     {
-      slug: "/learn/persistent-leaks",
+      slug: "/learn/mask-leaks",
       title: "If your mask still leaks",
       summary: "Common causes in weeks 3–8 — most fix with a small adjustment.",
       category: "troubleshooting",
     },
     {
-      slug: "/learn/side-sleeping",
-      title: "Sleeping on your side with CPAP",
-      summary: "Pillow tricks + the masks that play nicest with side-sleepers.",
+      slug: "/learn/sleep-hygiene",
+      title: "Sleeping well with CPAP",
+      summary: "Pillow tricks and habits that keep therapy on track.",
       category: "lifestyle",
     },
     {
-      slug: "/learn/mouth-breathing",
+      slug: "/learn/dry-mouth",
       title: "Mouth breathing, dry mouth, chin straps",
       summary: "Why your mouth feels like a desert and what actually helps.",
       category: "troubleshooting",
@@ -88,9 +88,9 @@ const ARTICLES: Record<EducationStage, ReadonlyArray<EducationArticle>> = {
       category: "maintenance",
     },
     {
-      slug: "/learn/humidifier-tuning",
-      title: "Tuning your humidifier for the season",
-      summary: "Winter dry, summer warm — three settings worth knowing.",
+      slug: "/learn/cleaning-routine",
+      title: "Cleaning + humidifier basics",
+      summary: "Keep the hose and chamber fresh through the seasons.",
       category: "comfort",
     },
     {
@@ -102,21 +102,21 @@ const ARTICLES: Record<EducationStage, ReadonlyArray<EducationArticle>> = {
   ],
   experienced: [
     {
-      slug: "/learn/annual-review",
-      title: "The annual sleep-medicine review",
+      slug: "/learn/reading-your-sleep-report",
+      title: "Reading your sleep report",
       summary: "What to bring up at your next provider visit.",
       category: "lifestyle",
     },
     {
-      slug: "/learn/rx-renewal-checklist",
-      title: "Renewing your prescription",
+      slug: "/learn/insurance-guide",
+      title: "Insurance + prescription renewals",
       summary: "Timing, documents, and what we file on your behalf.",
       category: "maintenance",
     },
     {
-      slug: "/learn/when-to-upgrade",
-      title: "Knowing when to upgrade your machine",
-      summary: "Five signs your unit's coasting toward retirement.",
+      slug: "/learn/pap-therapy-benefits",
+      title: "Getting more from your therapy",
+      summary: "Signs it may be time to revisit mask or machine fit.",
       category: "lifestyle",
     },
   ],

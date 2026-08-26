@@ -185,5 +185,47 @@ describe("GET /company-info — per-tenant assistant names", () => {
     expect(res.body.supportEmail).toBe("info@pennpaps.com");
     expect(res.body.assistantStorefrontName).toBe("PennBot");
     expect(resolveBrandingByHostMock).toHaveBeenCalled();
+    expect(res.headers["cache-control"]).toMatch(/max-age=60/);
+  });
+
+  it("overlays host branding when company-info name disagrees for any reason", async () => {
+    // Broader than platform-equality: if the logo says Penn, the footer
+    // must not keep a stale leftover name even when it isn't exactly
+    // PLATFORM_NAME (typo / partial rebrand / env drift).
+    resolveBrandOrgIdByHostMock.mockResolvedValueOnce("org-penn");
+    getCompanyInfoMock.mockResolvedValueOnce({
+      name: "CareMetric",
+      legalName: "CareMetric",
+      supportPhoneE164: "",
+      supportPhoneDisplay: "",
+      supportEmail: "support@cmbreathe.com",
+      generalEmail: "support@cmbreathe.com",
+      supportHours: "Mon–Fri 9a–5p ET",
+      websiteUrl: "https://cmbreathe.com",
+      address: null,
+      assistantStorefrontName: "PennBot",
+      assistantAdminName: "PennPilot",
+    });
+    resolveBrandingByHostMock.mockResolvedValueOnce({
+      storefrontName: "Penn Home Medical Supply",
+      legalName: "Penn Home Medical Supply",
+      tagline: "Your CPAP, made simple.",
+      logoUrl: "/penn/pennpaps-logo.jpeg",
+    });
+    resolveTenantBaseUrlMock.mockResolvedValueOnce("https://pennpaps.com");
+    resolveTenantSenderMock.mockResolvedValueOnce({
+      fromEmail: "info@pennpaps.com",
+    });
+    resolveAssistantNamesForOrgMock.mockResolvedValueOnce({
+      assistantStorefrontName: "PennBot",
+      assistantAdminName: "PennPilot",
+    });
+
+    const res = await request(makeApp())
+      .get("/company-info")
+      .set("Host", "pennpaps.com");
+    expect(res.status).toBe(200);
+    expect(res.body.name).toBe("Penn Home Medical Supply");
+    expect(res.body.supportEmail).toBe("info@pennpaps.com");
   });
 });
