@@ -21,7 +21,7 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import { z } from "zod";
 
-import { getOrgScopedClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 import {
   bufferToHexBytea,
   issueToken,
@@ -55,6 +55,28 @@ import { getDocumentSupplierName } from "../../lib/company-info";
 const router: IRouter = Router();
 
 const INVITE_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * Base URL for provider-portal invite / reminder links.
+ *
+ * Prefer the tenant's verified custom domain. For the seed org only,
+ * fall back to the platform public URL (single-tenant / preview
+ * unchanged). For any OTHER tenant, return null — a platform-host link
+ * would resolve the portal queue to the seed org and show an empty
+ * queue / 404, so callers must refuse rather than send a broken invite.
+ */
+async function resolveProviderPortalBaseUrl(
+  orgId: string,
+  platformBaseUrl: string,
+): Promise<string | null> {
+  const tenantBase = await resolveTenantBaseUrl(orgId);
+  if (tenantBase) return tenantBase.replace(/\/$/, "");
+  const seedId = await resolveSeedOrgId();
+  if (seedId && orgId === seedId) {
+    return platformBaseUrl.replace(/\/$/, "");
+  }
+  return null;
+}
 
 /**
  * The operating practice's name for provider-portal email + PDF copy.
@@ -140,15 +162,19 @@ const inviteBody = z
 /** Mint/refresh an auth user for the provider and email a set-password
  *  link. Returns the auth user id + whether the email was delivered,
  *  or `{ staffConflict: true }` when the email belongs to a staff
- *  (non-customer) auth row — the caller must 409, not invite. */
+ *  (non-customer) auth row — the caller must 409, not invite.
+ *  Returns `{ missingTenantDomain: true }` when a non-seed tenant has
+ *  no verified custom domain (platform-host links would 404). */
 async function inviteProviderUser(
   orgId: string,
   emailLower: string,
   displayName: string | null,
 ): Promise<
   | { staffConflict: true }
+  | { missingTenantDomain: true }
   | {
       staffConflict?: undefined;
+      missingTenantDomain?: undefined;
       authUserId: string;
       emailSent: boolean;
       inviteLink: string;
@@ -158,6 +184,17 @@ async function inviteProviderUser(
   const deps = getAuthDeps();
   const now = new Date();
   const nowIso = now.toISOString();
+
+  // Refuse before minting tokens when the inviting tenant has no host
+  // the provider portal can resolve. Seed tenants keep the platform
+  // fallback; every other tenant needs a verified custom domain.
+  const baseUrl = await resolveProviderPortalBaseUrl(
+    orgId,
+    deps.publicBaseUrl,
+  );
+  if (!baseUrl) {
+    return { missingTenantDomain: true };
+  }
 
   // Resolve / create the auth user. Providers are role 'customer' (the
   // lowest privilege — they can never pass requireAdmin); their
@@ -227,15 +264,6 @@ async function inviteProviderUser(
     });
   if (tokErr) throw tokErr;
 
-  // Build the set-password link from the INVITING tenant's own base URL so
-  // a non-seed tenant's provider lands on that tenant's host (where the
-  // host-scoped portal queue resolves to their org) — not the platform
-  // host (which resolves to the seed org → empty queue / 404). Falls back
-  // to the platform base URL when the tenant has no verified custom
-  // domain, so single-tenant / seed-tenant deployments are unchanged.
-  const baseUrl = (
-    (await resolveTenantBaseUrl(orgId)) ?? deps.publicBaseUrl
-  ).replace(/\/$/, "");
   const inviteLink = `${baseUrl}/provider/reset-password?token=${encodeURIComponent(token.raw)}`;
 
   // Brand the external clinician's invite with the inviting tenant's own
@@ -349,11 +377,19 @@ router.post(
       email,
       (provider.legal_name as string | null) ?? null,
     );
-    if (invite.staffConflict) {
+    if ("staffConflict" in invite && invite.staffConflict) {
       res.status(409).json({
         error: "email_belongs_to_staff",
         message:
           "This email address belongs to a staff account and can't be used for a provider portal invite. Use a different email.",
+      });
+      return;
+    }
+    if ("missingTenantDomain" in invite && invite.missingTenantDomain) {
+      res.status(422).json({
+        error: "tenant_domain_required",
+        message:
+          "Verify a custom domain for this tenant before inviting providers. Without one, the invite link would open on the platform host and show an empty queue.",
       });
       return;
     }
@@ -1010,25 +1046,36 @@ router.post(
     if (account?.email_lower) {
       const deps = getAuthDeps();
       // Sign-in link on the tenant's own host so the provider lands where
-      // the host-scoped portal queue resolves to their org. Falls back to
-      // the platform base URL when the tenant has no verified custom
-      // domain (single-tenant / seed-tenant unchanged).
-      const baseUrl = (
-        (await resolveTenantBaseUrl(orgId)) ?? deps.publicBaseUrl
-      ).replace(/\/$/, "");
-      const practice = await practiceName(orgId);
-      try {
-        await deps.email({
-          to: account.email_lower,
-          subject: `Action needed: a document is awaiting your signature`,
-          html: `<p>You have a document awaiting your electronic signature in the ${practice} provider portal.</p><p><a href="${baseUrl}/provider/sign-in">Sign in to review and sign</a></p>`,
-          text: `You have a document awaiting your electronic signature in the ${practice} provider portal. Sign in at ${baseUrl}/provider/sign-in`,
-        });
-        emailSent = true;
-      } catch (err) {
+      // the host-scoped portal queue resolves to their org. Non-seed
+      // tenants without a verified domain skip the email (platform-host
+      // links would 404); seed keeps the platform fallback.
+      const baseUrl = await resolveProviderPortalBaseUrl(
+        orgId,
+        deps.publicBaseUrl,
+      );
+      if (baseUrl) {
+        const practice = await practiceName(orgId);
+        try {
+          await deps.email({
+            to: account.email_lower,
+            subject: `Action needed: a document is awaiting your signature`,
+            html: `<p>You have a document awaiting your electronic signature in the ${practice} provider portal.</p><p><a href="${baseUrl}/provider/sign-in">Sign in to review and sign</a></p>`,
+            text: `You have a document awaiting your electronic signature in the ${practice} provider portal. Sign in at ${baseUrl}/provider/sign-in`,
+          });
+          emailSent = true;
+        } catch (err) {
+          logger.warn(
+            { err: redactDbErr(err) },
+            "provider signature reminder email failed",
+          );
+        }
+      } else {
         logger.warn(
-          { err: redactDbErr(err) },
-          "provider signature reminder email failed",
+          {
+            event: "provider_reminder_skipped_no_tenant_domain",
+            org_id: orgId,
+          },
+          "provider signature reminder skipped — tenant has no verified custom domain",
         );
       }
     }

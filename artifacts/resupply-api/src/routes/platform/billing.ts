@@ -320,12 +320,16 @@ async function currentUsage(orgId: string) {
   const db = getOrgScopedClient(orgId);
   const raw = db.raw().schema("resupply");
 
+  // Patient cash-pay checkout and auto-ship were retired — `shop_orders`
+  // / `shop_subscriptions` take no new writes. Keep the metric keys in
+  // the response shape (plan allowances + admin UI still name them) but
+  // always report 0 so platform metering never bills tenants for a
+  // storefront that no longer exists. Historical rows stay in the tables
+  // for analytics; the snapshot SQL (0371) can be corrected separately.
   const [
     activePatients,
     seats,
     locations,
-    ordersThisMonth,
-    activeSubscriptions,
     rollups,
   ] = await Promise.all([
     countTable(orgId, "patients"),
@@ -334,10 +338,6 @@ async function currentUsage(orgId: string) {
     }),
     countTable(orgId, "locations", undefined, {
       eq: [["is_active", "true"]],
-    }),
-    countTable(orgId, "shop_orders", from),
-    countTable(orgId, "shop_subscriptions", undefined, {
-      in: [["status", ["active", "trialing"]]],
     }),
     // Event-based metrics read from the monthly rollup — one row per
     // (org, month, metric_key), maintained by increment_tenant_usage_rollup
@@ -349,6 +349,8 @@ async function currentUsage(orgId: string) {
       .eq("org_id", orgId)
       .eq("month", monthDate),
   ]);
+  const ordersThisMonth = 0;
+  const activeSubscriptions = 0;
 
   if (rollups.error) throw rollups.error;
   const usageByMetric = new Map<string, number>();

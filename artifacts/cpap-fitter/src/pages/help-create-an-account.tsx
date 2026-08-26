@@ -85,34 +85,38 @@ const steps: HelpStep[] = [
         </p>
         <ul className="list-disc pl-5 space-y-1">
           <li>
-            <strong>Profile &amp; addresses</strong> — saved so resupply and fit
-            requests are faster.
+            <strong>Overview</strong> — a snapshot of your therapy and what is
+            due next.
           </li>
           <li>
-            <strong>Therapy &amp; supplies</strong> — what&apos;s due and your
-            registered equipment.
+            <strong>Therapy &amp; supplies</strong> — registered equipment and
+            resupply status.
           </li>
           <li>
             <strong>Messages</strong> — threaded chat with your care team.
           </li>
           <li>
-            <strong>Billing</strong> — insurance statements and open balances.
-          </li>
-          <li>
-            <strong>Reminders</strong> — your{" "}
+            <strong>Account</strong> — profile, addresses, security, and your{" "}
             <Link
               href="/help/resupply-reminders"
               className="text-primary hover:underline"
             >
               resupply reminder
             </Link>{" "}
-            preferences.
+            preferences. Insurance statements live at{" "}
+            <Link
+              href="/account/billing"
+              className="text-primary hover:underline"
+            >
+              /account/billing
+            </Link>
+            .
           </li>
         </ul>
       </>
     ),
     shot: (
-      <Screenshot caption="Your dashboard groups profile, therapy, messages, billing, and reminders into one sidebar.">
+      <Screenshot caption="Your dashboard groups Overview, Therapy &amp; supplies, Messages, and Account into tabs.">
         <AccountShot />
       </Screenshot>
     ),

@@ -1000,7 +1000,7 @@ export function AccountShot() {
         fill={C.panel}
         stroke={C.line}
       />
-      {["Profile", "Therapy", "Messages", "Billing", "Reminders"].map(
+      {["Overview", "Therapy", "Messages", "Account"].map(
         (label, i) => {
           const y = 122 + i * 44;
           const on = i === 1;

@@ -4,15 +4,17 @@
 // host — where the host-scoped portal queue resolves to their org — not
 // the platform host (which resolves to the seed org → empty queue / 404).
 // So both the invite set-password link and the reminder sign-in link are
-// built from `resolveTenantBaseUrl(orgId)`, falling back to the platform
-// `deps.publicBaseUrl` when the tenant has no verified custom domain.
+// built from `resolveTenantBaseUrl(orgId)`. Non-seed tenants without a
+// verified domain are refused (422 / skipped reminder); the seed org
+// alone may fall back to the platform `deps.publicBaseUrl`.
 //
 // These tests prove:
 //   1. Invite link uses the tenant base URL when the tenant has a
 //      verified custom domain.
 //   2. Reminder link uses the tenant base URL likewise.
-//   3. Both fall back to the platform base URL when the tenant has no
-//      verified domain (single-tenant / seed-tenant unchanged).
+//   3. Non-seed tenants without a verified domain get 422 on invite
+//      (and no reminder email), never a platform-host link.
+//   4. The seed org still falls back to the platform base URL.
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import express, { type Express } from "express";
@@ -201,8 +203,29 @@ describe("provider invite email link — tenant base URL", () => {
     expect(resolveTenantBaseUrlMock).toHaveBeenCalledWith(MOCK_ORG_ID);
   });
 
-  it("falls back to the platform base URL when the tenant has no verified domain", async () => {
+  it("refuses invite when a non-seed tenant has no verified domain", async () => {
     resolveTenantBaseUrlMock.mockResolvedValue(null);
+    stageInviteDbHappyPath();
+
+    const res = await request(makeApp())
+      .post("/admin/provider-portal/accounts/invite")
+      .send({ providerId: PROVIDER_ID });
+
+    expect(res.status).toBe(422);
+    expect(res.body.error).toBe("tenant_domain_required");
+    expect(sentEmails).toHaveLength(0);
+  });
+
+  it("falls back to the platform base URL for the seed org without a verified domain", async () => {
+    resolveTenantBaseUrlMock.mockResolvedValue(null);
+    // Treat the inviting org as the seed so the platform fallback applies.
+    mockAdmin.current = {
+      userId: "admin-1",
+      email: "admin@example.com",
+      role: "admin",
+      // Seed id returned by installSupabaseMock's resolveSeedOrgId.
+      orgId: "00000000-0000-4000-8000-000000000000",
+    };
     stageInviteDbHappyPath();
 
     const res = await request(makeApp())
@@ -254,7 +277,7 @@ describe("provider reminder email link — tenant base URL", () => {
     expect(resolveTenantBaseUrlMock).toHaveBeenCalledWith(MOCK_ORG_ID);
   });
 
-  it("falls back to the platform base URL when the tenant has no verified domain", async () => {
+  it("skips the reminder email when a non-seed tenant has no verified domain", async () => {
     resolveTenantBaseUrlMock.mockResolvedValue(null);
     stageReminderDbHappyPath();
 
@@ -263,8 +286,7 @@ describe("provider reminder email link — tenant base URL", () => {
     );
 
     expect(res.status).toBe(200);
-    expect(sentEmails[0].html).toContain(
-      `${PLATFORM_BASE_URL}/provider/sign-in`,
-    );
+    expect(res.body.emailSent).toBe(false);
+    expect(sentEmails).toHaveLength(0);
   });
 });

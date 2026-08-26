@@ -723,7 +723,7 @@ export const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             icon: Gavel,
             matchPrefix: "/admin/billing/disputes",
             requiredPermission: "reports.read",
-            hint: "Card chargebacks against storefront charges, ordered by evidence deadline",
+            hint: "Card chargebacks on platform SaaS charges, ordered by evidence deadline",
           },
           {
             href: "/admin/billing/payer-profitability",

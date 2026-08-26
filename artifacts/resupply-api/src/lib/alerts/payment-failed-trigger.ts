@@ -25,6 +25,7 @@
 import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import { isFeatureEnabled } from "../feature-flags";
+import { resolveTenantBaseUrl } from "../tenant-branding";
 import { dispatchAlert } from "./dispatch";
 
 export interface PaymentFailedTriggerInput {
@@ -156,6 +157,8 @@ export async function dispatchPaymentFailedAlertOrThrow(
     return;
   }
 
+  const billingBase =
+    (await resolveTenantBaseUrl(orgId)) ?? "https://cmbreathe.com";
   const outcome = await dispatchAlert({
     alertKey: "payment_failed",
     channel: "email",
@@ -166,10 +169,9 @@ export async function dispatchPaymentFailedAlertOrThrow(
     orgId,
     variables: {
       amount: formatAmount(input.amountDueCents, input.currency),
-      // No deep-link to a Stripe billing portal here — the patient
-      // /account page already reflects past_due. Operators can wire a
-      // real portal URL later; the template leaves {{update_payment_url}}
-      // literal if unset, which is QA-visible.
+      // Patients are insurance-only — point at the statements page, not a
+      // Stripe payment-method portal (cash-pay checkout is retired).
+      billing_url: `${billingBase.replace(/\/$/, "")}/account/billing`,
     },
   });
 

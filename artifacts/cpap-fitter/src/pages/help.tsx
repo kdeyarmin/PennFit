@@ -115,7 +115,7 @@ const categories: HelpCategory[] = [
     id: "account",
     eyebrow: "Your account",
     title: "Your Account",
-    caption: "Sign in, save your details, and manage billing in one place.",
+    caption: "Sign in, save your details, and manage reminders in one place.",
     topics: [
       {
         href: "/help/create-an-account",
