@@ -341,7 +341,10 @@ const byPatientPhone = new Map<string, CacheEntry<string | null>>();
 export async function resolveOrgIdByPatientPhone(
   fromNumber: string | undefined,
 ): Promise<string | null> {
-  const number = fromNumber?.trim();
+  // Same normalize-before-lookup posture as resolveOrgIdByCalledNumber /
+  // SMS inbound: bare NANP / 11-digit forms must become +1… before the
+  // phone_e164 equality, and non-E.164 input must not reach PostgREST.
+  const number = normalizeE164(fromNumber);
   if (!number) return null;
   const now = Date.now();
   const cached = byPatientPhone.get(number);

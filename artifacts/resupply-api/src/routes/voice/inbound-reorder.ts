@@ -30,6 +30,7 @@ import {
   type Json,
   type OrgScopedClient,
 } from "@workspace/resupply-db";
+import { normalizeE164 } from "@workspace/resupply-domain";
 import {
   buildConnectStreamTwiml,
   buildHangupTwiml,
@@ -128,7 +129,7 @@ router.post("/voice/inbound-reorder", signatureMiddleware, async (req, res) => {
       .send(buildHangupTwiml("Invalid call payload."));
     return;
   }
-  const { From, CallSid } = parsed.data;
+  const { CallSid } = parsed.data;
 
   // Webhook: no req.orgId. Route by the CALLED number to the tenant that
   // owns it (G7). On a shared platform number, route by the CALLER's patient
@@ -137,12 +138,14 @@ router.post("/voice/inbound-reorder", signatureMiddleware, async (req, res) => {
   // unknown everywhere. On total miss, Hangup so a tenant-context gap never
   // retry-storms Twilio.
   const calledNumber = parsed.data.Called ?? parsed.data.To;
-  const callerForOrg = parsed.data.From ?? parsed.data.Caller;
+  const callerRaw = parsed.data.From ?? parsed.data.Caller;
   const calledOrgId = await resolveOrgIdByCalledNumber(calledNumber);
+  const normalizedCaller = normalizeE164(callerRaw);
   const orgId = calledOrgId
     ? calledOrgId
-    : ((await resolveOrgIdByPatientPhone(callerForOrg)) ??
-      (await resolveSeedOrgId()));
+    : ((normalizedCaller
+        ? await resolveOrgIdByPatientPhone(normalizedCaller)
+        : null) ?? (await resolveSeedOrgId()));
   if (!orgId) {
     res
       .status(200)
@@ -175,7 +178,7 @@ router.post("/voice/inbound-reorder", signatureMiddleware, async (req, res) => {
   // as "unidentified" — that would mask an outage and mis-route the caller.
   // Surface it and ask the caller to retry (same posture as the session-
   // insert failure below); log only the digit-count to keep PHI out.
-  const callerE164 = From ?? parsed.data.Caller ?? "";
+  const callerE164 = normalizedCaller ?? "";
   let patientId: string | null;
   let shopCustomerId: string | null;
   let ambiguous: boolean;

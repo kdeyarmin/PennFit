@@ -92,6 +92,7 @@ describe("sendReviewRequestEmail — feature flag gate", () => {
 
     expect(isFeatureEnabledMock).toHaveBeenCalledWith(
       "storefront.reviews_collection",
+      undefined,
     );
   });
 });
