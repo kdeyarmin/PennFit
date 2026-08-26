@@ -1141,31 +1141,64 @@ export async function handlePlatformTenantStripeEvent(
       !sub.metadata.org_id
     )
       return false;
+    const orgId = sub.metadata.org_id;
     const subPeriods = sub as Stripe.Subscription & SubscriptionPeriods;
+    const deleted = event.type === "customer.subscription.deleted";
     const { error } = await raw
       .schema("resupply")
       .from("tenant_billing_subscriptions")
       .update({
         stripe_subscription_id: sub.id,
         stripe_status: sub.status,
+        ...(deleted ? { status: "canceled" as const } : {}),
         stripe_last_synced_at: new Date().toISOString(),
         current_period_start: asStripeTimestamp(
           subPeriods.current_period_start,
         ),
         current_period_end: asStripeTimestamp(subPeriods.current_period_end),
       })
-      .eq("org_id", sub.metadata.org_id)
+      .eq("org_id", orgId)
       .in("status", ["active", "trialing", "past_due"]);
     if (error) {
       logger.error(
         {
           event: "platform_billing_stripe_subscription_webhook_update_failed",
           err: error,
-          orgId: sub.metadata.org_id,
+          orgId,
           stripeSubscriptionId: sub.id,
         },
         "platform billing Stripe subscription webhook update failed",
       );
+    }
+    // Payment wall (migration 0427): a canceled subscription re-locks the
+    // tenant so they must checkout again. Mirror of invoice.paid clearing
+    // the flag. Best-effort — do not fail the webhook on org update errors.
+    if (deleted) {
+      const { error: lockErr } = await raw
+        .schema("resupply")
+        .from("organizations")
+        .update({ billing_required: true })
+        .eq("id", orgId);
+      if (lockErr) {
+        logger.error(
+          {
+            event: "platform_billing_paywall_lock_failed",
+            err: lockErr,
+            orgId,
+            via: "subscription.deleted",
+          },
+          "payment wall: failed to set billing_required after subscription.deleted",
+        );
+      } else {
+        logger.info(
+          {
+            event: "platform_billing_paywall_locked",
+            orgId,
+            via: "subscription.deleted",
+          },
+          "payment wall: billing_required set after subscription.deleted",
+        );
+      }
     }
     return true;
   }
@@ -1200,34 +1233,57 @@ export async function handlePlatformTenantStripeEvent(
     "platform billing Stripe invoice synced",
   );
 
-  // Payment wall (migration 0427): the first PAID invoice clears the tenant's
-  // `billing_required` flag, unlocking the full console. Idempotent — re-runs
-  // on a replayed invoice.paid event just re-set false. Best-effort: a failure
-  // here leaves the tenant gated (they can retry from the billing page) rather
-  // than failing the webhook, which Stripe would otherwise keep retrying.
-  if (event.type === "invoice.paid") {
-    const orgId = (data[0] as { org_id?: string | null }).org_id ?? null;
-    if (orgId) {
-      const { error: clearErr } = await raw
-        .schema("resupply")
-        .from("organizations")
-        .update({ billing_required: false })
-        .eq("id", orgId);
-      if (clearErr) {
-        logger.error(
-          {
-            event: "platform_billing_paywall_clear_failed",
-            err: clearErr,
-            orgId,
-          },
-          "payment wall: failed to clear billing_required after invoice.paid",
-        );
-      } else {
-        logger.info(
-          { event: "platform_billing_paywall_cleared", orgId },
-          "payment wall: billing_required cleared after invoice.paid",
-        );
-      }
+  // Payment wall (migration 0427): PAID clears `billing_required`; a failed
+  // invoice re-locks so the console stays gated until they pay again.
+  // Idempotent on replay. Best-effort: org-update failures log and leave the
+  // webhook successful so Stripe does not retry forever.
+  const orgId = (data[0] as { org_id?: string | null }).org_id ?? null;
+  if (orgId && event.type === "invoice.paid") {
+    const { error: clearErr } = await raw
+      .schema("resupply")
+      .from("organizations")
+      .update({ billing_required: false })
+      .eq("id", orgId);
+    if (clearErr) {
+      logger.error(
+        {
+          event: "platform_billing_paywall_clear_failed",
+          err: clearErr,
+          orgId,
+        },
+        "payment wall: failed to clear billing_required after invoice.paid",
+      );
+    } else {
+      logger.info(
+        { event: "platform_billing_paywall_cleared", orgId },
+        "payment wall: billing_required cleared after invoice.paid",
+      );
+    }
+  } else if (orgId && event.type === "invoice.payment_failed") {
+    const { error: lockErr } = await raw
+      .schema("resupply")
+      .from("organizations")
+      .update({ billing_required: true })
+      .eq("id", orgId);
+    if (lockErr) {
+      logger.error(
+        {
+          event: "platform_billing_paywall_lock_failed",
+          err: lockErr,
+          orgId,
+          via: "invoice.payment_failed",
+        },
+        "payment wall: failed to set billing_required after invoice.payment_failed",
+      );
+    } else {
+      logger.info(
+        {
+          event: "platform_billing_paywall_locked",
+          orgId,
+          via: "invoice.payment_failed",
+        },
+        "payment wall: billing_required set after invoice.payment_failed",
+      );
     }
   }
   return true;

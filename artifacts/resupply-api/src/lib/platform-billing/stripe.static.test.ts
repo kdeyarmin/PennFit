@@ -28,6 +28,17 @@ describe("platform billing Stripe service contract", () => {
     expect(SRC).toContain("last_invoice_status");
   });
 
+  it("re-locks the payment wall on failed invoice and canceled subscription", () => {
+    // Clears on paid/checkout; sets billing_required back on failure/delete
+    // so BILLING_PAYWALL_ENFORCED tenants cannot keep full console after
+    // the first successful payment.
+    expect(SRC).toContain("billing_required: false");
+    expect(SRC).toContain("billing_required: true");
+    expect(SRC).toContain("invoice.payment_failed");
+    expect(SRC).toContain("subscription.deleted");
+    expect(SRC).toContain('status: "canceled"');
+  });
+
   it("guards account-scoped IDs across a Stripe account switch", () => {
     // Records which account each synced object belongs to, and refuses to
     // reuse a customer/subscription from a different account (double-billing
