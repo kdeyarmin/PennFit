@@ -313,36 +313,33 @@ export interface ShopSubscriptionView {
 export interface ShopSubscriptionsResponse {
   subscriptions: ShopSubscriptionView[];
 }
-export const fetchShopMySubscriptions = () =>
-  meFetch<ShopSubscriptionsResponse>("/shop/me/subscriptions");
 
-export const cancelShopSubscription = (id: string) =>
-  meFetch<{ ok: true; alreadyCanceled?: boolean }>(
-    `/shop/me/subscriptions/${encodeURIComponent(id)}/cancel`,
-    { method: "POST" },
-  );
+const SUBSCRIPTIONS_RETIRED =
+  "subscriptions_retired: patient auto-ship subscriptions were removed; supplies are insurance-only.";
+
+export async function fetchShopMySubscriptions(): Promise<ShopSubscriptionsResponse> {
+  throw new Error(SUBSCRIPTIONS_RETIRED);
+}
+
+export async function cancelShopSubscription(
+  _id: string,
+): Promise<{ ok: true; alreadyCanceled?: boolean }> {
+  throw new Error(SUBSCRIPTIONS_RETIRED);
+}
 
 /**
  * T-C5 — pause / resume / cadence change.
  *
- * `pause` and `resume` mirror Stripe's `pause_collection` field. We
- * don't track paused state in our local schema yet (no-schema slice),
- * so the UI shows BOTH options whenever the subscription is active
- * and not pending cancellation. Both endpoints are idempotent server-
- * side; clicking the wrong one returns 200 without making a no-op
- * Stripe round-trip needlessly visible to the patient.
+ * Retired with patient cash-pay. Endpoints no longer exist on the API;
+ * these client helpers hard-fail so a reintroduced UI cannot 404 silently.
  */
-export const pauseShopSubscription = (id: string) =>
-  meFetch<{ ok: true }>(
-    `/shop/me/subscriptions/${encodeURIComponent(id)}/pause`,
-    { method: "POST" },
-  );
+export async function pauseShopSubscription(_id: string): Promise<{ ok: true }> {
+  throw new Error(SUBSCRIPTIONS_RETIRED);
+}
 
-export const resumeShopSubscription = (id: string) =>
-  meFetch<{ ok: true }>(
-    `/shop/me/subscriptions/${encodeURIComponent(id)}/resume`,
-    { method: "POST" },
-  );
+export async function resumeShopSubscription(_id: string): Promise<{ ok: true }> {
+  throw new Error(SUBSCRIPTIONS_RETIRED);
+}
 
 export interface ShopCadenceOption {
   priceId: string;
@@ -354,16 +351,19 @@ export interface ShopCadenceOption {
 export interface ShopCadenceOptionsResponse {
   options: ShopCadenceOption[];
 }
-export const fetchShopCadenceOptions = (id: string) =>
-  meFetch<ShopCadenceOptionsResponse>(
-    `/shop/me/subscriptions/${encodeURIComponent(id)}/cadence-options`,
-  );
 
-export const changeShopSubscriptionCadence = (id: string, priceId: string) =>
-  meFetch<{ ok: true; unchanged?: boolean }>(
-    `/shop/me/subscriptions/${encodeURIComponent(id)}/cadence`,
-    { method: "POST", body: JSON.stringify({ priceId }) },
-  );
+export async function fetchShopCadenceOptions(
+  _id: string,
+): Promise<ShopCadenceOptionsResponse> {
+  throw new Error(SUBSCRIPTIONS_RETIRED);
+}
+
+export async function changeShopSubscriptionCadence(
+  _id: string,
+  _priceId: string,
+): Promise<{ ok: true; unchanged?: boolean }> {
+  throw new Error(SUBSCRIPTIONS_RETIRED);
+}
 
 export async function startQuickCheckout(
   _input: QuickCheckoutInput,
