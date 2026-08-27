@@ -141,6 +141,7 @@ describe("GET /shop/me/dashboard", () => {
       data: null,
       count: 1,
     });
+    stageSupabaseResponse("episodes", "select", { data: [] });
 
     const res = await request(makeApp()).get("/shop/me/dashboard");
     expect(res.status).toBe(200);
@@ -151,5 +152,49 @@ describe("GET /shop/me/dashboard", () => {
       trackingNumber: "1Z999",
     });
     expect(res.body.pendingOrders).toBe(1);
+    expect(res.body.nextShipment).toBeNull();
+  });
+
+  it("populates nextShipment + eligibility from in-progress episodes", async () => {
+    mockSignedIn.current = USER_ID;
+    stageSupabaseResponse("shop_orders", "select", { data: null });
+    stageSupabaseResponse("shop_orders", "select", { data: null, count: 0 });
+    stageSupabaseResponse("shop_customers", "select", {
+      data: {
+        customer_id: USER_ID,
+        email_lower: "patient@example.com",
+      },
+    });
+    stageSupabaseResponse("patients", "select", {
+      data: [{ id: "pat_1" }],
+    });
+    stageSupabaseResponse("fulfillments", "select", { data: null });
+    stageSupabaseResponse("fulfillments", "select", { data: null, count: 0 });
+    stageSupabaseResponse("episodes", "select", {
+      data: [
+        {
+          id: "ep_due",
+          prescription_id: "rx_1",
+          due_at: "2020-01-01T00:00:00.000Z",
+        },
+      ],
+    });
+    stageSupabaseResponse("prescriptions", "select", {
+      data: [{ id: "rx_1", item_sku: "MASK-NASAL-M" }],
+    });
+
+    const res = await request(makeApp()).get("/shop/me/dashboard");
+    expect(res.status).toBe(200);
+    expect(res.body.nextShipment).toMatchObject({
+      subscriptionId: "ep_due",
+      date: "2020-01-01T00:00:00.000Z",
+      daysUntil: 0,
+      firstItemName: "MASK-NASAL-M",
+      cancelAtPeriodEnd: false,
+    });
+    expect(res.body.eligibility.eligibleNow).toEqual([
+      { subscriptionId: "ep_due", firstItemName: "MASK-NASAL-M" },
+    ]);
+    expect(res.body.activeSubscriptions).toBe(0);
   });
 });

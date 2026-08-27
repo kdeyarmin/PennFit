@@ -11,7 +11,6 @@ them up without re-discovering scope.
 | Provider portal seed-org fallback on platform host | Intentional for single-tenant Penn; full multi-tenant routing is architectural   | Design host→org routing for provider SPA before changing |
 | Platform billing payment wall enforcement          | Epic exists; re-lock on failed invoice is env-gated (`BILLING_PAYWALL_ENFORCED`) | Enable per runbook when Stripe platform billing is live  |
 | LTV including insurance claim dollars              | UI already labeled historical shop-only                                          | New insurance LTV metric once claim dollars are trusted  |
-| Home status banner insurance due / next ship       | `/shop/me/dashboard` stubs `nextShipment` / `eligibility` after Subscribe&Save   | Populate from episodes + Rx cadence; CTAs to `/contact`  |
 
 ## Shipped (merged)
 
@@ -24,6 +23,7 @@ them up without re-discovering scope.
 | Back-in-stock patient signup route                      | #1337 — `POST /shop/back-in-stock` with catalog SKU ids                               |
 | Trust strip live reviews aggregate                      | Round seven — static badges only; helper hard-fails                                   |
 | XPS shipping labels empty-state honesty                 | Round seven — PacWare / insurance copy; historical shop-order queue                   |
+| Home status banner insurance due / next ship            | Round eight — episodes → `nextShipment` / `eligibility`; CTAs to `/reminders`         |
 | Due math: queued fulfillments count via `created_at`    | Already on main — `reminders.ts` uses `shipped_at ?? created_at`; `reminders.test.ts` |
 | Review-request emails / `storefront.reviews_collection` | #1333 — migration 0530 OFF + `DELIBERATELY_OFF_FLAGS`                                 |
 | Lapsed winback last-activity gate                       | Round three — `resolveLastCustomerShipmentActivityIso` + tests                        |
@@ -75,13 +75,19 @@ them up without re-discovering scope.
 | -------------------------- | --------------------------------------------------------------- |
 | Back-in-stock signup route | Restored `POST /shop/back-in-stock` with catalog SKU validation |
 
-## Started in round seven (this branch)
+## Started in round seven — merged #1338
 
 | Item                                    | Status                                                                   |
 | --------------------------------------- | ------------------------------------------------------------------------ |
 | Trust strip reviews aggregate           | Removed live fetch; static badges only; helper hard-fails                |
 | XPS shipping labels insurance-only copy | Header + empty state point at PacWare; nav hint updated                  |
 | Legacy fit_session on `/api/recommend`  | Doc: already closed by #1326 attach-at-request; not writing on recommend |
+
+## Started in round eight (this branch)
+
+| Item                             | Status                                                                    |
+| -------------------------------- | ------------------------------------------------------------------------- |
+| Home banner insurance due digest | `buildInsuranceDueDigest` from open episodes; SPA Due tile → `/reminders` |
 
 ## Production deploy note (2026-08-27)
 

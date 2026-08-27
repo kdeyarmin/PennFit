@@ -385,26 +385,27 @@ export async function startQuickCheckout(
 
 /**
  * Aggregated status digest powering the signed-in home banner.
- * One round-trip across orders + subscriptions + abandoned cart.
+ * One round-trip: latest fulfillment/order + insurance episode due dates.
  */
 export interface ShopMeDashboardResponse {
+  /**
+   * Soonest open outreach episode (`due_at`). `subscriptionId` is the
+   * episode id — field name kept for older SPA builds.
+   */
   nextShipment: {
     subscriptionId: string;
     /** ISO 8601 string. */
     date: string;
     /**
-     * Phase A.1 — non-negative day countdown until this shipment is
-     * eligible. 0 means today / past.
+     * Non-negative day countdown until due. 0 means today / past.
      */
     daysUntil: number;
     firstItemName: string | null;
     cancelAtPeriodEnd: boolean;
   } | null;
   /**
-   * Phase A.1 — eligibility-claim payload. `eligibleNow` is the list
-   * of subscriptions whose period has already rolled past (the
-   * customer can reorder right now); `soonest` is the closest future
-   * eligibility for the countdown text.
+   * Overdue episodes in `eligibleNow`; closest future (or overdue)
+   * episode in `soonest` for the countdown text.
    */
   eligibility: {
     eligibleNow: Array<{
