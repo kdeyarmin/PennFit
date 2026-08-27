@@ -104,7 +104,56 @@ router.get(
     }));
 
     const report = buildLtvCacReport(inputs);
-    res.json({ ...report, generatedAt: new Date().toISOString() });
+
+    // ERA remittance companion — labeled NOT in the LTV:CAC ratio. Channel
+    // attribution for claim dollars still needs a patient↔customer join
+    // (customer_acquisition has no patient_id). Operators see remittance
+    // totals here and the full split on revenue-by-source.
+    let eraPayerPaidCents = 0;
+    let eraPaidClaimCount = 0;
+    {
+      const PAGE = 1000;
+      const CAP = 50_000;
+      for (let from = 0; from < CAP; from += PAGE) {
+        const { data, error, count } = await supabase
+          .from("insurance_claims")
+          .select("total_paid_cents", { count: "exact" })
+          .not("paid_at", "is", null)
+          .order("id", { ascending: true })
+          .range(from, from + PAGE - 1);
+        if (error) {
+          logger.warn(
+            { err: redactDbErr(error), orgId },
+            "ltv-cac: ERA remittance companion query failed",
+          );
+          eraPayerPaidCents = 0;
+          eraPaidClaimCount = 0;
+          break;
+        }
+        if (count != null && from === 0) eraPaidClaimCount = count;
+        for (const row of data ?? []) {
+          const cents = (row as { total_paid_cents: number | null })
+            .total_paid_cents;
+          eraPayerPaidCents += Math.max(0, cents ?? 0);
+        }
+        if (!data || data.length < PAGE) break;
+        if (count != null && count > CAP) {
+          // Cap hit — still report what we summed; flag incomplete below.
+          break;
+        }
+      }
+    }
+
+    res.json({
+      ...report,
+      generatedAt: new Date().toISOString(),
+      insuranceRemittance: {
+        eraPayerPaidCents,
+        paidClaimCount: eraPaidClaimCount,
+        includedInLtvRatio: false as const,
+        possiblyIncomplete: eraPaidClaimCount > 50_000,
+      },
+    });
   },
 );
 

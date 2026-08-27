@@ -32,6 +32,7 @@ import { useConfirmDialog } from "@/hooks/use-confirm-dialog";
 import { ErrorPanel, describeError } from "@/components/admin/ErrorPanel";
 import { EmptyState } from "@/components/admin/EmptyState";
 import { AdminModal } from "@/components/admin/AdminModal";
+import { ApiError } from "@workspace/api-client-react/admin";
 import {
   listProviders,
   type ProviderListItem,
@@ -243,7 +244,29 @@ function InviteModal({ onClose }: { onClose: () => void }) {
           </div>
           {mut.isError ? (
             <p className="text-xs text-red-600">
-              Could not send the invitation: {describeError(mut.error).detail}
+              Could not send the invitation:{" "}
+              {(() => {
+                const d = describeError(mut.error);
+                const code =
+                  mut.error instanceof ApiError
+                    ? (mut.error.data as { error?: string } | null)?.error
+                    : undefined;
+                if (code === "tenant_domain_required") {
+                  return (
+                    <>
+                      {d.detail} Open{" "}
+                      <a
+                        href="/admin/company-information"
+                        className="underline"
+                      >
+                        Company Information
+                      </a>{" "}
+                      to verify a custom domain, then try again.
+                    </>
+                  );
+                }
+                return d.detail;
+              })()}
             </p>
           ) : null}
           <div className="flex justify-end gap-2">
@@ -929,6 +952,19 @@ export function AdminProviderEsignPage() {
         <p className="text-sm mt-1" style={{ color: "hsl(var(--ink-3))" }}>
           Stage documents for providers to e-sign, track signed items through
           release, and print the Medicare/insurer-ready signature audit log.
+        </p>
+        <p
+          className="text-xs mt-2 rounded-md border px-3 py-2"
+          style={{
+            borderColor: "hsl(var(--line-1))",
+            color: "hsl(var(--ink-2))",
+            backgroundColor: "hsl(var(--surface-2, 0 0% 98%))",
+          }}
+        >
+          Providers must use this organization&apos;s{" "}
+          <strong>verified custom domain</strong> (Company Information). Invites
+          are blocked until a domain is verified — the platform home host cannot
+          show a tenant signature queue.
         </p>
       </header>
 

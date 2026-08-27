@@ -1,106 +1,49 @@
 # Deferred from comprehensive app review (PR #1330)
 
-Items intentionally left out of the insurance-only / tenant-branding /
-provider-portal hardening merge. Tracked here so a follow-up PR can pick
-them up without re-discovering scope.
+**Status: complete for this deferred backlog.** Every code-actionable item
+from the comprehensive review follow-ups has shipped. Residual work below is
+**ops enablement** or **new epics** — not unfinished deferred-review debt.
 
-## Still open (ops / larger product — not code blockers)
+## Residual (not deferred-review blockers)
 
-| Item                                          | Why still open                                                                   | Suggested next step                                                                 |
-| --------------------------------------------- | -------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| Enable platform billing payment wall in prod  | Code + preflight guard shipped; enforcement stays env-gated                      | Ops: follow `docs/runbooks/tenant-payment-wall.md` when Stripe platform billing live |
-| LTV:CAC including insurance claim dollars     | Revenue-by-source now shows ERA payer-paid separately; LTV UI stays shop-only    | Patient↔customer acquisition join before folding claim $ into LTV:CAC               |
-| Full multi-org provider portal                | Fail-closed on platform host shipped; membership / org-picker not built          | See `docs/provider-portal-tenant-host-routing.md`                                   |
+| Item                                          | Status                                                                                             | Where tracked                                               |
+| --------------------------------------------- | -------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| Flip `BILLING_PAYWALL_ENFORCED` in production | Code + preflight guard shipped; env still OFF by design until ops validates Stripe                 | `docs/runbooks/tenant-payment-wall.md`                      |
+| Channel LTV:CAC including claim dollars       | ERA remittance companion on LTV page + revenue-by-source; ratio stays shop-only until patient join | New epic: `customer_acquisition.patient_id` (or equivalent) |
+| Full multi-org provider org-picker            | Fail-closed API + SPA WrongTenantHost + invite domain gate shipped                                 | `docs/provider-portal-tenant-host-routing.md` (Future epic) |
 
 ## Shipped (merged)
 
-| Item                                                    | PR / location                                                                         |
-| ------------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| Provider portal / RTM seed-org soft-fallback            | Round nine — brand host resolve; 403 `provider_tenant_host_required`                  |
-| Preflight: paywall requires Stripe platform credentials | Round nine — `preflight-prod-env.ts`                                                  |
-| Revenue-by-source ERA payer-paid cents                  | Round nine — labeled `totalPayerPaidCents` (not LTV)                                  |
-| Control Center stale cash-pay module framing            | Round nine — comment scrub                                                            |
-| Episode lifecycle factory writer                        | #1326 — Rx create, bootstrap, post-confirm next cycle                                 |
-| Legacy fitter `fit_session` for recommend-only path     | #1326 — `createLegacyFitSessionForRequest` at fit-request time (not on recommend)     |
-| Chatbot PII scrub (MBI, PO Box, ZIP, member-id, cards)  | #1335 — `chatbotPii.ts` + behavioral tests                                            |
-| Back-in-stock auto-dispatch on restock                  | #1336 — `autoDispatchBackInStockOnRestock`; `RESUPPLY_BACK_IN_STOCK_AUTO_DISPATCH=1`  |
-| Back-in-stock patient signup route                      | #1337 — `POST /shop/back-in-stock` with catalog SKU ids                               |
-| Trust strip live reviews aggregate                      | Round seven — static badges only; helper hard-fails                                   |
-| XPS shipping labels empty-state honesty                 | Round seven — PacWare / insurance copy; historical shop-order queue                   |
-| Home status banner insurance due / next ship            | Round eight — episodes → `nextShipment` / `eligibility`; CTAs to `/reminders`         |
-| Due math: queued fulfillments count via `created_at`    | Already on main — `reminders.ts` uses `shipped_at ?? created_at`; `reminders.test.ts` |
-| Review-request emails / `storefront.reviews_collection` | #1333 — migration 0530 OFF + `DELIBERATELY_OFF_FLAGS`                                 |
-| Lapsed winback last-activity gate                       | Round three — `resolveLastCustomerShipmentActivityIso` + tests                        |
-| Account “Track a shipment” → `/contact`                 | #1333                                                                                 |
-| Help / account prefs cash-pay copy                      | #1333                                                                                 |
-| Account chatbot insurance-only tools                    | #1333 + round three FAQ claim-adjustment copy                                         |
-| Seed tenant `assistantAdminName` → PennPilot            | Round three — migration 0531                                                          |
-| Provider RTM paging / setupDate / attestation horizon   | #1333                                                                                 |
+| Item                                                    | PR / location                                                                        |
+| ------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| Provider SPA wrong-host honesty + admin domain callout  | Round ten — `ProviderPortalRoute`, `admin-provider-esign`                            |
+| LTV page ERA remittance companion (not in ratio)        | Round ten — `GET /admin/analytics/ltv-cac` `insuranceRemittance`                     |
+| Provider portal / RTM seed-org soft-fallback            | #1341 — brand host resolve; 403 `provider_tenant_host_required`                      |
+| Preflight: paywall requires Stripe platform credentials | #1341 — `preflight-prod-env.ts`                                                      |
+| Revenue-by-source ERA payer-paid cents                  | #1341 — labeled `totalPayerPaidCents` (not LTV)                                      |
+| Control Center stale cash-pay module framing            | #1341 — comment scrub                                                                |
+| Episode lifecycle factory writer                        | #1326 — Rx create, bootstrap, post-confirm next cycle                                |
+| Legacy fitter `fit_session` for recommend-only path     | #1326 — `createLegacyFitSessionForRequest` at fit-request time (not on recommend)    |
+| Chatbot PII scrub (MBI, PO Box, ZIP, member-id, cards)  | #1335 — `chatbotPii.ts` + behavioral tests                                           |
+| Back-in-stock auto-dispatch on restock                  | #1336 — `autoDispatchBackInStockOnRestock`; `RESUPPLY_BACK_IN_STOCK_AUTO_DISPATCH=1` |
+| Back-in-stock patient signup route                      | #1337 — `POST /shop/back-in-stock` with catalog SKU ids                              |
+| Trust strip live reviews aggregate                      | Round seven — static badges only; helper hard-fails                                  |
+| XPS shipping labels empty-state honesty                 | Round seven — PacWare / insurance copy; historical shop-order queue                  |
+| Home status banner insurance due / next ship            | Round eight / #1340 — episodes → `nextShipment` / `eligibility`                      |
+| Due math: queued fulfillments count via `created_at`    | Already on main — `reminders.ts` uses `shipped_at ?? created_at`                     |
+| Review-request emails / `storefront.reviews_collection` | #1333 — migration 0530 OFF + `DELIBERATELY_OFF_FLAGS`                                |
+| Lapsed winback last-activity gate                       | Round three — `resolveLastCustomerShipmentActivityIso` + tests                       |
+| Account “Track a shipment” → `/contact`                 | #1333                                                                                |
+| Help / account prefs cash-pay copy                      | #1333                                                                                |
+| Account chatbot insurance-only tools                    | #1333 + round three FAQ claim-adjustment copy                                        |
+| Seed tenant `assistantAdminName` → PennPilot            | Round three — migration 0531                                                         |
+| Provider RTM paging / setupDate / attestation horizon   | #1333                                                                                |
 
-## Started in this follow-up (PR #1333) — merged 2026-08-27
+## Round history (merged)
 
-| Item                                                              | Status                                                                       |
-| ----------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| Provider RTM roster `setupDate` truncated by PostgREST `max_rows` | Fixed: per-patient first-night lookup in `routes/provider/rtm.ts`            |
-| Provider RTM caseload list truncated at `max_rows`                | Fixed: page `prescriptions` with `.range()` in `listProviderPatientIds`      |
-| Provider RTM detail / attestation oldest-1000-nights only         | Fixed: CMS horizon fetch (`ATTESTATION_HORIZON_DAYS`) with `.range()` paging |
-| Roster recent-nights chunk still hit `max_rows`                   | Fixed: page each id-chunk’s recent-window nights                             |
-| RTM setupDate lookup unbounded concurrency (review)               | Fixed: cap at 15 concurrent reads per id chunk (#1333 `0f6c83fca`)           |
-| Review-request emails / `storefront.reviews_collection`           | Fixed: migration 0530 OFF + moved to `DELIBERATELY_OFF_FLAGS`                |
-| Account “Track a shipment” → `/track-order`                       | Fixed: CTA → `/contact` (“Ask about a shipment”)                             |
-| Account chatbot escalate / subscription tool cash-pay coaching    | Fixed: insurance-only tool descriptors + category labels                     |
-| Help / account prefs cash-pay leftover copy                       | Fixed: hide abandoned/review toggles; help + account prefs insurance-aligned |
-
-## Started in round three — merged
-
-| Item                                             | Status                                                  |
-| ------------------------------------------------ | ------------------------------------------------------- |
-| Seed tenant `assistantAdminName` → PennBot       | Migration 0531: correct admin key when value is PennBot |
-| Account chat KB tenant-brand guard               | `customerChatKnowledge.brand.test.ts`                   |
-| Account chat FAQ still says “refund in 5-7 days” | FAQ 85/89 aligned to claim-adjustment language          |
-| Lapsed winback last-activity gate                | `resolveLastCustomerShipmentActivityIso` + tests        |
-
-## Started in round four — merged #1335
-
-| Item                             | Status                                                               |
-| -------------------------------- | -------------------------------------------------------------------- |
-| Chatbot PII scrub scope          | Added MBI, PO Box, state/labeled ZIP, member-id label, card patterns |
-| Episode lifecycle factory writer | Already shipped in #1326 — doc updated; no code change this round    |
-
-## Started in round five — merged #1336
-
-| Item                        | Status                                                                  |
-| --------------------------- | ----------------------------------------------------------------------- |
-| Back-in-stock auto-dispatch | `autoDispatchBackInStockOnRestock` on positive `adjustStock`; env-gated |
-
-## Started in round six — merged #1337
-
-| Item                       | Status                                                          |
-| -------------------------- | --------------------------------------------------------------- |
-| Back-in-stock signup route | Restored `POST /shop/back-in-stock` with catalog SKU validation |
-
-## Started in round seven — merged #1338
-
-| Item                                    | Status                                                                   |
-| --------------------------------------- | ------------------------------------------------------------------------ |
-| Trust strip reviews aggregate           | Removed live fetch; static badges only; helper hard-fails                |
-| XPS shipping labels insurance-only copy | Header + empty state point at PacWare; nav hint updated                  |
-| Legacy fit_session on `/api/recommend`  | Doc: already closed by #1326 attach-at-request; not writing on recommend |
-
-## Started in round eight — merged #1340
-
-| Item                             | Status                                                                    |
-| -------------------------------- | ------------------------------------------------------------------------- |
-| Home banner insurance due digest | `buildInsuranceDueDigest` from open episodes; SPA Due tile → `/reminders` |
-
-## Started in round nine (this branch)
-
-| Item                                         | Status                                                                 |
-| -------------------------------------------- | ---------------------------------------------------------------------- |
-| Provider / RTM platform-host fail-closed     | Brand resolver; 403 `provider_tenant_host_required`                    |
-| Preflight paywall ↔ Stripe                   | FAIL when `BILLING_PAYWALL_ENFORCED` without billing keys              |
-| Revenue-by-source ERA payer paid             | `totalPayerPaidCents` + UI / CSV; LTV:CAC unchanged                    |
-| Provider host-routing design note            | `docs/provider-portal-tenant-host-routing.md`                          |
+Rounds three through nine closed prior deferred rows (see git history / PRs
+#1333–#1341). Round ten closes SPA honesty + LTV remittance companion and
+marks this tracker complete.
 
 ## Production deploy note (2026-08-27)
 
@@ -117,5 +60,5 @@ verify:deploy → 4 passed
 
 Platform host `pennfit.up.railway.app` correctly stays CareMetric-branded.
 
-Runbook for tenant payment wall: `docs/runbooks/tenant-payment-wall.md`.
-Provider host routing: `docs/provider-portal-tenant-host-routing.md`.
+Runbooks: `docs/runbooks/tenant-payment-wall.md`,
+`docs/provider-portal-tenant-host-routing.md`.

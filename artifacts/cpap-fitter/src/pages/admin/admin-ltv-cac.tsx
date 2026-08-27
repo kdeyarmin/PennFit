@@ -11,6 +11,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { TrendingUp } from "lucide-react";
+import { Link } from "wouter";
 
 import { Card } from "@/components/admin/Card";
 import { Button } from "@/components/admin/Button";
@@ -22,6 +23,7 @@ import {
   recordAcquisition,
   type AcquisitionChannel,
   type ChannelEconomics,
+  type LtvCacResponse,
 } from "@/lib/admin/ltv-cac-api";
 
 const CHANNELS: ReadonlyArray<{ value: AcquisitionChannel; label: string }> = [
@@ -73,12 +75,13 @@ export function AdminLtvCacPage() {
           LTV &amp; CAC by channel
         </h1>
         <p className="text-sm mt-1" style={{ color: "hsl(var(--ink-3))" }}>
-          Average lifetime value vs acquisition cost per channel. LTV is summed
-          from historical paid shop orders (patient cash-pay is retired —
-          insurance claim dollars are not in this ratio yet). CAC is averaged
-          over customers whose cost is recorded — a channel&apos;s costed/total
-          split is shown so thin data is visible, never a guessed CAC. LTV:CAC
-          above ~3:1 is the usual healthy bar.
+          Average lifetime value vs acquisition cost per channel. Channel LTV is
+          summed from historical paid shop orders only. Insurance remittance
+          (ERA payer paid) is shown separately below and is not in the LTV:CAC
+          ratio — folding claim dollars in needs a patient↔customer acquisition
+          join. CAC is averaged over customers whose cost is recorded — a
+          channel&apos;s costed/total split is shown so thin data is visible,
+          never a guessed CAC. LTV:CAC above ~3:1 is the usual healthy bar.
         </p>
       </header>
 
@@ -89,9 +92,56 @@ export function AdminLtvCacPage() {
       ) : query.isError ? (
         <ErrorPanel error={query.error} onRetry={() => void query.refetch()} />
       ) : (
-        <ChannelTable rows={query.data.byChannel} />
+        <>
+          <InsuranceRemittanceCard
+            remittance={query.data.insuranceRemittance}
+          />
+          <ChannelTable rows={query.data.byChannel} />
+        </>
       )}
     </div>
+  );
+}
+
+function InsuranceRemittanceCard({
+  remittance,
+}: {
+  remittance: LtvCacResponse["insuranceRemittance"];
+}) {
+  if (!remittance) return null;
+  return (
+    <Card data-testid="ltv-insurance-remittance">
+      <p
+        className="text-[10px] uppercase tracking-[0.2em] font-semibold mb-1"
+        style={{ color: "hsl(var(--penn-gold-deep))" }}
+      >
+        Insurance remittance (not in LTV:CAC)
+      </p>
+      <p
+        className="text-2xl font-semibold tabular-nums leading-none"
+        style={{ color: "hsl(var(--ink-1))" }}
+      >
+        {money(remittance.eraPayerPaidCents)}
+      </p>
+      <p className="text-[11px] mt-2" style={{ color: "hsl(var(--ink-3))" }}>
+        {remittance.paidClaimCount.toLocaleString("en-US")} claim(s) with a
+        paid_at stamp
+        {remittance.possiblyIncomplete
+          ? " (sum capped — open Revenue by source for the windowed view)"
+          : ""}
+        . Channel attribution for these dollars is a separate epic.
+      </p>
+      <p className="text-xs mt-2">
+        <Link
+          href="/admin/analytics/revenue-by-source"
+          className="underline"
+          style={{ color: "hsl(var(--penn-navy))" }}
+        >
+          Revenue by source
+        </Link>{" "}
+        — ERA payer paid by window
+      </p>
+    </Card>
   );
 }
 
