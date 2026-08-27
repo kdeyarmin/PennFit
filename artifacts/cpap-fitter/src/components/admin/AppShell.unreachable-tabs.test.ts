@@ -28,6 +28,12 @@ const CLINICIAN: ReadonlySet<string> = new Set([
   "clinical.intervention.write",
   "formulary.manage",
   "fit_session.override",
+  // Granted so the RT can run the therapy monitoring the User Manual
+  // calls their job. `therapy.read`, NOT `reports.read`: the latter also
+  // gates ~50 billing/revenue/payer route files an RT has no business in.
+  "therapy.read",
+  "returns.read",
+  "cases.read",
 ]);
 
 const CUSTOMER_SERVICE_REP: ReadonlySet<string> = new Set([
@@ -38,6 +44,7 @@ const CUSTOMER_SERVICE_REP: ReadonlySet<string> = new Set([
   "orders.create",
   "compliance.read",
   "reports.read",
+  "therapy.read",
   "inventory.read",
   "conversations.manage",
   "fit_session.override",
@@ -50,6 +57,7 @@ const BILLER: ReadonlySet<string> = new Set([
   "patients.read",
   "patients.update",
   "reports.read",
+  "therapy.read",
   "cost.read",
   "inventory.read",
   "billing.manage",
@@ -75,28 +83,43 @@ function visibleHrefs(
 
 /** href → the route permission that decides whether the page can load. */
 const THERAPY_DASHBOARDS = [
-  "/admin/therapy-fleet", // therapy-fleet.ts        → reports.read
-  "/admin/therapy-compliance", // therapy-compliance.ts   → reports.read
-  "/admin/therapy-resupply", // therapy-resupply.ts     → reports.read
+  "/admin/therapy-fleet", // therapy-fleet.ts        → therapy.read
+  "/admin/therapy-compliance", // therapy-compliance.ts   → therapy.read
+  "/admin/therapy-resupply", // therapy-resupply.ts     → therapy.read
 ] as const;
-const THERAPY_REPORT = "/admin/therapy-usage-report"; // → reports.read
+const THERAPY_REPORT = "/admin/therapy-usage-report"; // → therapy.read
 const RECALLS = "/admin/equipment-recalls"; // equipment-recalls.ts → returns.read
 
-describe("a clinician is not shown screens their role would 403 on", () => {
-  it("hides the population therapy dashboards", () => {
+// The clinician set was widened with reports.read / returns.read /
+// cases.read so an RT can run the therapy monitoring the User Manual
+// calls their job. The gates were NOT removed to achieve that — they
+// stayed exactly as they were and simply pass now, which is the whole
+// point of gating on the route's permission rather than on the role.
+describe("a clinician sees the therapy screens their role can now load", () => {
+  it("shows the population therapy dashboards", () => {
     for (const href of THERAPY_DASHBOARDS) {
-      expect(visibleHrefs(href, CLINICIAN)).not.toContain(href);
+      expect(visibleHrefs(href, CLINICIAN)).toContain(href);
     }
   });
 
-  it("hides the printable Therapy Report", () => {
-    expect(visibleHrefs(THERAPY_REPORT, CLINICIAN)).not.toContain(
-      THERAPY_REPORT,
-    );
+  it("shows the printable Therapy Report", () => {
+    expect(visibleHrefs(THERAPY_REPORT, CLINICIAN)).toContain(THERAPY_REPORT);
   });
 
-  it("hides Recalls", () => {
-    expect(visibleHrefs(RECALLS, CLINICIAN)).not.toContain(RECALLS);
+  it("shows Recalls", () => {
+    expect(visibleHrefs(RECALLS, CLINICIAN)).toContain(RECALLS);
+  });
+
+  it("still hides what the role genuinely cannot load", () => {
+    // Asset recovery READS on cases.read (now held), but a role without
+    // it must still not be offered the tab — the gate is what decides,
+    // not the role, so prove it with a set that lacks the permission.
+    const withoutCases = new Set(
+      [...CLINICIAN].filter((p) => p !== "cases.read"),
+    );
+    expect(visibleHrefs("/admin/asset-recovery", withoutCases)).not.toContain(
+      "/admin/asset-recovery",
+    );
   });
 });
 

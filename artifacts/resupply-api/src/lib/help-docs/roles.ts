@@ -341,16 +341,25 @@ const RT: StaffRoleProfile = {
   family: "rt",
   title: "Respiratory therapist",
   summary:
-    "You keep patients adherent and document the clinical care that backs every claim.",
+    "You watch therapy, keep patients adherent, and document the clinical care that backs every claim.",
   highlights: [
+    "Review the therapy board and fleet, and spot at-risk patients before they fall off therapy.",
+    "Track the CMS 90-day setup window and open interventions for patients who are drifting.",
     "Document clinical encounters, interventions, and adherence coaching straight into the patient's chart.",
-    "Work the clinical outreach list and follow up with patients drifting off therapy.",
-    "Read each patient's therapy history and clinical timeline before you act on it.",
+    "Work the clinical outreach list and the resupply-due worklist.",
     "Triage mask-fit feedback, and override a fitting's recommended mask or size when the clinical picture calls for it.",
-    "Curate the mask formulary so the fitter recommends what your practice actually dispenses.",
-    "Track your own encounters, patients, and interventions on RT Outcomes.",
+    "Produce provider-ready therapy reports, and check equipment recalls against what you have dispensed.",
   ],
   areas: [
+    {
+      label: "Therapy monitoring",
+      items: [
+        "RT Overview — the at-a-glance therapy board: alerts, AHI, leak, usage",
+        "Therapy Fleet — population compliance cohorts and the outreach worklist",
+        "Setup Adherence — the CMS 90-day tracker for new Medicare setups",
+        "Resupply Opportunities — device-reported supplies due for replacement",
+      ],
+    },
     {
       label: "Clinical work",
       items: [
@@ -376,26 +385,31 @@ const RT: StaffRoleProfile = {
       ],
     },
     {
-      label: "Your activity",
-      items: ["RT Outcomes — your encounters, patients, and interventions"],
+      label: "Devices & reports",
+      items: [
+        "Recalls — the manufacturer recall registry, scanned against dispensed serials",
+        "Asset Recovery — machines to recover from discontinued patients",
+        "Therapy Report — the provider-ready, print-quality adherence snapshot",
+        "RT Outcomes — your own encounters, patients, and interventions",
+      ],
     },
   ],
   extraSections: [
     {
-      heading: "What your role does not cover",
+      heading: "What stays with another role",
       paragraphs: [
-        "The population dashboards — Therapy Fleet, Setup Adherence, Resupply Opportunities — along with Recalls, Asset Recovery, and the printable Therapy Report, read from the reporting, returns, and case permissions, which your role does not hold. They are not in your menu, so you will not find them there.",
-        "That is by design, not something missing from your account. If you need a population view, ask an Owner or Admin to pull it — or to widen your access if that work has become part of your job.",
+        "You can read the recall registry and the asset-recovery list, but acting on them — transitioning a recall or working a recovery case — belongs to the customer-service and admin roles. The same goes for patient demographics: you document clinically on a chart, and an Owner, Admin or CSR edits the patient's own details. Ask one of them when something needs changing.",
       ],
     },
   ],
   firstTasks: [
     "Sign in and turn on multi-factor authentication on your own account.",
+    "Review the therapy board and find the patients most at risk.",
     "Open a patient's chart and read their clinical timeline end to end.",
     "Document a clinical encounter on that patient.",
     "Open a non-adherence intervention and work it.",
-    "Work the clinical outreach list and log what came of each contact.",
-    "Triage a mask-fit feedback item and sign off the fitting.",
+    "Check where your patients sit against the CMS 90-day setup window.",
+    "Generate a provider-ready therapy report.",
   ],
   customerServiceManual: false,
 };

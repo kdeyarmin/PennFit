@@ -74,6 +74,19 @@ import type { AdminRole } from "@workspace/resupply-db";
  *   audit.export            — download audit-log CSV
  *   audit.read              — view audit log entries in the UI
  *   admin_team.manage       — invite / revoke admin team members
+ *   therapy.read            — view POPULATION therapy monitoring: the
+ *                              therapy board/fleet, the CMS 90-day setup
+ *                              tracker, device-reported resupply
+ *                              opportunities, and the provider-ready
+ *                              therapy report. Split out of reports.read
+ *                              so the clinician tier can run the therapy
+ *                              monitoring that IS its job without also
+ *                              receiving the practice's financial read
+ *                              surface — reports.read gates ~50 route
+ *                              files, most of them billing, revenue and
+ *                              payer data an RT has no business seeing.
+ *                              Every role that held reports.read also
+ *                              holds this, so nothing lost access.
  *   reports.read            — view operations-center dashboards
  *   cost.read               — view unit cost / COGS / margin figures
  *                              (finance-gated; off front-line CSRs)
@@ -139,6 +152,7 @@ export type Permission =
   | "audit.read"
   | "admin_team.manage"
   | "reports.read"
+  | "therapy.read"
   | "cost.read"
   | "cost.write"
   | "metrics.read"
@@ -174,6 +188,7 @@ const ALL_PERMISSIONS: ReadonlyArray<Permission> = [
   "audit.read",
   "admin_team.manage",
   "reports.read",
+  "therapy.read",
   "cost.read",
   "cost.write",
   "metrics.read",
@@ -277,6 +292,7 @@ const EFFECTIVE_ROLE_PERMISSIONS: Record<
     "audit.read",
     "audit.export",
     "reports.read",
+    "therapy.read",
     "cost.read",
     "cost.write",
     "metrics.read",
@@ -312,6 +328,7 @@ const EFFECTIVE_ROLE_PERMISSIONS: Record<
     "orders.create",
     "compliance.read",
     "reports.read",
+    "therapy.read",
     "inventory.read",
     "conversations.manage",
     "fit_session.override",
@@ -341,6 +358,26 @@ const EFFECTIVE_ROLE_PERMISSIONS: Record<
     // exactly this permission. Without it the one role the queue exists
     // for could read every session but never act on one.
     "fit_session.override",
+    // Population therapy monitoring IS the RT's job — the User Manual's
+    // RT chapters lead with it — but the reads it runs on sat outside this
+    // set, so the therapy board, the CMS 90-day tracker, resupply
+    // opportunities, the printable therapy report, equipment recalls and
+    // asset recovery all denied for the one role they exist for.
+    //
+    // These three close that gap and are deliberately READ-scoped. Note
+    // `therapy.read` rather than `reports.read`: the therapy surfaces used
+    // to gate on the latter, which also covers ~50 route files of billing,
+    // revenue, payer and GL data. Granting that to run a therapy board
+    // would have handed an RT the practice's finances, so the four therapy
+    // routes were re-gated onto a permission that means what it says.
+    // `returns.read` and `cases.read` gate no mutation at all — recall and
+    // asset-recovery writes need returns.manage / cases.manage, which stay
+    // off this set. Patient-record writes remain out too: `patients.update`
+    // is deliberately NOT here, so an RT still reads a chart and documents
+    // clinically rather than editing demographics.
+    "therapy.read",
+    "returns.read",
+    "cases.read",
   ]),
 
   // Revenue-cycle staff (db role `biller`). Scoped to the Billing area:
@@ -360,6 +397,7 @@ const EFFECTIVE_ROLE_PERMISSIONS: Record<
     "patients.read",
     "patients.update",
     "reports.read",
+    "therapy.read",
     "cost.read",
     "inventory.read",
     "billing.manage",

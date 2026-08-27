@@ -22,7 +22,7 @@
 // over the trailing `days` window. The grouping joins use
 // resupply.prescriptions → providers and resupply.equipment_assets.
 //
-// Read-only, gated on reports.read. No new schema. The aggregation math
+// Read-only, gated on therapy.read. No new schema. The aggregation math
 // is the pure helper in lib/analytics/therapy-usage-report.ts; this
 // route is the DB-read + window-validation + de-identification layer.
 //
@@ -109,7 +109,7 @@ function isoDaysAgo(days: number): string {
 
 router.get(
   "/admin/reports/therapy-usage",
-  requirePermission("reports.read"),
+  requirePermission("therapy.read"),
   async (req, res) => {
     const parsed = querySchema.safeParse(req.query);
     if (!parsed.success) {
