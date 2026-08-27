@@ -1236,7 +1236,7 @@ function unsubscribeHtml(
           : "Something went wrong.";
   const body =
     state === "ok"
-      ? "We won't send you any more fitting follow-ups. You can still place an order at any time."
+      ? "We won't send you any more fitting follow-ups. You can still reach us anytime about your fitting or coverage."
       : state === "invalid"
         ? "This unsubscribe link has expired or was already used. If you keep getting emails, reply to one and we'll handle it directly."
         : state === "rate_limited"
