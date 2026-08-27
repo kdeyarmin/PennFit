@@ -143,6 +143,7 @@ export function makeMemoryRepo(now: () => Date = () => new Date()): MemoryRepo {
         userAgentHash: input.userAgentHash,
         impersonatedOrgId: input.impersonatedOrgId ?? null,
         impersonatorUserId: input.impersonatorUserId ?? null,
+        providerActiveOrgId: null,
       };
       sessions.set(session.id, session);
       sessionsByHash.set(input.tokenHash.toString("hex"), session);
@@ -170,6 +171,14 @@ export function makeMemoryRepo(now: () => Date = () => new Date()): MemoryRepo {
       if (!s || s.revokedAt) return;
       s.expiresAt = expiresAt;
       s.lastSeenAt = at;
+    },
+    async findSessionById(sessionId) {
+      return sessions.get(sessionId) ?? null;
+    },
+    async setProviderActiveOrgId(sessionId, orgId) {
+      const s = sessions.get(sessionId);
+      if (!s || s.revokedAt) return;
+      s.providerActiveOrgId = orgId;
     },
     async insertEmailToken(input) {
       emailTokens.set(input.tokenHash.toString("hex"), {

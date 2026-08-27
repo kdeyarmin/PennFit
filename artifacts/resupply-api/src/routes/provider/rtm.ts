@@ -17,6 +17,8 @@
 // be scoped to the tenant that owns THIS host. `attachProviderOrgId` (in
 // each chain, after requireProvider) uses the brand host resolver and
 // fails CLOSED (403 `provider_tenant_host_required`) on platform /
+// unbound hosts unless a membership-validated session pin is set —
+// never soft-falls to the seed org.
 // unbound hosts rather than soft-falling to the seed org.
 //
 // PHI posture: the app logger sees provider/patient ids + numeric counts
