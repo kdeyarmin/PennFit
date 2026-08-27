@@ -2,12 +2,12 @@
 // home banner.
 //
 // What it returns (read-only, never errors when authenticated):
-//   * nextShipment        — always null. Cash-pay Subscribe & Save is
-//                            retired; historical `shop_subscriptions`
-//                            rows must not surface as upcoming ships.
-//   * eligibility         — always empty. Same reason: do not nudge
-//                            insurance reorder from retired auto-ship
-//                            period ends.
+//   * nextShipment        — soonest in-progress insurance episode
+//                            `due_at` (outreach_pending / awaiting_response).
+//                            Field names reuse the retired Subscribe &
+//                            Save shape (`subscriptionId` = episode id).
+//   * eligibility         — overdue episodes in `eligibleNow`; closest
+//                            future (or overdue) in `soonest`.
 //   * latestOrder         — most-recent insurance fulfillment when the
 //                            signed-in email resolves to exactly one
 //                            patient chart; otherwise the latest paid
@@ -28,6 +28,11 @@ import { Router, type IRouter } from "express";
 
 import { type Json, getOrgScopedClient } from "@workspace/resupply-db";
 
+import {
+  IN_PROGRESS_EPISODE_STATUSES,
+  buildInsuranceDueDigest,
+  type EpisodeDueRow,
+} from "../../lib/shop-customer/insurance-due-digest";
 import { resolvePatientIdForCustomer } from "../../lib/shop-customer/resolve-patient";
 import { requireSignedIn } from "../../middlewares/requireSignedIn";
 
@@ -59,6 +64,40 @@ function parseShipmentMetadata(json: Json | null): {
 
 function orderActivityAt(iso: string | null | undefined): number {
   return iso ? Date.parse(iso) : 0;
+}
+
+async function loadInsuranceDueDigest(
+  supabase: ReturnType<typeof getOrgScopedClient>,
+  patientId: string,
+): Promise<ReturnType<typeof buildInsuranceDueDigest>> {
+  const { data: episodes, error: episodesErr } = await supabase
+    .from("episodes")
+    .select("id, prescription_id, due_at")
+    .eq("patient_id", patientId)
+    .in("status", [...IN_PROGRESS_EPISODE_STATUSES])
+    .order("due_at", { ascending: true })
+    .limit(50);
+  if (episodesErr) throw episodesErr;
+
+  const rows = (episodes ?? []) as EpisodeDueRow[];
+  if (rows.length === 0) {
+    return buildInsuranceDueDigest([], new Map());
+  }
+
+  const rxIds = [...new Set(rows.map((r) => r.prescription_id))];
+  const { data: prescriptions, error: rxErr } = await supabase
+    .from("prescriptions")
+    .select("id, item_sku")
+    .in("id", rxIds);
+  if (rxErr) throw rxErr;
+
+  const skuByRx = new Map<string, string>();
+  for (const rx of prescriptions ?? []) {
+    if (rx.id && typeof rx.item_sku === "string") {
+      skuByRx.set(rx.id, rx.item_sku);
+    }
+  }
+  return buildInsuranceDueDigest(rows, skuByRx);
 }
 
 router.get("/shop/me/dashboard", requireSignedIn, async (req, res) => {
@@ -103,29 +142,33 @@ router.get("/shop/me/dashboard", requireSignedIn, async (req, res) => {
 
   let latestFulfillment: DashboardLatestOrder | null = null;
   let pendingFulfillments = 0;
+  let dueDigest = buildInsuranceDueDigest([], new Map());
   if (patientId) {
-    const [latestFulfillmentRes, pendingFulfillmentsRes] = await Promise.all([
-      supabase
-        .from("fulfillments")
-        .select(
-          "id, status, created_at, shipped_at, delivered_at, shipment_metadata",
-        )
-        .eq("patient_id", patientId)
-        .order("created_at", { ascending: false })
-        .order("id", { ascending: false })
-        .limit(1)
-        .maybeSingle(),
-      supabase
-        .from("fulfillments")
-        .select("*", { count: "exact", head: true })
-        .eq("patient_id", patientId)
-        .is("shipped_at", null)
-        .is("delivered_at", null)
-        .not("status", "in", "(cancelled,canceled)"),
-    ]);
+    const [latestFulfillmentRes, pendingFulfillmentsRes, digest] =
+      await Promise.all([
+        supabase
+          .from("fulfillments")
+          .select(
+            "id, status, created_at, shipped_at, delivered_at, shipment_metadata",
+          )
+          .eq("patient_id", patientId)
+          .order("created_at", { ascending: false })
+          .order("id", { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+        supabase
+          .from("fulfillments")
+          .select("*", { count: "exact", head: true })
+          .eq("patient_id", patientId)
+          .is("shipped_at", null)
+          .is("delivered_at", null)
+          .not("status", "in", "(cancelled,canceled)"),
+        loadInsuranceDueDigest(supabase, patientId),
+      ]);
     if (latestFulfillmentRes.error) throw latestFulfillmentRes.error;
     if (pendingFulfillmentsRes.error) throw pendingFulfillmentsRes.error;
 
+    dueDigest = digest;
     pendingFulfillments = pendingFulfillmentsRes.count ?? 0;
     const row = latestFulfillmentRes.data;
     if (row) {
@@ -173,8 +216,8 @@ router.get("/shop/me/dashboard", requireSignedIn, async (req, res) => {
       : (latestFulfillment ?? latestShopOrder);
 
   res.json({
-    nextShipment: null,
-    eligibility: { eligibleNow: [], soonest: null },
+    nextShipment: dueDigest.nextShipment,
+    eligibility: dueDigest.eligibility,
     latestOrder,
     activeSubscriptions: 0,
     pendingOrders: (pendingOrdersRes.count ?? 0) + pendingFulfillments,

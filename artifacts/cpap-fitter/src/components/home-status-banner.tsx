@@ -20,10 +20,10 @@ import { formatAppDate } from "@/lib/utils";
  * customers. Single round-trip to /shop/me/dashboard, which aggregates
  * the digest the patient most wants to see on a home visit:
  *
- *   * Next insurance resupply / shipment date.
+ *   * Next insurance resupply due date (from open outreach episodes).
  *   * Latest order tracking / delivery status.
  *   * Pending order backlog count.
- *   * Optional nudge toward insurance reorder when items are ready.
+ *   * Optional nudge toward reminders / contact when items are due.
  *
  * Self-contained: <SignedIn> wraps it, so it returns nothing for
  * guests. Failures degrade silently — a network blip shouldn't
@@ -67,14 +67,16 @@ function SignedInBanner() {
   if (!loaded || !data) return null;
 
   // If absolutely nothing is going on (no shipments, no orders, no
-  // eligibility signal), skip rendering — a "you have no orders"
-  // banner is just noise on home. We only show the banner when
+  // eligibility / countdown signal), skip rendering — a "you have no
+  // orders" banner is just noise on home. We only show the banner when
   // there's signal worth hoisting above the marketing hero.
   const eligibleNowCount = data.eligibility?.eligibleNow?.length ?? 0;
+  const hasSoonest = data.eligibility?.soonest != null;
   const hasSignal =
     data.nextShipment !== null ||
     data.latestOrder !== null ||
-    eligibleNowCount > 0;
+    eligibleNowCount > 0 ||
+    hasSoonest;
   if (!hasSignal) return null;
 
   const firstName = ((displayName ?? "").trim().split(/\s+/)[0] ?? "").trim();
@@ -197,11 +199,12 @@ function ShipmentTile({
     day: "numeric",
   });
   const itemLabel = shipment.firstItemName ?? "Resupply";
-  const subtitle = shipment.cancelAtPeriodEnd
-    ? "Final shipment in this cycle"
-    : `Next: ${itemLabel}`;
+  const subtitle =
+    shipment.daysUntil === 0
+      ? `Due now · ${itemLabel}`
+      : `Due in ${shipment.daysUntil} day${shipment.daysUntil === 1 ? "" : "s"} · ${itemLabel}`;
   return (
-    <Link href="/insurance">
+    <Link href="/reminders">
       <div className="rounded-xl border bg-background/70 p-4 hover:border-[hsl(var(--penn-gold))] transition-colors cursor-pointer h-full">
         <div className="flex items-start gap-3">
           <div className="h-9 w-9 rounded-lg bg-[hsl(var(--penn-navy)/0.10)] flex items-center justify-center shrink-0">
@@ -209,7 +212,7 @@ function ShipmentTile({
           </div>
           <div className="min-w-0 flex-1">
             <p className="text-sm font-semibold text-[hsl(var(--penn-navy))]">
-              Ships {dateLabel}
+              Due {dateLabel}
             </p>
             <p className="text-xs text-muted-foreground truncate">{subtitle}</p>
           </div>
@@ -220,13 +223,11 @@ function ShipmentTile({
 }
 
 /**
- * Phase A.1 — eligibility countdown / claim banner. Three states:
- *   1. eligibleNow.length > 0  → "N items ready to reorder now"
- *      with a CTA. This is the high-conversion S3-style nudge.
- *   2. soonest.daysUntil === 0 → "Eligible today" (subscription
- *      cycle rolled over today; stripe will dispatch shortly).
- *   3. soonest.daysUntil > 0   → "Your X is eligible in N days" so
- *      the patient gets the operational visibility without a CTA.
+ * Eligibility countdown / claim banner. Three states:
+ *   1. eligibleNow.length > 0  → "N items due for resupply"
+ *      with a CTA to /reminders.
+ *   2. soonest.daysUntil === 0 → "Eligible today".
+ *   3. soonest.daysUntil > 0   → "Your X is eligible in N days".
  *
  * Renders nothing when there's no eligibility signal at all.
  */
