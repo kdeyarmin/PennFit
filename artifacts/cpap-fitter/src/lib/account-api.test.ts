@@ -52,3 +52,25 @@ describe("retired subscription client helpers", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });
+
+describe("retired cash-pay order client helpers", () => {
+  test("fetchShopMyOrders throws without calling the network", async () => {
+    const fetchMock = vi.fn();
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const { fetchShopMyOrders } = await import("./account-api");
+    await expect(fetchShopMyOrders()).rejects.toThrow(/my_orders_retired/);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  test("fetchReorderSuggestions throws without calling the network", async () => {
+    const fetchMock = vi.fn();
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const { fetchReorderSuggestions } = await import("./account-api");
+    await expect(fetchReorderSuggestions()).rejects.toThrow(
+      /reorder_suggestions_retired/,
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});

@@ -258,8 +258,14 @@ export const updateShopClinicalInfo = (input: {
 export interface ShopMyOrdersResponse {
   orders: Array<ShopRecentOrder & { paidAt: string | null }>;
 }
-export const fetchShopMyOrders = () =>
-  meFetch<ShopMyOrdersResponse>("/shop/me/orders");
+
+const MY_ORDERS_RETIRED =
+  "my_orders_retired: cash-pay order history was removed; use insurance fulfillments via /account and billing statements.";
+
+/** Retired — `/shop/me/orders` no longer exists. Insurance shipments are on the account + chatbot surfaces. */
+export async function fetchShopMyOrders(): Promise<ShopMyOrdersResponse> {
+  throw new Error(MY_ORDERS_RETIRED);
+}
 
 export interface QuickCheckoutInput {
   items?: Array<{
@@ -545,10 +551,16 @@ export interface ReorderSuggestion {
   totalQuantityHistorical: number;
 }
 
-export const fetchReorderSuggestions = () =>
-  meFetch<{ suggestions: ReorderSuggestion[]; previewMode?: boolean }>(
-    "/shop/me/reorder-suggestions",
-  );
+const REORDER_SUGGESTIONS_RETIRED =
+  "reorder_suggestions_retired: cash-pay reorder suggestions were removed; supplies are insurance-only.";
+
+/** Retired — `/shop/me/reorder-suggestions` no longer exists. */
+export async function fetchReorderSuggestions(): Promise<{
+  suggestions: ReorderSuggestion[];
+  previewMode?: boolean;
+}> {
+  throw new Error(REORDER_SUGGESTIONS_RETIRED);
+}
 
 export type CustomerInsightKind =
   | "leak_rising"
