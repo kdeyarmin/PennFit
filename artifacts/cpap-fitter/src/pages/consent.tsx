@@ -370,8 +370,8 @@ export function Consent() {
                   I agree to receive emails from <BrandName />
                 </label>
                 <p className="text-sm text-muted-foreground">
-                  Mask recommendation, fitting follow-ups, and product news. You
-                  can unsubscribe at any time.
+                  Mask recommendation, fitting follow-ups, and resupply
+                  reminders. You can unsubscribe at any time.
                 </p>
               </div>
             </div>

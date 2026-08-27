@@ -88,7 +88,7 @@ export function AdminAnalyticsAcquisitionFunnelPage() {
         <>
           <FunnelCard
             title="At-home fitter flow"
-            subtitle="Home → consent → capture → measure → questionnaire → results → order"
+            subtitle="Home → consent → capture → measure → questionnaire → results → fit-request"
             summary={query.data.fitter}
           />
           <FunnelCard
