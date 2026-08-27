@@ -91,7 +91,7 @@ export async function resolveProviderTenantOrgId(
   const account = req.providerAccount;
   if (!sessionId || !account) return null;
 
-  let pinned: string | null = null;
+  let pinned: string | null;
   try {
     const session = await getAuthDeps().repo.findSessionById(sessionId);
     pinned = session?.providerActiveOrgId ?? null;
