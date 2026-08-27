@@ -510,8 +510,8 @@ function renderRelativeAge(when: Date): string {
 // rest are incident controls: pause the dispatcher, stop auto-submitting
 // claims, take voice offline — flipped when something is wrong, flipped
 // back when it's fixed. A module switch is a setup decision that a
-// tenant makes once ("we're cash-pay, we will never open a claims
-// worklist") and it pays off on every page load afterwards, because
+// tenant makes once ("we will never open a claims worklist" / "hide the
+// fitter") and it pays off on every page load afterwards, because
 // turning one off REMOVES that part of the console from the sidebar.
 //
 // So it gets its own card, at the top, grouped by where each module

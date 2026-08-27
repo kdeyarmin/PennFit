@@ -12,13 +12,12 @@
 // own patients. All three routes are MFA-gated (requireProviderMfaEnrolled)
 // because they surface PHI (patient names + therapy data).
 //
-// Tenant scoping: unlike the legacy e-sign portal (which resolves the
-// SEED org for its GLOBAL account/MFA tables), the RTM reads touch TENANT
-// PHI tables (patients, prescriptions, patient_therapy_nights) which carry
-// org_id — so they MUST be scoped to the tenant that owns THIS host.
-// `attachProviderOrgId` (in each chain, after requireProvider) resolves
-// the org by host and pins it onto req.orgId; we fail CLOSED if it is
-// absent rather than widening to all tenants.
+// Tenant scoping: RTM reads touch TENANT PHI tables (patients,
+// prescriptions, patient_therapy_nights) which carry org_id — so they MUST
+// be scoped to the tenant that owns THIS host. `attachProviderOrgId` (in
+// each chain, after requireProvider) uses the brand host resolver and
+// fails CLOSED (403 `provider_tenant_host_required`) on platform /
+// unbound hosts rather than soft-falling to the seed org.
 //
 // PHI posture: the app logger sees provider/patient ids + numeric counts
 // only — never patient names, never therapy free-text, never image bytes.

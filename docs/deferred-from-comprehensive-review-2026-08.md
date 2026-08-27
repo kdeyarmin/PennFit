@@ -4,18 +4,22 @@ Items intentionally left out of the insurance-only / tenant-branding /
 provider-portal hardening merge. Tracked here so a follow-up PR can pick
 them up without re-discovering scope.
 
-## Still open
+## Still open (ops / larger product — not code blockers)
 
-| Item                                               | Why deferred                                                                     | Suggested next step                                      |
-| -------------------------------------------------- | -------------------------------------------------------------------------------- | -------------------------------------------------------- |
-| Provider portal seed-org fallback on platform host | Intentional for single-tenant Penn; full multi-tenant routing is architectural   | Design host→org routing for provider SPA before changing |
-| Platform billing payment wall enforcement          | Epic exists; re-lock on failed invoice is env-gated (`BILLING_PAYWALL_ENFORCED`) | Enable per runbook when Stripe platform billing is live  |
-| LTV including insurance claim dollars              | UI already labeled historical shop-only                                          | New insurance LTV metric once claim dollars are trusted  |
+| Item                                          | Why still open                                                                   | Suggested next step                                                                 |
+| --------------------------------------------- | -------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| Enable platform billing payment wall in prod  | Code + preflight guard shipped; enforcement stays env-gated                      | Ops: follow `docs/runbooks/tenant-payment-wall.md` when Stripe platform billing live |
+| LTV:CAC including insurance claim dollars     | Revenue-by-source now shows ERA payer-paid separately; LTV UI stays shop-only    | Patient↔customer acquisition join before folding claim $ into LTV:CAC               |
+| Full multi-org provider portal                | Fail-closed on platform host shipped; membership / org-picker not built          | See `docs/provider-portal-tenant-host-routing.md`                                   |
 
 ## Shipped (merged)
 
 | Item                                                    | PR / location                                                                         |
 | ------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| Provider portal / RTM seed-org soft-fallback            | Round nine — brand host resolve; 403 `provider_tenant_host_required`                  |
+| Preflight: paywall requires Stripe platform credentials | Round nine — `preflight-prod-env.ts`                                                  |
+| Revenue-by-source ERA payer-paid cents                  | Round nine — labeled `totalPayerPaidCents` (not LTV)                                  |
+| Control Center stale cash-pay module framing            | Round nine — comment scrub                                                            |
 | Episode lifecycle factory writer                        | #1326 — Rx create, bootstrap, post-confirm next cycle                                 |
 | Legacy fitter `fit_session` for recommend-only path     | #1326 — `createLegacyFitSessionForRequest` at fit-request time (not on recommend)     |
 | Chatbot PII scrub (MBI, PO Box, ZIP, member-id, cards)  | #1335 — `chatbotPii.ts` + behavioral tests                                            |
@@ -83,11 +87,20 @@ them up without re-discovering scope.
 | XPS shipping labels insurance-only copy | Header + empty state point at PacWare; nav hint updated                  |
 | Legacy fit_session on `/api/recommend`  | Doc: already closed by #1326 attach-at-request; not writing on recommend |
 
-## Started in round eight (this branch)
+## Started in round eight — merged #1340
 
 | Item                             | Status                                                                    |
 | -------------------------------- | ------------------------------------------------------------------------- |
 | Home banner insurance due digest | `buildInsuranceDueDigest` from open episodes; SPA Due tile → `/reminders` |
+
+## Started in round nine (this branch)
+
+| Item                                         | Status                                                                 |
+| -------------------------------------------- | ---------------------------------------------------------------------- |
+| Provider / RTM platform-host fail-closed     | Brand resolver; 403 `provider_tenant_host_required`                    |
+| Preflight paywall ↔ Stripe                   | FAIL when `BILLING_PAYWALL_ENFORCED` without billing keys              |
+| Revenue-by-source ERA payer paid             | `totalPayerPaidCents` + UI / CSV; LTV:CAC unchanged                    |
+| Provider host-routing design note            | `docs/provider-portal-tenant-host-routing.md`                          |
 
 ## Production deploy note (2026-08-27)
 
@@ -105,3 +118,4 @@ verify:deploy → 4 passed
 Platform host `pennfit.up.railway.app` correctly stays CareMetric-branded.
 
 Runbook for tenant payment wall: `docs/runbooks/tenant-payment-wall.md`.
+Provider host routing: `docs/provider-portal-tenant-host-routing.md`.
