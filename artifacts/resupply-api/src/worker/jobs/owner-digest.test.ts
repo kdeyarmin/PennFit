@@ -2,6 +2,9 @@
 // digest builder + text renderer + the run() fail-soft paths.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import path from "node:path";
 
 import {
   installSupabaseMock,
@@ -18,6 +21,10 @@ import {
   type DigestMetricRow,
 } from "./owner-digest";
 
+const OWNER_DIGEST_SRC = readFileSync(
+  path.join(path.dirname(fileURLToPath(import.meta.url)), "owner-digest.ts"),
+  "utf8",
+);
 const ORIGINAL_ENV = process.env;
 
 beforeEach(() => {
@@ -161,5 +168,15 @@ describe("runOwnerDigest", () => {
     expect(recipients).toEqual(["owner@penn.example.com"]);
     expect(String(subject)).toContain("weekly digest");
     expect(r.emailed).toBe(1);
+  });
+});
+
+describe("runOwnerDigest — paginated metrics_daily read", () => {
+  it("does not use a raw high .limit() that PostgREST would silently cap", () => {
+    expect(OWNER_DIGEST_SRC).not.toContain(".limit(5000)");
+  });
+
+  it("pages metrics_daily with .range()", () => {
+    expect(OWNER_DIGEST_SRC).toContain(".range(from, from + METRICS_PAGE - 1)");
   });
 });

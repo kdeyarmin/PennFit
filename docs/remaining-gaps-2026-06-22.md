@@ -124,16 +124,14 @@ operators can't see or act on it yet:
 
 ## 4. Performance / correctness hygiene (carried forward, still open)
 
-- **JS-side aggregation caps.** Several `.limit(20000/50000)`-then-aggregate-in-JS
-  sites remain across `routes/admin/` (`analytics.ts`, `billing-director.ts`,
-  and related). Silent truncation past PostgREST `max_rows` (~1000). Prefer
-  SQL RPCs or newest-first paging + `windowTruncated`. **Shipped /
-  mitigated:** `ltv-cac` + `resupply-kpis` RPCs (#1209); `billing-benchmarks`
-  / `voice-metrics` / `mask-fit-worklist` keyset or range paging;
-  `staffing-live` (#1350); collections-forecast + forward-order-book (#1351);
-  `payer-profitability` (#1352); billing aging-report + dso-by-payer (#1353);
-  `rt-outcomes` (#1354); `business-targets` (#1355); `mask-catalog` (#1356);
-  residual sites still on this sweep branch. _Effort: S–M for residual sites._
+- **JS-side aggregation caps.** Silent truncation past PostgREST
+  `max_rows` (~1000) on bare `.limit(N>1000)` aggregation reads. Prefer
+  SQL RPCs or newest-first / keyset paging + `windowTruncated` where a
+  safety bound still applies. **Shipped / mitigated (this sweep):** every
+  executable `.limit(N>1000)` under `artifacts/resupply-api/src` (admin
+  dashboards, worklists, CSV exports, workers, billing helpers) now
+  `.range()`-pages; comments that mention the old trap are not call sites.
+  _Residual:_ none known in resupply-api source; re-grep after new reads.
 - **`count:'exact'` on hot dashboards.** ~100+ across admin files vs a handful
   of `'estimated'`. **Caveat (verified this branch):** this is **not** a safe
   blanket change. The `inbox-counts.ts` calls are **user-visible nav badges**

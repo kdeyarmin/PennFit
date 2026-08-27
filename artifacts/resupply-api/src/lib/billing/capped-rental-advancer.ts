@@ -97,22 +97,32 @@ async function advanceCappedRentalForOrg(
   stats: AdvanceStats,
 ): Promise<void> {
   const supabase = getOrgScopedClient(orgId);
-  const { data: cycles, error: cyclesErr } = await supabase
-    .from("capped_rental_cycles")
-    .select(
-      "id, patient_id, hcpcs_code, payer_profile_id, insurance_coverage_id, start_date, current_month, max_months, status",
-    )
-    .eq("status", "active")
-    .limit(2000);
-  // Throw — not fall through. PostgREST returns errors in-band, so a
-  // swallowed error here makes `cycles` null, the loop a no-op, and
-  // the job report "completed { scanned: 0 }": monthly Medicare rental
-  // claims silently stop being drafted with zero failure signal for as
-  // long as the error persists. Throwing surfaces this tenant as failed
-  // (forEachActiveOrg isolates it, runCappedRentalAdvance re-throws) so
-  // the DLQ/monitor sees it.
-  if (cyclesErr) throw cyclesErr;
-  for (const cycle of cycles ?? []) {
+  // Page past PostgREST max_rows — a bare high `.limit(...)` silently
+  // truncated active cycles so monthly rental drafts stopped mid-roster.
+  const PAGE = 1000;
+  const cycles: Cycle[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error: cyclesErr } = await supabase
+      .from("capped_rental_cycles")
+      .select(
+        "id, patient_id, hcpcs_code, payer_profile_id, insurance_coverage_id, start_date, current_month, max_months, status",
+      )
+      .eq("status", "active")
+      .order("id", { ascending: true })
+      .range(from, from + PAGE - 1);
+    // Throw — not fall through. PostgREST returns errors in-band, so a
+    // swallowed error here makes `cycles` empty, the loop a no-op, and
+    // the job report "completed { scanned: 0 }": monthly Medicare rental
+    // claims silently stop being drafted with zero failure signal for as
+    // long as the error persists. Throwing surfaces this tenant as failed
+    // (forEachActiveOrg isolates it, runCappedRentalAdvance re-throws) so
+    // the DLQ/monitor sees it.
+    if (cyclesErr) throw cyclesErr;
+    const page = (data ?? []) as Cycle[];
+    cycles.push(...page);
+    if (page.length < PAGE) break;
+  }
+  for (const cycle of cycles) {
     stats.scanned += 1;
     try {
       const advanced = await advanceCycle(supabase, cycle);

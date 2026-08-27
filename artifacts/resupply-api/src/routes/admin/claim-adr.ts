@@ -498,12 +498,23 @@ router.get(
       return;
     }
     const supabase = getOrgScopedClient(orgId);
-    const { data } = await supabase
-      .from("claim_adr_requests")
-      .select("source, outcome, status")
-      .in("status", ["submitted", "closed"])
-      .limit(2000);
-    const rows = (data ?? []) as Array<{ source: string; outcome: string }>;
+    // Page past PostgREST max_rows — a bare high `.limit(...)` silently
+    // truncated ADR outcome tallies.
+    const PAGE = 1000;
+    type AdrRow = { source: string; outcome: string };
+    const rows: AdrRow[] = [];
+    for (let from = 0; ; from += PAGE) {
+      const { data, error } = await supabase
+        .from("claim_adr_requests")
+        .select("source, outcome, status")
+        .in("status", ["submitted", "closed"])
+        .order("id", { ascending: true })
+        .range(from, from + PAGE - 1);
+      if (error) throw error;
+      const page = (data ?? []) as AdrRow[];
+      rows.push(...page);
+      if (page.length < PAGE) break;
+    }
     res.json(aggregateAdrOutcomes(rows));
   },
 );

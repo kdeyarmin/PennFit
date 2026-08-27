@@ -209,20 +209,31 @@ router.get(
       return;
     }
     const supabase = getOrgScopedClient(orgId);
-    const { data } = await supabase
-      .from("patient_dunning_runs")
-      .select("id, patient_id, opened_balance_cents, opened_on, last_step_at")
-      .eq("status", "active")
-      .eq("current_step", "agency")
-      .order("opened_balance_cents", { ascending: false })
-      .limit(2000);
-    const rows = (data ?? []) as Array<{
+    // Page past PostgREST max_rows — a bare high `.limit(...)` silently
+    // truncated the agency-handoff worklist.
+    const PAGE = 1000;
+    type DunningRow = {
       id: string;
       patient_id: string;
       opened_balance_cents: number;
       opened_on: string;
       last_step_at: string | null;
-    }>;
+    };
+    const rows: DunningRow[] = [];
+    for (let from = 0; ; from += PAGE) {
+      const { data, error } = await supabase
+        .from("patient_dunning_runs")
+        .select("id, patient_id, opened_balance_cents, opened_on, last_step_at")
+        .eq("status", "active")
+        .eq("current_step", "agency")
+        .order("opened_balance_cents", { ascending: false })
+        .order("id", { ascending: false })
+        .range(from, from + PAGE - 1);
+      if (error) throw error;
+      const page = (data ?? []) as DunningRow[];
+      rows.push(...page);
+      if (page.length < PAGE) break;
+    }
     const header = [
       "run_id",
       "patient_id",

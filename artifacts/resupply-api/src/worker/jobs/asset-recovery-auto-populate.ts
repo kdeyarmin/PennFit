@@ -72,20 +72,29 @@ async function autoPopulateForOrg(
   const db = getOrgScopedClient(orgId);
 
   // 1. Candidate patients: undismissed usage_dropping triggers, recent.
-  const { data: triggers, error: trigErr } = await db
-    .from("patient_smart_trigger_events")
-    .select("patient_id")
-    .eq("kind", "usage_dropping")
-    .is("dismissed_at", null)
-    .gte("detected_at", isoDaysAgo(TRIGGER_LOOKBACK_DAYS))
-    .limit(2000);
-  if (trigErr) throw trigErr;
+  // Page past PostgREST max_rows — a bare high `.limit(...)` silently
+  // truncated the candidate pool.
+  const PAGE = 1000;
+  const triggerRows: Array<{ patient_id: string | null }> = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data: triggers, error: trigErr } = await db
+      .from("patient_smart_trigger_events")
+      .select("patient_id")
+      .eq("kind", "usage_dropping")
+      .is("dismissed_at", null)
+      .gte("detected_at", isoDaysAgo(TRIGGER_LOOKBACK_DAYS))
+      .order("detected_at", { ascending: false })
+      .order("id", { ascending: false })
+      .range(from, from + PAGE - 1);
+    if (trigErr) throw trigErr;
+    const page = (triggers ?? []) as Array<{ patient_id: string | null }>;
+    triggerRows.push(...page);
+    if (page.length < PAGE) break;
+  }
 
   const patientIds = [
     ...new Set(
-      ((triggers ?? []) as Array<{ patient_id: string | null }>)
-        .map((t) => t.patient_id)
-        .filter((id): id is string => !!id),
+      triggerRows.map((t) => t.patient_id).filter((id): id is string => !!id),
     ),
   ].slice(0, PER_RUN_MAX);
   stats.candidates += patientIds.length;

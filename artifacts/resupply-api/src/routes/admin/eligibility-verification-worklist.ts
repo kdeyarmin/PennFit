@@ -83,19 +83,27 @@ router.get(
     // future. (A coverage that already terminated is dead, not a
     // re-verify candidate.)
     const todayIso = new Date().toISOString().slice(0, 10);
-    const { data, error } = await db
-      .from("insurance_coverages")
-      .select(
-        "id, patient_id, rank, payer_name, member_id, verified_at, termination_date",
-      )
-      .or(`termination_date.is.null,termination_date.gte.${todayIso}`)
-      .limit(2000);
-    if (error) {
-      res.status(500).json({ error: "query_failed", message: error.message });
-      return;
+    // Page past PostgREST max_rows — a bare high `.limit(...)` silently
+    // truncated the re-verify candidate set.
+    const PAGE = 1000;
+    const rows: Array<Record<string, unknown>> = [];
+    for (let from = 0; ; from += PAGE) {
+      const { data, error } = await db
+        .from("insurance_coverages")
+        .select(
+          "id, patient_id, rank, payer_name, member_id, verified_at, termination_date",
+        )
+        .or(`termination_date.is.null,termination_date.gte.${todayIso}`)
+        .order("id", { ascending: true })
+        .range(from, from + PAGE - 1);
+      if (error) {
+        res.status(500).json({ error: "query_failed", message: error.message });
+        return;
+      }
+      const page = (data ?? []) as Array<Record<string, unknown>>;
+      rows.push(...page);
+      if (page.length < PAGE) break;
     }
-    const rows = (data ?? []) as Array<Record<string, unknown>>;
-
     const worklist = buildVerificationWorklist(
       rows.map((r) => ({
         id: String(r.id),

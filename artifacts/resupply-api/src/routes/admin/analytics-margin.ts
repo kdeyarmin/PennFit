@@ -135,16 +135,27 @@ router.get(
     const productIds = breakdown.byProduct.map((p) => p.productId);
     const nameByProduct = new Map<string, string>();
     if (productIds.length > 0) {
-      const { data: names } = await supabase
-        .from("inventory_reconciliation_lines")
-        .select("product_id, product_name, created_at")
-        .in("product_id", productIds)
-        .order("created_at", { ascending: false })
-        .limit(2000);
-      for (const n of (names ?? []) as Array<Record<string, unknown>>) {
-        const pid = typeof n.product_id === "string" ? n.product_id : "";
-        const nm = typeof n.product_name === "string" ? n.product_name : "";
-        if (pid && nm && !nameByProduct.has(pid)) nameByProduct.set(pid, nm);
+      // Page past PostgREST max_rows — a bare high `.limit(...)` silently
+      // truncated name enrichment past ~1000 unordered lines.
+      const PAGE = 1000;
+      for (let from = 0; ; from += PAGE) {
+        const { data: names, error: namesErr } = await supabase
+          .from("inventory_reconciliation_lines")
+          .select("product_id, product_name, created_at")
+          .in("product_id", productIds)
+          .order("created_at", { ascending: false })
+          .order("id", { ascending: false })
+          .range(from, from + PAGE - 1);
+        if (namesErr) throw namesErr;
+        const page = (names ?? []) as Array<Record<string, unknown>>;
+        for (const n of page) {
+          const pid = typeof n.product_id === "string" ? n.product_id : "";
+          const nm = typeof n.product_name === "string" ? n.product_name : "";
+          if (pid && nm && !nameByProduct.has(pid)) nameByProduct.set(pid, nm);
+        }
+        if (page.length < PAGE) break;
+        // Early exit once every product has a name.
+        if (nameByProduct.size >= productIds.length) break;
       }
     }
 

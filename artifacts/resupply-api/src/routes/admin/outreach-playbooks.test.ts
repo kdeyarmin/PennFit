@@ -12,6 +12,9 @@
 //   * cancel + call-task complete map "no row updated" to 409.
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import path from "node:path";
 import express, { type Express } from "express";
 import request from "supertest";
 
@@ -340,5 +343,26 @@ describe("POST /admin/outreach-playbooks/call-tasks/:id/complete", () => {
       call_outcome: "voicemail",
       completed_by_email: CSR.email,
     });
+  });
+});
+
+const OUTREACH_SRC = readFileSync(
+  path.join(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "outreach-playbooks.ts",
+  ),
+  "utf8",
+);
+
+describe("GET /admin/outreach-playbooks — paginated step/run reads", () => {
+  it("does not use raw high .limit() caps that PostgREST would silently truncate", () => {
+    expect(OUTREACH_SRC).not.toContain(".limit(5000)");
+    expect(OUTREACH_SRC).not.toContain(".limit(4000)");
+  });
+
+  it("pages outreach_playbook_runs and steps with .range()", () => {
+    expect(OUTREACH_SRC).toContain('.from("outreach_playbook_runs")');
+    expect(OUTREACH_SRC).toContain('.from("outreach_playbook_steps")');
+    expect(OUTREACH_SRC).toContain(".range(from, from + PAGE - 1)");
   });
 });

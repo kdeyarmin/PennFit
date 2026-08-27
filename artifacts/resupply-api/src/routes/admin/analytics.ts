@@ -510,7 +510,8 @@ type CsrActionQuery = {
   lte(column: string, value: string): CsrActionQuery;
   in(column: string, values: readonly string[]): CsrActionQuery;
   not(column: string, operator: string, value: unknown): CsrActionQuery;
-  limit(count: number): Promise<{ data: unknown; error: unknown }>;
+  order(column: string, opts?: { ascending?: boolean }): CsrActionQuery;
+  range(from: number, to: number): Promise<{ data: unknown; error: unknown }>;
 };
 
 /**
@@ -532,20 +533,30 @@ async function csrActionRows(
   refine: (q: CsrActionQuery) => CsrActionQuery,
 ): Promise<Array<{ id: string; ts: string | null }>> {
   if (adminIds.length === 0) return [];
-  const base = supabase
-    .from(table)
-    .select(`${attributionCol}, ${tsCol}`) as unknown as CsrActionQuery;
-  const refined = refine(base.in(attributionCol, adminIds));
-  const { data, error } = await refined.limit(50_000);
-  if (error) throw error;
+  // Page past PostgREST max_rows (~1000). A bare high `.limit(...)`
+  // silently truncated to an unordered first page.
+  const PAGE = 1000;
+  const MAX_ROWS = 50_000;
   const out: Array<{ id: string; ts: string | null }> = [];
-  for (const row of (data ?? []) as unknown as Array<
-    Record<string, string | null>
-  >) {
-    const id = row[attributionCol];
-    if (typeof id === "string" && id.length > 0) {
-      out.push({ id, ts: row[tsCol] ?? null });
+  for (let from = 0; from < MAX_ROWS; from += PAGE) {
+    const base = supabase
+      .from(table)
+      .select(`${attributionCol}, ${tsCol}`) as unknown as CsrActionQuery;
+    const refined = refine(base.in(attributionCol, adminIds));
+    const { data, error } = await refined
+      .order("id", { ascending: true })
+      .range(from, from + PAGE - 1);
+    if (error) throw error;
+    const page = (data ?? []) as unknown as Array<
+      Record<string, string | null>
+    >;
+    for (const row of page) {
+      const id = row[attributionCol];
+      if (typeof id === "string" && id.length > 0) {
+        out.push({ id, ts: row[tsCol] ?? null });
+      }
     }
+    if (page.length < PAGE) break;
   }
   return out;
 }

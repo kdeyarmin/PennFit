@@ -56,15 +56,26 @@ router.get(
     const supabase = getOrgScopedClient(orgId);
 
     // Auditable claims → per-patient claim count + billed total.
-    const { data: claimRows } = await supabase
-      .from("insurance_claims")
-      .select("patient_id, total_billed_cents, status")
-      .in("status", [...AUDITABLE_STATUSES])
-      .limit(8000);
-    const claims = (claimRows ?? []) as Array<{
+    // Page past PostgREST max_rows — a bare high `.limit(...)` silently
+    // truncated at ~1000 unordered rows, under-weighting the worklist.
+    const PAGE = 1000;
+    type ClaimAggRow = {
       patient_id: string;
       total_billed_cents: number | null;
-    }>;
+    };
+    const claims: ClaimAggRow[] = [];
+    for (let from = 0; ; from += PAGE) {
+      const { data: claimRows, error: claimErr } = await supabase
+        .from("insurance_claims")
+        .select("patient_id, total_billed_cents, status")
+        .in("status", [...AUDITABLE_STATUSES])
+        .order("id", { ascending: true })
+        .range(from, from + PAGE - 1);
+      if (claimErr) throw claimErr;
+      const page = (claimRows ?? []) as ClaimAggRow[];
+      claims.push(...page);
+      if (page.length < PAGE) break;
+    }
 
     const agg = new Map<string, { claims: number; billedCents: number }>();
     for (const c of claims) {

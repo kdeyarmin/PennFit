@@ -251,28 +251,41 @@ export async function runOwnerDigest(
   const supabase = getOrgScopedClient(orgId);
   const cutoff = dateMinusDays(Date.now(), 14);
 
-  const [metricsRes, alertsRes] = await Promise.all([
-    supabase
+  // Page metrics_daily past PostgREST max_rows (~1000). After the
+  // per-tenant re-key a 14-day window × many tenants × metric keys
+  // comfortably exceeds a bare high `.limit(...)` (which was already
+  // silently truncated at ~1000 unordered rows).
+  const METRICS_PAGE = 1000;
+  type MetricRow = Record<string, unknown>;
+  const metricRows: MetricRow[] = [];
+  for (let from = 0; ; from += METRICS_PAGE) {
+    const metricsRes = await supabase
       .raw()
       .schema("resupply")
       .from("metrics_daily")
       .select("metric_key, metric_date, metric_value")
       .gte("metric_date", cutoff)
-      .limit(5000),
-    supabase
-      .raw()
-      .schema("resupply")
-      .from("metric_alerts")
-      .select("severity, metric_key, metric_date, message, status")
-      .eq("status", "open")
-      .order("metric_date", { ascending: false })
-      .limit(200),
-  ]);
-  if (metricsRes.error) throw metricsRes.error;
+      .order("metric_date", { ascending: true })
+      .order("metric_key", { ascending: true })
+      .range(from, from + METRICS_PAGE - 1);
+    if (metricsRes.error) throw metricsRes.error;
+    const page = (metricsRes.data ?? []) as MetricRow[];
+    metricRows.push(...page);
+    if (page.length < METRICS_PAGE) break;
+  }
+
+  const alertsRes = await supabase
+    .raw()
+    .schema("resupply")
+    .from("metric_alerts")
+    .select("severity, metric_key, metric_date, message, status")
+    .eq("status", "open")
+    .order("metric_date", { ascending: false })
+    .limit(200);
   if (alertsRes.error) throw alertsRes.error;
 
   const digest = buildOwnerDigest(
-    ((metricsRes.data ?? []) as Array<Record<string, unknown>>).map((r) => ({
+    metricRows.map((r) => ({
       metricKey: String(r.metric_key ?? ""),
       metricDate: String(r.metric_date ?? ""),
       metricValue: typeof r.metric_value === "number" ? r.metric_value : 0,

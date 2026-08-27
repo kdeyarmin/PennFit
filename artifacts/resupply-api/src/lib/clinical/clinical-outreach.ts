@@ -455,19 +455,28 @@ export async function runClinicalOutreachBatch(
     skipped: 0,
   };
 
-  const { data, error } = await supabase
-    .from("clinical_encounters")
-    .select("id, patient_id, assessment_category, created_at")
-    .eq("encounter_type", "adherence_intervention")
-    .eq("outcome_status", "pending")
-    .order("created_at", { ascending: true })
-    .limit(2000);
-  if (error) throw error;
-  const rows = (data ?? []) as Array<{
+  // Page past PostgREST max_rows — a bare high `.limit(...)` silently
+  // truncated the open-intervention queue.
+  const PAGE = 1000;
+  const rows: Array<{
     id: string;
     patient_id: string;
     assessment_category: string | null;
-  }>;
+  }> = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await supabase
+      .from("clinical_encounters")
+      .select("id, patient_id, assessment_category, created_at")
+      .eq("encounter_type", "adherence_intervention")
+      .eq("outcome_status", "pending")
+      .order("created_at", { ascending: true })
+      .order("id", { ascending: true })
+      .range(from, from + PAGE - 1);
+    if (error) throw error;
+    const page = (data ?? []) as typeof rows;
+    rows.push(...page);
+    if (page.length < PAGE) break;
+  }
   result.openInterventions = rows.length;
   if (rows.length === 0) return result;
 

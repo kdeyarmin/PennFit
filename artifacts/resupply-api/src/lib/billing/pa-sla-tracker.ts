@@ -53,19 +53,42 @@ export async function runPaMcoSlaSweepForOrg(
   // Pull every PA that is potentially MCO-bound and currently in a
   // submitted/draft/appealed state. We deliberately include null
   // mco_sla_status so first-time tagging happens here.
-  const { data: pas, error } = await supabase
-    .from("prior_authorizations")
-    .select(
-      "id, patient_id, payer_name, hcpcs_code, status, submitted_at, decision_at, mco_sla_target_date, mco_sla_status, insurance_coverage_id",
-    )
-    .in("status", ["draft", "submitted", "appealed", "approved"])
-    .limit(5000);
-  if (error) throw error;
+  // Page past PostgREST max_rows (~1000): a bare high `.limit(...)` silently
+  // truncated, so PAs past the unordered first page never got SLA stamps.
+  const PAGE = 1000;
+  type PaScanRow = Pick<
+    PriorAuthRow,
+    | "id"
+    | "patient_id"
+    | "payer_name"
+    | "hcpcs_code"
+    | "status"
+    | "submitted_at"
+    | "decision_at"
+    | "mco_sla_target_date"
+    | "mco_sla_status"
+    | "insurance_coverage_id"
+  >;
+  const pas: PaScanRow[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await supabase
+      .from("prior_authorizations")
+      .select(
+        "id, patient_id, payer_name, hcpcs_code, status, submitted_at, decision_at, mco_sla_target_date, mco_sla_status, insurance_coverage_id",
+      )
+      .in("status", ["draft", "submitted", "appealed", "approved"])
+      .order("id", { ascending: true })
+      .range(from, from + PAGE - 1);
+    if (error) throw error;
+    const page = (data ?? []) as PaScanRow[];
+    pas.push(...page);
+    if (page.length < PAGE) break;
+  }
 
   // Resolve payer LOB once per distinct payer.
-  const payerLobMap = await resolvePayerLobMap(supabase, pas ?? []);
+  const payerLobMap = await resolvePayerLobMap(supabase, pas);
 
-  for (const pa of pas ?? []) {
+  for (const pa of pas) {
     stats.scanned += 1;
     const isMcoMedicaid = isPaMedicaidMco(pa, payerLobMap);
     if (!isMcoMedicaid) continue;

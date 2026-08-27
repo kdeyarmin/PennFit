@@ -231,7 +231,8 @@ type PostgrestQuery = {
   lte(column: string, value: string): PostgrestQuery;
   in(column: string, values: readonly string[]): PostgrestQuery;
   not(column: string, operator: string, value: unknown): PostgrestQuery;
-  limit(count: number): Promise<{ data: unknown; error: unknown }>;
+  order(column: string, opts?: { ascending?: boolean }): PostgrestQuery;
+  range(from: number, to: number): Promise<{ data: unknown; error: unknown }>;
 };
 
 /**
@@ -266,24 +267,29 @@ async function groupedCount(
   const counts = new Map<string, number>();
   if (adminIds.length === 0) return counts;
 
-  const base = supabase
-    .from(table)
-    .select(attributionCol) as unknown as PostgrestQuery;
-  const refined = refine(base.in(attributionCol, adminIds));
-  // Cap defensively. The signals we count are events, not the full
-  // tables — even a busy CSR's 30-day window of follow-ups is in the
-  // low hundreds.
-  const { data, error } = await refined.limit(50_000);
-  if (error) throw error;
-  // Cast through unknown: PostgREST infers a union of per-table
-  // row types here, but every variant carries the attribution
-  // column we selected — the runtime shape is uniform.
-  for (const row of (data ?? []) as unknown as Array<
-    Record<string, string | null>
-  >) {
-    const id = row[attributionCol];
-    if (!id) continue;
-    counts.set(id, (counts.get(id) ?? 0) + 1);
+  // Page past PostgREST max_rows (~1000). A bare high `.limit(...)`
+  // silently truncated to an unordered first page, under-counting
+  // busy agents' signal totals.
+  const PAGE = 1000;
+  const MAX_ROWS = 50_000;
+  for (let from = 0; from < MAX_ROWS; from += PAGE) {
+    const base = supabase
+      .from(table)
+      .select(attributionCol) as unknown as PostgrestQuery;
+    const refined = refine(base.in(attributionCol, adminIds));
+    const { data, error } = await refined
+      .order("id", { ascending: true })
+      .range(from, from + PAGE - 1);
+    if (error) throw error;
+    const page = (data ?? []) as unknown as Array<
+      Record<string, string | null>
+    >;
+    for (const row of page) {
+      const id = row[attributionCol];
+      if (!id) continue;
+      counts.set(id, (counts.get(id) ?? 0) + 1);
+    }
+    if (page.length < PAGE) break;
   }
   return counts;
 }

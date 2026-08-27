@@ -64,24 +64,30 @@ router.get(
     const cutoff = new Date();
     cutoff.setUTCDate(cutoff.getUTCDate() - days);
 
-    // Pull every NPS row in the window — typical volume is well under
-    // 1k/week even at scale, so a single read is cheaper than two
-    // round-trips for separate aggregations + tail.
-    const { data: rows, error } = await db
-      .from("shop_order_nps_responses")
-      .select("id, order_id, score, comment, created_at")
-      .gte("created_at", cutoff.toISOString())
-      .order("created_at", { ascending: false })
-      .limit(2000);
-    if (error) throw error;
-
-    const npsRows = (rows ?? []) as Array<{
+    // Page past PostgREST max_rows — a bare high `.limit(...)` silently
+    // truncated the NPS window on busy tenants.
+    const PAGE = 1000;
+    type NpsRow = {
       id: string;
       order_id: string;
       score: number;
       comment: string | null;
       created_at: string;
-    }>;
+    };
+    const npsRows: NpsRow[] = [];
+    for (let from = 0; ; from += PAGE) {
+      const { data: rows, error } = await db
+        .from("shop_order_nps_responses")
+        .select("id, order_id, score, comment, created_at")
+        .gte("created_at", cutoff.toISOString())
+        .order("created_at", { ascending: false })
+        .order("id", { ascending: false })
+        .range(from, from + PAGE - 1);
+      if (error) throw error;
+      const page = (rows ?? []) as NpsRow[];
+      npsRows.push(...page);
+      if (page.length < PAGE) break;
+    }
 
     // Dedup to most-recent rating per order. Sorted desc above, so the
     // first occurrence wins.

@@ -173,18 +173,28 @@ export async function loadDenialInputs(
   // Latest analysis per claim (rows newest-first → first seen wins).
   const analysisByClaim = new Map<string, Record<string, unknown>>();
   if (claimIds.length > 0) {
-    const { data: analyses, error: aErr } = await supabase
-      .from("claim_denial_analyses")
-      .select(
-        "claim_id, confidence, recommendation, can_auto_resubmit, review_status, created_at",
-      )
-      .in("claim_id", claimIds)
-      .order("created_at", { ascending: false })
-      .limit(2000);
-    if (aErr) return { ok: false, message: aErr.message };
-    for (const a of (analyses ?? []) as Array<Record<string, unknown>>) {
-      const cid = typeof a.claim_id === "string" ? a.claim_id : "";
-      if (cid && !analysisByClaim.has(cid)) analysisByClaim.set(cid, a);
+    // Page past PostgREST max_rows — a bare high `.limit(...)` silently
+    // truncated denial analyses for large worklists.
+    const PAGE = 1000;
+    for (let from = 0; ; from += PAGE) {
+      const { data: analyses, error: aErr } = await supabase
+        .from("claim_denial_analyses")
+        .select(
+          "claim_id, confidence, recommendation, can_auto_resubmit, review_status, created_at",
+        )
+        .in("claim_id", claimIds)
+        .order("created_at", { ascending: false })
+        .order("claim_id", { ascending: false })
+        .range(from, from + PAGE - 1);
+      if (aErr) return { ok: false, message: aErr.message };
+      const page = (analyses ?? []) as Array<Record<string, unknown>>;
+      for (const a of page) {
+        const cid = typeof a.claim_id === "string" ? a.claim_id : "";
+        if (cid && !analysisByClaim.has(cid)) analysisByClaim.set(cid, a);
+      }
+      if (page.length < PAGE) break;
+      // Early exit once every claim has an analysis.
+      if (analysisByClaim.size >= claimIds.length) break;
     }
   }
 

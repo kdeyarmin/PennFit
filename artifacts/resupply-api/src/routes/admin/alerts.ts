@@ -160,28 +160,34 @@ router.get(
       return;
     }
     const supabase = getOrgScopedClient(orgId);
-    const [defsRes, msgsRes] = await Promise.all([
-      supabase
-        .from("alert_definitions")
-        .select(
-          "key, name, description, category, severity, channels, allowed_variables, is_active",
-        )
-        .order("category", { ascending: true })
-        .order("name", { ascending: true })
-        .limit(500),
-      supabase
+    const defsRes = await supabase
+      .from("alert_definitions")
+      .select(
+        "key, name, description, category, severity, channels, allowed_variables, is_active",
+      )
+      .order("category", { ascending: true })
+      .order("name", { ascending: true })
+      .limit(500);
+    if (defsRes.error) throw defsRes.error;
+    // Page alert_messages past PostgREST max_rows — a bare high
+    // `.limit(...)` silently truncated message customizations.
+    const PAGE = 1000;
+    const msgs: AlertMessageRow[] = [];
+    for (let from = 0; ; from += PAGE) {
+      const msgsRes = await supabase
         .from("alert_messages")
         .select(
           "alert_key, channel, subject, body_html, body_text, is_active, updated_at, updated_by",
         )
         .order("alert_key", { ascending: true })
         .order("channel", { ascending: true })
-        .limit(2000),
-    ]);
-    if (defsRes.error) throw defsRes.error;
-    if (msgsRes.error) throw msgsRes.error;
+        .range(from, from + PAGE - 1);
+      if (msgsRes.error) throw msgsRes.error;
+      const page = (msgsRes.data ?? []) as AlertMessageRow[];
+      msgs.push(...page);
+      if (page.length < PAGE) break;
+    }
     const defs = (defsRes.data ?? []) as AlertDefinitionRow[];
-    const msgs = (msgsRes.data ?? []) as AlertMessageRow[];
     res.json({
       alerts: defs.map((d) => serializeDefinition(d, msgs)),
     });

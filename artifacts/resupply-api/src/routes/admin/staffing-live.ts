@@ -88,21 +88,29 @@ router.get(
     }
 
     // Who's on shift right now (started, not ended, not called off).
+    // Page past PostgREST max_rows — a bare high `.limit(...)` silently
+    // truncated at ~1000 unordered shift rows.
     const nowIso = new Date().toISOString();
-    const { data: shifts, error: shiftErr } = await supabase
-      .from("csr_shifts")
-      .select("staff_user_id")
-      .lte("starts_at", nowIso)
-      .gt("ends_at", nowIso)
-      .neq("status", "called_off")
-      .limit(2000);
-    if (shiftErr) throw shiftErr;
-    const onShiftIds = (shifts ?? [])
-      .map(
-        (s: Database["resupply"]["Tables"]["csr_shifts"]["Row"]) =>
-          s.staff_user_id,
-      )
-      .filter((id: string | null): id is string => Boolean(id));
+    const SHIFT_PAGE = 1000;
+    const onShiftIds: string[] = [];
+    for (let from = 0; ; from += SHIFT_PAGE) {
+      const { data: shifts, error: shiftErr } = await supabase
+        .from("csr_shifts")
+        .select("staff_user_id")
+        .lte("starts_at", nowIso)
+        .gt("ends_at", nowIso)
+        .neq("status", "called_off")
+        .order("id", { ascending: true })
+        .range(from, from + SHIFT_PAGE - 1);
+      if (shiftErr) throw shiftErr;
+      const page = (shifts ?? []) as Array<{
+        staff_user_id: string | null;
+      }>;
+      for (const s of page) {
+        if (s.staff_user_id) onShiftIds.push(s.staff_user_id);
+      }
+      if (page.length < SHIFT_PAGE) break;
+    }
 
     res.json({
       ...buildLiveStaffing({
