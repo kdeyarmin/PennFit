@@ -87,6 +87,9 @@ const escalateArgsSchema = z
     category: z
       .enum([
         "order_issue",
+        "shipment_issue",
+        // Legacy model / client values — still accepted so in-flight tool
+        // calls do not fail validation after the insurance-only scrub.
         "subscription",
         "returns_refund",
         "insurance_billing",
@@ -146,7 +149,7 @@ export const CUSTOMER_CHAT_TOOLS: OpenAiToolDescriptor[] = [
     function: {
       name: "get_my_subscriptions",
       description:
-        "List standing auto-ship lines on the signed-in customer's account. Cash-pay Subscribe & Save is retired — this always returns an empty list. For what is actually due next, use get_my_recent_orders or escalate_to_human. Never invite the patient to start, renew, or pay for auto-ship.",
+        "Always returns an empty list — patients do not have cash-pay auto-ship or Subscribe & Save lines. Do not offer to start, renew, cancel, or bill a subscription. For upcoming insurance resupply, use get_my_recent_orders or escalate_to_human.",
       parameters: {
         type: "object",
         additionalProperties: false,
@@ -172,7 +175,7 @@ export const CUSTOMER_CHAT_TOOLS: OpenAiToolDescriptor[] = [
     function: {
       name: "escalate_to_human",
       description:
-        "Forward the customer's request to Penn Home Medical Supply's human customer-service team by posting it to their in-app message thread (the same thread at /account → Messages, which a CSR monitors and replies to). Use this ONLY after the customer has confirmed they want a person — for things you cannot resolve yourself: refund requests, changing or canceling an order/subscription on their behalf, ANY shipping-address change (a patient address change has to be reviewed by a person before the next shipment goes out — you cannot make it yourself), insurance/prescription/prior-auth issues, reporting a wrong or damaged item, complaints, or anything the read-only tools and self-serve pages don't cover. Do NOT use it for questions you already answered or that a self-serve page handles. Compose `summary` as a clear, first-person message FROM the customer's perspective that includes any relevant order id, subscription, dates, or specifics gathered in the conversation, so the CSR has full context without asking again. After it succeeds, tell the customer their message was sent and the team will reply in /account → Messages (or to call (814) 471-0627 if it's urgent).",
+        "Forward the customer's request to the tenant's human customer-service team by posting it to their in-app message thread (the same thread at /account → Messages, which a CSR monitors and replies to). Use this ONLY after the customer has confirmed they want a person — for things you cannot resolve yourself: insurance shipment questions you cannot answer from the read-only tools, ANY shipping-address change (a patient address change has to be reviewed by a person before the next shipment goes out — you cannot make it yourself), insurance/prescription/prior-auth issues, reporting a wrong or damaged supply item, fit-request follow-ups, complaints, or anything the read-only tools and self-serve pages don't cover. Do NOT promise refunds, card charges, subscription cancels, or cash-pay order changes — those paths are retired. Do NOT use it for questions you already answered or that a self-serve page handles. Compose `summary` as a clear, first-person message FROM the customer's perspective that includes any relevant shipment id, dates, or specifics gathered in the conversation, so the CSR has full context without asking again. After it succeeds, tell the customer their message was sent and the team will reply in /account → Messages (or to call the support number on the site if it's urgent).",
       parameters: {
         type: "object",
         additionalProperties: false,
@@ -181,14 +184,13 @@ export const CUSTOMER_CHAT_TOOLS: OpenAiToolDescriptor[] = [
           summary: {
             type: "string",
             description:
-              "The message to send to the support team, written in plain English from the customer's point of view. Include the specific ask and any relevant order id / subscription / dates discussed. Do NOT include SSNs, full card numbers, or insurance member IDs.",
+              "The message to send to the support team, written in plain English from the customer's point of view. Include the specific ask and any relevant shipment id / dates discussed. Do NOT include SSNs, full card numbers, or insurance member IDs.",
           },
           category: {
             type: "string",
             enum: [
               "order_issue",
-              "subscription",
-              "returns_refund",
+              "shipment_issue",
               "insurance_billing",
               "prescription",
               "account",
@@ -196,7 +198,7 @@ export const CUSTOMER_CHAT_TOOLS: OpenAiToolDescriptor[] = [
               "other",
             ],
             description:
-              "Optional best-guess category so the CSR team can triage. Defaults to 'other'.",
+              "Optional best-guess category so the CSR team can triage. Defaults to 'other'. Prefer shipment_issue for wrong/damaged/missing supplies; order_issue for insurance resupply status.",
           },
         },
       },
@@ -551,9 +553,10 @@ async function executeGetDevice(
 }
 
 const ESCALATION_CATEGORY_LABELS: Record<string, string> = {
-  order_issue: "Order issue",
-  subscription: "Subscription",
-  returns_refund: "Return / refund",
+  order_issue: "Shipment / resupply",
+  shipment_issue: "Wrong or damaged supply",
+  subscription: "Resupply schedule",
+  returns_refund: "Wrong or damaged supply",
   insurance_billing: "Insurance / billing",
   prescription: "Prescription",
   account: "Account",

@@ -493,11 +493,14 @@ function RecentShipmentsSection({ orders }: { orders: ShopRecentOrder[] }) {
           <Package className="h-5 w-5 text-muted-foreground" />
           <h2 className="font-semibold">Recent shipments</h2>
         </div>
+        {/* Insurance fulfillments have empty sessionId and cannot be looked
+            up on /track-order (PENN/PHM/ORD refs only). Point patients at
+            support instead of a form that will always reject their id. */}
         <Link
-          href="/track-order"
+          href="/contact"
           className="text-xs font-medium text-primary hover:underline"
         >
-          Track a shipment
+          Ask about a shipment
         </Link>
       </div>
       {orders.length === 0 ? (

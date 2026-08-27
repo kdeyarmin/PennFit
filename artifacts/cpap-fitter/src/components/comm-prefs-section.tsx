@@ -13,13 +13,15 @@ import { checkBiometricAvailability } from "@/lib/native-runtime";
 import { useCompanyContact } from "@/lib/contact";
 
 /**
- * Communication preferences section on /account. Five email
- * categories + DND window. Customers can opt out of marketing,
- * resupply reminders, cart-abandonment nudges, and review-request
- * emails independently.
+ * Communication preferences section on /account. Email + SMS categories
+ * patients can opt out of independently (resupply reminders, CSR replies,
+ * marketing, shipment texts).
  *
- * Transactional (order shipped, refund issued) is not user-toggleable
- * here — those land via the order-detail email flow regardless.
+ * Cart-abandonment and review-request dispatchers are force-OFF
+ * (migrations 0528 / 0530); their preference fields remain in the API for
+ * historical rows but are not shown here.
+ *
+ * Transactional shipment notices always send — those are not toggleable.
  */
 export function CommPrefsSection({
   onDirtyChange,
@@ -95,8 +97,9 @@ export function CommPrefsSection({
         )}
       </div>
       <p className="text-sm text-muted-foreground">
-        Choose what you&apos;d like to hear from us. Order receipts and shipping
-        notifications always send — those aren&apos;t marketing.
+        Choose what you&apos;d like to hear from us. Shipping and delivery
+        notices for insurance resupply always send — those aren&apos;t
+        marketing.
       </p>
 
       <div className="space-y-2">
@@ -107,22 +110,6 @@ export function CommPrefsSection({
           onChange={() => toggle("emailResupplyReminders")}
           disabled={saving}
           testId="comm-toggle-resupply"
-        />
-        <Toggle
-          label="Incomplete-request reminders"
-          description="One email if you started a fit or resupply request and didn't finish within 24 hours."
-          enabled={prefs.emailAbandonedCart}
-          onChange={() => toggle("emailAbandonedCart")}
-          disabled={saving}
-          testId="comm-toggle-abandoned"
-        />
-        <Toggle
-          label="Review requests"
-          description="Quick ask 2 weeks after delivery — completely optional."
-          enabled={prefs.emailReviewRequests}
-          onChange={() => toggle("emailReviewRequests")}
-          disabled={saving}
-          testId="comm-toggle-review"
         />
         <Toggle
           label="Customer-service replies"
