@@ -40,6 +40,7 @@ import meReferralsRouter from "./me-referrals";
 import meDocumentsRouter from "./me-documents";
 import meCaregiverRouter from "./me-caregiver";
 import meAccountRouter from "./me-account";
+import backInStockRouter from "./back-in-stock";
 
 const router: IRouter = Router();
 // /shop/me/* — auth-aware patient account endpoints. Mounted
@@ -155,5 +156,9 @@ router.use(npsResponseRouter);
 router.use(maskFitResponseRouter);
 // /shop/education-videos — public education-video library (RT #25).
 router.use(educationVideosRouter);
+// /shop/back-in-stock — public notify-me signup for out-of-stock SKUs.
+// Queue rows use catalog SKU as product_id; dispatch is manual or via
+// RESUPPLY_BACK_IN_STOCK_AUTO_DISPATCH on restock.
+router.use(backInStockRouter);
 
 export default router;

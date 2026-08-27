@@ -11,7 +11,6 @@ them up without re-discovering scope.
 | Provider portal seed-org fallback on platform host   | Intentional for single-tenant Penn; full multi-tenant routing is architectural   | Design host→org routing for provider SPA before changing   |
 | Platform billing payment wall enforcement            | Epic exists; re-lock on failed invoice is env-gated (`BILLING_PAYWALL_ENFORCED`) | Enable per runbook when Stripe platform billing is live    |
 | LTV including insurance claim dollars                | UI already labeled historical shop-only                                          | New insurance LTV metric once claim dollars are trusted    |
-| Back-in-stock patient signup route                   | Removed with cash-pay shop; SPA helper still calls `/shop/back-in-stock`         | Restore POST route with SKU ids (not Stripe `prod_`)       |
 | Legacy fitter `fit_session` on pure `/api/recommend` | Optional; `results.tsx` already preserves `fitSessionId` on legacy fallbacks     | Only if analytics need session rows on recommend-only path |
 
 ## Shipped (merged)
@@ -21,6 +20,7 @@ them up without re-discovering scope.
 | Episode lifecycle factory writer                        | #1326 — Rx create, bootstrap, post-confirm next cycle                                 |
 | Chatbot PII scrub (MBI, PO Box, ZIP, member-id, cards)  | #1335 — `chatbotPii.ts` + behavioral tests                                            |
 | Back-in-stock auto-dispatch on restock                  | #1336 — `autoDispatchBackInStockOnRestock`; `RESUPPLY_BACK_IN_STOCK_AUTO_DISPATCH=1`  |
+| Back-in-stock patient signup route                      | Round six — `POST /shop/back-in-stock` with catalog SKU ids                           |
 | Due math: queued fulfillments count via `created_at`    | Already on main — `reminders.ts` uses `shipped_at ?? created_at`; `reminders.test.ts` |
 | Review-request emails / `storefront.reviews_collection` | #1333 — migration 0530 OFF + `DELIBERATELY_OFF_FLAGS`                                 |
 | Lapsed winback last-activity gate                       | Round three — `resolveLastCustomerShipmentActivityIso` + tests                        |
@@ -65,6 +65,12 @@ them up without re-discovering scope.
 | Item                        | Status                                                                  |
 | --------------------------- | ----------------------------------------------------------------------- |
 | Back-in-stock auto-dispatch | `autoDispatchBackInStockOnRestock` on positive `adjustStock`; env-gated |
+
+## Started in round six (this branch)
+
+| Item                       | Status                                                          |
+| -------------------------- | --------------------------------------------------------------- |
+| Back-in-stock signup route | Restored `POST /shop/back-in-stock` with catalog SKU validation |
 
 ## Production deploy note (2026-08-27)
 
