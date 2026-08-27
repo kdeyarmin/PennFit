@@ -32,40 +32,33 @@ const steps: HelpStep[] = [
     title: "Choose your emails",
     body: (
       <>
-        <p>Five email switches put you in control:</p>
+        <p>Three email switches put you in control:</p>
         <ul className="mt-2 list-disc space-y-1 pl-5">
           <li>
             <strong>Resupply reminders</strong> — nudges when each supply is due
             for replacement.
           </li>
           <li>
-            <strong>Incomplete-order reminders</strong> — one email if you
-            started an order request and didn&apos;t finish within 24 hours.
-          </li>
-          <li>
-            <strong>Review requests</strong> — a quick ask two weeks after
-            delivery, completely optional.
-          </li>
-          <li>
             <strong>Customer-service replies</strong> — an email when our team
             replies on your message thread.
           </li>
           <li>
-            <strong>Promotions &amp; news</strong> — occasional product and
-            seasonal updates.
+            <strong>Updates &amp; reminders</strong> — occasional updates about
+            coverage, mask fitting, and resupply timing.
           </li>
         </ul>
       </>
     ),
-    note: "Order receipts and shipping confirmations always send — they're part of fulfilling your order, not marketing.",
+    note: "Shipping and delivery notices for insurance resupply always send — they're part of fulfilling your supplies, not marketing.",
   },
   {
     title: "Choose your text messages",
     body: (
       <p>
         Under <strong>Text messages</strong> there are two switches:{" "}
-        <strong>Account &amp; order texts</strong> (order shipped, refund
-        issued, urgent recall notices) and <strong>Promotion texts</strong>.
+        <strong>Account &amp; shipment texts</strong> (shipment updates,
+        delivery notices, urgent recall alerts) and{" "}
+        <strong>Reminder texts</strong>.
       </p>
     ),
     warning:

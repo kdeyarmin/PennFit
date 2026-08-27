@@ -18,7 +18,7 @@ them up without re-discovering scope.
 | Review-request emails still CTA to `/contact`          | ~~Flag still ON~~ — migration 0530 + DELIBERATELY_OFF             | Shipped in #1333                                          |
 | Lapsed winback uses shop `paid_at` not fulfillments    | Cron env-gated; copy says “shipped” but math is last cash-pay                  | Gate on fulfillment/`shipped_at` or retire dispatcher     |
 | Account “Track a shipment” → `/track-order` only       | ~~Tracker rejects fulfillment UUIDs~~ — CTA now `/contact`         | Shipped in #1333                                          |
-| Help / prefs still describe cart/refund/review flows   | Copy + toggles lag insurance-only                                              | Align labels with resupply / fit requests                 |
+| Help / prefs still describe cart/refund/review flows   | ~~Copy + toggles~~ — help + account prefs scrubbed; abandoned/review toggles hidden | Shipped in #1333                                          |
 | Account chatbot tools still coach refunds/subscriptions | ~~Tool descriptors leftover~~ — escalate + subscription tool scrubbed          | Shipped in #1333; knowledge KB still has seed placeholders |
 
 ## Started in this follow-up (PR #1333)
@@ -32,6 +32,7 @@ them up without re-discovering scope.
 | Review-request emails / `storefront.reviews_collection`           | Fixed: migration 0530 OFF + moved to `DELIBERATELY_OFF_FLAGS`                                  |
 | Account “Track a shipment” → `/track-order`                       | Fixed: CTA → `/contact` (“Ask about a shipment”)                                               |
 | Account chatbot escalate / subscription tool cash-pay coaching    | Fixed: insurance-only tool descriptors + category labels                                       |
+| Help / account prefs cash-pay leftover copy                       | Fixed: hide abandoned/review toggles; help + SMS copy insurance-aligned                        |
 
 ## Already shipped in #1330 / #1332
 
