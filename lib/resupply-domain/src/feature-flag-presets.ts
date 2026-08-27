@@ -83,7 +83,6 @@ const REMINDERS = [
 /** Branded storefront + customer touchpoints (insurance-only). */
 const STOREFRONT = [
   "storefront.chatbot",
-  "storefront.reviews_collection",
   "storefront.nps",
   "storefront.auto_reminder_enrollment",
   "support.tickets",
@@ -197,6 +196,9 @@ export const DELIBERATELY_OFF_FLAGS = [
   "billing.patient_autopay",
   "billing.payment_plan_autocharge",
   "frontdesk.counter_orders",
+  // Post-delivery "leave a review" emails still target historical shop_orders
+  // and deep-link to /contact (no review form). Migration 0530 forces OFF.
+  "storefront.reviews_collection",
 ] as const;
 
 const uniq = (keys: readonly string[]): readonly string[] => [...new Set(keys)];
