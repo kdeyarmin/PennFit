@@ -48,6 +48,7 @@ import {
 import { logger } from "../logger";
 import { resolveSuperAdminRecipients } from "../admin-assistant/adminAssistantTools";
 import { placeResupplyOrderForConversation } from "../messaging/order-flow";
+import { resolvePatientIdForCustomer } from "../shop-customer/resolve-patient";
 import { describeHcpcsPlain } from "../swo-pdf";
 import {
   createSelfServeTenant,
@@ -630,13 +631,15 @@ class Impl implements VoiceToolDispatcher {
   private async getShopCustomerChart(
     call: DispatchToolCall<"get_customer_chart">,
   ): Promise<DispatchToolResult<"get_customer_chart">> {
-    // Storefront snapshot: first name + last order date + open-followup
-    // flag. Subscribe & Save is retired — never read shop_subscriptions
-    // or report an active subscription. Dates + booleans only — never
-    // order contents, addresses, payment details, or email.
+    // Storefront snapshot: first name + last order/shipment date +
+    // open-followup flag. Prefer insurance fulfillments when the
+    // customer's email binds to exactly one patient; fall back to
+    // historical shop_orders. Subscribe & Save is retired — never
+    // read shop_subscriptions. Dates + booleans only — never order
+    // contents, addresses, payment details, or email.
     const customerId = this.requireShopCustomerId();
     const supabase = await this.db();
-    const [customerRes, orderRes, followupRes] = await Promise.all([
+    const [customerRes, orderRes, followupRes, patientId] = await Promise.all([
       supabase
         .from("shop_customers")
         .select("display_name")
@@ -656,13 +659,28 @@ class Impl implements VoiceToolDispatcher {
         .eq("customer_id", customerId)
         .is("completed_at", null)
         .limit(1),
+      resolvePatientIdForCustomer(supabase, customerId),
     ]);
     if (customerRes.error) throw customerRes.error;
     if (orderRes.error) throw orderRes.error;
     if (followupRes.error) throw followupRes.error;
 
-    const lastOrderAt =
+    let fulfillmentAt: string | null = null;
+    if (patientId) {
+      const fulfillmentRes = await supabase
+        .from("fulfillments")
+        .select("created_at")
+        .eq("patient_id", patientId)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (fulfillmentRes.error) throw fulfillmentRes.error;
+      fulfillmentAt = fulfillmentRes.data?.created_at ?? null;
+    }
+
+    const shopOrderAt =
       orderRes.data?.paid_at ?? orderRes.data?.created_at ?? null;
+    const lastOrderAt = pickLatestIso(fulfillmentAt, shopOrderAt);
 
     return {
       callId: call.callId,
@@ -1300,6 +1318,13 @@ function firstNameFromDisplayName(
   if (!displayName) return undefined;
   const first = displayName.trim().split(/\s+/)[0];
   return first || undefined;
+}
+
+/** Prefer the chronologically later of two ISO timestamps (nulls ignored). */
+function pickLatestIso(a: string | null, b: string | null): string | null {
+  if (!a) return b;
+  if (!b) return a;
+  return Date.parse(a) >= Date.parse(b) ? a : b;
 }
 
 /**
