@@ -424,6 +424,7 @@ async function dispensedModelIds(orgId: string): Promise<{
       .select("mask_model_id, availability")
       .in("availability", ["in_stock", "low", "special_order"])
       .order("mask_model_id", { ascending: true })
+      .order("id", { ascending: true })
       .range(offset, offset + PAGE - 1);
     if (error) return { modelIds: null, manufacturers: [], error };
     const page = (data ?? []) as Row[];
@@ -566,7 +567,12 @@ router.get(
           "size_variant_id, approved, reviewed_by_email, reviewed_at, source_kind, source_ref",
         )
         .in("size_variant_id", chunk);
-      if (reviewErr) throw reviewErr;
+      if (reviewErr) {
+        res
+          .status(500)
+          .json({ error: "query_failed", message: reviewErr.message });
+        return;
+      }
       for (const r of (reviewRows ?? []) as Row[]) {
         reviewByVariant.set(String(r.size_variant_id), r);
       }

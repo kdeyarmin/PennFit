@@ -117,7 +117,7 @@ router.post(
     // .catch is load-bearing: index.ts exits the process on any
     // unhandledRejection, so a bare void-discarded rejection here
     // would take the whole site down from one POST.
-    void scoreAndPersist(claim.id).catch((err) => {
+    void scoreAndPersist(claim.id, orgId).catch((err) => {
       logger.warn(
         { err, claimId: claim.id },
         "heuristic denial scoring failed (non-blocking)",

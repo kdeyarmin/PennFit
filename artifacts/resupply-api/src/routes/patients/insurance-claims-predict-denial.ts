@@ -57,7 +57,7 @@ router.post(
       res.status(404).json({ error: "claim_not_found" });
       return;
     }
-    const score = await scoreAndPersist(parsed.data.claimId);
+    const score = await scoreAndPersist(parsed.data.claimId, orgId);
     if (!score) {
       res.status(404).json({ error: "claim_not_found" });
       return;

@@ -67,6 +67,7 @@ router.get(
     // queue window still reflects current load, not an oldest-frozen slice.
     type ConvoRow = { assigned_admin_user_id: string | null };
     const openConversationAssignees: Array<string | null> = [];
+    let windowTruncated = false;
     for (
       let offset = 0;
       offset < OPEN_CONVO_MAX_ROWS;
@@ -85,6 +86,18 @@ router.get(
         openConversationAssignees.push(c.assigned_admin_user_id ?? null);
       }
       if (page.length < OPEN_CONVO_PAGE) break;
+    }
+    // Confirm rows exist beyond the safety cap (exact-cap is not truncated).
+    if (openConversationAssignees.length >= OPEN_CONVO_MAX_ROWS) {
+      const { data: peek, error: peekErr } = await supabase
+        .from("conversations")
+        .select("assigned_admin_user_id")
+        .in("status", OPEN_CONVERSATION_STATUSES)
+        .order("updated_at", { ascending: false })
+        .order("id", { ascending: false })
+        .range(OPEN_CONVO_MAX_ROWS, OPEN_CONVO_MAX_ROWS);
+      if (peekErr) throw peekErr;
+      windowTruncated = (peek ?? []).length > 0;
     }
 
     // Who's on shift right now (started, not ended, not called off).
@@ -118,9 +131,8 @@ router.get(
         openConversationAssignees,
         onShiftIds,
       }),
-      // True when the newest-first window filled — older open threads
-      // beyond the most recent 20k exist and are not in this tally.
-      windowTruncated: openConversationAssignees.length >= OPEN_CONVO_MAX_ROWS,
+      // True only when older open threads beyond the newest 20k exist.
+      windowTruncated,
     });
   },
 );

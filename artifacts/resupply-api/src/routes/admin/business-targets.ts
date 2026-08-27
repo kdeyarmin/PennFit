@@ -120,8 +120,9 @@ router.get(
       // typed Database, so it's reached via raw() and the org filter must
       // be explicit — the pace-to-goal actuals are THIS tenant's only.
       //
-      // Page past PostgREST max_rows — a bare `.limit(5000)` silently
-      // truncates to ~1000 unordered rows and understates pace-to-goal.
+      // Page past PostgREST max_rows. Newest-first so a safety cap keeps
+      // the most recent snapshots (pace-to-goal cares about today, not
+      // the oldest days of the window).
       const PAGE = 1000;
       const MAX_ROWS = 5000;
       for (let offset = 0; offset < MAX_ROWS; offset += PAGE) {
@@ -134,7 +135,7 @@ router.get(
           .in("metric_key", metricKeys)
           .gte("metric_date", minStart)
           .lt("metric_date", maxEnd)
-          .order("metric_date", { ascending: true })
+          .order("metric_date", { ascending: false })
           .order("metric_key", { ascending: true })
           .range(offset, offset + PAGE - 1);
         if (metricsErr) {
@@ -147,6 +148,7 @@ router.get(
         metricRows.push(...page);
         if (page.length < PAGE) break;
       }
+      // Cap hit — older days in the selected window may be missing.
       metricsWindowTruncated = metricRows.length >= MAX_ROWS;
     }
 
