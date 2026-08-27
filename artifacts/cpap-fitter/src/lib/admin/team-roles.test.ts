@@ -100,7 +100,12 @@ const ROUTE_FILE = join(
 /** The roles POST /admin/team/invite and PATCH /admin/team/:id accept. */
 function serverRoleValues(): string[] {
   const src = readFileSync(ROUTE_FILE, "utf8");
-  const block = /const ROLE_VALUES: AdminRole\[\] = \[([^\]]*)\]/.exec(src);
+  // Tolerant of anything that doesn't change what the array MEANS:
+  // spacing, a type annotation that changes or disappears, and a
+  // trailing `as const satisfies …` before the semicolon. What it will
+  // not do is quietly match nothing — a rename fails the assertion
+  // below by name instead of silently checking an empty list.
+  const block = /const\s+ROLE_VALUES\b[^=]*=\s*\[([^\]]*)\][^;]*;/.exec(src);
   expect(block, `ROLE_VALUES not found in ${ROUTE_FILE}`).toBeTruthy();
   const roles = Array.from(block![1].matchAll(/"([a-z_]+)"/g), (m) => m[1]);
   // Sanity-check the parse itself: the enum has never been this small.
