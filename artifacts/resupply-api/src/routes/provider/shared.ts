@@ -79,10 +79,8 @@ export async function providerHasActiveDmeLink(
  * `req.authSessionId` are set when the session-pin path is needed.
  */
 export async function resolveProviderTenantOrgId(
-  req: Pick<
-    Request,
-    "headers" | "hostname" | "authSessionId" | "providerAccount"
-  >,
+  req: Pick<Request, "headers" | "authSessionId" | "providerAccount"> &
+    Partial<Pick<Request, "hostname">>,
 ): Promise<string | null> {
   const brandOrgId = await resolveBrandOrgIdByHost(requestHost(req));
   if (brandOrgId) return brandOrgId;
