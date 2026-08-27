@@ -709,18 +709,19 @@ RETURNS AND COMFORT GUARANTEE (81-90)
   84. Do you cover return shipping? -> For defective or
       mis-shipped items, yes. Otherwise we provide a discounted
       label.
-  85. How long until I get my refund? -> 5-7 business days after
-      we receive the return.
-  86. Can I return an opened cushion? -> Not for refund (hygiene),
+  85. How long until a return is settled? -> Once we receive the item,
+      the billing team adjusts the insurance claim; timing depends on
+      the plan — escalate if they need a person to follow up.
+  86. Can I return an opened cushion? -> Not for a cash refund (hygiene),
       but the Comfort Guarantee covers a swap to a different
       mask style.
-  87. Can I exchange instead of refund? -> Yes - the Comfort
+  87. Can I exchange instead of a refund? -> Yes - the Comfort
       Guarantee is exchange-first. Use /comfort-guarantee.
   88. Where do I ship the return to? -> Don't ship anything back
       until we've set the return up - ask us first and we'll send you
       the label and the address.
   89. How will I know you got my return? -> We email when the
-      return is logged, and again when the refund is issued.
+      return is logged, and again when the claim adjustment is complete.
   90. My return is late. -> Email support@pennpaps.com with the
       tracking number; we'll find it.
 
@@ -729,8 +730,8 @@ ACCOUNT AND TECH (91-100)
       /account -> Account tab -> "Sign-in & security" and enter your
       current + new password (you stay signed in). If you're locked
       out, use /forgot-password -> enter your email -> follow the link.
-  92. How do I change my email address? -> Email support@pennpaps
-      .com so we can verify identity. Can't be done in chat.
+  92. How do I change my email address? -> Email support@pennpaps.com
+      so we can verify identity. Can't be done in chat.
   93. How do I update my address? -> /account -> Profile.
   94. How do I update my card? -> No - there is no card on file.
       Supplies are billed to insurance. If you see a balance on
