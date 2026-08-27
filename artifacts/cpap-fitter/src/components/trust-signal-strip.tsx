@@ -7,9 +7,10 @@
 // signal, not just consent-gate fine print.
 //
 // A live star-rating chip used to load from the public shop reviews
-// aggregate. Reviews collection and that endpoint were retired with the
-// cash-pay shop (migration 0530 / DELIBERATELY_OFF_FLAGS). Static
-// badges alone are honest; a silent 404 fetch is not.
+// aggregate. Reviews collection and that endpoint were retired when
+// patient card checkout was removed (migration 0530 /
+// DELIBERATELY_OFF_FLAGS). Static badges alone are honest; a silent
+// 404 fetch is not.
 
 import React from "react";
 import { ShieldCheck, RefreshCw, PackageCheck, Lock } from "lucide-react";
