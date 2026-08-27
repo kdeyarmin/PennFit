@@ -128,7 +128,13 @@ router.get("/shop/me", attachSignedIn, async (req, res) => {
   }));
 
   const fulfillmentRecent: RecentOrderSummary[] = (
-    recentFulfillmentRes.data ?? []
+    (recentFulfillmentRes.data ?? []) as Array<{
+      id: string;
+      status: string;
+      created_at: string;
+      shipped_at: string | null;
+      delivered_at: string | null;
+    }>
   ).map((r) => ({
     id: r.id,
     sessionId: "",
@@ -139,7 +145,7 @@ router.get("/shop/me", attachSignedIn, async (req, res) => {
   }));
 
   const recentOrders = [...shopRecent, ...fulfillmentRecent]
-    .toSorted((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
+    .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
     .slice(0, RECENT_ORDERS_LIMIT);
 
   res.json({
