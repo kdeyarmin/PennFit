@@ -46,12 +46,17 @@ router.post(
       res.status(404).json({ error: "not_found" });
       return;
     }
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     try {
       const result = await submitClaimStatusCheck({
         claimId: parsed.data.claimId,
         patientId: parsed.data.id,
         requestedByEmail: req.adminEmail ?? "unknown",
-        orgId: req.orgId,
+        orgId,
       });
       await logAudit({
         action: "claim_status.check_submitted",

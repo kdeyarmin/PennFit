@@ -23,7 +23,7 @@
 // Idempotency: the webhook's stripe_webhook_events event-id gate dedupes
 // redelivered events upstream, so this module does no claiming of its own.
 
-import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import {
   sendSubscriptionBillingEmail,
@@ -81,7 +81,7 @@ export async function sendSubscriptionBillingNoticeOrThrow(
   const { stripeCustomerId, kind, log } = input;
   if (!stripeCustomerId) return;
 
-  const orgId = input.orgId ?? (await resolveSeedOrgId());
+  const orgId = input.orgId?.trim();
   if (!orgId) return;
   const supabase = getOrgScopedClient(orgId);
 

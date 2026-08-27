@@ -14,7 +14,6 @@ import {
   type Database,
   getOrgScopedClient,
   type OrgScopedClient,
-  resolveSeedOrgId,
 } from "@workspace/resupply-db";
 import {
   allocateControlNumbers,
@@ -36,8 +35,8 @@ export interface SubmitClaimStatusCheckInput {
   /** Patient id from the route — asserts the claim belongs to them. */
   patientId: string;
   requestedByEmail: string;
-  /** Tenant for the org-scoped reads/writes. Defaults to the seed org. */
-  orgId?: string;
+  /** Required — never invent the seed org for 276 claim-status inquiries. */
+  orgId: string;
 }
 
 export class ClaimNotForPatientError extends Error {
@@ -64,7 +63,7 @@ export interface SubmitClaimStatusCheckResult {
 export async function submitClaimStatusCheck(
   input: SubmitClaimStatusCheckInput,
 ): Promise<SubmitClaimStatusCheckResult> {
-  const orgId = input.orgId ?? (await resolveSeedOrgId());
+  const orgId = input.orgId?.trim();
   if (!orgId) throw new Error("claim-status-checker: no tenant resolved");
   const supabase = getOrgScopedClient(orgId);
 

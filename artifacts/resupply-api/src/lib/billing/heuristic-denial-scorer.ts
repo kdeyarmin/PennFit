@@ -26,7 +26,6 @@
 import {
   getOrgScopedClient,
   type OrgScopedClient,
-  resolveSeedOrgId,
 } from "@workspace/resupply-db";
 
 import { logger } from "../logger";
@@ -70,9 +69,8 @@ export async function scoreClaim(
   orgId?: string,
 ): Promise<DenialScore | null> {
   // Score the claim in its OWN tenant — the caller (auto-workflow fan-out)
-  // passes the org the claim was selected from. Defaults to the seed org so
-  // existing single-tenant callers are unchanged.
-  const resolvedOrgId = orgId?.trim() || (await resolveSeedOrgId());
+  // passes the org the claim was selected from. Never invent the seed org.
+  const resolvedOrgId = orgId?.trim();
   if (!resolvedOrgId) {
     // No tenant context — no opinion (the scorer is advisory and the
     // caller already handles a null score as "unscored").
@@ -327,8 +325,8 @@ export async function scoreAndPersist(
 ): Promise<DenialScore | null> {
   const score = await scoreClaim(claimId, orgId);
   if (!score) return null;
-  // Persist into the SAME tenant the claim was scored in (defaults to seed).
-  const resolvedOrgId = orgId?.trim() || (await resolveSeedOrgId());
+  // Persist into the SAME tenant the claim was scored in. Never invent seed.
+  const resolvedOrgId = orgId?.trim();
   if (!resolvedOrgId) {
     // Tenant context vanished between scoring and persist — the score
     // is advisory, so return it unpersisted rather than throwing.

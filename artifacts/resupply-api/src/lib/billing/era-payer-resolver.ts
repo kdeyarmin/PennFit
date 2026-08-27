@@ -23,7 +23,6 @@ import {
   type Database,
   getOrgScopedClient,
   type OrgScopedClient,
-  resolveSeedOrgId,
 } from "@workspace/resupply-db";
 
 import { logger } from "../logger";
@@ -47,9 +46,10 @@ export interface ResolvedEraPayer {
 
 export async function resolvePayerProfileForEra(
   hints: EraPayerHints,
-  opts: { orgId?: string } = {},
+  opts: { orgId: string },
 ): Promise<ResolvedEraPayer | null> {
-  const orgId = opts.orgId ?? (await resolveSeedOrgId());
+  // Required tenant — never invent the seed org for ERA payer matching.
+  const orgId = opts.orgId?.trim();
   if (!orgId) return null;
   const supabase = getOrgScopedClient(orgId);
 

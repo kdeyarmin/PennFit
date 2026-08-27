@@ -112,6 +112,11 @@ router.post(
       return;
     }
     const body = parsed.data;
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     try {
       const result = await runInsuranceDiscovery({
         subscriber: {
@@ -124,7 +129,7 @@ router.post(
           postalCode: body.postalCode ?? null,
         },
         serviceDate: body.serviceDate ?? null,
-        orgId: req.orgId,
+        orgId,
       });
       await logAudit({
         action: "insurance.discovery",
