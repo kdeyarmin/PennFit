@@ -58,6 +58,34 @@ const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
  *  of the repo chunks roster id-lists at 200 (worker bulk-campaign-tick). */
 const ID_CHUNK_SIZE = 200;
 
+/** Cap concurrent per-patient setup-date reads inside one id chunk.
+ *  Unbounded `Promise.all` over ID_CHUNK_SIZE (200) PostgREST calls can
+ *  429 the data API on large panels. */
+const SETUP_DATE_LOOKUP_CONCURRENCY = 15;
+
+async function mapWithConcurrency<T, R>(
+  items: readonly T[],
+  concurrency: number,
+  fn: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  if (items.length === 0) return [];
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+  const workerCount = Math.min(concurrency, items.length);
+
+  async function worker(): Promise<void> {
+    for (;;) {
+      const i = nextIndex;
+      nextIndex += 1;
+      if (i >= items.length) return;
+      results[i] = await fn(items[i], i);
+    }
+  }
+
+  await Promise.all(Array.from({ length: workerCount }, () => worker()));
+  return results;
+}
+
 /**
  * PostgREST `max_rows` (see `supabase/config.toml`) silently truncates any
  * response larger than this. `.limit(N)` with N > max_rows does NOT raise
@@ -362,24 +390,19 @@ router.get(
       // (1000), so later-starting patients in a large chunk silently
       // got `setupDate: null`. One ascending limit-1 read per patient
       // stays under the URI/row caps and never drops a panel member.
-      const firstNightRows = await Promise.all(
-        ids.map(async (patientId) => {
-          const { data, error } = await db
-            .from("patient_therapy_nights")
-            .select("patient_id, night_date")
-            .eq("patient_id", patientId)
-            .order("night_date", { ascending: true })
-            .limit(1)
-            .maybeSingle();
-          if (error) throw error;
-          return data as { patient_id: string; night_date: string } | null;
+      const setupDates = await mapWithConcurrency(
+        ids,
+        SETUP_DATE_LOOKUP_CONCURRENCY,
+        async (patientId) => ({
+          patientId,
+          setupDate: await loadPatientSetupDate(orgId, patientId),
         }),
       );
-      for (const row of firstNightRows) {
-        if (!row) continue;
-        const prior = setupByPatient.get(row.patient_id);
-        if (prior == null || row.night_date < prior) {
-          setupByPatient.set(row.patient_id, row.night_date);
+      for (const { patientId, setupDate } of setupDates) {
+        if (setupDate == null) continue;
+        const prior = setupByPatient.get(patientId);
+        if (prior == null || setupDate < prior) {
+          setupByPatient.set(patientId, setupDate);
         }
       }
     }
