@@ -92,6 +92,66 @@ async function practiceName(orgId: string): Promise<string> {
   return getDocumentSupplierName(orgId);
 }
 
+/**
+ * Provider ids this tenant may list/disable/enable portal accounts for.
+ * `provider_portal_accounts` has no org_id (global NPI login); scope via
+ * active DME referral links and staged signature requests for this org.
+ */
+async function orgLinkedProviderIds(orgId: string): Promise<string[]> {
+  const supabase = getOrgScopedClient(orgId);
+  const [links, requests] = await Promise.all([
+    supabase
+      .raw()
+      .schema("resupply")
+      .from("provider_dme_links")
+      .select("provider_id")
+      .eq("org_id", orgId)
+      .neq("status", "revoked"),
+    supabase
+      .raw()
+      .schema("resupply")
+      .from("provider_signature_requests")
+      .select("provider_id")
+      .eq("org_id", orgId),
+  ]);
+  if (links.error) throw links.error;
+  if (requests.error) throw requests.error;
+  const ids = new Set<string>();
+  for (const row of links.data ?? []) {
+    if (typeof row.provider_id === "string") ids.add(row.provider_id);
+  }
+  for (const row of requests.data ?? []) {
+    if (typeof row.provider_id === "string") ids.add(row.provider_id);
+  }
+  return [...ids];
+}
+
+/** Ensure a DME↔provider edge exists so invitees stay org-visible. */
+async function ensureProviderDmeLink(
+  orgId: string,
+  providerId: string,
+  invitedByEmail: string | null,
+): Promise<void> {
+  const supabase = getOrgScopedClient(orgId);
+  const nowIso = new Date().toISOString();
+  const { error } = await supabase
+    .raw()
+    .schema("resupply")
+    .from("provider_dme_links")
+    .upsert(
+      {
+        org_id: orgId,
+        provider_id: providerId,
+        status: "active",
+        invited_by_email: invitedByEmail,
+        revoked_at: null,
+        updated_at: nowIso,
+      },
+      { onConflict: "org_id,provider_id" },
+    );
+  if (error) throw error;
+}
+
 // ── Accounts ──────────────────────────────────────────────────────
 
 router.get(
@@ -105,8 +165,13 @@ router.get(
       return;
     }
     const supabase = getOrgScopedClient(orgId);
+    const linkedProviderIds = await orgLinkedProviderIds(orgId);
+    if (linkedProviderIds.length === 0) {
+      res.json({ accounts: [] });
+      return;
+    }
     // provider_portal_accounts is a BLOCKED GLOBAL table (no org_id) —
-    // raw client, no org filter.
+    // raw client, filtered to providers this tenant has linked.
     const { data, error } = await supabase
       .raw()
       .schema("resupply")
@@ -114,6 +179,7 @@ router.get(
       .select(
         "id, provider_id, email_lower, status, mfa_enrolled_at, last_login_at, invited_by_email, created_at, providers(legal_name, npi, practice_name)",
       )
+      .in("provider_id", linkedProviderIds)
       .order("created_at", { ascending: false })
       .limit(500);
     if (error) throw error;
@@ -383,17 +449,29 @@ router.post(
     const { authUserId, emailSent, inviteLink } = invite;
 
     // Link (or refresh) the portal account. provider_portal_accounts is
-    // a BLOCKED GLOBAL table (no org_id) — raw client, no org filter.
+    // a BLOCKED GLOBAL table unique on provider_id — never rebind an
+    // existing login to a different email (cross-tenant takeover).
     const { data: existingAccount } = await supabase
       .raw()
       .schema("resupply")
       .from("provider_portal_accounts")
-      .select("id")
+      .select("id, email_lower, auth_user_id")
       .eq("provider_id", parsed.data.providerId)
       .limit(1)
       .maybeSingle();
     const nowIso = new Date().toISOString();
     if (existingAccount) {
+      const existingEmail = String(existingAccount.email_lower ?? "")
+        .trim()
+        .toLowerCase();
+      if (existingEmail && existingEmail !== email) {
+        res.status(409).json({
+          error: "provider_portal_email_conflict",
+          message:
+            "This provider already has a portal login under a different email. Ask that clinician to keep using their existing address, or contact support to transfer the account.",
+        });
+        return;
+      }
       const { error: accountUpdateErr } = await supabase
         .raw()
         .schema("resupply")
@@ -423,6 +501,15 @@ router.post(
       if (accountInsertErr) throw accountInsertErr;
     }
 
+    // Invite establishes (or refreshes) the DME↔provider edge so this
+    // account appears in the org-scoped list and cannot be managed by
+    // an unrelated tenant that never linked the NPI.
+    await ensureProviderDmeLink(
+      orgId,
+      parsed.data.providerId,
+      req.adminEmail ?? null,
+    );
+
     res.json({ ok: true, email, emailSent, inviteLink });
   },
 );
@@ -446,7 +533,25 @@ router.post(
     }
     const supabase = getOrgScopedClient(orgId);
     const nowIso = new Date().toISOString();
-    // provider_portal_accounts is a BLOCKED GLOBAL table — raw, no filter.
+    // provider_portal_accounts is global — only disable when this org
+    // has a DME link or signature request for the account's provider.
+    const { data: acctRow, error: acctLookupErr } = await supabase
+      .raw()
+      .schema("resupply")
+      .from("provider_portal_accounts")
+      .select("id, provider_id, auth_user_id")
+      .eq("id", params.data.id)
+      .maybeSingle();
+    if (acctLookupErr) throw acctLookupErr;
+    if (!acctRow) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    const linked = await orgLinkedProviderIds(orgId);
+    if (!linked.includes(String(acctRow.provider_id))) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
     const { data, error } = await supabase
       .raw()
       .schema("resupply")
@@ -499,15 +604,26 @@ router.post(
     const supabase = getOrgScopedClient(orgId);
     const nowIso = new Date().toISOString();
     // Re-enable to 'active' if MFA already enrolled, else 'invited'.
-    // provider_portal_accounts is a BLOCKED GLOBAL table — raw, no filter.
-    const { data: acct } = await supabase
+    // provider_portal_accounts is global — only enable when this org
+    // has linked the provider.
+    const { data: acct, error: acctLookupErr } = await supabase
       .raw()
       .schema("resupply")
       .from("provider_portal_accounts")
-      .select("mfa_enrolled_at")
+      .select("id, provider_id, mfa_enrolled_at")
       .eq("id", params.data.id)
       .maybeSingle();
-    const nextStatus = acct?.mfa_enrolled_at ? "active" : "invited";
+    if (acctLookupErr) throw acctLookupErr;
+    if (!acct) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    const linked = await orgLinkedProviderIds(orgId);
+    if (!linked.includes(String(acct.provider_id))) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    const nextStatus = acct.mfa_enrolled_at ? "active" : "invited";
     const { data, error } = await supabase
       .raw()
       .schema("resupply")

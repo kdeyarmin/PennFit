@@ -156,6 +156,12 @@ describe("GET /admin/provider-portal/accounts", () => {
 
   it("maps the account rows (with the joined provider name)", async () => {
     mockAdmin.current = ADMIN;
+    stageSupabaseResponse("provider_dme_links", "select", {
+      data: [{ provider_id: PROVIDER }],
+    });
+    stageSupabaseResponse("provider_signature_requests", "select", {
+      data: [],
+    });
     stageSupabaseResponse("provider_portal_accounts", "select", {
       data: [
         {
@@ -185,6 +191,17 @@ describe("GET /admin/provider-portal/accounts", () => {
       providerName: "Dr. Sleep",
       providerNpi: "1234567890",
     });
+  });
+
+  it("returns an empty list when this org has no linked providers", async () => {
+    mockAdmin.current = ADMIN;
+    stageSupabaseResponse("provider_dme_links", "select", { data: [] });
+    stageSupabaseResponse("provider_signature_requests", "select", {
+      data: [],
+    });
+    const res = await request(makeApp()).get("/admin/provider-portal/accounts");
+    expect(res.status).toBe(200);
+    expect(res.body.accounts).toEqual([]);
   });
 });
 
@@ -247,6 +264,7 @@ describe("POST /admin/provider-portal/accounts/invite", () => {
     // Link the portal account: no existing account → insert.
     stageSupabaseResponse("provider_portal_accounts", "select", { data: null });
     stageSupabaseResponse("provider_portal_accounts", "insert", { data: null });
+    stageSupabaseResponse("provider_dme_links", "upsert", { data: null });
 
     const res = await request(makeApp())
       .post(url)
@@ -277,6 +295,29 @@ describe("POST /admin/provider-portal/accounts/invite", () => {
     expect(ctx.signatureName).not.toContain("Penn Home Medical Supply");
   });
 
+  it("409 when an existing portal login uses a different email", async () => {
+    mockAdmin.current = ADMIN;
+    stageSupabaseResponse("providers", "select", {
+      data: { id: PROVIDER, legal_name: "Dr. Sleep", email: "new@example.com" },
+    });
+    stageSupabaseResponse("users", "select", { data: null });
+    stageSupabaseResponse("users", "insert", { data: { id: "u-new" } });
+    stageSupabaseResponse("email_tokens", "insert", { data: null });
+    stageSupabaseResponse("provider_portal_accounts", "select", {
+      data: {
+        id: ACCOUNT,
+        email_lower: "existing@example.com",
+        auth_user_id: "u-old",
+      },
+    });
+
+    const res = await request(makeApp())
+      .post(url)
+      .send({ providerId: PROVIDER, email: "new@example.com" });
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe("provider_portal_email_conflict");
+  });
+
   it("resurrects a revoked CUSTOMER auth row (never touches the role)", async () => {
     mockAdmin.current = ADMIN;
     stageSupabaseResponse("providers", "select", {
@@ -289,9 +330,14 @@ describe("POST /admin/provider-portal/accounts/invite", () => {
     stageSupabaseResponse("users", "update", { data: null });
     stageSupabaseResponse("email_tokens", "insert", { data: null });
     stageSupabaseResponse("provider_portal_accounts", "select", {
-      data: { id: ACCOUNT },
+      data: {
+        id: ACCOUNT,
+        email_lower: "doc@example.com",
+        auth_user_id: "u-revoked",
+      },
     });
     stageSupabaseResponse("provider_portal_accounts", "update", { data: null });
+    stageSupabaseResponse("provider_dme_links", "upsert", { data: null });
 
     const res = await request(makeApp())
       .post(url)
@@ -313,13 +359,45 @@ describe("POST /admin/provider-portal/accounts/:id/disable", () => {
 
   it("404 when the account does not exist", async () => {
     mockAdmin.current = ADMIN;
-    stageSupabaseResponse("provider_portal_accounts", "update", { data: null });
+    stageSupabaseResponse("provider_portal_accounts", "select", {
+      data: null,
+    });
+    const res = await request(makeApp()).post(url).send({});
+    expect(res.status).toBe(404);
+  });
+
+  it("404 when the account's provider is not linked to this org", async () => {
+    mockAdmin.current = ADMIN;
+    stageSupabaseResponse("provider_portal_accounts", "select", {
+      data: {
+        id: ACCOUNT,
+        provider_id: PROVIDER,
+        auth_user_id: "u-1",
+      },
+    });
+    stageSupabaseResponse("provider_dme_links", "select", { data: [] });
+    stageSupabaseResponse("provider_signature_requests", "select", {
+      data: [],
+    });
     const res = await request(makeApp()).post(url).send({});
     expect(res.status).toBe(404);
   });
 
   it("disables the account and revokes live sessions", async () => {
     mockAdmin.current = ADMIN;
+    stageSupabaseResponse("provider_portal_accounts", "select", {
+      data: {
+        id: ACCOUNT,
+        provider_id: PROVIDER,
+        auth_user_id: "u-1",
+      },
+    });
+    stageSupabaseResponse("provider_dme_links", "select", {
+      data: [{ provider_id: PROVIDER }],
+    });
+    stageSupabaseResponse("provider_signature_requests", "select", {
+      data: [],
+    });
     stageSupabaseResponse("provider_portal_accounts", "update", {
       data: { auth_user_id: "u-1" },
     });
@@ -341,7 +419,17 @@ describe("POST /admin/provider-portal/accounts/:id/enable", () => {
   it("re-enables to 'active' when MFA was already enrolled", async () => {
     mockAdmin.current = ADMIN;
     stageSupabaseResponse("provider_portal_accounts", "select", {
-      data: { mfa_enrolled_at: "2026-01-01T00:00:00Z" },
+      data: {
+        id: ACCOUNT,
+        provider_id: PROVIDER,
+        mfa_enrolled_at: "2026-01-01T00:00:00Z",
+      },
+    });
+    stageSupabaseResponse("provider_dme_links", "select", {
+      data: [{ provider_id: PROVIDER }],
+    });
+    stageSupabaseResponse("provider_signature_requests", "select", {
+      data: [],
     });
     stageSupabaseResponse("provider_portal_accounts", "update", {
       data: { id: ACCOUNT },
@@ -354,7 +442,17 @@ describe("POST /admin/provider-portal/accounts/:id/enable", () => {
   it("re-enables to 'invited' when MFA was never enrolled", async () => {
     mockAdmin.current = ADMIN;
     stageSupabaseResponse("provider_portal_accounts", "select", {
-      data: { mfa_enrolled_at: null },
+      data: {
+        id: ACCOUNT,
+        provider_id: PROVIDER,
+        mfa_enrolled_at: null,
+      },
+    });
+    stageSupabaseResponse("provider_dme_links", "select", {
+      data: [{ provider_id: PROVIDER }],
+    });
+    stageSupabaseResponse("provider_signature_requests", "select", {
+      data: [],
     });
     stageSupabaseResponse("provider_portal_accounts", "update", {
       data: { id: ACCOUNT },

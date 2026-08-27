@@ -188,6 +188,8 @@ function stageInviteDbHappyPath(): void {
   stageSupabaseResponse("provider_portal_accounts", "select", { data: null });
   // provider_portal_accounts insert → ok.
   stageSupabaseResponse("provider_portal_accounts", "insert", { data: null });
+  // Invite upserts a DME link so the account stays org-scoped.
+  stageSupabaseResponse("provider_dme_links", "upsert", { data: null });
 }
 
 describe("provider invite email link — tenant base URL", () => {

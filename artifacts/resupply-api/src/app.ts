@@ -459,6 +459,13 @@ app.use(
   makeAuthRouter(providerAuthDeps, {
     productName: `${PLATFORM_NAME} Provider Portal`,
     signatureName: PLATFORM_NAME,
+    // Match the admin mount: reset/verify links must land on the
+    // provider SPA (`/provider/reset-password`), never the patient
+    // `/reset-password` surface. Provider sign-in deliberately hides
+    // forgot-password (recovery is coordinator-mediated), but the
+    // POST still exists — wrong-prefixed mail would lock a clinician
+    // into the patient auth flow.
+    uiPathPrefix: "/provider",
   }),
 );
 logger.info(
