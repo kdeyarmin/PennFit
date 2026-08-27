@@ -19,7 +19,7 @@ them up without re-discovering scope.
 | Lapsed winback uses shop `paid_at` not fulfillments    | Cron env-gated; copy says “shipped” but math is last cash-pay                  | Gate on fulfillment/`shipped_at` or retire dispatcher     |
 | Account “Track a shipment” → `/track-order` only       | ~~Tracker rejects fulfillment UUIDs~~ — CTA now `/contact`         | Shipped in #1333                                          |
 | Help / prefs still describe cart/refund/review flows   | Copy + toggles lag insurance-only                                              | Align labels with resupply / fit requests                 |
-| Account chatbot tools still coach refunds/subscriptions | Tool descriptors/`get_my_subscriptions` leftover                               | Scrub tool text to insurance shipments + escalate-only    |
+| Account chatbot tools still coach refunds/subscriptions | ~~Tool descriptors leftover~~ — escalate + subscription tool scrubbed          | Shipped in #1333; knowledge KB still has seed placeholders |
 
 ## Started in this follow-up (PR #1333)
 
@@ -31,6 +31,7 @@ them up without re-discovering scope.
 | Roster recent-nights chunk still hit `max_rows`                   | Fixed: page each id-chunk’s recent-window nights                                               |
 | Review-request emails / `storefront.reviews_collection`           | Fixed: migration 0530 OFF + moved to `DELIBERATELY_OFF_FLAGS`                                  |
 | Account “Track a shipment” → `/track-order`                       | Fixed: CTA → `/contact` (“Ask about a shipment”)                                               |
+| Account chatbot escalate / subscription tool cash-pay coaching    | Fixed: insurance-only tool descriptors + category labels                                       |
 
 ## Already shipped in #1330 / #1332
 
