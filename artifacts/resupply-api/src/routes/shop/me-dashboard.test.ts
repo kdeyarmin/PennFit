@@ -4,7 +4,8 @@
 //   * 401 without sign-in
 //   * Empty digest when no orders
 //   * Retired Subscribe & Save / abandoned-cart rows never surface
-//   * latestOrder + pendingOrders still read from shop_orders
+//   * latestOrder + pendingOrders from shop_orders (legacy) and
+//     fulfillments when email resolves to one patient chart
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import express, { type Express } from "express";
@@ -111,5 +112,44 @@ describe("GET /shop/me/dashboard", () => {
     });
     expect(res.body.pendingOrders).toBe(2);
     expect(res.body.nextShipment).toBeNull();
+  });
+
+  it("returns latestOrder + pendingOrders from insurance fulfillments", async () => {
+    mockSignedIn.current = USER_ID;
+    stageSupabaseResponse("shop_orders", "select", { data: null });
+    stageSupabaseResponse("shop_orders", "select", { data: null, count: 0 });
+    stageSupabaseResponse("shop_customers", "select", {
+      data: {
+        customer_id: USER_ID,
+        email_lower: "patient@example.com",
+      },
+    });
+    stageSupabaseResponse("patients", "select", {
+      data: [{ id: "pat_1" }],
+    });
+    stageSupabaseResponse("fulfillments", "select", {
+      data: {
+        id: "ful_1",
+        status: "queued",
+        created_at: "2024-02-01T12:00:00.000Z",
+        shipped_at: null,
+        delivered_at: null,
+        shipment_metadata: { carrier: "UPS", tracking: "1Z999" },
+      },
+    });
+    stageSupabaseResponse("fulfillments", "select", {
+      data: null,
+      count: 1,
+    });
+
+    const res = await request(makeApp()).get("/shop/me/dashboard");
+    expect(res.status).toBe(200);
+    expect(res.body.latestOrder).toMatchObject({
+      id: "ful_1",
+      paidAt: "2024-02-01T12:00:00.000Z",
+      trackingCarrier: "UPS",
+      trackingNumber: "1Z999",
+    });
+    expect(res.body.pendingOrders).toBe(1);
   });
 });

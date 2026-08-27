@@ -8,14 +8,15 @@
 //   * eligibility         — always empty. Same reason: do not nudge
 //                            insurance reorder from retired auto-ship
 //                            period ends.
-//   * latestOrder         — most-recent paid shop_orders row with
-//                            optional tracking + delivery state
-//                            (historical cash-pay or legacy rows only;
-//                            home banner links to /account).
+//   * latestOrder         — most-recent insurance fulfillment when the
+//                            signed-in email resolves to exactly one
+//                            patient chart; otherwise the latest paid
+//                            historical shop_orders row (legacy cash-pay).
+//                            Home banner links to /account.
 //   * activeSubscriptions — always 0 (Subscribe & Save takes no new
 //                            writes).
-//   * pendingOrders       — count of `status='paid' AND shipped_at IS NULL`
-//                            for the user (their backlog).
+//   * pendingOrders       — backlog of unshipped legacy shop_orders plus
+//                            queued insurance fulfillments (when linked).
 //   * abandonedCart       — always null. Abandoned cash-pay carts must
 //                            not nudge "ready to order" on the home page.
 //
@@ -25,11 +26,72 @@
 
 import { Router, type IRouter } from "express";
 
-import { getOrgScopedClient } from "@workspace/resupply-db";
+import { type Json, getOrgScopedClient } from "@workspace/resupply-db";
 
 import { requireSignedIn } from "../../middlewares/requireSignedIn";
 
 const router: IRouter = Router();
+
+type DashboardLatestOrder = {
+  id: string;
+  sessionId: string;
+  paidAt: string | null;
+  shippedAt: string | null;
+  deliveredAt: string | null;
+  trackingCarrier: string | null;
+  trackingNumber: string | null;
+};
+
+function parseShipmentMetadata(json: Json | null): {
+  carrier: string | null;
+  tracking: string | null;
+} {
+  if (!json || typeof json !== "object" || Array.isArray(json)) {
+    return { carrier: null, tracking: null };
+  }
+  const row = json as Record<string, unknown>;
+  return {
+    carrier: typeof row.carrier === "string" ? row.carrier : null,
+    tracking: typeof row.tracking === "string" ? row.tracking : null,
+  };
+}
+
+function orderActivityAt(iso: string | null | undefined): number {
+  return iso ? Date.parse(iso) : 0;
+}
+
+/**
+ * Bind the signed-in shop customer to a patient chart by email.
+ *
+ * Same exactly-one-match rule as /api/me/billing-statements and the
+ * signed-in account chatbot — refuse when zero or ambiguous matches.
+ */
+async function resolvePatientIdForCustomer(
+  supabase: ReturnType<typeof getOrgScopedClient>,
+  customerId: string,
+): Promise<string | null> {
+  const { data: customer, error: customerErr } = await supabase
+    .from("shop_customers")
+    .select("customer_id, email_lower")
+    .eq("customer_id", customerId)
+    .limit(1)
+    .maybeSingle();
+  if (customerErr) throw customerErr;
+  if (!customer?.email_lower) return null;
+
+  const escapedEmail = customer.email_lower.replace(
+    /[\\%_]/g,
+    (c: string) => `\\${c}`,
+  );
+  const { data: patients, error: patientErr } = await supabase
+    .from("patients")
+    .select("id")
+    .ilike("email", escapedEmail)
+    .limit(2);
+  if (patientErr) throw patientErr;
+  if (!patients || patients.length !== 1) return null;
+  return patients[0]!.id;
+}
 
 router.get("/shop/me/dashboard", requireSignedIn, async (req, res) => {
   const customerId = req.userCustomerId;
@@ -45,9 +107,11 @@ router.get("/shop/me/dashboard", requireSignedIn, async (req, res) => {
   }
   const supabase = getOrgScopedClient(orgId);
 
-  // Only historical order reads remain. Subscription / abandoned-cart
-  // tables still exist for analytics but must not drive patient UX.
-  const [latestOrderRes, pendingOrdersRes] = await Promise.all([
+  const patientIdPromise = resolvePatientIdForCustomer(supabase, customerId);
+
+  // Legacy cash-pay reads stay for historical rows. Insurance patients
+  // also get fulfillment-backed status when email resolves to one chart.
+  const [latestOrderRes, pendingOrdersRes, patientId] = await Promise.all([
     supabase
       .from("shop_orders")
       .select(
@@ -64,29 +128,88 @@ router.get("/shop/me/dashboard", requireSignedIn, async (req, res) => {
       .eq("customer_id", customerId)
       .eq("status", "paid")
       .is("shipped_at", null),
+    patientIdPromise,
   ]);
   if (latestOrderRes.error) throw latestOrderRes.error;
   if (pendingOrdersRes.error) throw pendingOrdersRes.error;
 
-  const latestOrderRow = latestOrderRes.data;
-  const latestOrder = latestOrderRow
+  let latestFulfillment: DashboardLatestOrder | null = null;
+  let pendingFulfillments = 0;
+  if (patientId) {
+    const [latestFulfillmentRes, pendingFulfillmentsRes] = await Promise.all([
+      supabase
+        .from("fulfillments")
+        .select(
+          "id, status, created_at, shipped_at, delivered_at, shipment_metadata",
+        )
+        .eq("patient_id", patientId)
+        .order("created_at", { ascending: false })
+        .order("id", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      supabase
+        .from("fulfillments")
+        .select("*", { count: "exact", head: true })
+        .eq("patient_id", patientId)
+        .is("shipped_at", null)
+        .is("delivered_at", null)
+        .not("status", "in", "(cancelled,canceled)"),
+    ]);
+    if (latestFulfillmentRes.error) throw latestFulfillmentRes.error;
+    if (pendingFulfillmentsRes.error) throw pendingFulfillmentsRes.error;
+
+    pendingFulfillments = pendingFulfillmentsRes.count ?? 0;
+    const row = latestFulfillmentRes.data;
+    if (row) {
+      const tracking = parseShipmentMetadata(row.shipment_metadata);
+      latestFulfillment = {
+        id: row.id,
+        sessionId: "",
+        paidAt: row.created_at,
+        shippedAt: row.shipped_at,
+        deliveredAt: row.delivered_at,
+        trackingCarrier: tracking.carrier,
+        trackingNumber: tracking.tracking,
+      };
+    }
+  }
+
+  const latestShopOrderRow = latestOrderRes.data;
+  const latestShopOrder: DashboardLatestOrder | null = latestShopOrderRow
     ? {
-        id: latestOrderRow.id,
-        sessionId: latestOrderRow.stripe_session_id,
-        paidAt: latestOrderRow.paid_at,
-        shippedAt: latestOrderRow.shipped_at,
-        deliveredAt: latestOrderRow.delivered_at,
-        trackingCarrier: latestOrderRow.tracking_carrier,
-        trackingNumber: latestOrderRow.tracking_number,
+        id: latestShopOrderRow.id,
+        sessionId: latestShopOrderRow.stripe_session_id,
+        paidAt: latestShopOrderRow.paid_at,
+        shippedAt: latestShopOrderRow.shipped_at,
+        deliveredAt: latestShopOrderRow.delivered_at,
+        trackingCarrier: latestShopOrderRow.tracking_carrier,
+        trackingNumber: latestShopOrderRow.tracking_number,
       }
     : null;
+
+  const latestOrder: DashboardLatestOrder | null =
+    latestFulfillment && latestShopOrder
+      ? orderActivityAt(
+            latestFulfillment.deliveredAt ??
+              latestFulfillment.shippedAt ??
+              latestFulfillment.paidAt,
+          ) >=
+          orderActivityAt(
+            latestShopOrder.deliveredAt ??
+              latestShopOrder.shippedAt ??
+              latestShopOrder.paidAt ??
+              latestShopOrderRow?.created_at,
+          )
+        ? latestFulfillment
+        : latestShopOrder
+      : (latestFulfillment ?? latestShopOrder);
 
   res.json({
     nextShipment: null,
     eligibility: { eligibleNow: [], soonest: null },
     latestOrder,
     activeSubscriptions: 0,
-    pendingOrders: pendingOrdersRes.count ?? 0,
+    pendingOrders: (pendingOrdersRes.count ?? 0) + pendingFulfillments,
     abandonedCart: null,
   });
 });
