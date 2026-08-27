@@ -6,11 +6,11 @@ from the comprehensive review follow-ups has shipped. Residual work below is
 
 ## Residual (not deferred-review blockers)
 
-| Item                                          | Status                                                                                             | Where tracked                                               |
-| --------------------------------------------- | -------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
-| Flip `BILLING_PAYWALL_ENFORCED` in production | Code + preflight guard shipped; env still OFF by design until ops validates Stripe                 | `docs/runbooks/tenant-payment-wall.md`                      |
-| Channel LTV:CAC including claim dollars       | ERA remittance companion on LTV page + revenue-by-source; ratio stays shop-only until patient join | New epic: `customer_acquisition.patient_id` (or equivalent) |
-| Full multi-org provider org-picker            | Fail-closed API + SPA WrongTenantHost + invite domain gate shipped                                 | `docs/provider-portal-tenant-host-routing.md` (Future epic) |
+| Item                                          | Status                                                                                           | Where tracked                                 |
+| --------------------------------------------- | ------------------------------------------------------------------------------------------------ | --------------------------------------------- |
+| Flip `BILLING_PAYWALL_ENFORCED` in production | Code + preflight guard shipped; env still OFF by design until ops validates Stripe               | `docs/runbooks/tenant-payment-wall.md`        |
+| Channel LTV:CAC including claim dollars       | Shipped — #1343 `customer_acquisition.patient_id` (migration 0532) folds linked ERA into LTV:CAC | `ltv-cac.ts` / migration 0532                 |
+| Full multi-org provider org-picker            | Shipped — deep links, session pin, platform switcher, tenant-host other-practice deep-links      | `docs/provider-portal-tenant-host-routing.md` |
 
 ## Shipped (merged)
 
@@ -18,6 +18,7 @@ from the comprehensive review follow-ups has shipped. Residual work below is
 | ------------------------------------------------------- | ------------------------------------------------------------------------------------ |
 | Provider SPA wrong-host honesty + admin domain callout  | Round ten — `ProviderPortalRoute`, `admin-provider-esign`                            |
 | LTV page ERA remittance companion (not in ratio)        | Round ten — `GET /admin/analytics/ltv-cac` `insuranceRemittance`                     |
+| Channel LTV:CAC + linked insurance via `patient_id`     | Migration 0532 + RPC rewrite; PUT `patientId`; SPA patient link field                |
 | Provider portal / RTM seed-org soft-fallback            | #1341 — brand host resolve; 403 `provider_tenant_host_required`                      |
 | Preflight: paywall requires Stripe platform credentials | #1341 — `preflight-prod-env.ts`                                                      |
 | Revenue-by-source ERA payer-paid cents                  | #1341 — labeled `totalPayerPaidCents` (not LTV)                                      |

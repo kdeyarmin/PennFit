@@ -27,6 +27,8 @@ function fakeRepo(failures: { byEmail: number; byIp: number }): AuthRepository {
     revokeAllUserSessions: unused,
     revokeOtherUserSessions: unused,
     bumpSession: unused,
+    findSessionById: unused,
+    setProviderActiveOrgId: unused,
     insertEmailToken: unused,
     expireUnconsumedEmailTokens: unused,
     consumeEmailToken: unused,

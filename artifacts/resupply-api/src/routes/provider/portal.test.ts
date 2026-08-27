@@ -9,14 +9,16 @@
 //   1. A provider on tenant-A's host scopes its `provider_signature_requests`
 //      read to tenant-A's org_id (NOT the seed org / tenant-B's).
 //   2. The platform host (brand resolve returns null) fails CLOSED with
-//      403 `provider_tenant_host_required` — never soft-falls to seed PHI.
+//      403 `provider_tenant_host_required` unless a membership-validated
+//      session pin is present — never soft-falls to seed PHI.
 //   3. Provider isolation still holds — every read carries the
 //      `.eq("provider_id", …)` filter for the signed-in provider.
 //   4. The MFA gate still applies to the PHI-bearing data routes.
 //
-// We mock `resolveBrandOrgIdByHost` (host → org or null). The mock captures
-// the `.eq(...)` filters applied to each (table, op) so we can assert the
-// org_id the route actually scoped to.
+// We mock `resolveBrandOrgIdByHost` (host → org or null) and the auth
+// repo session pin helpers. The mock captures the `.eq(...)` filters
+// applied to each (table, op) so we can assert the org_id the route
+// actually scoped to.
 
 import express, { type Express } from "express";
 import request from "supertest";
@@ -48,6 +50,24 @@ vi.mock("../../lib/tenant-branding", () => ({
   resolveBrandOrgIdByHost: resolveBrandOrgIdByHostMock,
 }));
 
+const SESSION_ID = "55555555-5555-4555-8555-555555555555";
+const findSessionByIdMock = vi.hoisted(() =>
+  vi.fn(async (_id: string) => ({
+    providerActiveOrgId: null as string | null,
+  })),
+);
+const setProviderActiveOrgIdMock = vi.hoisted(() =>
+  vi.fn(async (_id: string, _orgId: string | null) => undefined),
+);
+vi.mock("../../lib/auth-deps", () => ({
+  getAuthDeps: () => ({
+    repo: {
+      findSessionById: findSessionByIdMock,
+      setProviderActiveOrgId: setProviderActiveOrgIdMock,
+    },
+  }),
+}));
+
 // Append-only signature-event log — exercised by the view side effect.
 // No-op so we don't have to stage its DB round-trips; it isn't under test.
 const appendSignatureEventMock = vi.hoisted(() => vi.fn(async () => undefined));
@@ -60,6 +80,7 @@ vi.mock("../../lib/provider-portal/signature-events", () => ({
 // account-lookup plumbing (covered by the middleware's own tests). The MFA
 // gate is mocked separately so tests can flip it on/off.
 const mfaEnrolledMock = vi.hoisted(() => ({ value: true }));
+const sessionPinMock = vi.hoisted(() => ({ enabled: false }));
 vi.mock("../../middlewares/requireProvider", () => ({
   requireProvider: [
     (
@@ -74,6 +95,9 @@ vi.mock("../../middlewares/requireProvider", () => ({
         status: "active",
         mfaEnrolledAt: "2026-01-01T00:00:00.000Z",
       };
+      if (sessionPinMock.enabled) {
+        req.authSessionId = SESSION_ID;
+      }
       next();
     },
   ],
@@ -118,9 +142,13 @@ beforeEach(() => {
   supabaseMock.reset();
   resolveBrandOrgIdByHostMock.mockReset();
   resolveBrandOrgIdByHostMock.mockResolvedValue(null);
+  findSessionByIdMock.mockReset();
+  findSessionByIdMock.mockResolvedValue({ providerActiveOrgId: null });
+  setProviderActiveOrgIdMock.mockReset();
   appendSignatureEventMock.mockReset();
   appendSignatureEventMock.mockResolvedValue(undefined);
   mfaEnrolledMock.value = true;
+  sessionPinMock.enabled = false;
 });
 
 describe("provider portal — multi-tenant scoping of the signature queue", () => {
@@ -144,6 +172,27 @@ describe("provider portal — multi-tenant scoping of the signature queue", () =
     expect(resolveBrandOrgIdByHostMock).toHaveBeenCalledWith(
       "tenant-a.example.com",
     );
+  });
+
+  it("scopes the queue to a membership-validated session pin on platform host", async () => {
+    sessionPinMock.enabled = true;
+    findSessionByIdMock.mockResolvedValue({
+      providerActiveOrgId: TENANT_A_ORG,
+    });
+    stageSupabaseResponse("provider_dme_links", "select", {
+      data: { id: "link-1" },
+    });
+    stageSupabaseResponse("provider_signature_requests", "select", {
+      data: [],
+    });
+
+    const res = await request(makeApp())
+      .get("/api/provider/queue")
+      .set("Host", "cmbreathe.example");
+
+    expect(res.status).toBe(200);
+    expect(orgFilterValue("select")).toBe(TENANT_A_ORG);
+    expect(orgFilterValue("select")).not.toBe(SEED_ORG);
   });
 
   it("fails CLOSED on the platform host (no seed-org PHI fallback)", async () => {

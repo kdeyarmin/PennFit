@@ -76,12 +76,12 @@ export function AdminLtvCacPage() {
         </h1>
         <p className="text-sm mt-1" style={{ color: "hsl(var(--ink-3))" }}>
           Average lifetime value vs acquisition cost per channel. Channel LTV is
-          summed from historical paid shop orders only. Insurance remittance
-          (ERA payer paid) is shown separately below and is not in the LTV:CAC
-          ratio — folding claim dollars in needs a patient↔customer acquisition
-          join. CAC is averaged over customers whose cost is recorded — a
-          channel&apos;s costed/total split is shown so thin data is visible,
-          never a guessed CAC. LTV:CAC above ~3:1 is the usual healthy bar.
+          paid shop orders plus linked insurance remittance (when a patient is
+          linked on the acquisition record). Org-wide ERA is shown below for
+          coverage context. CAC is averaged over customers whose cost is
+          recorded — a channel&apos;s costed/total split is shown so thin data
+          is visible, never a guessed CAC. LTV:CAC above ~3:1 is the usual
+          healthy bar.
         </p>
       </header>
 
@@ -109,13 +109,16 @@ function InsuranceRemittanceCard({
   remittance: LtvCacResponse["insuranceRemittance"];
 }) {
   if (!remittance) return null;
+  const linked = remittance.includedInLtvRatio;
   return (
     <Card data-testid="ltv-insurance-remittance">
       <p
         className="text-[10px] uppercase tracking-[0.2em] font-semibold mb-1"
         style={{ color: "hsl(var(--penn-gold-deep))" }}
       >
-        Insurance remittance (not in LTV:CAC)
+        {linked
+          ? "Insurance remittance (linked dollars in LTV:CAC)"
+          : "Insurance remittance (link patients to fold into LTV:CAC)"}
       </p>
       <p
         className="text-2xl font-semibold tabular-nums leading-none"
@@ -124,12 +127,15 @@ function InsuranceRemittanceCard({
         {money(remittance.eraPayerPaidCents)}
       </p>
       <p className="text-[11px] mt-2" style={{ color: "hsl(var(--ink-3))" }}>
-        {remittance.paidClaimCount.toLocaleString("en-US")} claim(s) with a
-        paid_at stamp
+        Org-wide: {remittance.paidClaimCount.toLocaleString("en-US")} claim(s)
+        with a paid_at stamp
         {remittance.possiblyIncomplete
           ? " (sum capped — open Revenue by source for the windowed view)"
           : ""}
-        . Channel attribution for these dollars is a separate epic.
+        . Linked into channel LTV:{" "}
+        {money(remittance.linkedToCustomersCents ?? 0)} across{" "}
+        {(remittance.linkedCustomerCount ?? 0).toLocaleString("en-US")}{" "}
+        customer(s) — set Patient ID on Record acquisition to include more.
       </p>
       <p className="text-xs mt-2">
         <Link
@@ -145,16 +151,22 @@ function InsuranceRemittanceCard({
   );
 }
 
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 function RecordAcquisitionCard() {
   const qc = useQueryClient();
   const [customerId, setCustomerId] = useState("");
   const [channel, setChannel] = useState<AcquisitionChannel>("organic");
   const [cost, setCost] = useState("");
+  const [patientId, setPatientId] = useState("");
 
   const costNum = cost.trim() === "" ? null : Number(cost);
   const costValid =
     costNum == null || (Number.isFinite(costNum) && costNum >= 0);
-  const valid = customerId.trim() !== "" && costValid;
+  const patientTrim = patientId.trim();
+  const patientValid = patientTrim === "" || UUID_RE.test(patientTrim);
+  const valid = customerId.trim() !== "" && costValid && patientValid;
 
   const save = useMutation({
     mutationFn: () =>
@@ -163,10 +175,12 @@ function RecordAcquisitionCard() {
         // dollars entered → cents stored.
         acquisitionCostCents:
           costNum == null ? null : Math.round(costNum * 100),
+        ...(patientTrim !== "" ? { patientId: patientTrim } : {}),
       }),
     onSuccess: () => {
       setCustomerId("");
       setCost("");
+      setPatientId("");
       void qc.invalidateQueries({ queryKey: QUERY_KEY });
     },
   });
@@ -216,6 +230,18 @@ function RecordAcquisitionCard() {
             className="w-[130px]"
           />
         </label>
+        <label className="block">
+          <span className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground block mb-1">
+            Patient ID (optional)
+          </span>
+          <Input
+            value={patientId}
+            onChange={(e) => setPatientId(e.target.value)}
+            placeholder="uuid"
+            aria-label="Patient ID"
+            className="font-mono w-[280px]"
+          />
+        </label>
         <Button
           disabled={!valid || save.isPending}
           isLoading={save.isPending}
@@ -224,6 +250,10 @@ function RecordAcquisitionCard() {
           Save
         </Button>
       </div>
+      <p className="text-[11px] mt-2" style={{ color: "hsl(var(--ink-3))" }}>
+        Linking a patient folds that patient&apos;s ERA remittance into this
+        customer&apos;s channel LTV.
+      </p>
       {save.error instanceof Error && (
         <p className="mt-2 text-sm" style={{ color: "#b91c1c" }} role="alert">
           {save.error.message}
