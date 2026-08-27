@@ -5522,6 +5522,8 @@ export interface Database {
           recorded_by_email: string | null;
           created_at: string;
           updated_at: string;
+          // Migration 0532: optional link to patients for ERA remittance in LTV.
+          patient_id: string | null;
         };
         Insert: Partial<
           Database["resupply"]["Tables"]["customer_acquisition"]["Row"]

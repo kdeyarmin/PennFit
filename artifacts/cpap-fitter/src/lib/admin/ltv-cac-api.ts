@@ -38,11 +38,18 @@ export interface LtvCacResponse {
     ltvToCacRatio: number | null;
   };
   generatedAt: string;
-  /** ERA remittance companion — never folded into LTV:CAC. */
+  /**
+   * ERA remittance companion. Linked claim dollars (via
+   * customer_acquisition.patient_id) are already inside channel LTV /
+   * LTV:CAC when includedInLtvRatio is true; eraPayerPaidCents is org-wide
+   * for coverage context.
+   */
   insuranceRemittance?: {
     eraPayerPaidCents: number;
     paidClaimCount: number;
-    includedInLtvRatio: false;
+    linkedToCustomersCents: number;
+    linkedCustomerCount: number;
+    includedInLtvRatio: boolean;
     possiblyIncomplete: boolean;
   };
 }
@@ -71,8 +78,9 @@ export async function recordAcquisition(
     channel: AcquisitionChannel;
     acquisitionCostCents?: number | null;
     sourceDetail?: string | null;
+    patientId?: string | null;
   },
-): Promise<{ customerId: string; channel: string }> {
+): Promise<{ customerId: string; channel: string; patientId: string | null }> {
   const url = `/resupply-api/admin/customers/${encodeURIComponent(customerId)}/acquisition`;
   const res = await fetch(url, {
     method: "PUT",
@@ -93,5 +101,9 @@ export async function recordAcquisition(
     }
     throw new ApiError(res, data, { method: "PUT", url });
   }
-  return (await res.json()) as { customerId: string; channel: string };
+  return (await res.json()) as {
+    customerId: string;
+    channel: string;
+    patientId: string | null;
+  };
 }
