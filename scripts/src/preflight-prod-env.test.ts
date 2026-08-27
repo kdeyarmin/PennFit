@@ -572,7 +572,9 @@ describe("Stripe checks in production mode", () => {
     );
     expect(exitCode).toBe(1);
     expect(stdout).toContain("BILLING_PAYWALL_ENFORCED");
-    expect(stdout).toMatch(/neither STRIPE_PLATFORM_SECRET_KEY nor STRIPE_SECRET_KEY/i);
+    expect(stdout).toMatch(
+      /neither STRIPE_PLATFORM_SECRET_KEY nor STRIPE_SECRET_KEY/i,
+    );
   });
 
   it("passes when BILLING_PAYWALL_ENFORCED is on with shared STRIPE_SECRET_KEY", () => {

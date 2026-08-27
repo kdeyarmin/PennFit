@@ -656,7 +656,8 @@ function runChecks(): void {
       paywallRaw === "yes" ||
       paywallRaw === "on";
     if (paywallOn) {
-      const hasPlatformKey = getTrimmed("STRIPE_PLATFORM_SECRET_KEY") !== undefined;
+      const hasPlatformKey =
+        getTrimmed("STRIPE_PLATFORM_SECRET_KEY") !== undefined;
       const hasSharedKey = getTrimmed("STRIPE_SECRET_KEY") !== undefined;
       if (!hasPlatformKey && !hasSharedKey) {
         record(
