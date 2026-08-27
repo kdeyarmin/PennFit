@@ -270,16 +270,26 @@ router.get(
         nightsByPatient.set(row.patient_id, list);
       }
 
-      const { data: chunkFirstNights, error: fErr } = await db
-        .from("patient_therapy_nights")
-        .select("patient_id, night_date")
-        .in("patient_id", ids)
-        .order("night_date", { ascending: true });
-      if (fErr) throw fErr;
-      for (const row of (chunkFirstNights ?? []) as Array<{
-        patient_id: string;
-        night_date: string;
-      }>) {
+      // First therapy night per patient (= setupDate). A single
+      // ordered `.in(ids)` read is truncated by PostgREST `max_rows`
+      // (1000), so later-starting patients in a large chunk silently
+      // got `setupDate: null`. One ascending limit-1 read per patient
+      // stays under the URI/row caps and never drops a panel member.
+      const firstNightRows = await Promise.all(
+        ids.map(async (patientId) => {
+          const { data, error } = await db
+            .from("patient_therapy_nights")
+            .select("patient_id, night_date")
+            .eq("patient_id", patientId)
+            .order("night_date", { ascending: true })
+            .limit(1)
+            .maybeSingle();
+          if (error) throw error;
+          return data as { patient_id: string; night_date: string } | null;
+        }),
+      );
+      for (const row of firstNightRows) {
+        if (!row) continue;
         const prior = setupByPatient.get(row.patient_id);
         if (prior == null || row.night_date < prior) {
           setupByPatient.set(row.patient_id, row.night_date);
