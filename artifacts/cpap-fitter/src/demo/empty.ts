@@ -68,6 +68,7 @@ const EMPTY_COLLECTION_KEYS = [
   "setups",
   "signed",
   "opportunities",
+  "orgs",
   "campaigns",
   "candidates",
   "attempts",
