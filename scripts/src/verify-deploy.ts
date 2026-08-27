@@ -84,7 +84,10 @@ const TENANT_IDENTITY_BY_HOST: Readonly<Record<string, string>> = {
 };
 
 function expectedTenantIdentity(hostname: string): string | null {
-  const host = hostname.trim().toLowerCase().replace(/^www\./, "");
+  const host = hostname
+    .trim()
+    .toLowerCase()
+    .replace(/^www\./, "");
   return TENANT_IDENTITY_BY_HOST[host] ?? null;
 }
 
