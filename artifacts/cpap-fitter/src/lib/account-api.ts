@@ -427,6 +427,7 @@ export interface ShopMeDashboardResponse {
   } | null;
   activeSubscriptions: number;
   pendingOrders: number;
+  /** Always null — cash-pay abandoned carts are retired; kept for older SPA builds. */
   abandonedCart: {
     itemCount: number;
     updatedAt: string;

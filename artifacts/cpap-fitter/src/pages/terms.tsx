@@ -63,10 +63,10 @@ export function Terms() {
             </h3>
             <p>
               You must be 18 years of age or older, or the parent/legal guardian
-              of the patient, to place an order or consent to receive text
-              messages from <BrandName />. By using the Service you represent
-              that the information you provide is accurate and that you have the
-              authority to provide it.
+              of the patient, to use the Service, send a fit request, or consent
+              to receive text messages from <BrandName />. By using the Service
+              you represent that the information you provide is accurate and
+              that you have the authority to provide it.
             </p>
           </section>
 
@@ -95,7 +95,8 @@ export function Terms() {
               Orders, Insurance, and Prescriptions
             </h3>
             <p>
-              By submitting an order you authorize <BrandName /> to verify your
+              By submitting a fit request or authorizing staff to place an
+              insurance order, you authorize <BrandName /> to verify your
               insurance benefits, obtain or verify your CPAP prescription, ship
               supplies to the address on file, and bill your insurance and any
               patient responsibility. Coverage, eligibility, copays, and

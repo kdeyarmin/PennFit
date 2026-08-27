@@ -194,14 +194,14 @@ const sections: FaqSection[] = [
     Icon: Receipt,
     items: [
       {
-        q: "Do I need a prescription to order a CPAP mask?",
+        q: "Do I need a prescription to get a CPAP mask?",
         a: (
           <>
-            Yes — CPAP masks are FDA-classified prescription medical devices. On
-            the order form, you can either confirm we have an existing
-            prescription on file for you, or we'll reach out to your sleep
-            provider directly to coordinate one. We won't ship without a valid
-            prescription.
+            Yes — CPAP masks are FDA-classified prescription medical devices.
+            When you send a fit request, you can either confirm we have an
+            existing prescription on file for you, or we&apos;ll reach out to
+            your sleep provider directly to coordinate one. We won&apos;t ship
+            without a valid prescription.
           </>
         ),
       },

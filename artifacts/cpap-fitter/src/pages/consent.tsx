@@ -234,16 +234,16 @@ export function Consent() {
             </div>
             <div>
               <h3 className="font-semibold mb-1 tracking-tight">
-                If You Place an Order
+                If You Send a Fit Request
               </h3>
               <p className="text-sm text-muted-foreground">
                 Camera measurements stay on your device.{" "}
-                <strong>However, when you submit an order</strong>, the contact,
-                shipping, insurance, and prescription details you enter are
-                stored in <BrandName />
-                's secure database so our fulfillment team can ship your mask
-                and bill your insurance. You'll re-confirm this when you submit
-                an order or fit request. See our{" "}
+                <strong>However, when you submit a fit request</strong>, the
+                contact, shipping, insurance, and prescription details you enter
+                are stored in <BrandName />
+                &apos;s secure database so our team can fulfill supplies through
+                insurance. You&apos;ll re-confirm this when you submit the
+                request. See our{" "}
                 <Link href="/privacy" className="underline hover:text-primary">
                   Privacy Policy
                 </Link>{" "}
@@ -351,7 +351,7 @@ export function Consent() {
             )}
             <p id="fitter-email-help" className="text-sm text-muted-foreground">
               We need an email on file so we can send you the mask
-              recommendation and any follow-up about your order.
+              recommendation and any follow-up about your fitting or request.
             </p>
             <div
               className="flex flex-row items-start space-x-3 space-y-0 pt-2 cursor-pointer"
