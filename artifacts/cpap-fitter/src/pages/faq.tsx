@@ -248,7 +248,7 @@ const sections: FaqSection[] = [
         ),
       },
       {
-        q: "Do I need an account to place an order?",
+        q: "Do I need an account to request a mask?",
         a: (
           <>
             No — you can request a fit or ask a representative to contact you
@@ -259,9 +259,9 @@ const sections: FaqSection[] = [
             >
               account
             </Link>{" "}
-            saves your shipping address, lets you track insurance orders, and
+            saves your shipping address, lets you track insurance shipments, and
             manage resupply reminders. Your account info is used only to fulfill
-            your orders, never sold to third parties.
+            your supplies, never sold to third parties.
           </>
         ),
       },
