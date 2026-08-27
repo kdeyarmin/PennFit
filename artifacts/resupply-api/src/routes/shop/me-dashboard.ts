@@ -158,16 +158,16 @@ router.get("/shop/me/dashboard", requireSignedIn, async (req, res) => {
   const latestOrder: DashboardLatestOrder | null =
     latestFulfillment && latestShopOrder
       ? orderActivityAt(
-            latestFulfillment.deliveredAt ??
-              latestFulfillment.shippedAt ??
-              latestFulfillment.paidAt,
-          ) >=
-          orderActivityAt(
-            latestShopOrder.deliveredAt ??
-              latestShopOrder.shippedAt ??
-              latestShopOrder.paidAt ??
-              latestShopOrderRow?.created_at,
-          )
+          latestFulfillment.deliveredAt ??
+            latestFulfillment.shippedAt ??
+            latestFulfillment.paidAt,
+        ) >=
+        orderActivityAt(
+          latestShopOrder.deliveredAt ??
+            latestShopOrder.shippedAt ??
+            latestShopOrder.paidAt ??
+            latestShopOrderRow?.created_at,
+        )
         ? latestFulfillment
         : latestShopOrder
       : (latestFulfillment ?? latestShopOrder);
