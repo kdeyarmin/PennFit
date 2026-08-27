@@ -158,6 +158,7 @@ describe("GET /admin/analytics/rt-outcomes", () => {
     );
     expect(res.status).toBe(200);
     expect(res.body.windowDays).toBe(45);
+    expect(res.body.windowTruncated).toBe(false);
     expect(res.body.totals.encounters).toBe(3);
     expect(res.body.totals.rts).toBe(2);
     expect(res.body.rows[0].authorEmail).toBe("rt-a@x.com"); // most active
