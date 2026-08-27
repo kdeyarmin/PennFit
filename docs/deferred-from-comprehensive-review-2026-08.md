@@ -34,9 +34,22 @@ them up without re-discovering scope.
 | Account chatbot escalate / subscription tool cash-pay coaching    | Fixed: insurance-only tool descriptors + category labels                     |
 | Help / account prefs cash-pay leftover copy                       | Fixed: hide abandoned/review toggles; help + SMS copy insurance-aligned      |
 
-## Already shipped in #1330 / #1332
+## Production deploy note (2026-08-27)
 
-- Tenant branding / `storefront-company-info` / `verify:deploy` Penn gate
-- Cash-pay copy + redirects + retired feature-flag presets
-- Provider portal org-scoped accounts, invite email rebind, auth `uiPathPrefix`
-- Review-thread items (CI concurrency, batch NPI cache, CCPA export, reminder dedup release, NPS redirect order)
+After #1330 merged (`6fb33f837`), GitHub deployment `6115697681`
+(`PennPaps / production`) stayed `in_progress` for **30+ minutes** with no
+status updates while `https://pennpaps.com` and `https://pennfit.up.railway.app`
+continued to 404 `GET /api/storefront-company-info` and serve CareMetric on
+`/api/company-info`. `/api/storefront-branding` on pennpaps already returns
+Penn Home Medical Supply (DB/host resolution is fine — the live process is
+simply the pre-merge build).
+
+This is a **Railway production roll-out hang**, not an application bug in
+#1333. Unblock by checking the Railway production environment build/deploy
+logs for `6fb33f837` (migrations / build queue). Re-run:
+
+```bash
+pnpm --filter @workspace/scripts verify:deploy -- https://pennpaps.com
+```
+
+Expect both company-info endpoints → `"Penn Home Medical Supply"`.
