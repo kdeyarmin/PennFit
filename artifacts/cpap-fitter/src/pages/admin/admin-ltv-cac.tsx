@@ -73,10 +73,13 @@ export function AdminLtvCacPage() {
           LTV &amp; CAC by channel
         </h1>
         <p className="text-sm mt-1" style={{ color: "hsl(var(--ink-3))" }}>
-          Average lifetime value vs acquisition cost per channel. CAC is
-          averaged over customers whose cost is recorded — a channel&apos;s
-          costed/total split is shown so thin data is visible, never a guessed
-          CAC. LTV:CAC above ~3:1 is the usual healthy bar.
+          Average lifetime value vs acquisition cost per channel. LTV is
+          summed from historical paid shop orders (patient cash-pay is
+          retired — insurance claim dollars are not in this ratio yet).
+          CAC is averaged over customers whose cost is recorded — a
+          channel&apos;s costed/total split is shown so thin data is
+          visible, never a guessed CAC. LTV:CAC above ~3:1 is the usual
+          healthy bar.
         </p>
       </header>
 
