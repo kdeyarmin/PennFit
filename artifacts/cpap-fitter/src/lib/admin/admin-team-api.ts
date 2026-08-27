@@ -18,6 +18,7 @@ export type TeamRole =
   | "fulfillment"
   | "compliance_officer"
   | "agent"
+  | "rt"
   | "biller";
 export type TeamStatus = "pending" | "active" | "revoked";
 

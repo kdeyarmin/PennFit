@@ -28,7 +28,7 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
     question: "Which role should I give a new hire?",
     category: "getting-started",
     answer: [
-      "The narrowest one that covers their job. A customer-service rep gets conversations, patients, orders, and returns. A biller gets the billing area plus billing context on a chart, and nothing else. A clinician gets clinical documentation and patient read. Admin is the full console; owner adds vendor configuration on top.",
+      "The narrowest one that covers their job. A customer-service rep gets conversations, patients, orders, and returns. A biller gets the billing area plus billing context on a chart, and nothing else. A respiratory therapist gets therapy monitoring, fit review, and clinical documentation — no money, no demographics editing. Admin is the full console; owner adds vendor configuration on top.",
       "It is easy to widen a role later and awkward to explain why someone had access they did not need. Start narrow.",
     ],
     seeAlso: "invite-your-team",
@@ -39,6 +39,7 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
       "csr",
       "biller",
       "clinician",
+      "respiratory therapist",
       "admin",
     ],
   },
