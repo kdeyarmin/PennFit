@@ -106,6 +106,74 @@ describe("redactPiiForOutbound", () => {
     const r = redactPiiForOutbound("Show me the resmed-airfit-p10.");
     expect(r.text).toContain("resmed-airfit-p10");
   });
+
+  it("redacts a Medicare MBI with dash separators", () => {
+    const r = redactPiiForOutbound("My Medicare number is 1EG4-TE5-MK72.");
+    expect(r.text).not.toContain("1EG4-TE5-MK72");
+    expect(r.text).toContain("[redacted-mbi]");
+    expect(r.counts.mbi).toBe(1);
+  });
+
+  it("redacts a PO Box ship-to line", () => {
+    const r = redactPiiForOutbound("Please ship to P.O. Box 445.");
+    expect(r.text).not.toContain("P.O. Box 445");
+    expect(r.text).toContain("[redacted-po-box]");
+  });
+
+  it("redacts state + ZIP without touching nearby prose", () => {
+    const r = redactPiiForOutbound("I live in State College PA 16801 now.");
+    expect(r.text).not.toContain("PA 16801");
+    expect(r.text).toContain("[redacted-zip]");
+    expect(r.text).toContain("State College");
+  });
+
+  it("redacts an explicitly labeled ZIP code", () => {
+    const r = redactPiiForOutbound("My zip code: 90210-1234");
+    expect(r.text).not.toContain("90210-1234");
+    expect(r.text).toContain("[redacted-zip]");
+  });
+
+  it("redacts a labeled member id", () => {
+    const r = redactPiiForOutbound("Member ID: ABC-123456789");
+    expect(r.text).not.toContain("ABC-123456789");
+    expect(r.text).toContain("[redacted-member-id]");
+  });
+
+  it("redacts a credit-card-shaped number", () => {
+    const r = redactPiiForOutbound("Card 4111 1111 1111 1111 please.");
+    expect(r.text).not.toContain("4111 1111 1111 1111");
+    expect(r.text).toContain("[redacted-card]");
+  });
+});
+
+describe("redactPiiForOutbound — realistic patient messages", () => {
+  it("scrubs a compound insurance + ship-to message", () => {
+    const raw =
+      "Hi — Medicare 1EG4TE5MK72, member id XYZ-998877, ship PO Box 12, " +
+      "and my zip is PA 16801. Call (814) 471-0627 or jane@example.com.";
+    const r = redactPiiForOutbound(raw);
+
+    expect(r.text).not.toContain("1EG4TE5MK72");
+    expect(r.text).not.toContain("XYZ-998877");
+    expect(r.text).not.toContain("PO Box 12");
+    expect(r.text).not.toContain("PA 16801");
+    expect(r.text).not.toContain("471-0627");
+    expect(r.text).not.toContain("jane@example.com");
+    expect(r.counts.phone).toBe(1);
+    expect(r.counts.email).toBe(1);
+    expect(r.counts.mbi).toBe(1);
+    expect(r.counts["member-id"]).toBe(1);
+    expect(r.counts["po-box"]).toBe(1);
+    expect(r.counts.zip).toBe(1);
+  });
+
+  it("leaves ordinary therapy prose intact in the same turn", () => {
+    const raw =
+      "My AHI was 12 last night and I used CPAP 4 hours on the Drive setting.";
+    const r = redactPiiForOutbound(raw);
+    expect(r.text).toBe(raw);
+    expect(Object.keys(r.counts)).toHaveLength(0);
+  });
 });
 
 describe("containsLikelyPii", () => {
