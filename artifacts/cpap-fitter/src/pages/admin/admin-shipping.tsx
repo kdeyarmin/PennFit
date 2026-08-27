@@ -1,16 +1,11 @@
 // /admin/shipping — XPS Ship shipping-label console.
 //
-// The DME's "print labels" worklist. For each paid, ship-method order that
-// hasn't shipped yet, staff can rate-shop carriers, then create a label
-// with the patient's address merged straight in — no re-keying into XPS
-// Webship. On booking, tracking auto-fills on the order (firing the
-// existing patient shipping notification) and the label PDF opens for
-// printing. Parcel weight pre-fills from per-product presets.
-//
-// Efficiency tooling: a batch "create labels for selected" action,
-// per-product parcel-weight presets (managed inline), an address-validity
-// flag on each row, and (when the worker cron is enabled) automatic
-// resolution of staged orders so tracking lands without clicking Sync.
+// Historical cash-pay worklist: paid `shop_orders` that still need a
+// label. Insurance resupplies ship through PacWare (fulfillments), not
+// XPS — so on an insurance-only tenant this queue is usually empty.
+// The page stays for any remaining historical shop orders and for
+// tenants that still use XPS for legacy rows; empty state copy points
+// staff at PacWare / fulfillments.
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
@@ -78,8 +73,12 @@ export function AdminShippingPage() {
             <Truck className="h-6 w-6" /> Shipping labels
           </h1>
           <p className="text-sm mt-1" style={{ color: "hsl(var(--ink-3))" }}>
-            Create XPS shipping labels with each patient's address merged in.
-            Tracking auto-fills on the order and the customer is notified.
+            XPS labels for historical cash-pay shop orders. Insurance resupplies
+            ship through PacWare — use{" "}
+            <a href="/admin/pacware" className="underline decoration-dotted">
+              PacWare
+            </a>{" "}
+            / fulfillments for day-to-day shipping, not this queue.
           </p>
         </header>
 
@@ -214,7 +213,9 @@ function QueueCard({
           <ErrorPanel error={error} onRetry={onRefetch} />
         ) : orders.length === 0 ? (
           <p className="text-sm" style={{ color: "hsl(var(--ink-3))" }}>
-            No paid orders are awaiting a shipping label. 🎉
+            No historical cash-pay shop orders are awaiting an XPS label.
+            Insurance resupplies ship through PacWare — this queue stays empty
+            on purpose for day-to-day insurance fulfillments.
           </p>
         ) : (
           <>

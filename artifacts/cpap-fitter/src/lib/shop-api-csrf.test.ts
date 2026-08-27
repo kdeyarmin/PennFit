@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   cancelOrder,
   fetchMyOrders,
+  getShopReviewsSiteAggregate,
   resendOrderReceipt,
   updateOrderShippingAddress,
 } from "./shop-api";
@@ -55,6 +56,17 @@ describe("retired cash-pay shop-api order helpers", () => {
     const fetchMock = vi.fn();
     globalThis.fetch = fetchMock as unknown as typeof fetch;
     await expect(cancelOrder("o1")).rejects.toThrow(/cash_pay_orders_retired/);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("retired cash-pay reviews aggregate", () => {
+  it("getShopReviewsSiteAggregate throws without calling the network", async () => {
+    const fetchMock = vi.fn();
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    await expect(getShopReviewsSiteAggregate()).rejects.toThrow(
+      /cash_pay_reviews_retired/,
+    );
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });

@@ -636,7 +636,7 @@ export const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             icon: TruckIcon,
             matchPrefix: "/admin/shipping",
             requiredPermission: "returns.manage",
-            hint: "Print XPS shipping labels with the patient address merged in; tracking auto-fills",
+            hint: "XPS labels for historical cash-pay shop orders — insurance resupplies ship via PacWare",
           },
         ],
       },

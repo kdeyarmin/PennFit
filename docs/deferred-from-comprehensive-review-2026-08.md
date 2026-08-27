@@ -6,21 +6,24 @@ them up without re-discovering scope.
 
 ## Still open
 
-| Item                                                 | Why deferred                                                                     | Suggested next step                                        |
-| ---------------------------------------------------- | -------------------------------------------------------------------------------- | ---------------------------------------------------------- |
-| Provider portal seed-org fallback on platform host   | Intentional for single-tenant Penn; full multi-tenant routing is architectural   | Design host→org routing for provider SPA before changing   |
-| Platform billing payment wall enforcement            | Epic exists; re-lock on failed invoice is env-gated (`BILLING_PAYWALL_ENFORCED`) | Enable per runbook when Stripe platform billing is live    |
-| LTV including insurance claim dollars                | UI already labeled historical shop-only                                          | New insurance LTV metric once claim dollars are trusted    |
-| Legacy fitter `fit_session` on pure `/api/recommend` | Optional; `results.tsx` already preserves `fitSessionId` on legacy fallbacks     | Only if analytics need session rows on recommend-only path |
+| Item                                               | Why deferred                                                                     | Suggested next step                                      |
+| -------------------------------------------------- | -------------------------------------------------------------------------------- | -------------------------------------------------------- |
+| Provider portal seed-org fallback on platform host | Intentional for single-tenant Penn; full multi-tenant routing is architectural   | Design host→org routing for provider SPA before changing |
+| Platform billing payment wall enforcement          | Epic exists; re-lock on failed invoice is env-gated (`BILLING_PAYWALL_ENFORCED`) | Enable per runbook when Stripe platform billing is live  |
+| LTV including insurance claim dollars              | UI already labeled historical shop-only                                          | New insurance LTV metric once claim dollars are trusted  |
+| Home status banner insurance due / next ship       | `/shop/me/dashboard` stubs `nextShipment` / `eligibility` after Subscribe&Save   | Populate from episodes + Rx cadence; CTAs to `/contact`  |
 
 ## Shipped (merged)
 
 | Item                                                    | PR / location                                                                         |
 | ------------------------------------------------------- | ------------------------------------------------------------------------------------- |
 | Episode lifecycle factory writer                        | #1326 — Rx create, bootstrap, post-confirm next cycle                                 |
+| Legacy fitter `fit_session` for recommend-only path     | #1326 — `createLegacyFitSessionForRequest` at fit-request time (not on recommend)     |
 | Chatbot PII scrub (MBI, PO Box, ZIP, member-id, cards)  | #1335 — `chatbotPii.ts` + behavioral tests                                            |
 | Back-in-stock auto-dispatch on restock                  | #1336 — `autoDispatchBackInStockOnRestock`; `RESUPPLY_BACK_IN_STOCK_AUTO_DISPATCH=1`  |
-| Back-in-stock patient signup route                      | Round six — `POST /shop/back-in-stock` with catalog SKU ids                           |
+| Back-in-stock patient signup route                      | #1337 — `POST /shop/back-in-stock` with catalog SKU ids                               |
+| Trust strip live reviews aggregate                      | Round seven — static badges only; helper hard-fails                                   |
+| XPS shipping labels empty-state honesty                 | Round seven — PacWare / insurance copy; historical shop-order queue                   |
 | Due math: queued fulfillments count via `created_at`    | Already on main — `reminders.ts` uses `shipped_at ?? created_at`; `reminders.test.ts` |
 | Review-request emails / `storefront.reviews_collection` | #1333 — migration 0530 OFF + `DELIBERATELY_OFF_FLAGS`                                 |
 | Lapsed winback last-activity gate                       | Round three — `resolveLastCustomerShipmentActivityIso` + tests                        |
@@ -66,11 +69,19 @@ them up without re-discovering scope.
 | --------------------------- | ----------------------------------------------------------------------- |
 | Back-in-stock auto-dispatch | `autoDispatchBackInStockOnRestock` on positive `adjustStock`; env-gated |
 
-## Started in round six (this branch)
+## Started in round six — merged #1337
 
 | Item                       | Status                                                          |
 | -------------------------- | --------------------------------------------------------------- |
 | Back-in-stock signup route | Restored `POST /shop/back-in-stock` with catalog SKU validation |
+
+## Started in round seven (this branch)
+
+| Item                                    | Status                                                                   |
+| --------------------------------------- | ------------------------------------------------------------------------ |
+| Trust strip reviews aggregate           | Removed live fetch; static badges only; helper hard-fails                |
+| XPS shipping labels insurance-only copy | Header + empty state point at PacWare; nav hint updated                  |
+| Legacy fit_session on `/api/recommend`  | Doc: already closed by #1326 attach-at-request; not writing on recommend |
 
 ## Production deploy note (2026-08-27)
 
