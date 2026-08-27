@@ -11,7 +11,7 @@
 //   * latestOrder         — most-recent paid shop_orders row with
 //                            optional tracking + delivery state
 //                            (historical cash-pay or legacy rows only;
-//                            links to public /track-order).
+//                            home banner links to /account).
 //   * activeSubscriptions — always 0 (Subscribe & Save takes no new
 //                            writes).
 //   * pendingOrders       — count of `status='paid' AND shipped_at IS NULL`

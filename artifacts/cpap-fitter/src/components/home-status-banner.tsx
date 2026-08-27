@@ -123,7 +123,7 @@ function SignedInBanner() {
             <div className="flex flex-wrap gap-2 pt-1">
               {data.pendingOrders > 0 && (
                 <Link
-                  href="/track-order"
+                  href="/account"
                   className="inline-flex items-center gap-1.5 rounded-full bg-[hsl(var(--penn-gold)/0.18)] px-3 py-1 text-xs font-medium text-[hsl(var(--penn-navy))] hover:bg-[hsl(var(--penn-gold)/0.28)]"
                 >
                   <Truck className="w-3.5 h-3.5" />
