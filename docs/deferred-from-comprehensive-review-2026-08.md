@@ -6,29 +6,29 @@ them up without re-discovering scope.
 
 ## Still open
 
-| Item                                               | Why deferred                                                                   | Suggested next step                                      |
-| -------------------------------------------------- | ------------------------------------------------------------------------------ | -------------------------------------------------------- |
-| Provider portal seed-org fallback on platform host | Intentional for single-tenant Penn; full multi-tenant routing is architectural | Design host→org routing for provider SPA before changing |
-| Platform billing payment wall enforcement          | Epic exists; re-lock on failed invoice is env-gated (`BILLING_PAYWALL_ENFORCED`) | Enable per runbook when Stripe platform billing is live |
-| LTV including insurance claim dollars              | UI already labeled historical shop-only                                        | New insurance LTV metric once claim dollars are trusted  |
-| Back-in-stock patient signup route                 | Removed with cash-pay shop; SPA helper still calls `/shop/back-in-stock`       | Restore POST route with SKU ids (not Stripe `prod_`)     |
-| Legacy fitter `fit_session` on pure `/api/recommend` | Optional; `results.tsx` already preserves `fitSessionId` on legacy fallbacks | Only if analytics need session rows on recommend-only path |
+| Item                                                 | Why deferred                                                                     | Suggested next step                                        |
+| ---------------------------------------------------- | -------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| Provider portal seed-org fallback on platform host   | Intentional for single-tenant Penn; full multi-tenant routing is architectural   | Design host→org routing for provider SPA before changing   |
+| Platform billing payment wall enforcement            | Epic exists; re-lock on failed invoice is env-gated (`BILLING_PAYWALL_ENFORCED`) | Enable per runbook when Stripe platform billing is live    |
+| LTV including insurance claim dollars                | UI already labeled historical shop-only                                          | New insurance LTV metric once claim dollars are trusted    |
+| Back-in-stock patient signup route                   | Removed with cash-pay shop; SPA helper still calls `/shop/back-in-stock`         | Restore POST route with SKU ids (not Stripe `prod_`)       |
+| Legacy fitter `fit_session` on pure `/api/recommend` | Optional; `results.tsx` already preserves `fitSessionId` on legacy fallbacks     | Only if analytics need session rows on recommend-only path |
 
 ## Shipped (merged)
 
-| Item                                                    | PR / location                                                                 |
-| ------------------------------------------------------- | ----------------------------------------------------------------------------- |
-| Episode lifecycle factory writer                        | #1326 — Rx create, bootstrap, post-confirm next cycle                         |
-| Chatbot PII scrub (MBI, PO Box, ZIP, member-id, cards)  | #1335 — `chatbotPii.ts` + behavioral tests                                    |
-| Back-in-stock auto-dispatch on restock                  | #1336 — `autoDispatchBackInStockOnRestock`; `RESUPPLY_BACK_IN_STOCK_AUTO_DISPATCH=1` |
+| Item                                                    | PR / location                                                                         |
+| ------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| Episode lifecycle factory writer                        | #1326 — Rx create, bootstrap, post-confirm next cycle                                 |
+| Chatbot PII scrub (MBI, PO Box, ZIP, member-id, cards)  | #1335 — `chatbotPii.ts` + behavioral tests                                            |
+| Back-in-stock auto-dispatch on restock                  | #1336 — `autoDispatchBackInStockOnRestock`; `RESUPPLY_BACK_IN_STOCK_AUTO_DISPATCH=1`  |
 | Due math: queued fulfillments count via `created_at`    | Already on main — `reminders.ts` uses `shipped_at ?? created_at`; `reminders.test.ts` |
-| Review-request emails / `storefront.reviews_collection`   | #1333 — migration 0530 OFF + `DELIBERATELY_OFF_FLAGS`                       |
-| Lapsed winback last-activity gate                       | Round three — `resolveLastCustomerShipmentActivityIso` + tests                |
-| Account “Track a shipment” → `/contact`                 | #1333                                                                         |
-| Help / account prefs cash-pay copy                      | #1333                                                                         |
-| Account chatbot insurance-only tools                    | #1333 + round three FAQ claim-adjustment copy                                 |
-| Seed tenant `assistantAdminName` → PennPilot            | Round three — migration 0531                                                  |
-| Provider RTM paging / setupDate / attestation horizon   | #1333                                                                         |
+| Review-request emails / `storefront.reviews_collection` | #1333 — migration 0530 OFF + `DELIBERATELY_OFF_FLAGS`                                 |
+| Lapsed winback last-activity gate                       | Round three — `resolveLastCustomerShipmentActivityIso` + tests                        |
+| Account “Track a shipment” → `/contact`                 | #1333                                                                                 |
+| Help / account prefs cash-pay copy                      | #1333                                                                                 |
+| Account chatbot insurance-only tools                    | #1333 + round three FAQ claim-adjustment copy                                         |
+| Seed tenant `assistantAdminName` → PennPilot            | Round three — migration 0531                                                          |
+| Provider RTM paging / setupDate / attestation horizon   | #1333                                                                                 |
 
 ## Started in this follow-up (PR #1333) — merged 2026-08-27
 
