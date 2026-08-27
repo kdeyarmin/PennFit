@@ -24,6 +24,7 @@ import {
 
 import { logger } from "../../lib/logger";
 import { ensureShopCustomerRow } from "../../lib/shop-customer/record";
+import { resolvePatientIdForCustomer } from "../../lib/shop-customer/resolve-patient";
 import { readCustomerProfile } from "../../lib/customer-profile";
 import {
   attachSignedIn,
@@ -36,6 +37,28 @@ type ShopCustomersUpdate =
 const router: IRouter = Router();
 
 const RECENT_ORDERS_LIMIT = 5;
+
+type RecentOrderSummary = {
+  id: string;
+  sessionId: string;
+  status: string;
+  amountTotalCents: number | null;
+  currency: string | null;
+  createdAt: string;
+};
+
+function describeFulfillmentStatus(row: {
+  status: string;
+  shipped_at: string | null;
+  delivered_at: string | null;
+}): string {
+  if (row.delivered_at) return "delivered";
+  if (row.shipped_at) return "shipped";
+  if (row.status === "cancelled" || row.status === "canceled") {
+    return "cancelled";
+  }
+  return "with_warehouse";
+}
 
 router.get("/shop/me", attachSignedIn, async (req, res) => {
   if (!req.userCustomerId) {
@@ -61,19 +84,63 @@ router.get("/shop/me", attachSignedIn, async (req, res) => {
     displayName,
   });
 
-  // Recent orders summary (last 5). We DON'T expose price/line items
-  // here — that's behind /shop/me/orders so the account header stays
-  // light. Just enough to render "3 past orders, latest Apr 22".
+  // Recent orders summary (last 5). Insurance fulfillments take precedence
+  // when the caller's email resolves to exactly one patient chart; legacy
+  // cash-pay shop_orders fill in when present. No price/line items here.
   const supabase = getOrgScopedClient(orgId);
-  const { data: recent, error: recentErr } = await supabase
-    .from("shop_orders")
-    .select(
-      "id, stripe_session_id, status, amount_total_cents, currency, created_at",
-    )
-    .eq("customer_id", req.userCustomerId)
-    .order("created_at", { ascending: false })
-    .limit(RECENT_ORDERS_LIMIT);
-  if (recentErr) throw recentErr;
+  const patientId = await resolvePatientIdForCustomer(
+    supabase,
+    req.userCustomerId,
+  );
+  const [recentShopRes, recentFulfillmentRes] = await Promise.all([
+    supabase
+      .from("shop_orders")
+      .select(
+        "id, stripe_session_id, status, amount_total_cents, currency, created_at",
+      )
+      .eq("customer_id", req.userCustomerId)
+      .order("created_at", { ascending: false })
+      .limit(RECENT_ORDERS_LIMIT),
+    patientId
+      ? supabase
+          .from("fulfillments")
+          .select("id, status, created_at, shipped_at, delivered_at")
+          .eq("patient_id", patientId)
+          .order("created_at", { ascending: false })
+          .order("id", { ascending: false })
+          .limit(RECENT_ORDERS_LIMIT)
+      : Promise.resolve({ data: null, error: null }),
+  ]);
+  if (recentShopRes.error) throw recentShopRes.error;
+  if (recentFulfillmentRes.error) throw recentFulfillmentRes.error;
+
+  const shopRecent: RecentOrderSummary[] = (
+    (recentShopRes.data ?? []) as Array<
+      Database["resupply"]["Tables"]["shop_orders"]["Row"]
+    >
+  ).map((r) => ({
+    id: r.id,
+    sessionId: r.stripe_session_id,
+    status: r.status,
+    amountTotalCents: r.amount_total_cents,
+    currency: r.currency,
+    createdAt: r.created_at,
+  }));
+
+  const fulfillmentRecent: RecentOrderSummary[] = (
+    recentFulfillmentRes.data ?? []
+  ).map((r) => ({
+    id: r.id,
+    sessionId: "",
+    status: describeFulfillmentStatus(r),
+    amountTotalCents: null,
+    currency: null,
+    createdAt: r.created_at,
+  }));
+
+  const recentOrders = [...shopRecent, ...fulfillmentRecent]
+    .toSorted((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
+    .slice(0, RECENT_ORDERS_LIMIT);
 
   res.json({
     signedIn: true,
@@ -95,18 +162,7 @@ router.get("/shop/me", attachSignedIn, async (req, res) => {
     // Patient cash-pay / card-on-file is retired. Keep the field so
     // older SPA builds don't break, but never surface a saved card.
     savedCard: null,
-    recentOrders: (
-      (recent ?? []) as Array<
-        Database["resupply"]["Tables"]["shop_orders"]["Row"]
-      >
-    ).map((r) => ({
-      id: r.id,
-      sessionId: r.stripe_session_id,
-      status: r.status,
-      amountTotalCents: r.amount_total_cents,
-      currency: r.currency,
-      createdAt: r.created_at,
-    })),
+    recentOrders,
   });
 });
 
