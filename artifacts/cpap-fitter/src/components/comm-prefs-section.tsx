@@ -109,8 +109,8 @@ export function CommPrefsSection({
           testId="comm-toggle-resupply"
         />
         <Toggle
-          label="Cart reminders"
-          description="One email when you've left items in your cart for 24 hours."
+          label="Incomplete-request reminders"
+          description="One email if you started a fit or resupply request and didn't finish within 24 hours."
           enabled={prefs.emailAbandonedCart}
           onChange={() => toggle("emailAbandonedCart")}
           disabled={saving}
@@ -133,8 +133,8 @@ export function CommPrefsSection({
           testId="comm-toggle-in-app-reply"
         />
         <Toggle
-          label="Promotions & news"
-          description="Occasional updates about new products and seasonal offers."
+          label="Updates & reminders"
+          description="Occasional updates about coverage reminders, mask fitting, and resupply timing."
           enabled={prefs.emailMarketing}
           onChange={() => toggle("emailMarketing")}
           disabled={saving}
@@ -147,16 +147,16 @@ export function CommPrefsSection({
           Text messages
         </div>
         <Toggle
-          label="Account & order texts"
-          description="Order shipped, refund issued, urgent recall notices."
+          label="Account & shipment texts"
+          description="Shipment updates, delivery notices, and urgent recall alerts."
           enabled={prefs.smsTransactional}
           onChange={() => toggle("smsTransactional")}
           disabled={saving}
           testId="comm-toggle-sms-transactional"
         />
         <Toggle
-          label="Promotion texts"
-          description="Occasional product news. Opt-out anytime by replying STOP."
+          label="Reminder texts"
+          description="Occasional resupply and fitting reminders. Opt-out anytime by replying STOP."
           enabled={prefs.smsMarketing}
           onChange={() => toggle("smsMarketing")}
           disabled={saving}

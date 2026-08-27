@@ -96,8 +96,8 @@ const FEATURE_FLAG_SEED: Array<
   },
   {
     key: "storefront.checkout",
-    enabled: true,
-    description: "Online checkout on the storefront.",
+    enabled: false,
+    description: "RETIRED — patient cash-pay checkout was removed. Leave OFF.",
     category: "Storefront",
   },
   {

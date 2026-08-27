@@ -351,7 +351,7 @@ export function Order() {
         <div className="inline-flex items-center justify-center gap-3 mb-1">
           <div className="h-px w-8 bg-gradient-to-r from-transparent to-[hsl(var(--penn-gold))]" />
           <span className="text-xs font-semibold uppercase tracking-[0.32em] text-[hsl(var(--penn-navy))]/75">
-            {company.name} · Checkout
+            {company.name} · Insurance order
           </span>
           <div className="h-px w-8 bg-gradient-to-l from-transparent to-[hsl(var(--penn-gold))]" />
         </div>
@@ -955,10 +955,10 @@ export function Order() {
               No surprise bills.
             </p>
             <p className="text-muted-foreground mt-0.5">
-              Submitting this form does not charge your card.{" "}
-              {company.legalName} will verify your insurance benefit and
-              prescription first, then contact you to confirm before anything
-              ships. You'll know your out-of-pocket — usually
+              Submitting this form does not charge you. {company.legalName} will
+              verify your insurance benefit and prescription first, then contact
+              you to confirm before anything ships. You'll know your
+              out-of-pocket — usually
               <span className="font-semibold"> $0 with prescription</span> —
               before they fulfill the order.
             </p>

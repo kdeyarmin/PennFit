@@ -42,12 +42,11 @@ import {
 
 import { isFeatureEnabled } from "../feature-flags";
 import { createTenantSendgridClient } from "../email/tenant-sender.js";
+import { resolveBrandingByOrgId } from "../tenant-branding.js";
 import {
-  resolveBrandingByOrgId,
-  resolveTenantBaseUrl,
-} from "../tenant-branding.js";
-
-const DEFAULT_BASE_URL = "https://cmbreathe.com";
+  resolvePatientEmailLinkBase,
+  TENANT_DOMAIN_REQUIRED,
+} from "./link-base.js";
 
 export interface SendDeliveryFollowupEmailInput {
   toEmail: string;
@@ -83,15 +82,6 @@ export interface SendDeliveryFollowupEmailResult {
   messageId?: string;
 }
 
-function publicBaseUrl(override?: string): string {
-  const raw =
-    override ??
-    process.env.SHOP_PUBLIC_BASE_URL ??
-    process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL ??
-    DEFAULT_BASE_URL;
-  return raw.replace(/\/$/, "");
-}
-
 export async function sendDeliveryFollowupEmail(
   input: SendDeliveryFollowupEmailInput,
 ): Promise<SendDeliveryFollowupEmailResult> {
@@ -115,14 +105,20 @@ export async function sendDeliveryFollowupEmail(
   const brand = await resolveBrandingByOrgId(input.orgId);
   const brandName = brand.storefrontName;
 
-  const base = publicBaseUrl(
-    input.baseUrlOverride ??
-      (await resolveTenantBaseUrl(input.orgId)) ??
-      undefined,
+  const base = await resolvePatientEmailLinkBase(
+    input.orgId,
+    input.baseUrlOverride,
   );
-  const orderUrl = `${base}/shop/orders`;
-  const returnsUrl = `${base}/account#returns`;
-  const reviewUrl = `${base}/shop/orders?leave_review=${encodeURIComponent(stripeSessionId)}`;
+  if (!base) {
+    return {
+      configured: true,
+      delivered: false,
+      error: TENANT_DOMAIN_REQUIRED,
+    };
+  }
+  const orderUrl = `${base}/contact`;
+  const returnsUrl = `${base}/contact`;
+  const reviewUrl = `${base}/contact?utm_campaign=delivery_followup`;
 
   // NPS-rating links — 0..10 buttons rendered inline. Each carries an
   // HMAC-signed token that binds the score to this specific order +
@@ -186,7 +182,7 @@ export async function sendDeliveryFollowupEmail(
     "Sleep well,",
     `The ${brandName} team`,
     "",
-    `View your order: ${orderUrl}`,
+    `Questions about your order? ${orderUrl}`,
     ...(npsRow ? npsRow.text : []),
   ].join("\n");
 
@@ -226,7 +222,7 @@ ${npsRow.html}
     ]
       .filter(Boolean)
       .join("\n"),
-    footerHtml: `<a href="${escapeHtml(orderUrl)}" style="color:${BREATHE_COLORS.blue};text-decoration:underline;">View your order</a>`,
+    footerHtml: `<a href="${escapeHtml(orderUrl)}" style="color:${BREATHE_COLORS.blue};text-decoration:underline;">Contact us</a>`,
     footerLines: [`Sleep well, the ${brandName} team`],
     copyrightName: brandName,
   });

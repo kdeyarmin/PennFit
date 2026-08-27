@@ -60,8 +60,9 @@ function makeLead(
 }
 
 describe("runFitterConversionAttribution", () => {
-  it("returns all-zero stats when there are no recent orders", async () => {
+  it("returns all-zero stats when there are no recent conversions", async () => {
     stageSupabaseResponse("orders", "select", { data: [] });
+    stageSupabaseResponse("fitter_fit_requests", "select", { data: [] });
 
     const stats = await runFitterConversionAttributionForOrg(TEST_ORG);
 
@@ -77,6 +78,7 @@ describe("runFitterConversionAttribution", () => {
     const lead = makeLead("lead-001", "alice@example.com");
 
     stageSupabaseResponse("orders", "select", { data: [order] });
+    stageSupabaseResponse("fitter_fit_requests", "select", { data: [] });
     stageSupabaseResponse("fitter_leads", "select", { data: [lead] });
     stageSupabaseResponse("fitter_leads", "update", {
       data: null,
@@ -100,6 +102,7 @@ describe("runFitterConversionAttribution", () => {
     const lead = makeLead("lead-bob", "bob@example.com");
 
     stageSupabaseResponse("orders", "select", { data: [order] });
+    stageSupabaseResponse("fitter_fit_requests", "select", { data: [] });
     stageSupabaseResponse("fitter_leads", "select", { data: [lead] });
     stageSupabaseResponse("fitter_leads", "update", {
       data: null,
@@ -120,12 +123,47 @@ describe("runFitterConversionAttribution", () => {
     expect(updatePayload.next_campaign_touch_at).toBeTruthy();
   });
 
+  it("attributes a fulfilled fit request (insurance path) to the matching lead", async () => {
+    const lead = makeLead("lead-ins", "ins@example.com");
+    stageSupabaseResponse("orders", "select", { data: [] });
+    stageSupabaseResponse("fitter_fit_requests", "select", {
+      data: [
+        {
+          id: "freq-001",
+          email: "ins@example.com",
+          full_name: "Ins Patient",
+          closed_at: "2025-01-16T12:00:00Z",
+          created_at: "2025-01-15T12:00:00Z",
+        },
+      ],
+    });
+    stageSupabaseResponse("fitter_leads", "select", { data: [lead] });
+    stageSupabaseResponse("fitter_leads", "update", {
+      data: null,
+      error: null,
+    });
+
+    const stats = await runFitterConversionAttributionForOrg(TEST_ORG);
+
+    expect(stats.ordersScanned).toBe(1);
+    expect(stats.attributed).toBe(1);
+    const [updatePayload] = supabaseMock.writePayloads(
+      "fitter_leads",
+      "update",
+    ) as Array<Record<string, unknown>>;
+    expect(updatePayload.first_order_id).toBe("freq-001");
+    expect(updatePayload.first_order_placed_at).toBe("2025-01-16T12:00:00Z");
+    expect(updatePayload.first_name).toBe("Ins");
+    expect(updatePayload.journey_stage).toBe("reorder_active");
+  });
+
   it("matches orders to leads in a case-insensitive manner", async () => {
     // order.patient_email is uppercase; lead.email is lowercase
     const order = makeOrder("order-ci", "CAROL@EXAMPLE.COM");
     const lead = makeLead("lead-carol", "carol@example.com");
 
     stageSupabaseResponse("orders", "select", { data: [order] });
+    stageSupabaseResponse("fitter_fit_requests", "select", { data: [] });
     stageSupabaseResponse("fitter_leads", "select", { data: [lead] });
     stageSupabaseResponse("fitter_leads", "update", {
       data: null,
@@ -147,6 +185,7 @@ describe("runFitterConversionAttribution", () => {
     );
 
     stageSupabaseResponse("orders", "select", { data: [order] });
+    stageSupabaseResponse("fitter_fit_requests", "select", { data: [] });
     stageSupabaseResponse("fitter_leads", "select", { data: [lead] });
 
     const stats = await runFitterConversionAttributionForOrg(TEST_ORG);
@@ -162,6 +201,7 @@ describe("runFitterConversionAttribution", () => {
     const lead = makeLead("lead-eve", "eve@example.com", "unsubscribed", null);
 
     stageSupabaseResponse("orders", "select", { data: [order] });
+    stageSupabaseResponse("fitter_fit_requests", "select", { data: [] });
     stageSupabaseResponse("fitter_leads", "select", { data: [lead] });
 
     const stats = await runFitterConversionAttributionForOrg(TEST_ORG);
@@ -176,6 +216,7 @@ describe("runFitterConversionAttribution", () => {
     const lead = makeLead("lead-frank", "frank@example.com");
 
     stageSupabaseResponse("orders", "select", { data: [order] });
+    stageSupabaseResponse("fitter_fit_requests", "select", { data: [] });
     stageSupabaseResponse("fitter_leads", "select", { data: [lead] });
     stageSupabaseResponse("fitter_leads", "update", {
       error: { message: "DB write failed" },
@@ -197,6 +238,7 @@ describe("runFitterConversionAttribution", () => {
     const lead = makeLead("lead-g", "g@example.com");
 
     stageSupabaseResponse("orders", "select", { data: orders });
+    stageSupabaseResponse("fitter_fit_requests", "select", { data: [] });
     stageSupabaseResponse("fitter_leads", "select", { data: [lead] });
     stageSupabaseResponse("fitter_leads", "update", {
       data: null,
@@ -214,6 +256,7 @@ describe("runFitterConversionAttribution", () => {
     stageSupabaseResponse("orders", "select", {
       error: { message: "orders table offline" },
     });
+    stageSupabaseResponse("fitter_fit_requests", "select", { data: [] });
 
     await expect(
       runFitterConversionAttributionForOrg(TEST_ORG),
@@ -231,6 +274,7 @@ describe("runFitterConversionAttribution", () => {
     const lead = makeLead("lead-james", "james@example.com");
 
     stageSupabaseResponse("orders", "select", { data: orders });
+    stageSupabaseResponse("fitter_fit_requests", "select", { data: [] });
     stageSupabaseResponse("fitter_leads", "select", { data: [lead] });
     stageSupabaseResponse("fitter_leads", "update", {
       data: null,
@@ -260,6 +304,7 @@ describe("runFitterConversionAttribution", () => {
     ];
 
     stageSupabaseResponse("orders", "select", { data: orders });
+    stageSupabaseResponse("fitter_fit_requests", "select", { data: [] });
 
     const stats = await runFitterConversionAttributionForOrg(TEST_ORG);
 

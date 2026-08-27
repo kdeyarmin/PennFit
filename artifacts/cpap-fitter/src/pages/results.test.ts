@@ -177,6 +177,26 @@ describe("results — magnet screening is not skipped on clinical outage", () =>
   });
 });
 
+describe("results — fitSessionId survives legacy fallbacks", () => {
+  it("does not clear fitSessionId when clinical assess is not enabled", () => {
+    const notEnabledIdx = SRC.indexOf('result.kind === "not_enabled"');
+    const branchEnd = SRC.indexOf("\n      }", notEnabledIdx);
+    const branch = SRC.slice(notEnabledIdx, branchEnd);
+    expect(branch).not.toContain("setFitSessionId(null)");
+  });
+
+  it("does not clear fitSessionId when the invite token is absent", () => {
+    const noInviteIdx = SRC.indexOf("if (!inviteToken)");
+    const branchEnd = SRC.indexOf("\n    }", noInviteIdx);
+    const branch = SRC.slice(noInviteIdx, branchEnd);
+    expect(branch).not.toContain("setFitSessionId(null)");
+  });
+
+  it("still records fitSessionId when clinical assess succeeds", () => {
+    expect(SRC).toContain("setFitSessionId(result.assessment.fitSessionId)");
+  });
+});
+
 describe("results — structural integrity", () => {
   it("exports the Results function component", () => {
     expect(SRC).toContain("export function Results");

@@ -35,7 +35,10 @@ import { EmailConfigError } from "@workspace/resupply-email";
 
 import { getCompanyInfo } from "../../lib/company-info";
 import { logger } from "../../lib/logger";
-import { applyTenantEmailSender } from "../../lib/email/apply-tenant-email-sender";
+import {
+  applyTenantEmailSender,
+  isPatientEmailClickBaseReady,
+} from "../../lib/email/apply-tenant-email-sender";
 import { applyTenantSmsFrom } from "../../lib/messaging/tenant-telecom";
 import { recordOutboundMessageUsage } from "../../lib/metering/usage";
 import { readMessagingConfigOrNull } from "../../lib/messaging/messaging-config";
@@ -163,6 +166,17 @@ router.post(
             practiceName: tenantPracticeName,
           })
         : null;
+    if (
+      channel === "email" &&
+      !isPatientEmailClickBaseReady(emailCfg?.publicBaseUrl)
+    ) {
+      res.status(422).json({
+        error: "tenant_domain_required",
+        message:
+          "Verify a custom domain for this tenant before bulk-sending reminder emails. Without one, click links would open on the platform host and land on the wrong portal.",
+      });
+      return;
+    }
     // The SMS branch previously built its cfg inline with the platform number
     // and the seed practice name; route it through applyTenantSmsFrom for the
     // tenant's own number (symmetric with email) and the tenant brand.

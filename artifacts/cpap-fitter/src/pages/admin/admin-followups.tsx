@@ -370,22 +370,39 @@ function Row({
         <div style={{ fontSize: 13, whiteSpace: "pre-wrap", marginBottom: 6 }}>
           {row.body}
         </div>
-        <Link href={subjectHref(row)} asChild>
-          <a
-            style={{
-              fontSize: 12,
-              color: "#1e40af",
-              textDecoration: "none",
-              display: "inline-flex",
-              gap: 4,
-              alignItems: "center",
-            }}
-            data-testid={`admin-followup-subject-link-${row.id}`}
-          >
-            {row.subjectDisplayName ?? row.subjectEmail ?? row.subjectId}
-            <ExternalLink size={11} />
-          </a>
-        </Link>
+        {(() => {
+          const href = subjectHref(row);
+          const label =
+            row.subjectDisplayName ?? row.subjectEmail ?? row.subjectId;
+          if (!href) {
+            return (
+              <span
+                style={{ fontSize: 12, color: "#64748b" }}
+                data-testid={`admin-followup-subject-link-${row.id}`}
+              >
+                {label}
+              </span>
+            );
+          }
+          return (
+            <Link href={href} asChild>
+              <a
+                style={{
+                  fontSize: 12,
+                  color: "#1e40af",
+                  textDecoration: "none",
+                  display: "inline-flex",
+                  gap: 4,
+                  alignItems: "center",
+                }}
+                data-testid={`admin-followup-subject-link-${row.id}`}
+              >
+                {label}
+                <ExternalLink size={11} />
+              </a>
+            </Link>
+          );
+        })()}
       </div>
       <Button
         size="sm"
@@ -402,11 +419,11 @@ function Row({
 }
 
 // Phase 20: route the row's "Open subject" link to the right detail
-// page based on `kind`. Shop customers live under /admin/shop/customers,
-// patients under /admin/patients.
-function subjectHref(row: AdminFollowupRow): string {
+// page based on `kind`. Patients live under /admin/patients. Historical
+// storefront accounts no longer have a detail page (cash-pay retired).
+function subjectHref(row: AdminFollowupRow): string | null {
   if (row.kind === "patient") {
     return `/admin/patients/${encodeURIComponent(row.subjectId)}`;
   }
-  return `/admin/shop/customers/${encodeURIComponent(row.subjectId)}`;
+  return null;
 }

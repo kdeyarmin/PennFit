@@ -235,8 +235,8 @@ function csrfHeader(): Record<string, string> {
 }
 
 export async function startCheckout(
-  items: CheckoutItem[],
-  options?: {
+  _items: CheckoutItem[],
+  _options?: {
     successPath?: string;
     cancelPath?: string;
     /** "ship" (default) or "pickup". Pickup requires pickupLocationId. */
@@ -255,41 +255,9 @@ export async function startCheckout(
     orderedVariantId?: string | null;
   },
 ): Promise<{ url: string; sessionId: string }> {
-  // Per-attempt idempotency key — re-clicking "Checkout" within a
-  // few seconds will hit Stripe's idempotency cache and reuse the
-  // same Session URL instead of creating a duplicate.
-  const idempotencyKey = crypto.randomUUID();
-  const res = await fetch("/resupply-api/shop/checkout", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Idempotency-Key": idempotencyKey,
-      ...csrfHeader(),
-    },
-    body: JSON.stringify({
-      items,
-      successPath: options?.successPath,
-      cancelPath: options?.cancelPath,
-      ...(options?.fulfillmentMethod
-        ? { fulfillmentMethod: options.fulfillmentMethod }
-        : {}),
-      ...(options?.pickupLocationId
-        ? { pickupLocationId: options.pickupLocationId }
-        : {}),
-      ...(options?.fitSessionId ? { fitSessionId: options.fitSessionId } : {}),
-      ...(options?.orderedMaskSlug
-        ? { orderedMaskSlug: options.orderedMaskSlug }
-        : {}),
-      ...(options?.orderedVariantId
-        ? { orderedVariantId: options.orderedVariantId }
-        : {}),
-    }),
-  });
-  if (!res.ok) {
-    const body = (await res.json().catch(() => ({}))) as { message?: string };
-    throw new Error(body.message ?? `Couldn't start checkout (${res.status})`);
-  }
-  return (await res.json()) as { url: string; sessionId: string };
+  throw new Error(
+    "checkout_retired: patient cash-pay checkout was removed; use insurance ordering.",
+  );
 }
 
 export interface PickupLocation {
@@ -634,89 +602,37 @@ export interface OrderHistoryResponse {
   nextCursor: string | null;
 }
 
+const CASH_PAY_ORDERS_RETIRED =
+  "cash_pay_orders_retired: patient cash-pay order history and mutations were removed; supplies are insurance-only.";
+
 /**
- * Paginated order history for the signed-in caller. Newest first.
- * Throws on 401 — the caller is expected to gate the page behind a
- * the auth provider's `<SignedIn>` so this only fires for authenticated sessions.
+ * Paginated order history for the signed-in caller.
+ * Retired with cash-pay — `/shop/me/orders` no longer exists.
  */
-export async function fetchMyOrders(opts?: {
+export async function fetchMyOrders(_opts?: {
   cursor?: string;
   limit?: number;
 }): Promise<OrderHistoryResponse> {
-  const params = new URLSearchParams();
-  if (opts?.cursor) params.set("cursor", opts.cursor);
-  if (opts?.limit) params.set("limit", String(opts.limit));
-  const qs = params.toString() ? `?${params.toString()}` : "";
-  const headers = { Accept: "application/json" };
-  const res = await fetch(`/resupply-api/shop/me/orders${qs}`, { headers });
-  if (!res.ok) {
-    throw new Error(`Failed to load your orders (${res.status})`);
-  }
-  return (await res.json()) as OrderHistoryResponse;
+  throw new Error(CASH_PAY_ORDERS_RETIRED);
 }
 
 /**
- * Re-send the Stripe email receipt for an order to the original
- * purchaser (C8). Returns the masked destination email so the UI
- * can confirm "we just sent it to a***@example.com".
- *
- * Server enforces:
- *   - ownership (caller must be the auth user that paid)
- *   - status === 'paid'
- *   - per-session rate limit (5 sends / 10 min)
- *
- * Throws an Error whose `code` field is the server's error string
- * (rate_limited / not_payable / stripe_error / etc) so the caller
- * can render targeted UX messages.
+ * Re-send the Stripe email receipt for an order.
+ * Retired with cash-pay.
  */
 export async function resendOrderReceipt(
-  sessionId: string,
+  _sessionId: string,
 ): Promise<{ sent: true; email: string }> {
-  const headers = {
-    Accept: "application/json",
-    // Signed-in POST — the app-level CSRF gate rejects any shop
-    // mutation that carries a pf_session cookie without this header.
-    ...csrfHeader(),
-  };
-  const res = await fetch(
-    `/resupply-api/shop/me/orders/${encodeURIComponent(sessionId)}/resend-receipt`,
-    { method: "POST", headers },
-  );
-  if (!res.ok) {
-    let code = `http_${res.status}`;
-    try {
-      const body = (await res.json()) as { error?: string };
-      if (body && typeof body.error === "string") code = body.error;
-    } catch {
-      // Body wasn't JSON — keep the http_<status> fallback.
-    }
-    const err = new Error(`Failed to re-send receipt (${code})`) as Error & {
-      code: string;
-    };
-    err.code = code;
-    throw err;
-  }
-  return (await res.json()) as { sent: true; email: string };
+  throw new Error(CASH_PAY_ORDERS_RETIRED);
 }
 
 /**
- * Update the per-order shipping address. Only allowed while the
- * parcel hasn't shipped — the server returns 409 once shipped_at IS
- * NOT NULL. Throws an Error whose `code` field carries the server's
- * machine-readable error string so the caller can branch on it.
- *
- * Possible codes:
- *   - "invalid_order_id" / "invalid_body" — caller bug
- *   - "order_not_found"                   — wrong id, or someone
- *                                            else's order (server
- *                                            collapses both into 404
- *                                            for privacy)
- *   - "order_not_paid"                    — never billed, can't edit
- *   - "order_already_shipped"             — too late, contact support
+ * Update the per-order shipping address.
+ * Retired with cash-pay.
  */
 export async function updateOrderShippingAddress(
-  orderId: string,
-  address: OrderShippingAddress,
+  _orderId: string,
+  _address: OrderShippingAddress,
 ): Promise<{
   order: {
     id: string;
@@ -725,90 +641,17 @@ export async function updateOrderShippingAddress(
     canEditAddress: boolean;
   };
 }> {
-  const headers = {
-    Accept: "application/json",
-    "Content-Type": "application/json",
-    // Signed-in POST — the app-level CSRF gate rejects any shop
-    // mutation that carries a pf_session cookie without this header.
-    ...csrfHeader(),
-  };
-  const res = await fetch(
-    `/resupply-api/shop/me/orders/${encodeURIComponent(orderId)}/shipping-address`,
-    {
-      method: "POST",
-      headers,
-      body: JSON.stringify(address),
-    },
-  );
-  if (!res.ok) {
-    let code = `http_${res.status}`;
-    try {
-      const body = (await res.json()) as { error?: string };
-      if (body && typeof body.error === "string") code = body.error;
-    } catch {
-      // Body wasn't JSON — keep http_<status>.
-    }
-    const err = new Error(
-      `Failed to update shipping address (${code})`,
-    ) as Error & { code: string };
-    err.code = code;
-    throw err;
-  }
-  return (await res.json()) as {
-    order: {
-      id: string;
-      shippingAddress: OrderShippingAddress;
-      shippedAt: string | null;
-      canEditAddress: boolean;
-    };
-  };
+  throw new Error(CASH_PAY_ORDERS_RETIRED);
 }
 
 /**
- * Self-serve cancel a paid, not-yet-shipped order. Issues a full refund
- * server-side and flips the order to `refunded`; the customer gets the
- * standard refund email.
- *
- * Possible codes:
- *   - "order_not_found"          — wrong id / someone else's order (404)
- *   - "order_already_refunded"   — nothing left to cancel
- *   - "order_not_paid"           — never billed
- *   - "order_already_shipped"    — too late, use the return flow
- *   - "stripe_not_configured"    — preview/dev (503)
- *   - "stripe_refund_failed"     — Stripe declined the refund (502)
+ * Self-serve cancel a paid, not-yet-shipped order.
+ * Retired with cash-pay.
  */
 export async function cancelOrder(
-  orderId: string,
+  _orderId: string,
 ): Promise<{ ok: boolean; order: { id: string; status: string } }> {
-  const res = await fetch(
-    `/resupply-api/shop/me/orders/${encodeURIComponent(orderId)}/cancel`,
-    {
-      method: "POST",
-      headers: {
-        Accept: "application/json",
-        // Signed-in POST — app-level CSRF gate requires this header.
-        ...csrfHeader(),
-      },
-    },
-  );
-  if (!res.ok) {
-    let code = `http_${res.status}`;
-    try {
-      const body = (await res.json()) as { error?: string };
-      if (body && typeof body.error === "string") code = body.error;
-    } catch {
-      // Body wasn't JSON — keep http_<status>.
-    }
-    const err = new Error(`Failed to cancel order (${code})`) as Error & {
-      code: string;
-    };
-    err.code = code;
-    throw err;
-  }
-  return (await res.json()) as {
-    ok: boolean;
-    order: { id: string; status: string };
-  };
+  throw new Error(CASH_PAY_ORDERS_RETIRED);
 }
 
 // ────────────────────────────────────────── site-wide reviews aggregate

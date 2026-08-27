@@ -49,7 +49,7 @@ import { ADMIN_PASSWORD_TTL_MS } from "@workspace/resupply-auth";
 import { logger } from "../../lib/logger";
 import {
   resolveBrandingByOrgId,
-  resolveTenantBaseUrl,
+  resolveTenantLinkBaseUrl,
 } from "../../lib/tenant-branding";
 import {
   createQueueWithDlq,
@@ -369,24 +369,22 @@ export async function runInvitePasswordExpiryNotifySweep(
     if (a.auth_user_id && a.org_id) orgByUserId.set(a.auth_user_id, a.org_id);
   }
 
-  // Per-recipient brand + sign-in host, falling back to the platform
-  // default copy (cfg) when the user has no resolvable tenant.
+  // Per-recipient brand + sign-in host. Orphaned users (no org) get the
+  // platform identity. Users whose tenant has no verified domain are
+  // skipped — a platform-host sign-in link resolves to the wrong org.
   const tenantCopy = async (
     userId: string,
-  ): Promise<{ practiceName: string; publicBaseUrl: string }> => {
+  ): Promise<{ practiceName: string; publicBaseUrl: string } | null> => {
     const orgId = orgByUserId.get(userId);
     if (!orgId) {
-      // No resolvable tenant for this user. Sign the invite copy with the
-      // PLATFORM name — this used to read the seed tenant's env-folded
-      // practice name, so an orphaned invite went out branded as the seed
-      // tenant to someone who may have nothing to do with it.
       return {
         practiceName: PLATFORM_NAME,
         publicBaseUrl: cfg.publicBaseUrl,
       };
     }
     const brand = await resolveBrandingByOrgId(orgId);
-    const base = (await resolveTenantBaseUrl(orgId)) ?? cfg.publicBaseUrl;
+    const base = await resolveTenantLinkBaseUrl(orgId, cfg.publicBaseUrl);
+    if (!base) return null;
     return { practiceName: brand.storefrontName, publicBaseUrl: base };
   };
 
@@ -401,6 +399,15 @@ export async function runInvitePasswordExpiryNotifySweep(
     const user = usersById.get(row.user_id);
     if (!user) {
       stats.skippedNoEmail += 1;
+      continue;
+    }
+
+    const copy = await tenantCopy(row.user_id);
+    if (!copy) {
+      logger.info(
+        { userId: row.user_id },
+        "invite-password-expiry-notify: reminder skipped (no tenant domain)",
+      );
       continue;
     }
 
@@ -441,7 +448,6 @@ export async function runInvitePasswordExpiryNotifySweep(
       0,
       (ADMIN_PASSWORD_TTL_MS - ageMs) / 3_600_000,
     );
-    const copy = await tenantCopy(row.user_id);
     const { subject, html, text } = composeReminderEmail({
       practiceName: copy.practiceName,
       publicBaseUrl: copy.publicBaseUrl,
@@ -476,6 +482,15 @@ export async function runInvitePasswordExpiryNotifySweep(
       continue;
     }
 
+    const copy = await tenantCopy(row.user_id);
+    if (!copy) {
+      logger.info(
+        { userId: row.user_id },
+        "invite-password-expiry-notify: expired notice skipped (no tenant domain)",
+      );
+      continue;
+    }
+
     const nowIso = new Date().toISOString();
     const claim = supabase
       .raw()
@@ -504,7 +519,6 @@ export async function runInvitePasswordExpiryNotifySweep(
       continue;
     }
 
-    const copy = await tenantCopy(row.user_id);
     const { subject, html, text } = composeExpiredEmail({
       practiceName: copy.practiceName,
       displayName: user.display_name,

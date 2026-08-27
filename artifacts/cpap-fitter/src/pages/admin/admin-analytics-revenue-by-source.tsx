@@ -1,5 +1,5 @@
-// /admin/analytics/revenue-by-source — order volume + cash revenue by
-// channel (storefront cash-pay / insurance resupply / clinical form).
+// /admin/analytics/revenue-by-source — order volume by channel
+// (historical storefront / insurance resupply / clinical form).
 //
 // Closed-loop measurement: "where do orders and revenue come from?"
 // Pairs with /admin/analytics/outreach-attribution (which outreach
@@ -115,9 +115,9 @@ function HeadlineCards({ data }: { data: RevenueBySourceResponse }) {
   return (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
       <Metric
-        label="Cash revenue"
+        label="Historical revenue"
         value={money(data.totalCashRevenueCents)}
-        hint="Storefront paid orders"
+        hint="Legacy storefront paid orders"
       />
       <Metric
         label="Total orders"
@@ -127,7 +127,7 @@ function HeadlineCards({ data }: { data: RevenueBySourceResponse }) {
       <Metric
         label="Storefront paid"
         value={num(storefront?.paidOrders ?? 0)}
-        hint={`${num(storefront?.orders ?? 0)} created`}
+        hint={`${num(storefront?.orders ?? 0)} created (historical)`}
       />
       <Metric
         label="Resupply units"
@@ -198,7 +198,7 @@ function BySourceTable({ rows }: { rows: RevenueSourceBucket[] }) {
               Paid orders
             </th>
             <th scope="col" className="text-right px-3 py-2">
-              Cash revenue
+              Historical revenue
             </th>
           </tr>
         </thead>

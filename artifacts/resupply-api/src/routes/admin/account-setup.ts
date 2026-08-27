@@ -142,7 +142,7 @@ export function buildChecklistItems(
   if (stripeConfigured) {
     stripeDetail = stripeWebhook
       ? "Configured (secret key + webhook signing secret)."
-      : "Secret key set, but STRIPE_WEBHOOK_SIGNING_SECRET is missing — checkout works, fulfillment webhooks won't verify.";
+      : "Secret key set, but STRIPE_WEBHOOK_SIGNING_SECRET is missing — SaaS Checkout can open, but billing webhooks won't verify.";
   }
 
   const required: AccountSetupItem[] = [
@@ -272,7 +272,7 @@ export function buildChecklistItems(
       group: "Verification",
       title: "Post-deploy smoke test",
       description:
-        "Confirms the API (not just the SPA) is actually routed after a deploy — probes /resupply-api/healthz and the public shop catalog.",
+        "Confirms the API (not just the SPA) is actually routed after a deploy — probes /resupply-api/healthz and /api/company-info.",
       status: "manual",
       detail: "Run after each deploy; the probe must exit 0.",
       docHref: doc("docs/runbooks/production-launch.md"),

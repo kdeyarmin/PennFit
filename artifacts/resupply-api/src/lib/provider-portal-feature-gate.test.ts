@@ -144,6 +144,30 @@ describe("providerPortalFeatureGate — staged-rollout exemptions", () => {
     expect(isFeatureEnabledMock).not.toHaveBeenCalled();
   });
 
+  it("lets /api/provider/me through when the flag is OFF (pre-launch onboarding)", async () => {
+    isFeatureEnabledMock.mockResolvedValue(false);
+
+    const res = await request(makeApp())
+      .get("/api/provider/me")
+      .set("Host", "tenant-a.example.com");
+
+    expect(res.status).toBe(200);
+    expect(res.body.passedThrough).toBe(true);
+    expect(isFeatureEnabledMock).not.toHaveBeenCalled();
+  });
+
+  it("lets /api/provider/mfa/* through when the flag is OFF", async () => {
+    isFeatureEnabledMock.mockResolvedValue(false);
+
+    const res = await request(makeApp())
+      .post("/api/provider/mfa/enroll/begin")
+      .set("Host", "tenant-a.example.com");
+
+    expect(res.status).toBe(200);
+    expect(res.body.passedThrough).toBe(true);
+    expect(isFeatureEnabledMock).not.toHaveBeenCalled();
+  });
+
   it("ignores non-/api/provider paths entirely (no flag read)", async () => {
     isFeatureEnabledMock.mockResolvedValue(false);
 

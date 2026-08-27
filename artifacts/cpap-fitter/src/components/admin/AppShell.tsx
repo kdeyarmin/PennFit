@@ -727,7 +727,7 @@ export const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             icon: Gavel,
             matchPrefix: "/admin/billing/disputes",
             requiredPermission: "reports.read",
-            hint: "Card chargebacks against storefront charges, ordered by evidence deadline",
+            hint: "Card chargebacks on platform SaaS charges, ordered by evidence deadline",
           },
           {
             href: "/admin/billing/payer-profitability",
@@ -1001,7 +1001,7 @@ export const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             icon: ListFilter,
             matchPrefix: "/admin/analytics/acquisition-funnel",
             requiredPermission: "reports.read",
-            hint: "Where anonymous visitors drop out of the fitter and shop checkout flows",
+            hint: "Where anonymous visitors drop out of the fitter flow (and historical storefront checkout)",
           },
           {
             href: "/admin/analytics/revenue-by-source",
@@ -1009,7 +1009,7 @@ export const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             icon: BarChart3,
             matchPrefix: "/admin/analytics/revenue-by-source",
             requiredPermission: "reports.read",
-            hint: "Order volume + cash revenue by channel (storefront / resupply / clinical form)",
+            hint: "Order volume by channel (historical storefront / resupply / clinical form)",
           },
           {
             href: "/admin/analytics/fitter-outcomes",
@@ -1121,10 +1121,10 @@ export const NAV_GROUPS: ReadonlyArray<NavGroup> = [
           },
           {
             href: "/admin/fitter/analytics",
-            label: "Storefront Analytics",
+            label: "Fitter analytics",
             icon: BarChart3,
             matchPrefix: "/admin/fitter/analytics",
-            hint: "Storefront traffic & revenue",
+            hint: "Fit requests, funnel completion, and mask outcomes",
           },
         ],
       },

@@ -33,12 +33,11 @@ import {
 } from "@workspace/resupply-email";
 
 import { createTenantSendgridClient } from "../email/tenant-sender.js";
+import { resolveBrandingByOrgId } from "../tenant-branding.js";
 import {
-  resolveBrandingByOrgId,
-  resolveTenantBaseUrl,
-} from "../tenant-branding.js";
-
-const DEFAULT_BASE_URL = "https://cmbreathe.com";
+  resolvePatientEmailLinkBase,
+  TENANT_DOMAIN_REQUIRED,
+} from "./link-base.js";
 
 export type SubscriptionBillingEmailKind = "renewing_soon" | "receipt";
 
@@ -71,15 +70,6 @@ export interface SendSubscriptionBillingEmailResult {
   delivered: boolean;
   error?: string;
   messageId?: string;
-}
-
-function publicBaseUrl(override?: string): string {
-  const raw =
-    override ??
-    process.env.SHOP_PUBLIC_BASE_URL ??
-    process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL ??
-    DEFAULT_BASE_URL;
-  return raw.replace(/\/$/, "");
 }
 
 /** cents → "$12.34" (USD) or "12.34 EUR". null → "your balance". */
@@ -129,31 +119,31 @@ function copyFor(
   if (kind === "renewing_soon") {
     const when = date ? `on ${date}` : "soon";
     return {
-      subject: `Your ${brandName} subscription renews ${date ? date : "soon"}`,
-      banner: "Renewing soon",
+      subject: `Your ${brandName} supply schedule (${when})`,
+      banner: "Supply schedule",
       intro:
-        `Heads up — your ${brandName} auto-ship subscription renews ${when}. ` +
-        `We'll charge ${amount} to the card on file and send your next supplies automatically. ` +
-        `No action is needed if everything looks right.`,
-      cta: "Manage subscription or update card",
+        `Cash-pay Subscribe & Save is retired at ${brandName}. ` +
+        `If you previously had an auto-ship plan that was set to renew ${when} (${amount}), ` +
+        `reply or call and we'll move you onto an insurance resupply schedule instead. ` +
+        `We will not charge a patient card for supplies.`,
+      cta: "Contact us about resupply",
       accent: "#1d4ed8",
       footer:
-        "Need to update your card, change quantities, skip a shipment, or pause? " +
-        "Use the button above any time before the renewal date.",
+        "Need help with coverage, quantities, or timing? Use the button above and a team member will help.",
     };
   }
-  // receipt
+  // receipt — historical cash-pay renewals only; no new patient charges.
   const when = date ? ` on ${date}` : "";
   return {
-    subject: `Your ${brandName} subscription payment receipt`,
-    banner: "Payment received",
+    subject: `About a past ${brandName} supply payment`,
+    banner: "Past payment notice",
     intro:
-      `Thanks — we received your ${amount} ${brandName} auto-ship payment${when}. ` +
-      `Your next supply order is on its way; you'll get a shipping notice with tracking when it leaves our warehouse.`,
-    cta: "View billing & subscription",
+      `We recorded a ${amount} payment${when} on a retired cash-pay auto-ship plan at ${brandName}. ` +
+      `New supplies ship through insurance — reply if you need a statement or want to set up reminders.`,
+    cta: "Contact us",
     accent: "#1f8a4c",
     footer:
-      "Questions about this charge? Just reply to this message and we'll help.",
+      "Questions about this notice? Just reply to this message and we'll help.",
   };
 }
 
@@ -177,15 +167,20 @@ export async function sendSubscriptionBillingEmail(
   const brand = await resolveBrandingByOrgId(input.orgId);
   const brandName = brand.storefrontName;
 
-  const base = publicBaseUrl(
-    input.baseUrlOverride ??
-      (await resolveTenantBaseUrl(input.orgId)) ??
-      undefined,
+  const base = await resolvePatientEmailLinkBase(
+    input.orgId,
+    input.baseUrlOverride,
   );
-  // Durable link (not a short-lived Stripe portal URL — the email may be
-  // opened hours later): the signed-in /account-billing page opens the
-  // Stripe Customer Portal on demand.
-  const manageUrl = `${base}/account-billing`;
+  if (!base) {
+    return {
+      configured: true,
+      delivered: false,
+      error: TENANT_DOMAIN_REQUIRED,
+    };
+  }
+  // Durable contact link — cash-pay Subscribe & Save / Stripe Customer
+  // Portal are retired; patients finish through insurance with staff help.
+  const manageUrl = `${base}/contact`;
 
   const amount = formatBillingAmount(input.amountCents, input.currency);
   const date = formatBillingDate(input.chargeDateIso);

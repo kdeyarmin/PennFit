@@ -28,12 +28,11 @@ import {
 } from "@workspace/resupply-email";
 
 import { createTenantSendgridClient } from "../email/tenant-sender.js";
+import { resolveBrandingByOrgId } from "../tenant-branding.js";
 import {
-  resolveBrandingByOrgId,
-  resolveTenantBaseUrl,
-} from "../tenant-branding.js";
-
-const DEFAULT_BASE_URL = "https://cmbreathe.com";
+  resolvePatientEmailLinkBase,
+  TENANT_DOMAIN_REQUIRED,
+} from "./link-base.js";
 
 export interface PickupLocationForEmail {
   name: string;
@@ -68,15 +67,6 @@ export interface SendReadyForPickupEmailResult {
   delivered: boolean;
   error?: string;
   messageId?: string;
-}
-
-function publicBaseUrl(override?: string): string {
-  const raw =
-    override ??
-    process.env.SHOP_PUBLIC_BASE_URL ??
-    process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL ??
-    DEFAULT_BASE_URL;
-  return raw.replace(/\/$/, "");
 }
 
 function locationTextLines(loc: PickupLocationForEmail): string[] {
@@ -122,12 +112,18 @@ export async function sendReadyForPickupEmail(
   const brandName = brand.storefrontName;
 
   const subject = `Your ${brandName} order is ready for pickup`;
-  const base = publicBaseUrl(
-    input.baseUrlOverride ??
-      (await resolveTenantBaseUrl(input.orgId)) ??
-      undefined,
+  const base = await resolvePatientEmailLinkBase(
+    input.orgId,
+    input.baseUrlOverride,
   );
-  const orderUrl = `${base}/shop/checkout-success?session_id=${encodeURIComponent(stripeSessionId)}`;
+  if (!base) {
+    return {
+      configured: true,
+      delivered: false,
+      error: TENANT_DOMAIN_REQUIRED,
+    };
+  }
+  const orderUrl = `${base}/contact`;
 
   // ---------- text body ----------
   const textLines: string[] = [
@@ -139,7 +135,7 @@ export async function sendReadyForPickupEmail(
     "Please bring a photo ID matching the order. " +
       "If someone else is collecting on your behalf, let us know in advance.",
     "",
-    `View your order: ${orderUrl}`,
+    `Questions about your order? ${orderUrl}`,
   ];
   const text = textLines.join("\n");
 
@@ -154,7 +150,7 @@ export async function sendReadyForPickupEmail(
       textParagraph(`Good news — your ${brandName} order is ready to pick up.`),
       infoPanel({ title: "Pick up at", html: locationHtml(location) }),
     ].join("\n"),
-    button: { label: "View order", url: orderUrl },
+    button: { label: "Contact us", url: orderUrl },
     footerLines: [
       "Please bring a photo ID matching the order. If someone else is collecting on your behalf, let us know in advance.",
     ],

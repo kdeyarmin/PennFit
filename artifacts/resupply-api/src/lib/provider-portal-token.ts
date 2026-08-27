@@ -16,6 +16,12 @@ interface ProviderPortalPayload {
   id: string;
   e: number;
   /**
+   * Minting tenant org id. Caseload reads must use this org, not the
+   * request Host, so a token minted for Acme cannot be replayed on
+   * cmbreathe.com to read the seed org's prescriptions.
+   */
+  o?: string;
+  /**
    * Optional revocation version. Mirrors
    * `providers.portal_link_version` at mint time so a CSR can
    * invalidate every outstanding token for a provider by bumping
@@ -56,11 +62,12 @@ function hmacSign(payloadEncoded: string): Buffer {
 export function signProviderPortalToken(
   providerId: string,
   ttlSeconds = DEFAULT_TTL_SECONDS,
-  options: { portalLinkVersion?: number } = {},
+  options: { portalLinkVersion?: number; orgId?: string } = {},
 ): string {
   const payload: ProviderPortalPayload = {
     id: providerId,
     e: Math.floor(Date.now() / 1000) + ttlSeconds,
+    ...(options.orgId ? { o: options.orgId } : {}),
     ...(options.portalLinkVersion !== undefined
       ? { v: options.portalLinkVersion }
       : {}),
@@ -73,7 +80,7 @@ export function signProviderPortalToken(
 }
 
 export type VerifyProviderPortalTokenResult =
-  | { valid: true; providerId: string; version: number }
+  | { valid: true; providerId: string; version: number; orgId: string | null }
   | { valid: false };
 
 export function verifyProviderPortalToken(
@@ -114,11 +121,11 @@ export function verifyProviderPortalToken(
   }
   const p = parsed as Record<string, unknown>;
   const keys = Object.keys(p);
-  // Accept either {id, e} (legacy) or {id, e, v} (post-revocation).
+  // Accept {id, e} (legacy), {id, e, v}, and {id, e, v?, o}.
   if (
     !keys.includes("id") ||
     !keys.includes("e") ||
-    keys.some((k) => k !== "id" && k !== "e" && k !== "v")
+    keys.some((k) => k !== "id" && k !== "e" && k !== "v" && k !== "o")
   ) {
     return { valid: false };
   }
@@ -132,6 +139,18 @@ export function verifyProviderPortalToken(
   ) {
     return { valid: false };
   }
+  let orgId: string | null = null;
+  if (p.o !== undefined) {
+    if (typeof p.o !== "string") return { valid: false };
+    if (
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        p.o,
+      )
+    ) {
+      return { valid: false };
+    }
+    orgId = p.o;
+  }
   if (!Number.isFinite(p.e) || Date.now() / 1000 > p.e) {
     return { valid: false };
   }
@@ -143,5 +162,5 @@ export function verifyProviderPortalToken(
     version = p.v;
   }
 
-  return { valid: true, providerId: p.id, version };
+  return { valid: true, providerId: p.id, version, orgId };
 }

@@ -11,12 +11,10 @@ import { Router, type IRouter, type Request } from "express";
 import expressRateLimit, { ipKeyGenerator } from "express-rate-limit";
 import { z } from "zod";
 
-import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { verifyProviderPortalToken } from "../lib/provider-portal-token";
 import { RATE_LIMITS } from "../lib/rate-limits-config";
-import { resolveOrgIdByHost } from "../lib/tenant-branding";
-import { requestHost } from "../lib/request-host";
 
 const router: IRouter = Router();
 
@@ -48,13 +46,15 @@ router.get(
       res.status(401).json({ error: "invalid_or_expired_token" });
       return;
     }
-    // Provider-token route — no req.orgId. Resolve the tenant by host (the
-    // physician visits the minting tenant's domain) so the caseload query
-    // is scoped to THAT tenant's prescriptions, not the seed org's. Apex /
-    // platform host / miss → seed org (single-tenant posture unchanged).
-    const orgId =
-      (await resolveOrgIdByHost(requestHost(req))) ??
-      (await resolveSeedOrgId());
+    // Caseload reads MUST use the minting tenant embedded in the token.
+    // Legacy tokens without `o` resolved org from request Host, which
+    // let a valid link minted for tenant A be replayed on cmbreathe.com
+    // (or any other host) to read another tenant's prescriptions.
+    if (!v.orgId) {
+      res.status(401).json({ error: "token_requires_reissue" });
+      return;
+    }
+    const orgId = v.orgId;
     if (!orgId) {
       res.status(404).json({ error: "provider_not_found" });
       return;

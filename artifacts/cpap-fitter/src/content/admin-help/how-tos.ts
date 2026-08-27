@@ -189,7 +189,7 @@ export const HOW_TO_GUIDES: readonly HowToGuide[] = [
         title: "Learn the six sidebar groups",
         body: "Every page lives in one of six groups, and the group tells you what kind of work it is.",
         substeps: [
-          "Workspace — the day-to-day desk: front desk, conversations, cases, schedule, outreach.",
+          "Workspace — the day-to-day desk: conversations, cases, schedule, outreach.",
           "Patients & Clinical — the patient roster, paperwork and e-sign, therapy monitoring, and clinical work.",
           "Orders & fulfillment — insurance orders, fulfillment, signature paperwork, inventory, and storefront leads.",
           "Billing — the revenue cycle, front to back, as worklists.",

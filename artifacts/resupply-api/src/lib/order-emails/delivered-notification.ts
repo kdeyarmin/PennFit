@@ -186,9 +186,8 @@ export async function sendDeliveredNotificationIfNew(args: {
         const counts = await sendPushToCustomer(orgId, claimedRow.customer_id, {
           title: `Your ${brand.storefrontName} order was delivered`,
           body: "Your order has arrived.",
-          // The retail Orders tab went with the cash-pay storefront, so
-          // /account/orders no longer resolves. Point at the account itself.
-          url: "/account",
+          // Cash-pay shop orders are not trackable via /track-order.
+          url: "/contact",
           tag: `shop_order_delivered:${claimedRow.id}`,
         });
         if (counts.delivered + counts.expired + counts.transient > 0) {

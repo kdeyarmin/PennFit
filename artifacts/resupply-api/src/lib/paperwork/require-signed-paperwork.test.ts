@@ -7,7 +7,8 @@
 // each test stages the rows the helper's queries see in order:
 //   1. shop_customers   (auth_user_id)
 //   2. patients         (id by portal_auth_user_id)
-//   3. feature_flags     (isFeatureEnabled — global flag)
+//   3. feature_flags     (getFeatureFlagState — global flag; degraded
+//                        lookups fail toward ON for this safety gate)
 //   4. insurance_coverages (primary payer_name)
 //   5. payer_profiles    (requires_signed_paperwork — only if coverage)
 //   6. patient_form_acknowledgements (form_kind — only if required)
@@ -91,6 +92,25 @@ describe("evaluatePaperworkGateForCustomer", () => {
       "Assignment of Benefits",
       "Supplier Standards",
     ]);
+  });
+
+  it("enforces when the flag lookup is degraded (fails toward on)", async () => {
+    // A PostgREST error (not merely "no row") marks the lookup degraded.
+    // Safety flags use `enabled || degraded` so an unreachable flag table
+    // cannot silently drop an operator-enabled ship gate.
+    stagePatientResolution();
+    stageSupabaseResponse("feature_flags", "select", {
+      data: null,
+      error: { message: "permission denied for table feature_flags" },
+    });
+    stageSupabaseResponse("insurance_coverages", "select", { data: null });
+    stageSupabaseResponse("patient_form_acknowledgements", "select", {
+      data: [],
+    });
+    const decision = await evaluatePaperworkGateForCustomer(TEST_ORG, CUSTOMER);
+    expect(decision.required).toBe(true);
+    expect(decision.satisfied).toBe(false);
+    expect(decision.sources).toEqual(["global"]);
   });
 
   it("is satisfied when the global flag is on and every form is signed", async () => {

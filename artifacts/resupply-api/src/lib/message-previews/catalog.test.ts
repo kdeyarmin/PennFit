@@ -250,9 +250,9 @@ describe("exact scenarios call the production renderer", () => {
       practiceName: BRAND.companyName,
       firstName: SAMPLE.firstName,
       items: SAMPLE.items.map((i) => ({ name: i.name, quantity: i.quantity })),
-      confirmUrl: `${BRAND.baseUrl}/r/c/demo-signed-token`,
-      editUrl: `${BRAND.baseUrl}/r/e/demo-signed-token`,
-      stopUrl: `${BRAND.baseUrl}/r/s/demo-signed-token`,
+      confirmUrl: `${BRAND.baseUrl}/resupply-api/email/click?t=demo-signed-token-confirm`,
+      editUrl: `${BRAND.baseUrl}/resupply-api/email/click?t=demo-signed-token-edit`,
+      stopUrl: `${BRAND.baseUrl}/resupply-api/email/click?t=demo-signed-token-stop`,
       variant: "initial",
     });
     const preview = findMessagePreview(BRAND, "resupply.reminder.initial");
@@ -276,7 +276,7 @@ describe("exact scenarios call the production renderer", () => {
   it("renders the video-visit invite from the extracted pure module", async () => {
     const { renderInviteEmailHtml, renderInviteEmailText } =
       await import("../video-visits/invite-email");
-    const link = `${BRAND.baseUrl}/v/demo-signed-token`;
+    const link = `${BRAND.baseUrl}/video-visit?token=demo-signed-token`;
     const preview = findMessagePreview(BRAND, "clinical.video_visit");
     expect(preview?.email?.html).toBe(
       renderInviteEmailHtml(

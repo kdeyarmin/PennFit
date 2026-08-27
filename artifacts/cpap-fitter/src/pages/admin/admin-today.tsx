@@ -245,12 +245,12 @@ function FollowupsCard({ data }: { data: TodayResponse }) {
             // id for the row's source; otherwise render the same text inert.
             const subjectId =
               f.source === "patient" ? f.patient_id : f.customer_id;
+            // Shop-customer detail pages retired with cash-pay checkout —
+            // only link patient follow-ups to a living admin page.
             const link =
-              subjectId === null
+              subjectId === null || f.source !== "patient"
                 ? null
-                : f.source === "patient"
-                  ? `/admin/patients/${encodeURIComponent(subjectId)}`
-                  : `/admin/shop/customers/${encodeURIComponent(subjectId)}`;
+                : `/admin/patients/${encodeURIComponent(subjectId)}`;
             const label = (
               <>
                 <span className="font-medium">

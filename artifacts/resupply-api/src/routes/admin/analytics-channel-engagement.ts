@@ -238,9 +238,9 @@ router.get(
     res.write(
       `Overall engagement rate,${result.summary.overallEngagementRate ?? ""}\n`,
     );
-    res.write(`Purchases,${result.outcomes.purchases}\n`);
+    res.write(`Historical purchases,${result.outcomes.purchases}\n`);
     res.write(
-      `Purchase revenue (USD),${(
+      `Historical purchase revenue (USD),${(
         result.outcomes.purchaseRevenueCents / 100
       ).toFixed(2)}\n`,
     );

@@ -35,7 +35,10 @@ import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import { requestHost } from "../../lib/request-host";
-import { resolveBrandOrgIdByHost } from "../../lib/tenant-branding";
+import {
+  resolveBrandOrgIdByHost,
+  resolveTenantLinkBaseUrl,
+} from "../../lib/tenant-branding";
 import { resolveOrgIdForSignedRecord } from "../../lib/storefront/signed-link-org";
 
 type FitterLeadsUpdate =
@@ -780,13 +783,20 @@ async function recordOpenEvent(
 // outside our own catalog.
 
 /** Closed enum of legitimate CTA destinations. The link_key in
- *  every signed click token MUST be in this map. */
+ *  every signed click token MUST be in this map.
+ *
+ *  Cash-pay /shop destinations were retired with the insurance-only
+ *  patient path — keys keep their historical names so in-flight
+ *  click tokens still verify, but they resolve to living surfaces. */
 const CTA_DESTINATIONS: Record<string, (baseUrl: string) => string> = {
-  results: (b) => `${b}/results`,
-  shop: (b) => `${b}/shop`,
-  subscribe: (b) => `${b}/shop/subscribe`,
-  refer: (b) => `${b}/shop/refer`,
-  promo: (b) => `${b}/shop`,
+  // Cold campaign clicks have no browser fit session — /results
+  // bounces to consent/invite. Land on /consent so the patient can
+  // continue the live funnel.
+  results: (b) => `${b}/consent`,
+  shop: (b) => `${b}/contact`,
+  subscribe: (b) => `${b}/reminders`,
+  refer: (b) => `${b}/contact`,
+  promo: (b) => `${b}/insurance`,
   consent: (b) => `${b}/consent`,
 };
 
@@ -886,8 +896,12 @@ function verifyClickTrackingToken(
   return { valid: true, leadId, touchIndex, linkKey, variantKey };
 }
 
-function publicBaseUrl(): string {
+/** Platform / env fallback origin. Prefer a tenant override so tracked
+ *  campaign clicks land on the tenant host (e.g. pennpaps.com), not
+ *  Railway / cmbreathe.com. */
+function publicBaseUrl(override?: string): string {
   return (
+    override ??
     process.env.SHOP_PUBLIC_BASE_URL ??
     process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL ??
     (process.env.RAILWAY_PUBLIC_DOMAIN
@@ -896,12 +910,32 @@ function publicBaseUrl(): string {
   ).replace(/\/$/, "");
 }
 
+/** Prefer the lead's tenant custom domain for CTA redirects. Seed org
+ *  may fall through to the platform env base; non-seed without a
+ *  verified domain returns null so the caller can keep the request Host
+ *  via a path-only redirect (never bounce onto cmbreathe.com / Railway). */
+async function resolveClickBaseUrl(leadId: string): Promise<string | null> {
+  try {
+    const orgId = await resolveOrgIdForSignedRecord("fitter_leads", leadId);
+    if (orgId) {
+      return resolveTenantLinkBaseUrl(orgId, publicBaseUrl());
+    }
+  } catch (err) {
+    logger.warn(
+      { err: redactDbErr(err), leadId },
+      "shop/track/c: tenant base resolve failed",
+    );
+  }
+  return null;
+}
+
 /** Fallback destination when verification fails — we still 302 the
  *  user somewhere (a broken CTA mid-marketing-email is a worse UX
  *  than a redirect to the storefront), but we don't record the
- *  click. */
-function fallbackDestination(): string {
-  return `${publicBaseUrl()}/shop`;
+ *  click. Prefer a path-only redirect so the request Host (tenant
+ *  domain that served the tracked link) is preserved. */
+function fallbackDestination(base?: string | null): string {
+  return base ? `${base.replace(/\/$/, "")}/insurance` : "/insurance";
 }
 
 router.get("/shop/track/c", clickTrackRateLimiter, async (req, res) => {
@@ -924,13 +958,25 @@ router.get("/shop/track/c", clickTrackRateLimiter, async (req, res) => {
     return;
   }
 
+  // Resolve tenant BEFORE the redirect so pennpaps.com campaign emails
+  // do not bounce patients onto the platform host.
+  const base = await resolveClickBaseUrl(verify.leadId);
+  if (!base) {
+    // Keep Host from the tracked email URL (tenant domain). Empty base
+    // yields path-only destinations (/consent, /contact, …).
+    res.redirect(
+      302,
+      CTA_DESTINATIONS[verify.linkKey]?.("") ?? fallbackDestination(),
+    );
+    return;
+  }
+
   // Compute the destination from our server-side allowlist.
   // CTA_DESTINATIONS has been narrowed by verifyClickTrackingToken
   // (verify.linkKey is guaranteed to be a key), but the optional-
   // chain guard is belt-and-suspenders.
   const dest =
-    CTA_DESTINATIONS[verify.linkKey]?.(publicBaseUrl()) ??
-    fallbackDestination();
+    CTA_DESTINATIONS[verify.linkKey]?.(base) ?? fallbackDestination(base);
 
   // Best-effort: record the click + bump engagement_score by 5.
   // We don't await this — the redirect is the patient's primary
@@ -1190,7 +1236,7 @@ function unsubscribeHtml(
           : "Something went wrong.";
   const body =
     state === "ok"
-      ? "We won't send you any more fitting follow-ups. You can still place an order at any time."
+      ? "We won't send you any more fitting follow-ups. You can still reach us anytime about your fitting or coverage."
       : state === "invalid"
         ? "This unsubscribe link has expired or was already used. If you keep getting emails, reply to one and we'll handle it directly."
         : state === "rate_limited"

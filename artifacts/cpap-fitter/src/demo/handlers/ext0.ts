@@ -171,7 +171,8 @@ function accountSetupChecklist() {
       tab: "optional",
       group: "Payments",
       title: "Stripe",
-      description: "Cash-pay storefront checkout and refunds.",
+      description:
+        "Platform SaaS billing for tenants — not used for patient checkout.",
       status: "complete",
       detail: "Configured (secret key + webhook signing secret).",
       docHref: null,

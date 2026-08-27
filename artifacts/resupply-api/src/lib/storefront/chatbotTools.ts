@@ -341,7 +341,7 @@ export const CHAT_TOOLS: OpenAiToolDescriptor[] = [
           order_reference: {
             type: "string",
             description:
-              "The Penn Home Medical Supply order reference, e.g. 'PENN-AB1234' (the 6-character tail alone is also accepted).",
+              "The order reference from the confirmation email — 'PENN-' plus 6 letters/digits, or a legacy 'PHM-XXX-XXX' code. The 6-character PENN tail alone is also accepted.",
           },
         },
       },
@@ -629,7 +629,7 @@ async function executeTrackOrder(
       data: {
         status: "not_found",
         guidance:
-          "That doesn't look like a Penn Home Medical Supply order reference — it's 'PENN-' plus 6 letters/digits, from the confirmation email. Ask the user to double-check it.",
+          "That doesn't look like a known order reference — it's usually 'PENN-' plus 6 letters/digits from the confirmation email (older emails used 'PHM-XXX-XXX'). Ask the user to double-check it.",
       },
     };
   }

@@ -61,9 +61,10 @@ export function AdminBillingDisputesPage() {
             Chargeback disputes
           </h1>
           <p className="text-sm mt-1" style={{ color: "hsl(var(--ink-3))" }}>
-            Card disputes opened against storefront charges, ordered by evidence
-            deadline. Respond in the Stripe Dashboard before the deadline to
-            contest the chargeback.
+            Card disputes on platform SaaS charges (tenants paying CareMetric
+            Breathe), ordered by evidence deadline. Historical patient-checkout
+            rows may still appear. Respond in the Stripe Dashboard before the
+            deadline to contest the chargeback.
           </p>
         </div>
         <label className="flex items-center gap-2 text-xs text-slate-600">

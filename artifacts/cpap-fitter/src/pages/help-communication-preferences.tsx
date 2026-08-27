@@ -39,8 +39,8 @@ const steps: HelpStep[] = [
             for replacement.
           </li>
           <li>
-            <strong>Cart reminders</strong> — one email if you leave items in
-            your cart for 24 hours.
+            <strong>Incomplete-order reminders</strong> — one email if you
+            started an order request and didn&apos;t finish within 24 hours.
           </li>
           <li>
             <strong>Review requests</strong> — a quick ask two weeks after

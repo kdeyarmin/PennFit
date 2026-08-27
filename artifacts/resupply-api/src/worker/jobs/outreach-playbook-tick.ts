@@ -61,7 +61,10 @@ import {
 } from "../../lib/comm-prefs.js";
 import { getCompanyInfo } from "../../lib/company-info.js";
 import { isFeatureEnabled } from "../../lib/feature-flags.js";
-import { applyTenantEmailSender } from "../../lib/email/apply-tenant-email-sender.js";
+import {
+  applyTenantEmailSender,
+  isPatientEmailClickBaseReady,
+} from "../../lib/email/apply-tenant-email-sender.js";
 import { applyTenantSmsFrom } from "../../lib/messaging/tenant-telecom.js";
 import { recordOutboundMessageUsage } from "../../lib/metering/usage.js";
 import { logger } from "../../lib/logger.js";
@@ -583,6 +586,21 @@ async function outreachPlaybookSweepForOrg(
         });
         continue;
       }
+      const emailCfg = {
+        ...(await applyTenantEmailSender(orgId, cfg.email)),
+        practiceName,
+      };
+      if (!isPatientEmailClickBaseReady(emailCfg.publicBaseUrl)) {
+        stats.skipped += 1;
+        await recordStep(orgId, {
+          runId: run.id,
+          stepIndex: step.step_index,
+          channel: "email",
+          status: "skipped",
+          detail: "tenant_domain_required",
+        });
+        continue;
+      }
       const subject = renderPlaybookBody(step.subject ?? "", {
         firstName: patientRow.legal_first_name,
         practiceName,
@@ -593,10 +611,7 @@ async function outreachPlaybookSweepForOrg(
         // Send under the tenant's own From identity when configured (G6);
         // falls back to the platform default when it isn't. Brand the
         // library-composed parts (footer, reply subject) to match.
-        cfg: {
-          ...(await applyTenantEmailSender(orgId, cfg.email)),
-          practiceName,
-        },
+        cfg: emailCfg,
         patientId: run.patient_id,
         content: { subject, bodyText: rendered },
         actor,

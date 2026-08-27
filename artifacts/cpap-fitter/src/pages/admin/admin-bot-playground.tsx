@@ -70,9 +70,9 @@ const BOT_LABELS: Record<BotKind, string> = {
 
 const BOT_BLURB: Record<BotKind, string> = {
   storefront:
-    "Public pre-purchase chatbot. Real mask tools run live (public catalog).",
+    "Public storefront chatbot. Real mask tools run live (public catalog).",
   account:
-    "Signed-in account assistant. Runs against synthetic account data; order/subscription/escalation tools are simulated.",
+    "Signed-in account assistant. Runs against synthetic account data; shipment and escalation tools are simulated (cash-pay order/subscription tools are retired).",
   voice:
     "Phone agent's text brain. Identity, ordering, and handoff tools are simulated so you can walk the flow without a real call.",
 };

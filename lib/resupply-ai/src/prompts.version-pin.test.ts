@@ -195,6 +195,11 @@ const PROMPT_VERSION_HASHES: Readonly<Record<string, string>> = {
   // (insurance-only). PATIENT render is byte-for-byte unchanged from v18.
   "2026-08-26.v25":
     "8d7fb4c7ff77bb8e7b7aa65a2b2db91973b2de48b3096a2c2b243170b225cff0",
+  // v26 drops patient auto-ship / paid-subscription handoff language from the
+  // PATIENT goal clause and scrubbed get_customer_chart tool copy so the
+  // voice agent never invents a cash-pay subscription path.
+  "2026-08-26.v26":
+    "23b0bc863cc0debd35a018c1a907cc217a5baf717f28f4d90178710f3a0ce38e",
 };
 
 function renderCanonicalPrompt(): string {
@@ -221,7 +226,7 @@ function hashStrippingVersionLine(prompt: string, version: string): string {
  * Update the same way: render, take the printed hash, record it here.
  */
 const SHOP_PROMPT_HASH =
-  "e6f012d1e579549c774538645e0cc451e7c686cd8ab0c542b7ff9efbf744e371";
+  "48690b40cb3f19ee5d65750cc9e4c42f6fc685c888747aa624b3d5e9f835800e";
 
 /**
  * The CareMetric Breathe sales (breathe_prospect) variant renders its own
@@ -250,10 +255,12 @@ const SHOP_PROMPT_HASH =
  * changing it again. v24 removes the claim that patient payments run through
  * Stripe and says the platform is insurance-billing rather than retail —
  * patients are supplied against their plan and never charged a card, so the
- * agent must not pitch e-commerce — changing it again.
+ * agent must not pitch e-commerce — changing it again. A follow-up knowledge
+ * edit drops Subscribe & Save / guest checkout / patient-pay shop pitch from
+ * the spoken sales blocks (hash moves again while PROMPT_VERSION stays v25).
  */
 const BREATHE_SALES_PROMPT_HASH =
-  "17434d4cc1d0ccacfa3e9810517ce3b3b84cddb5e33a71992ac382d0611b90a7";
+  "e5a53e411a135b499027cd9a9f58adfba9cb3e60fb1278f272350a07b87579fe";
 
 describe("PROMPT_VERSION drift detector", () => {
   it("has a recorded hash for the currently-shipped PROMPT_VERSION", () => {

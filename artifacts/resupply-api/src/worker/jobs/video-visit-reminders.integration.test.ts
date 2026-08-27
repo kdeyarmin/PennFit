@@ -83,10 +83,19 @@ describeIfDb("video-visit-reminders fan-out (live db)", () => {
 
   async function seedOrg(orgId: string, slugSuffix: string): Promise<void> {
     const pool = getDbPool();
+    // Verified custom domain required — resolveTenantLinkBaseUrl skips
+    // non-seed orgs without one so join links never land on the platform
+    // host / wrong org.
     await pool.query(
-      `INSERT INTO resupply.organizations (id, slug, name, status)
-       VALUES ($1, $2, $3, 'active')`,
-      [orgId, `${runTag}-${slugSuffix}`, `Test Org ${slugSuffix}`],
+      `INSERT INTO resupply.organizations
+         (id, slug, name, status, custom_domain, custom_domain_status)
+       VALUES ($1, $2, $3, 'active', $4, 'verified')`,
+      [
+        orgId,
+        `${runTag}-${slugSuffix}`,
+        `Test Org ${slugSuffix}`,
+        `${runTag}-${slugSuffix}.example.test`,
+      ],
     );
     // Per-tenant flags the sweep gates on. Explicit so the test never
     // depends on the seed org's defaults.

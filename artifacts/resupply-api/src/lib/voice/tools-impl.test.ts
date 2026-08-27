@@ -856,6 +856,9 @@ interface ShopStubOpts {
   emailLower: string | null;
   displayName: string | null;
   lastOrder: { paid_at: string | null; created_at: string } | null;
+  /** Exactly-one patient match for the customer's email (insurance path). */
+  patientId: string | null;
+  lastFulfillmentAt: string | null;
   activeSubs: Array<{ status: string }>;
   openFollowups: Array<{ id: string }>;
 }
@@ -866,6 +869,7 @@ function buildShopStub(opts: ShopStubOpts) {
       case "shop_customers":
         return {
           data: {
+            customer_id: "cust-1",
             email_lower: opts.emailLower,
             display_name: opts.displayName,
           },
@@ -877,6 +881,18 @@ function buildShopStub(opts: ShopStubOpts) {
         return { data: opts.activeSubs, error: null };
       case "shop_customer_followups":
         return { data: opts.openFollowups, error: null };
+      case "patients":
+        return {
+          data: opts.patientId ? [{ id: opts.patientId }] : [],
+          error: null,
+        };
+      case "fulfillments":
+        return {
+          data: opts.lastFulfillmentAt
+            ? { created_at: opts.lastFulfillmentAt }
+            : null,
+          error: null,
+        };
       default:
         return { data: null, error: null };
     }
@@ -887,6 +903,7 @@ function buildShopStub(opts: ShopStubOpts) {
       eq: () => b,
       is: () => b,
       in: () => b,
+      ilike: () => b,
       order: () => b,
       limit: () => b,
       maybeSingle: () => Promise.resolve(responseFor(table)),
@@ -921,6 +938,8 @@ describe("VoiceToolDispatcher — shop_customer flow", () => {
       paid_at: "2026-05-02T00:00:00.000Z",
       created_at: "2026-05-01T00:00:00.000Z",
     },
+    patientId: null,
+    lastFulfillmentAt: null,
     activeSubs: [{ status: "active" }],
     openFollowups: [{ id: "f1" }],
   };
@@ -999,9 +1018,59 @@ describe("VoiceToolDispatcher — shop_customer flow", () => {
       supplies_due: [],
       recent_order_summary: {
         last_order_at: "2026-05-02T00:00:00.000Z",
-        open_subscription: true,
+        open_subscription: false,
       },
       has_open_followups: true,
+    });
+  });
+
+  it("prefers a linked insurance fulfillment over a legacy shop_order date", async () => {
+    const dispatcher = shopDispatcher({
+      ...RICH_SHOP,
+      patientId: "pat-1",
+      lastFulfillmentAt: "2026-06-15T12:00:00.000Z",
+    });
+    await dispatcher.dispatch({
+      callId: "v",
+      name: "verify_shop_customer_identity",
+      args: { email: "jane@example.com" },
+    });
+    const r = await dispatcher.dispatch({
+      callId: "g",
+      name: "get_customer_chart",
+      args: {},
+    });
+    expect(r.result).toMatchObject({
+      kind: "shop_customer",
+      recent_order_summary: {
+        last_order_at: "2026-06-15T12:00:00.000Z",
+        open_subscription: false,
+      },
+    });
+  });
+
+  it("uses a linked fulfillment when the caller has no shop_orders", async () => {
+    const dispatcher = shopDispatcher({
+      ...RICH_SHOP,
+      lastOrder: null,
+      patientId: "pat-1",
+      lastFulfillmentAt: "2026-07-01T00:00:00.000Z",
+    });
+    await dispatcher.dispatch({
+      callId: "v",
+      name: "verify_shop_customer_identity",
+      args: { email: "jane@example.com" },
+    });
+    const r = await dispatcher.dispatch({
+      callId: "g",
+      name: "get_customer_chart",
+      args: {},
+    });
+    expect(r.result).toMatchObject({
+      kind: "shop_customer",
+      recent_order_summary: {
+        last_order_at: "2026-07-01T00:00:00.000Z",
+      },
     });
   });
 

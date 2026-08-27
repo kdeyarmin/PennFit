@@ -156,23 +156,16 @@ export function ConversationDetailPage({ id }: { id: string }) {
                 >
                   {data.customerId ? (
                     /*
-                      In-app threads: header links to the
-                      customer-360 page where the CSR can see saved
-                      device + physician info + lifetime stats. No
-                      patient context to show — a shop customer is a
-                      different identity space than a resupply
-                      patient.
+                      In-app threads can still reference a historical
+                      storefront account. The /admin/shop/customers
+                      detail page retired with cash-pay checkout — show
+                      the label without a dead deep link.
                     */
-                    <Link
-                      href={`/admin/shop/customers/${encodeURIComponent(data.customerId)}`}
-                      className="underline decoration-dotted"
-                      style={{ color: "hsl(var(--ink-1))" }}
-                      data-testid="conv-detail-customer-link"
-                    >
+                    <span data-testid="conv-detail-customer-link">
                       {data.customerDisplayName ??
                         data.customerEmail ??
-                        "Shop customer"}
-                    </Link>
+                        "Storefront account"}
+                    </span>
                   ) : data.patientId ? (
                     <Link
                       href={`/admin/patients/${data.patientId}`}

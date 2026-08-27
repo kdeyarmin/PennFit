@@ -76,18 +76,21 @@ export function Home() {
               </span>{" "}
               {hasDistinctStorefrontName(branding) ? (
                 <>
-                  is the online CPAP storefront from{" "}
+                  is the patient site for{" "}
                   <span className="font-semibold text-foreground">
                     {branding.legalName}
                   </span>{" "}
                   — your local DME team.
                 </>
               ) : (
-                <>is your local DME team&rsquo;s online CPAP storefront.</>
+                <>
+                  is your local DME team&rsquo;s home for CPAP mask fitting and
+                  insurance resupply.
+                </>
               )}{" "}
-              Get clinically matched to the right mask, order cushions, filters,
-              and tubing through your insurance plan, and let us keep your
-              resupply on schedule.
+              Get clinically matched to the right mask, request cushions,
+              filters, and tubing through your insurance plan, and let us keep
+              your resupply on schedule.
             </p>
 
             <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
@@ -270,8 +273,8 @@ export function Home() {
                     Your account
                   </h3>
                   <p className="text-sm text-muted-foreground leading-relaxed">
-                    Track resupply shipments, update insurance details, and see
-                    past orders in one place.
+                    Track resupply, update insurance details, message your care
+                    team, and manage reminders in one place.
                   </p>
                 </div>
               </div>

@@ -4,15 +4,17 @@
 // host — where the host-scoped portal queue resolves to their org — not
 // the platform host (which resolves to the seed org → empty queue / 404).
 // So both the invite set-password link and the reminder sign-in link are
-// built from `resolveTenantBaseUrl(orgId)`, falling back to the platform
-// `deps.publicBaseUrl` when the tenant has no verified custom domain.
+// built from `resolveTenantBaseUrl(orgId)`. Non-seed tenants without a
+// verified domain are refused (422 / skipped reminder); the seed org
+// alone may fall back to the platform `deps.publicBaseUrl`.
 //
 // These tests prove:
 //   1. Invite link uses the tenant base URL when the tenant has a
 //      verified custom domain.
 //   2. Reminder link uses the tenant base URL likewise.
-//   3. Both fall back to the platform base URL when the tenant has no
-//      verified domain (single-tenant / seed-tenant unchanged).
+//   3. Non-seed tenants without a verified domain get 422 on invite
+//      (and no reminder email), never a platform-host link.
+//   4. The seed org still falls back to the platform base URL.
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import express, { type Express } from "express";
@@ -72,6 +74,18 @@ const resolveBrandingByOrgIdMock = vi.hoisted(() =>
 );
 vi.mock("../../lib/tenant-branding", () => ({
   resolveTenantBaseUrl: resolveTenantBaseUrlMock,
+  resolveTenantLinkBaseUrl: async (
+    orgId?: string,
+    platformFallback?: string,
+  ) => {
+    const tenant = await resolveTenantBaseUrlMock(orgId);
+    if (tenant) return tenant.replace(/\/$/, "");
+    // Seed org id from installSupabaseMock — only that org may fall back.
+    if (orgId === "00000000-0000-4000-8000-000000000000") {
+      return (platformFallback ?? PLATFORM_BASE_URL).replace(/\/$/, "");
+    }
+    return null;
+  },
   resolveBrandingByOrgId: resolveBrandingByOrgIdMock,
 }));
 
@@ -121,8 +135,8 @@ vi.mock("@workspace/resupply-auth", async (importOriginal) => {
     ) => ({
       subject: "Welcome",
       // Echo the base URL the route handed the renderer so we can assert it.
-      html: `<a href="${cfg.publicBaseUrl}/reset-password?token=${args.rawToken}">set password</a>`,
-      text: `${cfg.publicBaseUrl}/reset-password?token=${args.rawToken}`,
+      html: `<a href="${cfg.publicBaseUrl}/provider/reset-password?token=${args.rawToken}">set password</a>`,
+      text: `${cfg.publicBaseUrl}/provider/reset-password?token=${args.rawToken}`,
     }),
   };
 });
@@ -174,6 +188,8 @@ function stageInviteDbHappyPath(): void {
   stageSupabaseResponse("provider_portal_accounts", "select", { data: null });
   // provider_portal_accounts insert → ok.
   stageSupabaseResponse("provider_portal_accounts", "insert", { data: null });
+  // Invite upserts a DME link so the account stays org-scoped.
+  stageSupabaseResponse("provider_dme_links", "upsert", { data: null });
 }
 
 describe("provider invite email link — tenant base URL", () => {
@@ -189,18 +205,41 @@ describe("provider invite email link — tenant base URL", () => {
     expect(res.body.emailSent).toBe(true);
     // The link returned to the admin uses the tenant host.
     expect(res.body.inviteLink).toBe(
-      `${TENANT_BASE_URL}/reset-password?token=raw-token-123`,
+      `${TENANT_BASE_URL}/provider/reset-password?token=raw-token-123`,
     );
     // The emailed copy uses the tenant host too (renderer got tenant base URL).
     expect(sentEmails).toHaveLength(1);
-    expect(sentEmails[0].html).toContain(`${TENANT_BASE_URL}/reset-password`);
+    expect(sentEmails[0].html).toContain(
+      `${TENANT_BASE_URL}/provider/reset-password`,
+    );
     expect(sentEmails[0].html).not.toContain(PLATFORM_BASE_URL);
     // Resolver was asked for the inviting tenant's org.
     expect(resolveTenantBaseUrlMock).toHaveBeenCalledWith(MOCK_ORG_ID);
   });
 
-  it("falls back to the platform base URL when the tenant has no verified domain", async () => {
+  it("refuses invite when a non-seed tenant has no verified domain", async () => {
     resolveTenantBaseUrlMock.mockResolvedValue(null);
+    stageInviteDbHappyPath();
+
+    const res = await request(makeApp())
+      .post("/admin/provider-portal/accounts/invite")
+      .send({ providerId: PROVIDER_ID });
+
+    expect(res.status).toBe(422);
+    expect(res.body.error).toBe("tenant_domain_required");
+    expect(sentEmails).toHaveLength(0);
+  });
+
+  it("falls back to the platform base URL for the seed org without a verified domain", async () => {
+    resolveTenantBaseUrlMock.mockResolvedValue(null);
+    // Treat the inviting org as the seed so the platform fallback applies.
+    mockAdmin.current = {
+      userId: "admin-1",
+      email: "admin@example.com",
+      role: "admin",
+      // Seed id returned by installSupabaseMock's resolveSeedOrgId.
+      orgId: "00000000-0000-4000-8000-000000000000",
+    };
     stageInviteDbHappyPath();
 
     const res = await request(makeApp())
@@ -209,9 +248,11 @@ describe("provider invite email link — tenant base URL", () => {
 
     expect(res.status).toBe(200);
     expect(res.body.inviteLink).toBe(
-      `${PLATFORM_BASE_URL}/reset-password?token=raw-token-123`,
+      `${PLATFORM_BASE_URL}/provider/reset-password?token=raw-token-123`,
     );
-    expect(sentEmails[0].html).toContain(`${PLATFORM_BASE_URL}/reset-password`);
+    expect(sentEmails[0].html).toContain(
+      `${PLATFORM_BASE_URL}/provider/reset-password`,
+    );
   });
 });
 
@@ -250,7 +291,7 @@ describe("provider reminder email link — tenant base URL", () => {
     expect(resolveTenantBaseUrlMock).toHaveBeenCalledWith(MOCK_ORG_ID);
   });
 
-  it("falls back to the platform base URL when the tenant has no verified domain", async () => {
+  it("skips the reminder email when a non-seed tenant has no verified domain", async () => {
     resolveTenantBaseUrlMock.mockResolvedValue(null);
     stageReminderDbHappyPath();
 
@@ -259,8 +300,7 @@ describe("provider reminder email link — tenant base URL", () => {
     );
 
     expect(res.status).toBe(200);
-    expect(sentEmails[0].html).toContain(
-      `${PLATFORM_BASE_URL}/provider/sign-in`,
-    );
+    expect(res.body.emailSent).toBe(false);
+    expect(sentEmails).toHaveLength(0);
   });
 });

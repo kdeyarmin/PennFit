@@ -88,9 +88,8 @@ export function Privacy() {
                 position).
               </li>
               <li>
-                If you choose to place an order: the patient, shipping,
-                insurance, and prescription details you submit on the order
-                form.
+                If you choose to send a fit request: the patient, shipping,
+                insurance, and prescription details you submit on that form.
               </li>
               <li>
                 Anonymous funnel-step events (e.g., "consent given," "results
@@ -165,9 +164,9 @@ export function Privacy() {
               SMS / Text Messaging Notifications
             </h3>
             <p>
-              When you place an order and consent to be contacted, <BrandName />{" "}
-              may send you SMS text messages from our toll-free number for the
-              following purposes:
+              When you send a fit request (or enroll in resupply) and consent to
+              be contacted, <BrandName /> may send you SMS text messages from
+              our toll-free number for the following purposes:
             </p>
             <ul className="list-disc pl-5 mt-2 space-y-1">
               <li>Order confirmation and shipping updates;</li>

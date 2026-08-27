@@ -75,7 +75,7 @@ export interface StorefrontBranding {
 export const DEFAULT_BRANDING: StorefrontBranding = {
   storefrontName: "CareMetric Breathe",
   legalName: "CareMetric Breathe",
-  tagline: "Your CPAP, made simple. Fit. Shop. Resupply.",
+  tagline: "Your CPAP, made simple. Fit. Order. Resupply.",
   logoUrl: null,
   resolved: false,
 };
@@ -150,8 +150,8 @@ export function getStorefrontBranding(): StorefrontBranding {
  * from its registered company name.
  *
  * Surfaces that show both — the header lockup's "by <company>" line, the
- * footer brand block, the home hero's "<brand> is the online storefront
- * from <company>" — must gate the second name on this. A tenant that
+ * footer brand block, the home hero's "<brand> is the patient site
+ * for <company>" — must gate the second name on this. A tenant that
  * trades under its registered name has the two fields equal (Penn Home
  * Medical Supply, since migration 0510 retired its "PennPaps" storefront
  * DBA), and rendering both unconditionally reads as "X by X".

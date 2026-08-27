@@ -62,7 +62,7 @@ import { logger } from "../../lib/logger";
 import { createTenantSendgridClient } from "../../lib/email/tenant-sender.js";
 import {
   resolveBrandingByOrgId,
-  resolveTenantBaseUrl,
+  resolveTenantLinkBaseUrl,
 } from "../../lib/tenant-branding.js";
 import { resolveTenantSmsClientOptions } from "../../lib/messaging/tenant-telecom.js";
 import { recordOutboundMessageUsage } from "../../lib/metering/usage.js";
@@ -291,22 +291,39 @@ async function firstDayNudgeSweepForOrg(
   const convertedSet = new Set<string>();
   for (let i = 0; i < emails.length; i += CHUNK) {
     const chunk = emails.slice(i, i + CHUNK);
-    const orClauses = chunk
+    const orderOr = chunk
       .map((e) => `patient_email.ilike.${escapePostgRESTFilterValue(e)}`)
       .join(",");
-    const { data: converted, error: convErr } = await supabase
-      .raw()
-      .schema("public")
-      .from("orders")
-      .select("patient_email")
-      // Tenant-scoped (migration 0463): a conversion only counts if the order
-      // was placed in THIS tenant's org.
-      .eq("org_id", orgId)
-      .or(orClauses);
-    if (convErr) throw convErr;
-    for (const r of converted ?? []) {
+    const requestOr = chunk
+      .map((e) => `email.ilike.${escapePostgRESTFilterValue(e)}`)
+      .join(",");
+    const [orderRes, fulfilledRes] = await Promise.all([
+      supabase
+        .raw()
+        .schema("public")
+        .from("orders")
+        .select("patient_email")
+        // Tenant-scoped (migration 0463): a conversion only counts if the order
+        // was placed in THIS tenant's org.
+        .eq("org_id", orgId)
+        .or(orderOr),
+      // Insurance path: staff closed a fit request as fulfilled.
+      supabase
+        .from("fitter_fit_requests")
+        .select("email")
+        .eq("closed_outcome", "fulfilled")
+        .or(requestOr),
+    ]);
+    if (orderRes.error) throw orderRes.error;
+    if (fulfilledRes.error) throw fulfilledRes.error;
+    for (const r of orderRes.data ?? []) {
       if (typeof r.patient_email === "string") {
         convertedSet.add(r.patient_email.toLowerCase());
+      }
+    }
+    for (const r of fulfilledRes.data ?? []) {
+      if (typeof r.email === "string") {
+        convertedSet.add(r.email.toLowerCase());
       }
     }
   }
@@ -324,8 +341,16 @@ async function firstDayNudgeSweepForOrg(
   const practiceName = brand.storefrontName;
   // Build patient links from the tenant's own storefront origin (its verified
   // custom domain) when it has one; the seed tenant falls through to the env/
-  // default, so single-tenant is unchanged. Resolved once per tenant sweep.
-  const resumeUrl = `${publicBaseUrl((await resolveTenantBaseUrl(orgId)) ?? undefined)}/consent`;
+  // default. Non-seed without a domain: skip — never nudge to the platform host.
+  const baseUrl = await resolveTenantLinkBaseUrl(orgId, publicBaseUrl());
+  if (!baseUrl) {
+    logger.info(
+      { org_id: orgId },
+      "fitter-lead.first-day-nudge: skipped (no tenant domain)",
+    );
+    return;
+  }
+  const resumeUrl = `${baseUrl}/consent`;
 
   for (const lead of candidates) {
     stats.scanned += 1;

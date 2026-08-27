@@ -60,28 +60,28 @@ export const REPORTS: readonly ReportDefinition[] = [
     slug: "all-financial",
     title: "All financial data",
     subtitle:
-      "Everything in one file: shop orders, refunds, insurance (payer) receipts, and patient payments for the range. Pick QuickBooks Desktop (.iif) or Online (.csv) and import a single artifact — no chasing four separate downloads.",
+      "Everything in one file: historical shop orders, refunds, insurance (payer) receipts, and patient-responsibility collections for the range. Pick QuickBooks Desktop (.iif) or Online (.csv) and import a single artifact — no chasing four separate downloads.",
     formats: ["csv", "pdf", "iif", "qbo"],
   },
   {
     slug: "orders",
-    title: "Orders",
+    title: "Orders (historical shop)",
     subtitle:
-      "Every paid shop order in the range — patient, product, amount, tax, shipping. The QuickBooks formats post each order as a Sales Receipt.",
+      "Historical paid shop orders in the range — patient, product, amount, tax, shipping. New patient volume is insurance-only; this export covers legacy cash-pay rows. QuickBooks formats post each order as a Sales Receipt.",
     formats: ["csv", "pdf", "iif", "qbo"],
   },
   {
     slug: "returns",
     title: "Returns",
     subtitle:
-      "Refunds + return-shipping reversals. Mirrors the Orders shape so the two reconcile in QuickBooks against the same customer record.",
+      "Refunds + return-shipping reversals on historical shop orders. Mirrors the Orders shape so the two reconcile in QuickBooks against the same customer record.",
     formats: ["csv", "pdf", "iif", "qbo"],
   },
   {
     slug: "revenue-summary",
     title: "Revenue summary",
     subtitle:
-      "Top-of-funnel rollup: gross, refunds, net, by product category. The PDF supports the optional prior-period comparison panel.",
+      "Top-of-funnel rollup: gross, refunds, net, by product category (historical shop + insurance where available). The PDF supports the optional prior-period comparison panel.",
     formats: ["csv", "pdf"],
   },
   {
@@ -95,21 +95,21 @@ export const REPORTS: readonly ReportDefinition[] = [
     slug: "insurance-claims",
     title: "Insurance claims",
     subtitle:
-      "Submitted, accepted, paid, and denied claims in the range. The QuickBooks formats post the paid slice as payer cash receipts; patient-collected cash lives in the Patient payments report.",
+      "Submitted, accepted, paid, and denied claims in the range. The QuickBooks formats post the paid slice as payer cash receipts; patient-responsibility collections live in the Patient payments report.",
     formats: ["csv", "pdf", "iif", "qbo"],
   },
   {
     slug: "patient-payments",
     title: "Patient payments",
     subtitle:
-      "Patient-responsibility cash actually collected (card + mail-in check). Disjoint from insurance claims, so the two reconcile without double-counting. QuickBooks formats post to a dedicated Patient Payments income account.",
+      "Patient-responsibility amounts collected (mail-in check and other recorded collections — not a live card-checkout path). Disjoint from insurance claims, so the two reconcile without double-counting. QuickBooks formats post to a dedicated Patient Payments income account.",
     formats: ["csv", "pdf", "iif", "qbo"],
   },
   {
     slug: "customer-activity",
     title: "Customer activity",
     subtitle:
-      "Per-patient summary: orders, returns, last contact, lifetime spend. Useful for outreach prep before a CSR call.",
+      "Per-patient summary: historical orders, returns, last contact, lifetime spend. Useful for outreach prep before a CSR call.",
     formats: ["csv", "pdf"],
   },
 ];

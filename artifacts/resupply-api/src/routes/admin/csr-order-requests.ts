@@ -39,6 +39,8 @@ import {
   parseOrderItems,
   snapshotOrderDocuments,
 } from "../../lib/csr-order/order";
+import { getAuthDeps } from "../../lib/auth-deps";
+import { resolveTenantLinkBaseUrl } from "../../lib/tenant-branding";
 import {
   adminRateLimit,
   adminReadRateLimiter,
@@ -46,6 +48,16 @@ import {
 import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
+
+const TENANT_DOMAIN_REQUIRED = {
+  error: "tenant_domain_required",
+  message:
+    "Verify a custom domain for this tenant before sending order-sign links. Without one, the link would open on the platform host and land on the wrong portal.",
+} as const;
+
+async function requireTenantLinkBase(orgId: string): Promise<string | null> {
+  return resolveTenantLinkBaseUrl(orgId, getAuthDeps().publicBaseUrl);
+}
 
 const idParam = z.object({ id: z.string().uuid() });
 
@@ -341,6 +353,10 @@ router.post(
       res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
+    if (!(await requireTenantLinkBase(orgId))) {
+      res.status(422).json(TENANT_DOMAIN_REQUIRED);
+      return;
+    }
     const supabase = getOrgScopedClient(orgId);
     const snapshot = await snapshotOrderDocuments(supabase, [
       ...new Set(b.documentKeys),
@@ -381,11 +397,16 @@ router.post(
       .single();
     if (insertErr) throw insertErr;
 
-    const signingLink = buildCsrOrderSigningLink(
+    const signingLink = await buildCsrOrderSigningLink(
       created.id,
       created.link_version,
       ttlDays * 24 * 60 * 60,
+      orgId,
     );
+    if (!signingLink) {
+      res.status(422).json(TENANT_DOMAIN_REQUIRED);
+      return;
+    }
     const { emailSent, smsSent } = await deliverCsrOrderInvite({
       supabase: supabase,
       customerName: b.customerName,
@@ -469,7 +490,12 @@ router.get(
       signingLink:
         row.status === "canceled"
           ? null
-          : buildCsrOrderSigningLink(row.id, row.link_version),
+          : await buildCsrOrderSigningLink(
+              row.id,
+              row.link_version,
+              undefined,
+              orgId,
+            ),
     });
   },
 );
@@ -509,6 +535,11 @@ router.post(
       return;
     }
 
+    if (!(await requireTenantLinkBase(orgId))) {
+      res.status(422).json(TENANT_DOMAIN_REQUIRED);
+      return;
+    }
+
     // Reissue: bump link_version (invalidates outstanding links) and
     // extend the expiry window from now.
     const nowIso = new Date().toISOString();
@@ -527,7 +558,16 @@ router.post(
       .eq("link_version", row.link_version);
     if (bumpErr) throw bumpErr;
 
-    const signingLink = buildCsrOrderSigningLink(row.id, newVersion);
+    const signingLink = await buildCsrOrderSigningLink(
+      row.id,
+      newVersion,
+      undefined,
+      orgId,
+    );
+    if (!signingLink) {
+      res.status(422).json(TENANT_DOMAIN_REQUIRED);
+      return;
+    }
     const { emailSent, smsSent } = await deliverCsrOrderInvite({
       supabase: supabase,
       customerName: row.customer_name,

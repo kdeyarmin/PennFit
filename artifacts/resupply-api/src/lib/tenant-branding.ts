@@ -24,6 +24,7 @@ import { logger } from "./logger";
 import {
   extractTenantSubdomainLabel,
   normalizeCustomDomain,
+  platformSubdomainBases,
 } from "./tenant-domain";
 
 export interface StorefrontBranding {
@@ -200,7 +201,10 @@ export async function resolveBrandingByHost(
       { event: "tenant_branding_load_failed", err: normalized },
       "tenant branding load failed; falling back to default brand",
     );
-    branding = DEFAULT_BRANDING;
+    // Do NOT cache the platform default on failure — a transient miss
+    // would pin CareMetric on a verified tenant host for the full TTL
+    // and leave company-info / logo disagreeing across replicas.
+    return DEFAULT_BRANDING;
   }
   cache.set(key, { branding, expiresAt: now + CACHE_TTL_MS });
   return branding;
@@ -257,7 +261,19 @@ export async function resolveBrandingByOrgId(
       { event: "tenant_branding_load_failed", err: normalized },
       "tenant branding load by org failed; falling back to default brand",
     );
-    branding = DEFAULT_BRANDING;
+    // Do NOT cache the platform default on failure — a transient miss
+    // (boot race, blip) would pin CareMetric over a real tenant brand for
+    // the full TTL and leave company-info disagreeing with host branding.
+    return DEFAULT_BRANDING;
+  }
+  // Same posture for an empty/missing organizations row: retry next call
+  // rather than caching the platform identity as if it were the tenant.
+  if (
+    branding.storefrontName === DEFAULT_BRANDING.storefrontName &&
+    branding.legalName === DEFAULT_BRANDING.legalName &&
+    branding.logoUrl === null
+  ) {
+    return branding;
   }
   orgBrandingCache.set(key, { branding, expiresAt: now + CACHE_TTL_MS });
   return branding;
@@ -350,6 +366,68 @@ export async function resolveTenantBaseUrl(
   }
   orgBaseUrlCache.set(id, { value, expiresAt: now + CACHE_TTL_MS });
   return value;
+}
+
+/**
+ * Public origin for a slug-only tenant on the platform subdomain (G10),
+ * e.g. `https://acme.cmbreathe.com`. Returns null when the org has no
+ * slug or the lookup fails.
+ */
+async function resolveTenantSlugSubdomainUrl(
+  orgId: string,
+): Promise<string | null> {
+  try {
+    const seedOrgId = await resolveSeedOrgId();
+    if (!seedOrgId) return null;
+    const supabase = getOrgScopedClient(seedOrgId);
+    const { data, error } = await withTimeout(
+      supabase
+        .raw()
+        .schema("resupply")
+        .from("organizations")
+        .select("slug")
+        .eq("id", orgId)
+        .eq("status", "active")
+        .limit(1)
+        .maybeSingle(),
+    );
+    if (error) return null;
+    const slug = trimmed(
+      (data as { slug?: string | null } | null)?.slug ?? null,
+    );
+    if (!slug) return null;
+    const base = platformSubdomainBases()[0];
+    if (!base) return null;
+    return `https://${slug}.${base}`;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Base URL for patient/provider invite and reminder links.
+ *
+ * Prefer the tenant's verified custom domain. For the seed org only,
+ * fall back to `platformFallback` (single-tenant / preview unchanged).
+ * When the tenant has no verified domain but does have a platform slug,
+ * synthesize `https://<slug>.<platform-base>` (G10). Otherwise return
+ * null — a bare platform-host link would resolve queues to the wrong org.
+ */
+export async function resolveTenantLinkBaseUrl(
+  orgId: string | undefined,
+  platformFallback: string,
+): Promise<string | null> {
+  const tenantBase = await resolveTenantBaseUrl(orgId);
+  if (tenantBase) return tenantBase.replace(/\/$/, "");
+  const id = orgId?.trim();
+  if (!id) return null;
+  const seedId = await resolveSeedOrgId();
+  if (seedId && id === seedId) {
+    return platformFallback.replace(/\/$/, "");
+  }
+  const slugBase = await resolveTenantSlugSubdomainUrl(id);
+  if (slugBase) return slugBase;
+  return null;
 }
 
 /**

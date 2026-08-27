@@ -47,7 +47,7 @@ import {
   FITTER_INVITE_TTL_MS,
   signFitterInviteToken,
 } from "../../lib/fitter-invite-token";
-import { resolveTenantBaseUrl } from "../../lib/tenant-branding";
+import { resolveTenantLinkBaseUrl } from "../../lib/tenant-branding";
 import {
   requireProvider,
   requireProviderMfaEnrolled,
@@ -273,6 +273,22 @@ router.post(
       Date.now() + FITTER_INVITE_TTL_MS,
     ).toISOString();
 
+    // Verified custom domain required for non-seed tenants; seed may
+    // fall back to the platform host. Check before insert so we never
+    // leave a dangling invite when the link cannot be minted safely.
+    const baseUrl = await resolveTenantLinkBaseUrl(
+      found.orgId,
+      "https://cmbreathe.com",
+    ).catch(() => null);
+    if (!baseUrl) {
+      res.status(422).json({
+        error: "tenant_domain_required",
+        message:
+          "This practice has no verified custom domain yet, so a fitter link cannot be issued safely. Ask the DME to verify a domain first.",
+      });
+      return;
+    }
+
     try {
       const { data: invite, error: inviteErr } = (await supabase
         .from("fitter_invites")
@@ -300,18 +316,13 @@ router.post(
       }
 
       const token = signFitterInviteToken(invite.id);
-      // A tenant with a verified custom domain gets a link on their own
-      // brand; everyone else falls back to the platform host.
-      const baseUrl =
-        (await resolveTenantBaseUrl(found.orgId).catch(() => null)) ??
-        "https://cmbreathe.com";
       // Carry the entry point through to the fitter. Without it
       // /api/fit/assess defaults every persisted session to
       // `remote_link`, which would systematically mislabel in-office and
       // kiosk fittings and quietly defeat the by-channel outcome
       // comparison this feature is explicitly built to enable.
       const link =
-        `${baseUrl.replace(/\/$/, "")}/fitter-invite` +
+        `${baseUrl}/fitter-invite` +
         `?t=${encodeURIComponent(token)}` +
         `&entry=${encodeURIComponent(entryPoint)}`;
 

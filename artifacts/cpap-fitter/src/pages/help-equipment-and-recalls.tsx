@@ -62,7 +62,7 @@ const steps: HelpStep[] = [
         and, if enabled, by <strong>account &amp; order texts</strong> (urgent
         recall notices are exactly what that channel is for). Your registered
         device also helps us suggest compatible cushions, filters, and tubing
-        when you shop.
+        when your next resupply is due.
       </p>
     ),
     warning:
@@ -78,7 +78,7 @@ export function HelpEquipmentAndRecalls() {
       Icon={Stethoscope}
       minutes="2 min"
       metaDescription="How to register your CPAP, BiPAP, or accessory device so you're alerted if a manufacturer recall ever matches your serial number."
-      intro="Sixty seconds of typing now means you hear immediately if your machine is ever recalled — and better compatibility suggestions every time you shop."
+      intro="Sixty seconds of typing now means you hear immediately if your machine is ever recalled — and better compatibility suggestions when supplies are due."
       summary={
         <>
           Open <strong>Account → Therapy &amp; supplies → My equipment</strong>,

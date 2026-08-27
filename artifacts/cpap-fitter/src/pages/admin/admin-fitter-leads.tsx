@@ -54,13 +54,13 @@ const STAGE_STYLE: Record<
   campaign_active: {
     bg: "#fef3c7",
     fg: "#854d0e",
-    label: "Pre-purchase",
+    label: "Pre-fulfillment",
     description: "T1–T6 nurture (60d)",
   },
   reorder_active: {
     bg: "#cffafe",
     fg: "#155e75",
-    label: "Re-order nurture",
+    label: "Resupply nurture",
     description: "T7–T10 supply touches (180d)",
   },
   final_call_pending: {
@@ -73,7 +73,7 @@ const STAGE_STYLE: Record<
     bg: "#dcfce7",
     fg: "#14532d",
     label: "Converted",
-    description: "Placed an order",
+    description: "Fit request fulfilled / insurance order",
   },
   unsubscribed: {
     bg: "#fee2e2",
@@ -246,11 +246,11 @@ export function AdminFitterLeadsPage() {
             Patients who started or finished the at-home mask fitter on{" "}
             <span className="font-mono text-xs">/consent → /results</span>.
             Completing the fitter enrolls a lead into a{" "}
-            <strong>6-touch pre-purchase nurture</strong> over 60 days. Placing
-            an order flips them into the{" "}
-            <strong>4-touch post-purchase re-order nurture</strong> (cushion at
-            30d, filter at 60d, headgear at 90d, full refresh at 180d) so
-            first-time buyers turn into recurring supply orders.
+            <strong>6-touch nurture</strong> over 60 days while staff work the
+            fit request. Closing a request as fulfilled (patient has their mask)
+            flips them into the <strong>4-touch resupply nurture</strong>{" "}
+            (cushion at 30d, filter at 60d, headgear at 90d, full refresh at
+            180d) so a first fitting becomes ongoing insurance resupply.
           </>
         }
       />
@@ -264,7 +264,7 @@ export function AdminFitterLeadsPage() {
         >
           <div>
             <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
-              Fitter → Order conversion
+              Fitter → fulfilled conversion
             </div>
             <div
               className="text-3xl font-semibold tabular-nums"
@@ -315,7 +315,7 @@ export function AdminFitterLeadsPage() {
             {hotLeadsNeedingContact} need a CSR call now ·{" "}
             {hotLeadsActive - hotLeadsNeedingContact} already contacted.
             <br />
-            Hot = 3+ opens or any click without ordering.
+            Hot = 3+ opens or any click without converting.
             <br />
             {hotOnly
               ? "Filter is ON — click to show all leads."
@@ -340,8 +340,8 @@ export function AdminFitterLeadsPage() {
             Per-touch metrics
           </div>
           <div className="text-xs text-slate-500 mt-0.5">
-            T1–T6 pre-purchase · T7–T10 re-order · T11 final-call. Open + click
-            rates are against email_sends.
+            T1–T6 pre-fulfillment nurture · T7–T10 resupply · T11 final-call.
+            Open + click rates are against email_sends.
           </div>
         </div>
         <table className="w-full text-xs min-w-[720px]">
@@ -828,7 +828,7 @@ export function AdminFitterLeadsPage() {
                       {r.nextCampaignTouchAt
                         ? formatFuture(r.nextCampaignTouchAt, nowMs)
                         : r.firstOrderPlacedAt
-                          ? `ordered ${formatRelative(r.firstOrderPlacedAt, nowMs)}`
+                          ? `converted ${formatRelative(r.firstOrderPlacedAt, nowMs)}`
                           : "—"}
                     </td>
                     <td className="px-3 py-2 align-top text-xs text-slate-600">
@@ -1077,7 +1077,7 @@ function timelineEventBadge(kind: string): string {
   if (kind === "hot_flipped") return "hot";
   if (kind === "cold_skipped") return "cold";
   if (kind === "csr_contacted") return "csr";
-  if (kind === "order_placed") return "order";
+  if (kind === "order_placed") return "converted";
   if (kind === "unsubscribed") return "unsub";
   if (kind === "fitter_completed") return "fit";
   if (kind === "lead_created") return "start";

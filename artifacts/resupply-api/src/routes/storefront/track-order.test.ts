@@ -118,6 +118,36 @@ describe("POST /orders/track — orderReference validation (PR change: {6} only)
     expect(res.status).not.toBe(400);
   });
 
+  it("accepts legacy PHM-XXX-XXX mint still present in older confirmation emails", async () => {
+    stageSupabaseResponse("orders", "select", { data: null });
+
+    const res = await request(makeApp())
+      .post("/resupply-api/orders/track")
+      .send({ orderReference: "PHM-7K3-N9X", email: "a@a.com" });
+
+    expect(res.status).not.toBe(400);
+  });
+
+  it("accepts CSR signature-order ORD- + 6 alphanumerics", async () => {
+    stageSupabaseResponse("csr_order_requests", "select", { data: null });
+
+    const res = await request(makeApp())
+      .post("/resupply-api/orders/track")
+      .send({ orderReference: "ORD-7K3M2Q", email: "a@a.com" });
+
+    expect(res.status).not.toBe(400);
+  });
+
+  it("accepts lowercase legacy PHM refs", async () => {
+    stageSupabaseResponse("orders", "select", { data: null });
+
+    const res = await request(makeApp())
+      .post("/resupply-api/orders/track")
+      .send({ orderReference: "phm-7k3-n9x", email: "a@a.com" });
+
+    expect(res.status).not.toBe(400);
+  });
+
   // -----------------------------------------------------------------------
   // Inputs that MUST be REJECTED by the new regex
   // -----------------------------------------------------------------------
@@ -277,6 +307,29 @@ describe("POST /orders/track — order lookup", () => {
       manufacturer: "ResMed",
     });
     expect(res.body.emailStatus).toBe("delivered");
+  });
+
+  it("looks up CSR ORD- references against csr_order_requests", async () => {
+    stageSupabaseResponse("csr_order_requests", "select", {
+      data: {
+        order_reference: "ORD-7K3M2Q",
+        customer_email: "bob@example.com",
+        status: "sent",
+        items: [
+          { description: "N20 cushion", quantity: 1, unitAmountCents: 0 },
+        ],
+        created_at: "2026-08-01T10:00:00Z",
+      },
+    });
+
+    const res = await request(makeApp())
+      .post("/resupply-api/orders/track")
+      .send({ orderReference: "ORD-7K3M2Q", email: "bob@example.com" });
+
+    expect(res.status).toBe(200);
+    expect(res.body.orderReference).toBe("ORD-7K3M2Q");
+    expect(res.body.mask.name).toBe("N20 cushion");
+    expect(res.body.emailStatus).toBe("awaiting_signature");
   });
 
   it("normalises the reference to PENN- prefix before looking up", async () => {

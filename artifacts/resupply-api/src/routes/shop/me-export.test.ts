@@ -3,7 +3,8 @@
 // Coverage:
 //   * 401 without sign-in
 //   * Sends Content-Disposition attachment with .json filename
-//   * Aggregates seven concurrent reads (customer, orders, items, subs, returns, reviews, carts)
+//   * Aggregates concurrent reads (customer, orders, items, subscriptions,
+//     returns, reviews, carts) — historical cash-pay rows retained for access
 //   * Joins line items onto their order rows by order_id
 //   * Sets correct Content-Type
 //   * Includes the "phi: separate system" disclaimer in notes
@@ -76,6 +77,7 @@ describe("GET /shop/me/export", () => {
     expect(body.notes.phi).toContain("separate system");
     expect(body.profile).toBeNull();
     expect(body.orders).toEqual([]);
+    expect(body.subscriptions).toEqual([]);
   });
 
   it("joins line items onto their parent orders", async () => {

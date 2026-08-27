@@ -38,15 +38,21 @@ export type MembershipOption = {
   intervalCount: number | null;
 };
 
-export const getMembershipOptions = () =>
-  jsonFetch<{ tiers: MembershipOption[] }>("/shop/membership/options");
+export async function getMembershipOptions(): Promise<{
+  tiers: MembershipOption[];
+}> {
+  throw new Error(
+    "membership_checkout_retired: patient cash-pay membership checkout was removed; supplies are insurance-only.",
+  );
+}
 
-export const startMembershipCheckout = (tier: string) =>
-  jsonFetch<{ url: string | null }>("/shop/membership/checkout", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ tier }),
-  });
+export async function startMembershipCheckout(
+  _tier: string,
+): Promise<{ url: string | null }> {
+  throw new Error(
+    "membership_checkout_retired: patient cash-pay membership checkout was removed; supplies are insurance-only.",
+  );
+}
 
 // ---- Equipment self-register ----
 

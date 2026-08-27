@@ -1,15 +1,13 @@
-// /account/billing — patient-facing billing portal.
+// /account/billing — patient-facing insurance billing portal.
 //
-// Mirrors what Brightree's Patient Hub, Bonafide's My Account, and
-// CollaborateMD's payment portal expose to patients: open balances
-// (per claim), past statements (with PDF download), and payment
-// history. Read-only in this revision — initiating a card payment
-// goes through Stripe Elements which is its own follow-up; the page
-// surfaces a "Contact billing" CTA when there's an open balance so
-// patients have a path RIGHT NOW instead of waiting for the widget.
+// Open balances (per claim), past statements (with PDF download), and
+// payment/adjustment history. Read-only — patients are insurance-only;
+// there is no card capture or patient Stripe Checkout on this page. An
+// open balance surfaces a "Contact billing" CTA so patients can reach
+// staff without waiting for a charge widget.
 //
 // Auth: gated by <SignedIn>. The /api/me/* endpoints 401 without a
-// shop-customer cookie, which the global error boundary catches.
+// session cookie, which the global error boundary catches.
 
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";

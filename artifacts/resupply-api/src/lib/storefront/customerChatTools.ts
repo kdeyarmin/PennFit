@@ -10,9 +10,9 @@
  *     async and require the customerId to be passed in by the route.
  *
  * Tools implemented:
- *   - get_my_recent_orders(limit?)  → last N paid orders + tracking
- *   - get_order_details(orderId)    → line items for one order
- *   - get_my_subscriptions()        → active resupply subscriptions
+ *   - get_my_recent_orders(limit?)  → last N insurance shipments
+ *   - get_order_details(orderId)    → line items for one shipment
+ *   - get_my_subscriptions()        → always empty (cash-pay retired)
  *   - get_my_device()               → saved CPAP machine on file
  *
  * Privacy posture:
@@ -146,7 +146,7 @@ export const CUSTOMER_CHAT_TOOLS: OpenAiToolDescriptor[] = [
     function: {
       name: "get_my_subscriptions",
       description:
-        "List any standing auto-ship lines on the signed-in customer's account. These come from the retained cash-pay-era tables, so a line may be historical rather than current — describe what it returns without promising it is what will arrive next, and never invite the patient to start, renew or pay for one. For what is actually due next, use get_my_recent_orders or escalate_to_human.",
+        "List standing auto-ship lines on the signed-in customer's account. Cash-pay Subscribe & Save is retired — this always returns an empty list. For what is actually due next, use get_my_recent_orders or escalate_to_human. Never invite the patient to start, renew, or pay for auto-ship.",
       parameters: {
         type: "object",
         additionalProperties: false,
@@ -271,7 +271,7 @@ export type CustomerChatToolResult =
       ok: true;
       data: { patientLinked: true; found: true } & OrderDetailsEntry;
     }
-  | { ok: true; data: { subscriptions: SubscriptionEntry[] } }
+  | { ok: true; data: { subscriptions: SubscriptionEntry[]; note?: string } }
   | { ok: true; data: DeviceEntry }
   | { ok: true; data: { found: false; kind: "device" | "order" } }
   | { ok: true; data: EscalationResult }
@@ -296,6 +296,8 @@ const RECENT_ORDERS_DEFAULT_LIMIT = 5;
 export interface CustomerChatToolContext {
   supabase: ResupplySupabaseClient;
   customerId: string;
+  /** Owning tenant — used when filing CSR-inbox notifications. */
+  orgId: string;
   /**
    * Display name + email of the signed-in caller. Used only by
    * `escalate_to_human` to label the CSR-inbox notification (the same
@@ -316,14 +318,6 @@ export interface CustomerChatToolContext {
    * CUSTOMER_CHAT_TOOLS placeholders.
    */
   tools?: OpenAiToolDescriptor[];
-}
-
-interface SubscriptionItemPayload {
-  name?: string | null;
-  quantity?: number | null;
-  unitAmountCents?: number | null;
-  currency?: string | null;
-  intervalLabel?: string | null;
 }
 
 /**
@@ -498,7 +492,7 @@ async function executeGetOrderDetails(
 }
 
 async function executeGetSubscriptions(
-  ctx: CustomerChatToolContext,
+  _ctx: CustomerChatToolContext,
   rawArgs: unknown,
 ): Promise<CustomerChatToolResult> {
   const parsed = noArgsSchema.safeParse(rawArgs ?? {});
@@ -509,38 +503,16 @@ async function executeGetSubscriptions(
     };
   }
 
-  const { data: rows, error } = await ctx.supabase
-    .schema("resupply")
-    .from("shop_subscriptions")
-    .select(
-      "id, status, items, current_period_end, cancel_at_period_end, canceled_at, created_at",
-    )
-    .eq("customer_id", ctx.customerId)
-    .order("created_at", { ascending: false });
-  if (error) throw error;
-
-  const subscriptions: SubscriptionEntry[] = (rows ?? []).map((r) => {
-    const items = (Array.isArray(r.items) ? r.items : []) as
-      | SubscriptionItemPayload[]
-      | [];
-    return {
-      subscriptionId: r.id,
-      status: r.status,
-      currentPeriodEnd: r.current_period_end,
-      cancelAtPeriodEnd: r.cancel_at_period_end,
-      canceledAt: r.canceled_at,
-      items: items.map((it) => ({
-        name: it.name ?? null,
-        quantity: typeof it.quantity === "number" ? it.quantity : 0,
-        unitAmountCents:
-          typeof it.unitAmountCents === "number" ? it.unitAmountCents : null,
-        currency: it.currency ?? null,
-        intervalLabel: it.intervalLabel ?? null,
-      })),
-    };
-  });
-
-  return { ok: true, data: { subscriptions } };
+  // Subscribe & Save / cash-pay auto-ship is retired. Always return an
+  // empty list so the account chatbot cannot invent standing auto-ship
+  // lines from historical shop_subscriptions rows.
+  return {
+    ok: true,
+    data: {
+      subscriptions: [] as SubscriptionEntry[],
+      note: "No standing auto-ship lines. Supplies ship through insurance reminders — use get_my_recent_orders for what went out, or escalate_to_human for cadence questions.",
+    },
+  };
 }
 
 async function executeGetDevice(
@@ -666,6 +638,7 @@ async function executeEscalateToHuman(
     threadCreated: result.threadCreated,
     customerEmail: ctx.customerEmail ?? null,
     customerDisplayName: ctx.customerDisplayName ?? null,
+    orgId: ctx.orgId,
     source: "chatbot",
     assistantName,
   }).catch((err) => {

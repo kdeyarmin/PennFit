@@ -293,7 +293,7 @@ export const APP_CONFIG_CATALOG: readonly AppConfigSetting[] = [
     secret: true,
     applyMode: "restart",
     description:
-      "Server-side key for charge creation and refunds. Use sk_live_… in production.",
+      "Server-side key for platform SaaS billing (tenants paying CareMetric Breathe). Patients are insurance-only — this key never charges a patient card. Use sk_live_… in production.",
     placeholder: "sk_live_…",
   },
   {
@@ -307,7 +307,8 @@ export const APP_CONFIG_CATALOG: readonly AppConfigSetting[] = [
     category: CATEGORY_STRIPE,
     secret: true,
     applyMode: "restart",
-    description: "Verifies the signature on inbound Stripe webhook events.",
+    description:
+      "Verifies the signature on inbound Stripe webhook events for platform SaaS billing.",
     placeholder: "whsec_…",
   },
   {
@@ -317,13 +318,12 @@ export const APP_CONFIG_CATALOG: readonly AppConfigSetting[] = [
     secret: false,
     applyMode: "restart",
     description:
-      "Browser-exposed key for Stripe.js / Checkout. Safe to reveal (pk_live_… / pk_test_…).",
+      "Browser-exposed key for Stripe.js on the tenant billing portal (SaaS checkout). Safe to reveal (pk_live_… / pk_test_…). Not used for patient payments.",
     placeholder: "pk_live_…",
   },
   {
     // Optional DEDICATED account for platform SaaS billing (tenants paying
-    // the platform), kept off the account that processes patient/storefront
-    // checkout above. Unset → platform billing shares STRIPE_SECRET_KEY
+    // the platform). Unset → platform billing shares STRIPE_SECRET_KEY
     // (single-account mode). Platform-scoped: super-admin only.
     key: "STRIPE_PLATFORM_SECRET_KEY",
     label: "Platform billing secret key",
@@ -331,14 +331,14 @@ export const APP_CONFIG_CATALOG: readonly AppConfigSetting[] = [
     secret: true,
     applyMode: "restart",
     description:
-      "Optional separate Stripe account for tenant→platform SaaS billing. Leave blank to bill on the patient-checkout account. sk_live_… in production.",
+      "Optional separate Stripe account for tenant→platform SaaS billing. Leave blank to bill on STRIPE_SECRET_KEY (shared account). sk_live_… in production.",
     placeholder: "sk_live_…",
   },
   {
     // Signing secret for the dedicated platform-billing account's webhook
     // (/resupply-api/stripe/platform-webhook). Required only when
     // STRIPE_PLATFORM_SECRET_KEY is set; in shared mode platform events
-    // arrive on the patient webhook with STRIPE_WEBHOOK_SIGNING_SECRET.
+    // arrive on the primary webhook with STRIPE_WEBHOOK_SIGNING_SECRET.
     key: "STRIPE_PLATFORM_WEBHOOK_SIGNING_SECRET",
     label: "Platform billing webhook signing secret",
     category: CATEGORY_STRIPE,

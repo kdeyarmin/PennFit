@@ -21,6 +21,7 @@ import {
 } from "@/lib/provider/provider-api";
 import { providerAuthHooks } from "@/lib/provider/provider-auth";
 import { ProviderSignIn } from "./provider-sign-in";
+import { ProviderResetPassword } from "./provider-reset-password";
 import { ProviderMfaSetup } from "./provider-mfa-setup";
 import { ProviderQueue } from "./provider-queue";
 import { ProviderSignDocument } from "./provider-sign-document";
@@ -118,6 +119,9 @@ export function ProviderPortalRoute() {
     <Switch>
       <Route path="/provider/sign-in">
         <ProviderSignIn />
+      </Route>
+      <Route path="/provider/reset-password">
+        <ProviderResetPassword />
       </Route>
       <Route path="/provider/mfa-setup">
         <Gated

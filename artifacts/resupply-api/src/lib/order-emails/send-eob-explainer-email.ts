@@ -34,12 +34,11 @@ import {
 } from "@workspace/resupply-email";
 
 import { createTenantSendgridClient } from "../email/tenant-sender.js";
+import { resolveBrandingByOrgId } from "../tenant-branding.js";
 import {
-  resolveBrandingByOrgId,
-  resolveTenantBaseUrl,
-} from "../tenant-branding.js";
-
-const DEFAULT_BASE_URL = "https://cmbreathe.com";
+  resolvePatientEmailLinkBase,
+  TENANT_DOMAIN_REQUIRED,
+} from "./link-base.js";
 
 export type EobEventKind = "paid" | "partial_pay" | "denied";
 
@@ -77,15 +76,6 @@ export interface SendEobExplainerEmailResult {
 
 function fmtMoney(cents: number): string {
   return `$${(cents / 100).toFixed(2)}`;
-}
-
-function publicBaseUrl(override?: string): string {
-  const raw =
-    override ??
-    process.env.SHOP_PUBLIC_BASE_URL ??
-    process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL ??
-    DEFAULT_BASE_URL;
-  return raw.replace(/\/$/, "");
 }
 
 function subjectFor(kind: EobEventKind): string {
@@ -126,13 +116,19 @@ export async function sendEobExplainerEmail(
   const brand = await resolveBrandingByOrgId(input.orgId);
   const brandName = brand.storefrontName;
 
-  const base = publicBaseUrl(
-    input.baseUrlOverride ??
-      (await resolveTenantBaseUrl(input.orgId)) ??
-      undefined,
+  const base = await resolvePatientEmailLinkBase(
+    input.orgId,
+    input.baseUrlOverride,
   );
+  if (!base) {
+    return {
+      configured: true,
+      delivered: false,
+      error: TENANT_DOMAIN_REQUIRED,
+    };
+  }
   const accountUrl = `${base}/account`;
-  const supportUrl = `${base}/account#chat`;
+  const supportUrl = `${base}/account#messages`;
   const greeting = input.firstName
     ? `Hi ${escapeHtml(input.firstName)},`
     : "Hi there,";

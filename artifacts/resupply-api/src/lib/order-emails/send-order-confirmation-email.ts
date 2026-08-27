@@ -54,12 +54,11 @@ import type { SavedShippingAddress } from "@workspace/resupply-db";
 import { withMetrics } from "../observability";
 import { withRetry } from "../with-retry.js";
 import { createTenantSendgridClient } from "../email/tenant-sender.js";
+import { resolveBrandingByOrgId } from "../tenant-branding.js";
 import {
-  resolveBrandingByOrgId,
-  resolveTenantBaseUrl,
-} from "../tenant-branding.js";
-
-const DEFAULT_BASE_URL = "https://cmbreathe.com";
+  resolvePatientEmailLinkBase,
+  TENANT_DOMAIN_REQUIRED,
+} from "./link-base.js";
 
 export interface OrderConfirmationLineItem {
   name: string;
@@ -129,15 +128,6 @@ function formatMoney(cents: number, currency: string): string {
   }
 }
 
-function publicBaseUrl(override?: string): string {
-  const raw =
-    override ??
-    process.env.SHOP_PUBLIC_BASE_URL ??
-    process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL ??
-    DEFAULT_BASE_URL;
-  return raw.replace(/\/$/, "");
-}
-
 function renderAddressTextLines(addr: SavedShippingAddress): string[] {
   // Address shape comes from shop-customers.ts SavedShippingAddress.
   // Fields: line1, line2?, city, state, postalCode, country.
@@ -194,17 +184,25 @@ export async function sendOrderConfirmationEmail(
   // custom domain) when the caller didn't pass an explicit override; the seed
   // tenant falls through to the platform env/default, so single-tenant is
   // unchanged. Resolved once per send.
-  const base = publicBaseUrl(
-    input.baseUrlOverride ??
-      (await resolveTenantBaseUrl(input.orgId)) ??
-      undefined,
+  const base = await resolvePatientEmailLinkBase(
+    input.orgId,
+    input.baseUrlOverride,
   );
-  const orderUrl = `${base}/shop/checkout-success?session_id=${encodeURIComponent(stripeSessionId)}`;
-  const browseUrl = `${base}/shop`;
+  if (!base) {
+    return {
+      configured: true,
+      delivered: false,
+      error: TENANT_DOMAIN_REQUIRED,
+    };
+  }
+  const orderUrl = `${base}/contact`;
+  // Cash-pay /shop is retired — send patients to insurance coverage
+  // rather than a LegacyShopRedirect hop off /shop.
+  const coverageUrl = `${base}/insurance`;
 
   // ---------- text body ----------
   const textLines: string[] = [
-    `Thanks for your order at ${brandName}. Your payment was received and we're getting it ready to ship.`,
+    `Thanks for your order at ${brandName}. We've received it and we're getting it ready to ship.`,
     "",
   ];
   if (items.length > 0) {
@@ -225,8 +223,8 @@ export async function sendOrderConfirmationEmail(
     }
     textLines.push("");
   }
-  textLines.push(`View your order: ${orderUrl}`);
-  textLines.push(`Browse the shop:  ${browseUrl}`);
+  textLines.push(`Questions about your order? ${orderUrl}`);
+  textLines.push(`Insurance coverage: ${coverageUrl}`);
   textLines.push("");
   textLines.push(
     "We'll send another email with tracking info once your order ships. " +
@@ -248,7 +246,7 @@ export async function sendOrderConfirmationEmail(
           })),
         )
       : textParagraph(
-          "Your full itemized order is available online — use the View order button below.",
+          "Questions about your order? Use the Contact us button below.",
         );
 
   const addressPanel = shippingAddress
@@ -264,7 +262,7 @@ export async function sendOrderConfirmationEmail(
     preheader: `We received your payment of ${formatMoney(amountTotalCents, currency)} and we're getting your order ready to ship.`,
     contentHtml: [
       textParagraph(
-        "Thanks for your order. Your payment was received and we're getting it ready to ship.",
+        "Thanks for your order. We've received it and we're getting it ready to ship.",
       ),
       itemsHtml,
       summaryRows([
@@ -278,8 +276,8 @@ export async function sendOrderConfirmationEmail(
     ]
       .filter(Boolean)
       .join("\n"),
-    button: { label: "View order", url: orderUrl },
-    footerHtml: `<a href="${escapeHtml(browseUrl)}" style="color:${BREATHE_COLORS.blue};text-decoration:underline;">Browse the shop</a>`,
+    button: { label: "Contact us", url: orderUrl },
+    footerHtml: `<a href="${escapeHtml(coverageUrl)}" style="color:${BREATHE_COLORS.blue};text-decoration:underline;">Insurance coverage</a>`,
     footerLines: [
       "We'll send another email with tracking info once your order ships.",
       "Reply to this message if you need to make a change — we read every reply.",

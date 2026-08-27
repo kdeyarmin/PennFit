@@ -18,7 +18,10 @@ import {
 
 import { getCompanyInfo } from "../../lib/company-info";
 import { logger } from "../../lib/logger";
-import { applyTenantEmailSender } from "../../lib/email/apply-tenant-email-sender";
+import {
+  applyTenantEmailSender,
+  isPatientEmailClickBaseReady,
+} from "../../lib/email/apply-tenant-email-sender";
 import { recordOutboundMessageUsage } from "../../lib/metering/usage";
 import { readMessagingConfigOrNull } from "../../lib/messaging/messaging-config";
 import { adminWriteRateLimiter } from "../../middlewares/admin-rate-limit";
@@ -70,6 +73,24 @@ router.post(
     }
     const supabase = getOrgScopedClient(orgId);
 
+    const emailCfg = await applyTenantEmailSender(orgId, {
+      sendgridApiKey: cfg.email.sendgridApiKey,
+      sendgridFromEmail: cfg.email.sendgridFromEmail,
+      sendgridFromName: cfg.email.sendgridFromName,
+      publicBaseUrl: cfg.email.publicBaseUrl,
+      // Tenant's own name, not the process-global seed practice name (G7).
+      // Seed copy is unchanged: getCompanyInfo(seed).name === the env value.
+      practiceName: (await getCompanyInfo(orgId)).name,
+    });
+    if (!isPatientEmailClickBaseReady(emailCfg.publicBaseUrl)) {
+      res.status(422).json({
+        error: "tenant_domain_required",
+        message:
+          "Verify a custom domain for this tenant before sending reminder emails. Without one, click links would open on the platform host and land on the wrong portal.",
+      });
+      return;
+    }
+
     let outcome: SendReminderOutcome;
     try {
       outcome = await sendReminderEmail({
@@ -83,15 +104,7 @@ router.post(
         orgId,
         // Send under the tenant's own From identity when configured (G6);
         // falls back to the platform default when it isn't.
-        cfg: await applyTenantEmailSender(orgId, {
-          sendgridApiKey: cfg.email.sendgridApiKey,
-          sendgridFromEmail: cfg.email.sendgridFromEmail,
-          sendgridFromName: cfg.email.sendgridFromName,
-          publicBaseUrl: cfg.email.publicBaseUrl,
-          // Tenant's own name, not the process-global seed practice name (G7).
-          // Seed copy is unchanged: getCompanyInfo(seed).name === the env value.
-          practiceName: (await getCompanyInfo(orgId)).name,
-        }),
+        cfg: emailCfg,
         patientId,
         episodeId,
         actor: {

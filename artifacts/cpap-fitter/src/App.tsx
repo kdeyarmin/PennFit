@@ -830,8 +830,11 @@ function LegacyResupplyRedirect({ rest }: { rest: string }) {
  * The cash-pay storefront (/shop, cart, checkout, product pages) was
  * retired when the patient path went insurance-only. Bookmarks, email
  * links, and in-app CTAs still point at /shop/*, so forward them to
- * the insurance explainer (or account orders for order history) while
- * preserving query strings and hashes.
+ * living insurance-era surfaces while preserving query strings and
+ * hashes:
+ *   - order history → /track-order
+ *   - cart / checkout / success receipts → /contact (no trackable ref)
+ *   - everything else (product pages, generic /shop) → /insurance
  */
 function LegacyShopRedirect({ rest }: { rest: string }) {
   const [, setLocation] = useLocation();
@@ -839,10 +842,24 @@ function LegacyShopRedirect({ rest }: { rest: string }) {
     const search = typeof window !== "undefined" ? window.location.search : "";
     const hash = typeof window !== "undefined" ? window.location.hash : "";
     const normalized = rest.replace(/^\/+/, "").toLowerCase();
-    const path =
-      normalized === "orders" || normalized.startsWith("orders/")
-        ? `/account/orders${normalized.slice("orders".length)}`
-        : "/insurance";
+    let path = "/insurance";
+    if (normalized === "nps" || normalized.startsWith("orders/nps")) {
+      path = "/nps";
+    } else if (normalized === "orders" || normalized.startsWith("orders/")) {
+      path = "/track-order";
+    } else if (
+      normalized === "cart" ||
+      normalized.startsWith("cart/") ||
+      normalized === "checkout" ||
+      normalized.startsWith("checkout") ||
+      normalized === "checkout-success" ||
+      normalized.startsWith("checkout-success")
+    ) {
+      // Abandoned-cart / mid-checkout bookmarks have no PENN/PHM
+      // reference — /track-order would just reject the empty form.
+      // Match abandonment-email CTAs and send them to a human.
+      path = "/contact";
+    }
     setLocation(`${path}${search}${hash}`, { replace: true });
   }, [rest, setLocation]);
   return null;
@@ -868,7 +885,11 @@ function LoginAliasRedirect() {
   return null;
 }
 
-function AccountHashRedirect({ hash }: { hash: "insights" | "orders" }) {
+function AccountHashRedirect({
+  hash,
+}: {
+  hash: "insights" | "messages" | "orders";
+}) {
   const [, setLocation] = useLocation();
   useEffect(() => {
     const search = typeof window !== "undefined" ? window.location.search : "";
@@ -1250,19 +1271,26 @@ function PatientRouter() {
             <Route path="/track-order" component={TrackOrder} />
             <Route path="/nps" component={NpsLanding} />
             <Route path="/mask-fit" component={MaskFitLanding} />
-            {/* Push-notification deep links. The backend sends pushes
-                with url=/account/orders (shipping updates) and
-                /account/insights (smart triggers); both surfaces are
-                tabs on /account, not standalone routes, so redirect to
-                the hash form that hashToAccountTab() understands. */}
+            {/* Push-notification deep links. Shipping pushes now use
+                /track-order; smart-trigger pushes still use
+                /account/insights. Path-style aliases redirect to the
+                hash form that hashToAccountTab() understands (or to
+                public tracking for the retired Orders tab). */}
             <Route path="/account/insights">
               {() => <AccountHashRedirect hash="insights" />}
             </Route>
+            <Route path="/account/messages">
+              {() => <AccountHashRedirect hash="messages" />}
+            </Route>
             {/* Legacy deep link: the retail Orders tab retired with
-                cash-pay, but pushes sent before this deploy still carry
-                the URL. Land them on the account rather than a hash that
-                resolves to nothing. */}
+                cash-pay, but older pushes/emails still carry
+                /account/orders or /account/orders/:id. Land them on
+                /account Overview (Recent shipments) rather than a 404
+                or the guest-only tracker. */}
             <Route path="/account/orders">
+              {() => <Redirect to="/account" />}
+            </Route>
+            <Route path="/account/orders/:orderId">
               {() => <Redirect to="/account" />}
             </Route>
             <Route path="/account" component={GuardedAccount} />
@@ -1329,8 +1357,11 @@ function TopRouter() {
           tenant storefront host, `/` stays the patient storefront, so
           the explicit `/` route below falls through to PatientRouter.
           The canonical /breathe URL keeps working on every host.
+
+          Sub-routes are registered BEFORE `/breathe` so a prefix-style
+          match can never shadow `/breathe/features`, `/breathe/pricing`,
+          etc. (Wouter Switch is first-match-wins.)
         */}
-        <Route path="/breathe" component={BreatheHome} />
         <Route path="/breathe/features" component={BreatheFeatures} />
         <Route path="/breathe/integrations" component={BreatheIntegrations} />
         <Route path="/breathe/why" component={BreatheLearn} />
@@ -1377,6 +1408,7 @@ function TopRouter() {
           component={BreatheSwitchNikohealth}
         />
         <Route path="/breathe/signup" component={BreatheSignup} />
+        <Route path="/breathe" component={BreatheHome} />
         <Route path="/">
           {() => (isPlatformHomeHost() ? <BreatheHome /> : <PatientRouter />)}
         </Route>

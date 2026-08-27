@@ -299,3 +299,40 @@ describe("provider portal — sign route scopes the org-guarded update", () => {
     expect(providerFilterValue("select")).toBe(PROVIDER_ID);
   });
 });
+
+describe("provider portal — batch sign route scopes each row to its own org", () => {
+  it("batch-signs a request staged by another tenant", async () => {
+    const TENANT_B_ORG = "bbbbbbbb-0000-4000-8000-000000000002";
+    const BATCH_ID = "44444444-4444-4444-8444-444444444444";
+    resolveOrgIdByHostMock.mockResolvedValue(TENANT_A_ORG);
+    stageSupabaseResponse("provider_signature_requests", "select", {
+      data: {
+        id: BATCH_ID,
+        org_id: TENANT_B_ORG,
+        status: "pending",
+        expires_at: null,
+        subject_type: "referral",
+      },
+    });
+    stageSupabaseResponse("providers", "select", {
+      data: { npi: "1234567890" },
+    });
+    stageSupabaseResponse("provider_signature_requests", "update", {
+      data: { id: BATCH_ID },
+    });
+
+    const res = await request(makeApp())
+      .post("/api/provider/queue/sign-batch")
+      .set("Host", "tenant-a.example.com")
+      .send({
+        ids: [BATCH_ID],
+        consentEsign: true,
+        signerName: "Dr Pat Example",
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.signed).toEqual([BATCH_ID]);
+    expect(orgFilterValue("update")).toBe(TENANT_B_ORG);
+    expect(providerFilterValue("select")).toBe(PROVIDER_ID);
+  });
+});

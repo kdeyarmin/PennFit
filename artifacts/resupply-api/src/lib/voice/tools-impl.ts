@@ -48,6 +48,7 @@ import {
 import { logger } from "../logger";
 import { resolveSuperAdminRecipients } from "../admin-assistant/adminAssistantTools";
 import { placeResupplyOrderForConversation } from "../messaging/order-flow";
+import { resolvePatientIdForCustomer } from "../shop-customer/resolve-patient";
 import { describeHcpcsPlain } from "../swo-pdf";
 import {
   createSelfServeTenant,
@@ -630,13 +631,15 @@ class Impl implements VoiceToolDispatcher {
   private async getShopCustomerChart(
     call: DispatchToolCall<"get_customer_chart">,
   ): Promise<DispatchToolResult<"get_customer_chart">> {
-    // Storefront snapshot: first name + last order date + active-
-    // subscription flag + open-followup flag. No supplies_due (cash-pay
-    // customers have no clinical prescriptions). Dates + booleans only —
-    // never order contents, addresses, payment details, or email.
+    // Storefront snapshot: first name + last order/shipment date +
+    // open-followup flag. Prefer insurance fulfillments when the
+    // customer's email binds to exactly one patient; fall back to
+    // historical shop_orders. Subscribe & Save is retired — never
+    // read shop_subscriptions. Dates + booleans only — never order
+    // contents, addresses, payment details, or email.
     const customerId = this.requireShopCustomerId();
     const supabase = await this.db();
-    const [customerRes, orderRes, subRes, followupRes] = await Promise.all([
+    const [customerRes, orderRes, followupRes, patientId] = await Promise.all([
       supabase
         .from("shop_customers")
         .select("display_name")
@@ -651,25 +654,33 @@ class Impl implements VoiceToolDispatcher {
         .limit(1)
         .maybeSingle(),
       supabase
-        .from("shop_subscriptions")
-        .select("status")
-        .eq("customer_id", customerId)
-        .in("status", ["active", "trialing"])
-        .limit(1),
-      supabase
         .from("shop_customer_followups")
         .select("id")
         .eq("customer_id", customerId)
         .is("completed_at", null)
         .limit(1),
+      resolvePatientIdForCustomer(supabase, customerId),
     ]);
     if (customerRes.error) throw customerRes.error;
     if (orderRes.error) throw orderRes.error;
-    if (subRes.error) throw subRes.error;
     if (followupRes.error) throw followupRes.error;
 
-    const lastOrderAt =
+    let fulfillmentAt: string | null = null;
+    if (patientId) {
+      const fulfillmentRes = await supabase
+        .from("fulfillments")
+        .select("created_at")
+        .eq("patient_id", patientId)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (fulfillmentRes.error) throw fulfillmentRes.error;
+      fulfillmentAt = fulfillmentRes.data?.created_at ?? null;
+    }
+
+    const shopOrderAt =
       orderRes.data?.paid_at ?? orderRes.data?.created_at ?? null;
+    const lastOrderAt = pickLatestIso(fulfillmentAt, shopOrderAt);
 
     return {
       callId: call.callId,
@@ -682,7 +693,7 @@ class Impl implements VoiceToolDispatcher {
         supplies_due: [],
         recent_order_summary: {
           last_order_at: lastOrderAt,
-          open_subscription: (subRes.data ?? []).length > 0,
+          open_subscription: false,
         },
         has_open_followups: (followupRes.data ?? []).length > 0,
       },
@@ -1309,6 +1320,13 @@ function firstNameFromDisplayName(
   return first || undefined;
 }
 
+/** Prefer the chronologically later of two ISO timestamps (nulls ignored). */
+function pickLatestIso(a: string | null, b: string | null): string | null {
+  if (!a) return b;
+  if (!b) return a;
+  return Date.parse(a) >= Date.parse(b) ? a : b;
+}
+
 /**
  * Constant-time string equality for variable-length values.
  * Compares padded equal-length buffers with `timingSafeEqual`, then
@@ -1414,7 +1432,7 @@ function buildPlatformInfoEmail(
   notes: string | undefined,
 ): { subject: string; text: string; html: string } {
   const overview = [
-    "CareMetric Breathe is an all-in-one platform that DME and sleep businesses use to run their CPAP resupply program — a branded patient storefront with an AI mask-fitter, automated SMS/email/voice resupply reminders and auto-ship, insurance eligibility and billing tools, therapy-compliance monitoring, built-in AI assistants, multi-location support, and analytics. It's the engine that helps providers bring more patients back on schedule and grow resupply revenue without adding staff.",
+    "CareMetric Breathe is an all-in-one platform that DME and sleep businesses use to run their CPAP resupply program — a branded patient storefront with an AI mask-fitter, automated SMS/email/voice insurance resupply reminders (confirm-before-ship), insurance eligibility and billing tools, therapy-compliance monitoring, built-in AI assistants, multi-location support, and analytics. It's the engine that helps providers bring more patients back on schedule and grow resupply revenue without adding staff.",
   ];
   const pricing = [
     "CareMetric Breathe pricing — these are Founder DME Launch prices, a limited-time launch discount (regular Launch is $799/mo, Growth $1,899/mo, Scale $3,999/mo), and a DME that signs up during the launch has the rate locked for a full 12 months. Every plan is a monthly platform fee plus a small per-active-patient monthly fee plus a one-time setup, and all plans include the full platform:",

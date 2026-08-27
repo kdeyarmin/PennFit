@@ -155,18 +155,19 @@ describe("AdminFollowupsPage", () => {
     ).toContain("Upcoming (1)");
   });
 
-  it("routes patient and customer subject links to their owning pages", () => {
+  it("routes patient subject links to the patient page; shop accounts stay unlinked", () => {
     render(<AdminFollowupsPage />);
     expect(
       screen
         .getByTestId("admin-followup-subject-link-patient-fu")
         .getAttribute("href"),
     ).toBe("/admin/patients/11111111-1111-4111-8111-111111111111");
+    // Historical storefront accounts no longer have an admin detail page.
     expect(
       screen
         .getByTestId("admin-followup-subject-link-customer-fu")
         .getAttribute("href"),
-    ).toBe("/admin/shop/customers/shop-customer-1");
+    ).toBeNull();
   });
 
   it("dispatches completion to the patient endpoint and exposes Undo", async () => {

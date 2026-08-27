@@ -43,6 +43,19 @@ vi.mock("../../lib/auth-deps", () => ({
   getAuthDeps: () => ({ publicBaseUrl: "https://cmbreathe.com" }),
 }));
 
+vi.mock("../../lib/tenant-branding", () => ({
+  resolveTenantBaseUrl: vi.fn(async () => "https://cmbreathe.com"),
+  resolveTenantLinkBaseUrl: vi.fn(
+    async (_orgId?: string, _fallback?: string) => "https://cmbreathe.com",
+  ),
+  resolveBrandingByOrgId: vi.fn(async () => ({
+    storefrontName: "CareMetric Breathe",
+    legalName: "CareMetric Breathe",
+    tagline: "",
+    logoUrl: null,
+  })),
+}));
+
 // HMAC token mint reads RESUPPLY_LINK_HMAC_KEY from env — stub it so no
 // secret is needed and the signing link is deterministic.
 vi.mock("../../lib/patient-packet-token", () => ({

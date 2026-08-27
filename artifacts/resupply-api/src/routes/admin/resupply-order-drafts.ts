@@ -34,6 +34,8 @@ import {
   generateCsrOrderReference,
   snapshotOrderDocuments,
 } from "../../lib/csr-order/order.js";
+import { getAuthDeps } from "../../lib/auth-deps.js";
+import { resolveTenantLinkBaseUrl } from "../../lib/tenant-branding.js";
 import {
   type DraftSeed,
   stageResupplyDrafts,
@@ -83,7 +85,7 @@ const dismissBody = z
   .object({ reason: z.string().max(280).optional() })
   .strict();
 
-// Approve = convert the proposal into a CSR sign-&-pay order request. The
+// Approve = convert the proposal into a CSR signature order request. The
 // CSR finalises the priced line items (the SPA pre-fills one from the
 // draft's suggested SKU) + the recipient at review time, since the draft
 // itself carries no price.
@@ -282,6 +284,14 @@ router.post(
       res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
+    if (!(await resolveTenantLinkBaseUrl(orgId, getAuthDeps().publicBaseUrl))) {
+      res.status(422).json({
+        error: "tenant_domain_required",
+        message:
+          "Verify a custom domain for this tenant before approving draft orders. Without one, the signing link would open on the platform host and land on the wrong portal.",
+      });
+      return;
+    }
     const b = parsed.data;
     const draftId = idParse.data;
 
@@ -415,11 +425,20 @@ router.post(
       );
     }
 
-    const link = buildCsrOrderSigningLink(
+    const link = await buildCsrOrderSigningLink(
       created.id,
       created.link_version,
       ttlDays * 24 * 60 * 60,
+      orgId,
     );
+    if (!link) {
+      res.status(422).json({
+        error: "tenant_domain_required",
+        message:
+          "Verify a custom domain for this tenant before approving draft orders. Without one, the signing link would open on the platform host and land on the wrong portal.",
+      });
+      return;
+    }
     let emailSent = false;
     let smsSent = false;
     if (b.deliver) {

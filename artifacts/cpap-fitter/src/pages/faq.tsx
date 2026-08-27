@@ -194,14 +194,14 @@ const sections: FaqSection[] = [
     Icon: Receipt,
     items: [
       {
-        q: "Do I need a prescription to order a CPAP mask?",
+        q: "Do I need a prescription to get a CPAP mask?",
         a: (
           <>
-            Yes — CPAP masks are FDA-classified prescription medical devices. On
-            the order form, you can either confirm we have an existing
-            prescription on file for you, or we'll reach out to your sleep
-            provider directly to coordinate one. We won't ship without a valid
-            prescription.
+            Yes — CPAP masks are FDA-classified prescription medical devices.
+            When you send a fit request, you can either confirm we have an
+            existing prescription on file for you, or we&apos;ll reach out to
+            your sleep provider directly to coordinate one. We won&apos;t ship
+            without a valid prescription.
           </>
         ),
       },
@@ -248,20 +248,20 @@ const sections: FaqSection[] = [
         ),
       },
       {
-        q: "Do I need an account to place an order?",
+        q: "Do I need an account to request a mask?",
         a: (
           <>
-            No — you can check out as a guest. Creating a free{" "}
+            No — you can request a fit or ask a representative to contact you
+            without signing in. Creating a free{" "}
             <Link
               href="/account"
               className="text-primary underline-offset-4 hover:underline"
             >
               account
             </Link>{" "}
-            simply saves your shipping address and order history so future
-            orders are quicker, and gives you a "Reorder" button on past
-            purchases. Your account info is used only to fulfill your orders,
-            never sold to third parties.
+            saves your shipping address, lets you track insurance shipments, and
+            manage resupply reminders. Your account info is used only to fulfill
+            your supplies, never sold to third parties.
           </>
         ),
       },

@@ -26,10 +26,15 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { fetchShopMe, type ShopMeResponse } from "@/lib/account-api";
+import {
+  fetchShopMe,
+  type ShopMeResponse,
+  type ShopRecentOrder,
+} from "@/lib/account-api";
 import { DocumentsSection } from "@/components/account/DocumentsSection";
 import { ProfileSection } from "@/components/account/ProfileSection";
 import { SecuritySection } from "@/components/account/SecuritySection";
+import { formatAppDate } from "@/lib/utils";
 import { ClinicalInfoSection } from "@/components/clinical-info-section";
 import { AccountMessagesSection } from "@/components/account-messages-section";
 import { CustomerChatSection } from "@/components/customer-chat-section";
@@ -67,14 +72,17 @@ type AccountTabId = (typeof ACCOUNT_TABS)[number]["id"];
 // in the app keep working now that the sections live behind tabs:
 //   /account#messages  → Messages
 //   /account#insights  → Overview (InsightsSection lives on the Overview tab)
+//   /account#comm-prefs / #caregiver → Account (prefs + caregiver live there)
+//   /account#chat / #returns → Messages (support / help conversation)
 // Legacy #autoship / #orders hashes no longer map (cash-pay orders tab retired).
 export function hashToAccountTab(hash: string): AccountTabId | null {
   const h = hash.replace(/^#/, "");
   if (h === "insights") return "overview";
   if (h === "overview") return "overview";
-  if (h === "messages") return "messages";
+  if (h === "messages" || h === "chat" || h === "returns") return "messages";
   if (h === "therapy") return "therapy";
-  if (h === "account") return "account";
+  if (h === "account" || h === "comm-prefs" || h === "caregiver")
+    return "account";
   return null;
 }
 
@@ -169,8 +177,8 @@ function SignedOutAccountPrompt() {
           Sign in to your account
         </h1>
         <p className="text-sm md:text-base text-muted-foreground max-w-md mx-auto mb-6">
-          Your profile, shipping address, and message history live here. Sign in
-          or create an account to continue.
+          Your profile, shipping address, recent shipments, and message history
+          live here. Sign in or create an account to continue.
         </p>
         <div className="flex flex-col sm:flex-row gap-3 justify-center">
           <Link href="/sign-in?redirect=/account">
@@ -387,6 +395,7 @@ function AccountInner() {
                   localStorage) and on subscription success.
                 */}
                 <PushPromptBanner />
+                <RecentShipmentsSection orders={data.recentOrders ?? []} />
                 <ProfileSection
                   profile={data.profile!}
                   onSaved={() => void reload()}
@@ -446,6 +455,89 @@ function AccountInner() {
         </aside>
       </div>
     </div>
+  );
+}
+
+function recentOrderStatusLabel(status: string): string {
+  switch (status) {
+    case "delivered":
+      return "Delivered";
+    case "shipped":
+      return "Shipped";
+    case "with_warehouse":
+      return "With warehouse";
+    case "cancelled":
+    case "canceled":
+      return "Cancelled";
+    case "paid":
+      return "Paid (historical)";
+    default:
+      return status.replace(/_/g, " ");
+  }
+}
+
+/**
+ * Surfaces /shop/me recentOrders on the Overview tab so home-banner
+ * "awaiting shipment" / latest-order CTAs that deep-link to /account
+ * land on a page that actually lists shipments (insurance fulfillments
+ * + any legacy shop rows).
+ */
+function RecentShipmentsSection({ orders }: { orders: ShopRecentOrder[] }) {
+  return (
+    <section
+      className="glass-card rounded-2xl p-6 space-y-3"
+      data-testid="account-recent-shipments"
+    >
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <Package className="h-5 w-5 text-muted-foreground" />
+          <h2 className="font-semibold">Recent shipments</h2>
+        </div>
+        <Link
+          href="/track-order"
+          className="text-xs font-medium text-primary hover:underline"
+        >
+          Track a shipment
+        </Link>
+      </div>
+      {orders.length === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          No shipments yet. When insurance resupply is queued or shipped, it
+          will show up here.
+        </p>
+      ) : (
+        <ul className="divide-y divide-[hsl(var(--line-2))]">
+          {orders.map((o) => (
+            <li
+              key={o.id}
+              className="py-3 first:pt-0 last:pb-0 flex items-start justify-between gap-3"
+              data-testid="account-shipment-row"
+            >
+              <div>
+                <div className="text-sm font-medium">
+                  {recentOrderStatusLabel(o.status)}
+                </div>
+                <div className="text-xs text-muted-foreground mt-0.5">
+                  {formatAppDate(o.createdAt, {
+                    month: "short",
+                    day: "numeric",
+                    year: "numeric",
+                  })}
+                </div>
+              </div>
+              {o.amountTotalCents != null && o.amountTotalCents > 0 ? (
+                <div className="text-xs text-muted-foreground tabular-nums">
+                  {(o.amountTotalCents / 100).toLocaleString("en-US", {
+                    style: "currency",
+                    currency: (o.currency ?? "usd").toUpperCase(),
+                  })}
+                </div>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 

@@ -72,6 +72,8 @@ describe("Account notification deep links", () => {
   it("registers path-style account aliases so old notification payloads avoid the 404 route", () => {
     expect(SRC).toContain('path="/account/insights"');
     expect(SRC).toContain('path="/account/orders"');
+    expect(SRC).toContain('path="/account/orders/:orderId"');
+    expect(SRC).toContain('path="/account/messages"');
   });
 
   it("redirects /account/insights to the hash tab the account page understands", () => {
@@ -81,13 +83,17 @@ describe("Account notification deep links", () => {
     );
   });
 
-  it("lands /account/orders on the account itself, not a dead hash", () => {
+  it("lands /account/orders on /account Overview (Recent shipments)", () => {
     // The retail Orders tab retired with cash-pay, so `#orders` no longer
     // resolves and hashToAccountTab() would silently fall back to Overview.
-    // Pushes sent before that deploy still carry the path, so the route
-    // stays — pointing somewhere real.
+    // Pushes sent before that deploy still carry the path — send them to
+    // /account, where Recent shipments lists insurance fulfillments.
     expect(SRC).not.toContain('<AccountHashRedirect hash="orders" />');
     expect(SRC).toContain('<Redirect to="/account" />');
+  });
+
+  it("redirects /account/messages to the hash tab the account page understands", () => {
+    expect(SRC).toContain('<AccountHashRedirect hash="messages" />');
   });
 });
 

@@ -1,12 +1,14 @@
 // /admin/analytics/acquisition-funnel — where patients drop out of the
-// at-home fitter flow and the shop checkout flow, from the anonymous
-// usage_events stream (Growth #G1, surfacing half).
+// at-home fitter flow (and, historically, storefront checkout), from the
+// anonymous usage_events stream (Growth #G1, surfacing half).
 //
 // The customer SPA already instruments the whole funnel (lib/track.ts);
 // this page is the readout that was missing. Conversion is by distinct
 // session, so a stage showing 40% means 40% of the sessions that reached
 // the top of that funnel also reached this stage. reports.read-gated
 // server-side; anonymous sessions only — no PHI.
+// Cash-pay checkout is retired; the second funnel remains for historical
+// sessions that still land in usage_events.
 
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -57,8 +59,9 @@ export function AdminAnalyticsAcquisitionFunnelPage() {
             Acquisition funnel
           </h1>
           <p className="text-sm mt-1" style={{ color: "hsl(var(--ink-3))" }}>
-            Where anonymous visitors drop out of the at-home fitter flow and the
-            shop checkout flow. Conversion is by distinct session.
+            Where anonymous visitors drop out of the at-home fitter flow (and,
+            historically, storefront checkout). Conversion is by distinct
+            session.
           </p>
         </div>
         <label className="flex items-center gap-2 text-xs text-slate-600">
@@ -85,12 +88,12 @@ export function AdminAnalyticsAcquisitionFunnelPage() {
         <>
           <FunnelCard
             title="At-home fitter flow"
-            subtitle="Home → consent → capture → measure → questionnaire → results → order"
+            subtitle="Home → consent → capture → measure → questionnaire → results → fit-request"
             summary={query.data.fitter}
           />
           <FunnelCard
-            title="Shop checkout flow"
-            subtitle="Checkout started → step viewed → completed"
+            title="Historical storefront checkout"
+            subtitle="Retired cash-pay path — checkout started → step viewed → completed"
             summary={query.data.checkout}
           />
           <SignalsCard data={query.data} />

@@ -51,4 +51,32 @@ describe("articlesForStage", () => {
       }
     }
   });
+
+  it("only links to learn pages that ship in the SPA", () => {
+    // Keep in sync with App.tsx /learn/* routes — phantom slugs 404 from
+    // the account education feed.
+    const live = new Set([
+      "/learn/first-two-weeks",
+      "/learn/how-pap-works",
+      "/learn/mask-leaks",
+      "/learn/sleep-hygiene",
+      "/learn/dry-mouth",
+      "/learn/replacement-schedule",
+      "/learn/cleaning-routine",
+      "/learn/traveling-with-cpap",
+      "/learn/reading-your-sleep-report",
+      "/learn/insurance-guide",
+      "/learn/pap-therapy-benefits",
+    ]);
+    for (const stage of [
+      "new",
+      "habituating",
+      "steady",
+      "experienced",
+    ] as const) {
+      for (const a of articlesForStage(stage)) {
+        expect(live.has(a.slug)).toBe(true);
+      }
+    }
+  });
 });

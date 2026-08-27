@@ -119,11 +119,11 @@ const FIRST_ACTIONS: ReadonlyArray<{
   cta: string;
 }> = [
   {
-    title: "Take an order",
+    title: "Verify a new patient",
     blurb:
-      "Ring up a cash or insurance order at the front desk — no storefront setup needed.",
-    href: "/admin/shop/counter-orders",
-    cta: "Open the front desk",
+      "Open a benefit-verification request from the insurance leads queue — supplies ship against the plan, not a card.",
+    href: "/admin/shop/insurance-leads",
+    cta: "Open insurance leads",
   },
   {
     title: "Bring in your patients",

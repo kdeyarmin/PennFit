@@ -97,7 +97,11 @@ export interface SendOrderResult {
 }
 
 /**
- * Generate a short, human-readable order reference (e.g. "PHM-7K3-N9X").
+ * Generate a short, human-readable order reference (e.g. "PENN-7K3N9X").
+ * Shape matches `ORDER_REFERENCE_PATTERN` / `normalizeOrderReference` so
+ * the confirmation email, `/track-order`, and the chatbot `track_order`
+ * tool all accept the same string the patient was emailed. (An earlier
+ * `PHM-XXX-XXX` mint was rejected by those surfaces.)
  */
 export function generateOrderReference(): string {
   const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no I/O/0/1
@@ -107,7 +111,7 @@ export function generateOrderReference(): string {
     // would be biased whenever 256 isn't an exact multiple of len.
     ref += alphabet[randomInt(alphabet.length)];
   }
-  return `PHM-${ref.slice(0, 3)}-${ref.slice(3, 6)}`;
+  return `PENN-${ref}`;
 }
 
 /**

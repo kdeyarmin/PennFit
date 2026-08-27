@@ -233,8 +233,8 @@ export function AdminStorefrontBrandingPage() {
       <header>
         <h1 className="text-2xl font-semibold">Storefront branding</h1>
         <p className="text-sm mt-1" style={{ color: "hsl(var(--ink-3))" }}>
-          Your storefront name, tagline, and logo are shown to shoppers on the
-          public site. Wire up your own domain below so customers reach your
+          Your storefront name, tagline, and logo are shown to patients on the
+          public site. Wire up your own domain below so patients reach your
           storefront at your address — with your brand on it.
         </p>
       </header>

@@ -41,7 +41,7 @@ import { logger } from "../logger.js";
 import { resolveTenantSmsClientOptions } from "../messaging/tenant-telecom.js";
 import {
   resolveBrandingByOrgId,
-  resolveTenantBaseUrl,
+  resolveTenantLinkBaseUrl,
 } from "../tenant-branding.js";
 import {
   FITTER_INVITE_TTL_MS,
@@ -72,6 +72,7 @@ export interface RescanDelivery {
     | "no_contact"
     | "no_channel_config"
     | "in_office_handoff"
+    | "tenant_domain_required"
     | "send_failed";
   /** The link, so staff can read it to the patient when sending failed. */
   link: string | null;
@@ -175,11 +176,17 @@ export async function sendRescanForInvite(
     // assessment; an unrecognised value is ignored there, so an older
     // client simply records the default.
     const entryPoint = reason === "poor_scan" ? null : "refit_campaign";
-    // The tenant's own verified domain when it has one, so the patient
-    // lands on THEIR DME's branded storefront rather than the platform
-    // host (same pattern as every other patient-facing link builder).
-    const base =
-      (await resolveTenantBaseUrl(orgId).catch(() => null)) ?? publicBaseUrl();
+    // Prefer the tenant's verified custom domain. Non-seed without a
+    // domain: refuse — a platform-host /fitter-invite token resolves to
+    // the wrong org (same posture as admin fitter invites).
+    const base = await resolveTenantLinkBaseUrl(orgId, publicBaseUrl());
+    if (!base) {
+      return {
+        delivered: false,
+        reason: "tenant_domain_required",
+        link: null,
+      };
+    }
     const link =
       `${base}/fitter-invite?t=${encodeURIComponent(token)}` +
       (entryPoint ? `&entry=${encodeURIComponent(entryPoint)}` : "");

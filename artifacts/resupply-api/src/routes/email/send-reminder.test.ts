@@ -38,6 +38,15 @@ vi.mock("@workspace/resupply-audit", () => ({
   logAudit: (...a: unknown[]) => logAuditMock(...a),
 }));
 
+const resolveTenantLinkBaseUrlMock = vi.hoisted(() =>
+  vi.fn<(orgId: string, platform: string) => Promise<string | null>>(
+    async (_orgId, platform) => platform,
+  ),
+);
+vi.mock("../../lib/tenant-branding", () => ({
+  resolveTenantLinkBaseUrl: resolveTenantLinkBaseUrlMock,
+}));
+
 import sendEmailRouter from "./send-reminder";
 
 const PATIENT_ID = "11111111-1111-4111-8111-111111111111";
@@ -109,6 +118,10 @@ describe("POST /email/send-reminder", () => {
     mockAdmin.current = null;
     sendEmailMock.mockReset();
     logAuditMock.mockReset().mockResolvedValue(undefined);
+    resolveTenantLinkBaseUrlMock.mockReset();
+    resolveTenantLinkBaseUrlMock.mockImplementation(
+      async (_orgId: string, platform: string) => platform,
+    );
   });
   afterEach(() => {
     for (const k of ENV_KEYS) {
@@ -148,6 +161,18 @@ describe("POST /email/send-reminder", () => {
       .send({ patientId: PATIENT_ID, episodeId: EPISODE_ID });
     expect(res.status).toBe(422);
     expect(res.body.error).toBe("patient_missing_email");
+  });
+
+  it("returns 422 tenant_domain_required when click base is unavailable", async () => {
+    setMessagingEnv();
+    stubVerifiedAdmin();
+    resolveTenantLinkBaseUrlMock.mockResolvedValueOnce(null);
+    const res = await request(makeApp())
+      .post("/resupply-api/email/send-reminder")
+      .send({ patientId: PATIENT_ID, episodeId: EPISODE_ID });
+    expect(res.status).toBe(422);
+    expect(res.body.error).toBe("tenant_domain_required");
+    expect(sendEmailMock).not.toHaveBeenCalled();
   });
 
   it("sends, opens conversation, audits, returns 201, scrubs email PHI", async () => {

@@ -34,6 +34,7 @@ import { getAuthDeps } from "../../lib/auth-deps";
 import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import { resolveCompanyProfile } from "../../lib/patient-packet/company";
+import { resolveTenantLinkBaseUrl } from "../../lib/tenant-branding";
 import {
   defaultTemplateSections,
   effectiveTemplateContent,
@@ -198,6 +199,18 @@ const resendBody = z.object({ channels: channelsSchema }).strict();
 
 function signingUrl(baseUrl: string, token: string): string {
   return `${baseUrl.replace(/\/$/, "")}/patient-packet-sign?token=${encodeURIComponent(token)}`;
+}
+
+async function tenantSigningUrl(
+  orgId: string,
+  token: string,
+): Promise<string | null> {
+  const base = await resolveTenantLinkBaseUrl(
+    orgId,
+    getAuthDeps().publicBaseUrl,
+  );
+  if (!base) return null;
+  return signingUrl(base, token);
 }
 
 // ── Document catalog (with effective, editable content) ──────────
@@ -781,6 +794,14 @@ router.post(
       createdByEmail: req.adminEmail ?? null,
     });
     if (!result.ok) {
+      if (result.code === "tenant_domain_required") {
+        res.status(422).json({
+          error: "tenant_domain_required",
+          message:
+            "Verify a custom domain for this tenant before sending patient packets. Without one, the signing link would open on the platform host and land on the wrong portal.",
+        });
+        return;
+      }
       if (
         result.code === "invalid_document_keys" ||
         result.code === "invalid_document_overrides"
@@ -878,6 +899,14 @@ router.post(
       createdByEmail: req.adminEmail ?? null,
     });
     if (!result.ok) {
+      if (result.code === "tenant_domain_required") {
+        res.status(422).json({
+          error: "tenant_domain_required",
+          message:
+            "Verify a custom domain for this tenant before sending patient packets. Without one, the signing link would open on the platform host and land on the wrong portal.",
+        });
+        return;
+      }
       if (
         result.code === "invalid_document_keys" ||
         result.code === "invalid_document_overrides"
@@ -984,7 +1013,7 @@ router.get(
     let signingLink: string | null = null;
     if (packet.status === "sent" || packet.status === "viewed") {
       const token = signPatientPacketToken(packet.id, packet.link_version);
-      signingLink = signingUrl(getAuthDeps().publicBaseUrl, token);
+      signingLink = await tenantSigningUrl(orgId, token);
     }
 
     res.json({
@@ -1188,6 +1217,21 @@ router.post(
       return;
     }
 
+    // Refuse before bumping link_version when we cannot mint a safe link.
+    const probeToken = signPatientPacketToken(
+      packet.id,
+      (packet.link_version ?? 1) + 1,
+    );
+    const linkProbe = await tenantSigningUrl(orgId, probeToken);
+    if (!linkProbe) {
+      res.status(422).json({
+        error: "tenant_domain_required",
+        message:
+          "Verify a custom domain for this tenant before resending patient packets. Without one, the signing link would open on the platform host and land on the wrong portal.",
+      });
+      return;
+    }
+
     // Bump link_version to invalidate any previously issued link.
     const nextVersion = (packet.link_version ?? 1) + 1;
     const nowIso = new Date().toISOString();
@@ -1220,8 +1264,7 @@ router.post(
       resendPhone = patient?.phone_e164 ?? null;
     }
 
-    const token = signPatientPacketToken(packet.id, nextVersion);
-    const link = signingUrl(getAuthDeps().publicBaseUrl, token);
+    const link = linkProbe;
 
     const { emailSent, smsSent } = await deliverPacketLink({
       supabase: supabase,

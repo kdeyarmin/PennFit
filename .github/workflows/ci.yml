@@ -1,15 +1,38 @@
 name: CI
 
+# Nudge 2026-08-26i: forever-queued run 32984456339 still starving
+# synchronizes; bump concurrency prefix civ3 → civ4.
+# Nudge 2026-08-26h: HEAD 528f96ad6 missing full CI after provider-ui
+# test fix; touch workflow to re-register pull_request synchronize.
+# Nudge 2026-08-26g: HEAD 32cab5f97 still missing full CI; forever-queued
+# run 32984456339 + dropped synchronize. Fresh concurrency prefix civ3.
+# Nudge 2026-08-26f: forever-queued run 32984456339 still blocks full CI
+# from scheduling on later SHAs; rename concurrency group namespace.
+# Nudge 2026-08-26e: HEAD 6549478bc+ still missing full CI (stuck queued
+# run 32984456339 + dropped synchronize). Touch workflow to re-register.
+# Nudge 2026-08-26d: force pull_request synchronize for current HEAD.
+
+# Retrigger registration for PR #1330 after missed pull_request events.
+# Nudge 2026-08-26: Actions stopped firing synchronize after aafe1601e;
+# a workflow-file touch re-registers the pull_request webhook.
+# workflow_dispatch lets us kick a stuck branch when pull_request
+# synchronize events are dropped by GitHub.
+# Nudge 2: HEAD b02b17b9a still missing a full CI run (stuck queued
+# legacy SHAs + startup_failure on 25c821923).
 on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 # Cancel an in-flight CI run for a given branch when a new commit lands.
 # Saves runner minutes on rapid push sequences and avoids a stale "passing"
 # check from a previous head sticking around.
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  # Fresh civ4 prefix breaks association with a stuck legacy run (PR 1330 /
+  # run 32984456339). Per-ref (not per-SHA) so cancel-in-progress cancels
+  # older runs on the same branch when a new commit lands.
+  group: civ4-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:

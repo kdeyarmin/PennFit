@@ -35,6 +35,7 @@ function makeCtx(): CustomerChatToolContext {
   return {
     supabase: getSupabaseServiceRoleClient(),
     customerId: "cust_123",
+    orgId: "org_test",
     customerDisplayName: "Pat Patient",
     customerEmail: "pat@example.com",
   };

@@ -32,6 +32,12 @@
 // limit the per-run batch to a soft cap so a backlog of newly-
 // eligible customers doesn't single-day-burst the SendGrid quota
 // in regions with rate caps.
+//
+// Feature flag
+// ------------
+// Off by default. Set `RESUPPLY_LAPSED_CUSTOMER_WINBACK_CRON_ENABLED=1`
+// to turn it on. Cash-pay storefront accounts are historical; a
+// credentialed staging deploy must not auto-email lapsed shoppers.
 
 import type PgBoss from "pg-boss";
 
@@ -343,6 +349,16 @@ async function winbackSweepForOrg(
 export async function registerLapsedCustomerWinbackJob(
   boss: PgBoss,
 ): Promise<void> {
+  if (process.env.RESUPPLY_LAPSED_CUSTOMER_WINBACK_CRON_ENABLED !== "1") {
+    logger.info(
+      { event: "shop-customers.winback.disabled" },
+      "shop-customers.winback: not registered (RESUPPLY_LAPSED_CUSTOMER_WINBACK_CRON_ENABLED!=1)",
+    );
+    if (typeof boss.unschedule === "function") {
+      await boss.unschedule(JOB_NAME).catch(() => undefined);
+    }
+    return;
+  }
   await createQueueWithDlq(boss, JOB_NAME, VENDOR_SEND_QUEUE_OPTS);
 
   await boss.work(JOB_NAME, async () => {

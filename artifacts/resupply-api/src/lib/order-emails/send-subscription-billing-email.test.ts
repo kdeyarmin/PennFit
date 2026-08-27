@@ -28,7 +28,9 @@ vi.mock("../tenant-branding.js", () => ({
     tagline: "tagline",
     logoUrl: null,
   })),
-  resolveTenantBaseUrl: vi.fn(async () => null),
+  resolveTenantLinkBaseUrl: vi.fn(
+    async (_orgId: string, platform: string) => platform,
+  ),
 }));
 
 import { EmailConfigError } from "@workspace/resupply-email";
@@ -101,7 +103,7 @@ describe("sendSubscriptionBillingEmail", () => {
     expect(sendEmailMock).not.toHaveBeenCalled();
   });
 
-  it("renewing_soon: advance notice with date, amount, and manage link", async () => {
+  it("renewing_soon: insurance retarget notice with date, amount, and contact link", async () => {
     process.env.SENDGRID_API_KEY = "SG.test";
     process.env.SENDGRID_FROM_EMAIL = "no-reply@penn.example";
     sendEmailMock.mockResolvedValueOnce({ messageId: "msg_soon" });
@@ -120,17 +122,19 @@ describe("sendSubscriptionBillingEmail", () => {
       messageId: "msg_soon",
     });
     const arg = sendEmailMock.mock.calls[0]![0];
-    expect(arg.subject).toContain("renews");
+    expect(arg.subject).toContain("supply schedule");
     expect(arg.subject).toContain("June 30, 2026");
-    expect(arg.html).toContain("Renewing soon");
+    expect(arg.html).toContain("Supply schedule");
     expect(arg.html).toContain("$49.99");
-    expect(arg.html).toContain("https://test.example.com/account-billing");
+    expect(arg.html).toContain("https://test.example.com/contact");
+    expect(arg.html).not.toContain("card on file");
+    expect(arg.html).not.toContain("update card");
     expect(arg.customArgs).toEqual({
       kind: "shop_subscription_renewing_soon_v1",
     });
   });
 
-  it("receipt: payment-received confirmation with amount + manage link", async () => {
+  it("receipt: past-payment notice with amount + contact link", async () => {
     process.env.SENDGRID_API_KEY = "SG.test";
     process.env.SENDGRID_FROM_EMAIL = "no-reply@penn.example";
     sendEmailMock.mockResolvedValueOnce({ messageId: "msg_receipt" });
@@ -145,10 +149,11 @@ describe("sendSubscriptionBillingEmail", () => {
 
     expect(result.delivered).toBe(true);
     const arg = sendEmailMock.mock.calls[0]![0];
-    expect(arg.subject).toContain("receipt");
-    expect(arg.html).toContain("Payment received");
+    expect(arg.subject).toContain("past");
+    expect(arg.html).toContain("Past payment notice");
     expect(arg.html).toContain("$49.99");
-    expect(arg.html).toContain("https://test.example.com/account-billing");
+    expect(arg.html).toContain("https://test.example.com/contact");
+    expect(arg.html).not.toContain("auto-ship payment");
     expect(arg.customArgs).toEqual({ kind: "shop_subscription_receipt_v1" });
   });
 

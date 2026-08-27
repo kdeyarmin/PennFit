@@ -46,12 +46,11 @@ import {
 import type { SavedShippingAddress } from "@workspace/resupply-db";
 
 import { createTenantSendgridClient } from "../email/tenant-sender.js";
+import { resolveBrandingByOrgId } from "../tenant-branding.js";
 import {
-  resolveBrandingByOrgId,
-  resolveTenantBaseUrl,
-} from "../tenant-branding.js";
-
-const DEFAULT_BASE_URL = "https://cmbreathe.com";
+  resolvePatientEmailLinkBase,
+  TENANT_DOMAIN_REQUIRED,
+} from "./link-base.js";
 
 export interface SendShippingNotificationEmailInput {
   /** Recipient email — required. Caller resolves; helper does not look up. */
@@ -88,15 +87,6 @@ export interface SendShippingNotificationEmailResult {
   delivered: boolean;
   error?: string;
   messageId?: string;
-}
-
-function publicBaseUrl(override?: string): string {
-  const raw =
-    override ??
-    process.env.SHOP_PUBLIC_BASE_URL ??
-    process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL ??
-    DEFAULT_BASE_URL;
-  return raw.replace(/\/$/, "");
 }
 
 /**
@@ -178,12 +168,18 @@ export async function sendShippingNotificationEmail(
 
   const subject = `Your ${brandName} order has shipped`;
 
-  const base = publicBaseUrl(
-    input.baseUrlOverride ??
-      (await resolveTenantBaseUrl(input.orgId)) ??
-      undefined,
+  const base = await resolvePatientEmailLinkBase(
+    input.orgId,
+    input.baseUrlOverride,
   );
-  const orderUrl = `${base}/shop/checkout-success?session_id=${encodeURIComponent(stripeSessionId)}`;
+  if (!base) {
+    return {
+      configured: true,
+      delivered: false,
+      error: TENANT_DOMAIN_REQUIRED,
+    };
+  }
+  const orderUrl = `${base}/contact`;
   const trackingUrl = getCarrierTrackingUrl(carrier, trackingNumber);
 
   // ---------- text body ----------
@@ -204,7 +200,7 @@ export async function sendShippingNotificationEmail(
     }
     textLines.push("");
   }
-  textLines.push(`View your order: ${orderUrl}`);
+  textLines.push(`Questions about your order? ${orderUrl}`);
   textLines.push("");
   textLines.push(
     "If anything looks off (wrong address, wrong items), reply to this " +
@@ -246,11 +242,11 @@ export async function sendShippingNotificationEmail(
       .join("\n"),
     button: trackingUrl
       ? { label: "Track package", url: trackingUrl }
-      : { label: "View order", url: orderUrl },
+      : { label: "Contact us", url: orderUrl },
     // Secondary action belongs BELOW the CTA, so it renders in the
     // post-button slot rather than in contentHtml (which sits above it).
     postButtonHtml: trackingUrl
-      ? secondaryLink("Or view your full order", orderUrl)
+      ? secondaryLink("Or contact us about this order", orderUrl)
       : "",
     footerLines: [
       "If anything looks off — wrong address, wrong items — reply to this message right away and we'll sort it out.",

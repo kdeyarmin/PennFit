@@ -368,11 +368,12 @@ export function LearnTherapyTypes() {
           </div>
           <div className="flex-1">
             <h3 className="font-semibold tracking-tight mb-1 group-hover:text-primary transition-colors">
-              Order PAP equipment
+              Request PAP equipment
             </h3>
             <p className="text-sm text-muted-foreground leading-relaxed">
-              Start an insurance order for CPAP, APAP, BiPAP, and the
-              accessories <BrandName /> stocks today.
+              Start the insurance path for CPAP, APAP, BiPAP, and the
+              accessories <BrandName /> stocks today — staff place the order
+              after your request.
             </p>
           </div>
           <ArrowRight className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors mt-1" />

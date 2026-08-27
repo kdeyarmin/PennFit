@@ -24,12 +24,16 @@ import {
   EmailConfigError,
 } from "@workspace/resupply-email";
 import { DEFAULT_STOREFRONT_ASSISTANT_NAME } from "../company-info.js";
+import { platformPublicBaseUrl } from "../order-emails/link-base.js";
+import { resolveTenantLinkBaseUrl } from "../tenant-branding.js";
 
 export interface NotifyCsrInboxInput {
   threadId: string;
   threadCreated: boolean;
   customerEmail: string | null;
   customerDisplayName: string | null;
+  /** Tenant that owns the conversation — drives the admin deep link origin. */
+  orgId: string;
   /**
    * Optional origin hint surfaced in the subject so a CSR can tell a
    * message the customer typed themselves from one the storefront
@@ -78,11 +82,10 @@ export async function notifyCsrInboxOfCustomerMessage(
   const subjectPrefix = input.threadCreated ? "New" : "Reply on";
   const subject = `${subjectPrefix} customer message${viaChatbot} — ${customerLabel}`;
 
-  // Pull the public base URL from the same env the rest of the shop
-  // side uses. Fallback to relative path so the link still navigates
-  // if the env var isn't set in dev.
-  const base = process.env["SHOP_PUBLIC_BASE_URL"]?.trim().replace(/\/$/, "");
-  const inboxUrl = `${base ?? ""}/admin/conversations/${input.threadId}`;
+  const platform = platformPublicBaseUrl();
+  const tenantBase =
+    (await resolveTenantLinkBaseUrl(input.orgId, platform)) ?? platform;
+  const inboxUrl = `${tenantBase.replace(/\/$/, "")}/admin/conversations/${input.threadId}`;
 
   const intro =
     input.source === "chatbot"

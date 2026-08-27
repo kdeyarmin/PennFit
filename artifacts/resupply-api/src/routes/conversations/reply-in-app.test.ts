@@ -111,7 +111,10 @@ vi.mock("../../lib/tenant-branding", () => ({
     tagline: "",
     logoUrl: null,
   })),
-  resolveTenantBaseUrl: vi.fn(async () => null),
+  resolveTenantBaseUrl: vi.fn(async () => "https://pennpaps.com"),
+  resolveTenantLinkBaseUrl: vi.fn(
+    async (_orgId?: string, _fallback?: string) => "https://pennpaps.com",
+  ),
 }));
 
 import replyRouter from "./reply";
@@ -249,7 +252,7 @@ describe("POST /conversations/:id/reply (in_app)", () => {
     const [, pushCustId, pushPayload] = sendPushToCustomerMock.mock.calls[0]!;
     expect(pushCustId).toBe("user_anna");
     expect(pushPayload.title).toBe("New message from Penn Home Medical Supply");
-    expect(pushPayload.url).toBe("/account/messages");
+    expect(pushPayload.url).toBe("/account#messages");
     expect(pushPayload.tag).toMatch(/^csr_reply:/);
     expect(JSON.stringify(pushPayload)).not.toContain("replacement");
   });
@@ -296,7 +299,7 @@ describe("POST /conversations/:id/reply (in_app)", () => {
     const [, pushCustId, pushPayload] = sendPushToCustomerMock.mock.calls[0]!;
     expect(pushCustId).toBe("user_anna");
     expect(pushPayload.title).toBe("New message from Penn Home Medical Supply");
-    expect(pushPayload.url).toBe("/account/messages");
+    expect(pushPayload.url).toBe("/account#messages");
     expect(pushPayload.tag).toMatch(/^csr_reply:/);
     expect(JSON.stringify(pushPayload)).not.toContain("replacement");
   });
