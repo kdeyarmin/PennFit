@@ -14,6 +14,7 @@
 import { getOrgScopedClient, type Database } from "@workspace/resupply-db";
 
 import { autoClearBackorderForSku } from "../backorder/auto-clear-on-restock";
+import { autoDispatchBackInStockOnRestock } from "../back-in-stock/auto-dispatch-on-restock";
 import { DEFAULT_LOW_STOCK_THRESHOLD } from "./categories";
 
 export type ProductRow = Database["resupply"]["Tables"]["products"]["Row"];
@@ -294,6 +295,7 @@ export async function adjustStock(
   // throws, and a clear failure must not undo a recorded movement.
   if (input.delta > 0 && balance !== null && balance > 0) {
     await autoClearBackorderForSku({ orgId, sku: input.sku });
+    void autoDispatchBackInStockOnRestock({ orgId, sku: input.sku });
   }
 
   return balance;

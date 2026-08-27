@@ -8,13 +8,13 @@ them up without re-discovering scope.
 
 | Item                                                    | Why deferred                                                                        | Suggested next step                                        |
 | ------------------------------------------------------- | ----------------------------------------------------------------------------------- | ---------------------------------------------------------- |
-| Episode lifecycle factory has no production writer      | No live enqueue path; analytics read zeros                                          | Wire a single production writer or retire the readers      |
+| Episode lifecycle factory has no production writer      | ~~No live enqueue path~~ — wired in #1326 (`openOutreachEpisode`)                   | Shipped: Rx create, bootstrap, post-confirm next cycle     |
 | Provider portal seed-org fallback on platform host      | Intentional for single-tenant Penn; full multi-tenant routing is architectural      | Design host→org routing for provider SPA before changing   |
 | Due math uses `MAX(shipped_at)` vs queued fulfillments  | Needs product decision on “due” vs “dispensed”                                      | Spec + migration if queue time should count                |
-| Chatbot PII scrub scope                                 | Broader than this review’s surface                                                  | Expand scrub allowlist with behavioral tests               |
+| Chatbot PII scrub scope                                 | Round four (#1335): MBI, PO Box, ZIP, member-id, card patterns                      | Shipped in round-four PR                                   |
 | Platform billing payment wall                           | SaaS billing for tenants, not patient cash-pay                                      | Separate platform-billing epic                             |
 | LTV including insurance claim dollars                   | UI already labeled historical shop-only                                             | New insurance LTV metric once claim dollars are trusted    |
-| Back-in-stock auto-dispatch                             | Catalog copy fixed; automated dispatch soft-deferred                                | Opt-in dispatcher behind env flag when stock RPC is ready  |
+| Back-in-stock auto-dispatch                             | ~~Catalog copy fixed; automated dispatch soft-deferred~~                            | Round five: env-gated hook on `adjustStock` restock        |
 | Review-request emails still CTA to `/contact`           | ~~Flag still ON~~ — migration 0530 + DELIBERATELY_OFF                               | Shipped in #1333                                           |
 | Lapsed winback uses shop `paid_at` not fulfillments     | ~~Cron env-gated; copy says “shipped” but math is last cash-pay~~                   | Fixed in round three: fulfillment activity gate            |
 | Account “Track a shipment” → `/track-order` only        | ~~Tracker rejects fulfillment UUIDs~~ — CTA now `/contact`                          | Shipped in #1333                                           |
@@ -44,6 +44,12 @@ them up without re-discovering scope.
 | Account chat KB tenant-brand guard               | `customerChatKnowledge.brand.test.ts`                   |
 | Account chat FAQ still says “refund in 5-7 days” | FAQ 85/89 aligned to claim-adjustment language          |
 | Lapsed winback last-activity gate                | `resolveLastCustomerShipmentActivityIso` + tests        |
+
+## Started in round five (this branch)
+
+| Item                        | Status                                                                  |
+| --------------------------- | ----------------------------------------------------------------------- |
+| Back-in-stock auto-dispatch | `autoDispatchBackInStockOnRestock` on positive `adjustStock`; env-gated |
 
 ## Production deploy note (2026-08-27)
 
