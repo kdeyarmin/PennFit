@@ -8,10 +8,9 @@ them up without re-discovering scope.
 
 | Item                                                    | Why deferred                                                                        | Suggested next step                                        |
 | ------------------------------------------------------- | ----------------------------------------------------------------------------------- | ---------------------------------------------------------- |
-| Episode lifecycle factory has no production writer      | No live enqueue path; analytics read zeros                                          | Wire a single production writer or retire the readers      |
+| Episode lifecycle factory has no production writer      | ~~No live enqueue path~~ — wired in #1326 (`openOutreachEpisode`)                   | Shipped: Rx create, bootstrap, post-confirm next cycle     |
 | Provider portal seed-org fallback on platform host      | Intentional for single-tenant Penn; full multi-tenant routing is architectural      | Design host→org routing for provider SPA before changing   |
 | Due math uses `MAX(shipped_at)` vs queued fulfillments  | Needs product decision on “due” vs “dispensed”                                      | Spec + migration if queue time should count                |
-| Chatbot PII scrub scope                                 | Broader than this review’s surface                                                  | Expand scrub allowlist with behavioral tests               |
 | Platform billing payment wall                           | SaaS billing for tenants, not patient cash-pay                                      | Separate platform-billing epic                             |
 | LTV including insurance claim dollars                   | UI already labeled historical shop-only                                             | New insurance LTV metric once claim dollars are trusted    |
 | Back-in-stock auto-dispatch                             | Catalog copy fixed; automated dispatch soft-deferred                                | Opt-in dispatcher behind env flag when stock RPC is ready  |
@@ -44,6 +43,13 @@ them up without re-discovering scope.
 | Account chat KB tenant-brand guard               | `customerChatKnowledge.brand.test.ts`                   |
 | Account chat FAQ still says “refund in 5-7 days” | FAQ 85/89 aligned to claim-adjustment language          |
 | Lapsed winback last-activity gate                | `resolveLastCustomerShipmentActivityIso` + tests        |
+
+## Started in round four (this branch)
+
+| Item                             | Status                                                               |
+| -------------------------------- | -------------------------------------------------------------------- |
+| Chatbot PII scrub scope          | Added MBI, PO Box, state/labeled ZIP, member-id label, card patterns |
+| Episode lifecycle factory writer | Already shipped in #1326 — doc updated; no code change this round    |
 
 ## Production deploy note (2026-08-27)
 
