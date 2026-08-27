@@ -16,11 +16,11 @@ them up without re-discovering scope.
 | LTV including insurance claim dollars                   | UI already labeled historical shop-only                                             | New insurance LTV metric once claim dollars are trusted    |
 | Back-in-stock auto-dispatch                             | Catalog copy fixed; automated dispatch soft-deferred                                | Opt-in dispatcher behind env flag when stock RPC is ready  |
 | Review-request emails still CTA to `/contact`           | ~~Flag still ON~~ — migration 0530 + DELIBERATELY_OFF                               | Shipped in #1333                                           |
-| Lapsed winback uses shop `paid_at` not fulfillments     | Cron env-gated; copy says “shipped” but math is last cash-pay                       | Gate on fulfillment/`shipped_at` or retire dispatcher      |
+| Lapsed winback uses shop `paid_at` not fulfillments     | ~~Cron env-gated; copy says “shipped” but math is last cash-pay~~                   | Fixed in round three: fulfillment activity gate            |
 | Account “Track a shipment” → `/track-order` only        | ~~Tracker rejects fulfillment UUIDs~~ — CTA now `/contact`                          | Shipped in #1333                                           |
 | Help / prefs still describe cart/refund/review flows    | ~~Copy + toggles~~ — help + account prefs scrubbed; abandoned/review toggles hidden | Shipped in #1333                                           |
 | Account chatbot tools still coach refunds/subscriptions | ~~Tool descriptors leftover~~ — escalate + subscription tool scrubbed               | Shipped in #1333; FAQ claim-adjustment copy in round three |
-| Seed tenant `assistantAdminName` returns PennBot        | Prod company-info showed PennBot for both assistants (expect PennPilot for admin)    | Migration 0531 in round three                             |
+| Seed tenant `assistantAdminName` returns PennBot        | Prod company-info showed PennBot for both assistants (expect PennPilot for admin)   | Migration 0531 in round three                              |
 
 ## Started in this follow-up (PR #1333) — merged 2026-08-27
 
@@ -38,11 +38,12 @@ them up without re-discovering scope.
 
 ## Started in round three (this branch)
 
-| Item                                           | Status                                                                 |
-| ---------------------------------------------- | ---------------------------------------------------------------------- |
-| Seed tenant `assistantAdminName` → PennBot     | Migration 0531: correct admin key when value is PennBot                |
-| Account chat KB tenant-brand guard             | `customerChatKnowledge.brand.test.ts`                                  |
-| Account chat FAQ still says “refund in 5-7 days” | FAQ 85/89 aligned to claim-adjustment language                       |
+| Item                                             | Status                                                  |
+| ------------------------------------------------ | ------------------------------------------------------- |
+| Seed tenant `assistantAdminName` → PennBot       | Migration 0531: correct admin key when value is PennBot |
+| Account chat KB tenant-brand guard               | `customerChatKnowledge.brand.test.ts`                   |
+| Account chat FAQ still says “refund in 5-7 days” | FAQ 85/89 aligned to claim-adjustment language          |
+| Lapsed winback last-activity gate                | `resolveLastCustomerShipmentActivityIso` + tests        |
 
 ## Production deploy note (2026-08-27)
 
