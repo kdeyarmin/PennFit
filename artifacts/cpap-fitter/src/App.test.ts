@@ -83,13 +83,13 @@ describe("Account notification deep links", () => {
     );
   });
 
-  it("lands /account/orders on public order tracking, not a dead hash", () => {
+  it("lands /account/orders on /account Overview (Recent shipments)", () => {
     // The retail Orders tab retired with cash-pay, so `#orders` no longer
     // resolves and hashToAccountTab() would silently fall back to Overview.
     // Pushes sent before that deploy still carry the path — send them to
-    // /track-order, the patient-facing lookup that still works.
+    // /account, where Recent shipments lists insurance fulfillments.
     expect(SRC).not.toContain('<AccountHashRedirect hash="orders" />');
-    expect(SRC).toContain('<Redirect to="/track-order" />');
+    expect(SRC).toContain('<Redirect to="/account" />');
   });
 
   it("redirects /account/messages to the hash tab the account page understands", () => {

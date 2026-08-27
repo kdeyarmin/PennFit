@@ -1285,12 +1285,13 @@ function PatientRouter() {
             {/* Legacy deep link: the retail Orders tab retired with
                 cash-pay, but older pushes/emails still carry
                 /account/orders or /account/orders/:id. Land them on
-                track-order (lookup by ref) rather than a 404. */}
+                /account Overview (Recent shipments) rather than a 404
+                or the guest-only tracker. */}
             <Route path="/account/orders">
-              {() => <Redirect to="/track-order" />}
+              {() => <Redirect to="/account" />}
             </Route>
             <Route path="/account/orders/:orderId">
-              {() => <Redirect to="/track-order" />}
+              {() => <Redirect to="/account" />}
             </Route>
             <Route path="/account" component={GuardedAccount} />
             <Route path="/account/billing" component={GuardedAccountBilling} />

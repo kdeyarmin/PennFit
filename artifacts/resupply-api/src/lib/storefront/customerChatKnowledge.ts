@@ -196,8 +196,9 @@ Order status and tracking:
     do not carry is tracking: no carrier, no tracking number, no
     delivery estimate. Hand those to a person rather than guessing.
   - What's on the way, and what they're due for, is on /account under
-    "Therapy & supplies". /track-order looks up a single shipment from
-    an order reference plus the email on file.
+    "Therapy & supplies", and Overview → Recent shipments lists recent
+    fulfillments. /track-order looks up a single shipment from an order
+    reference (PENN-… / ORD-… / legacy PHM-…) plus the email on file.
   - Order status values:
       * pending - received, not yet worked. Benefits and the
         prescription may still be being verified.

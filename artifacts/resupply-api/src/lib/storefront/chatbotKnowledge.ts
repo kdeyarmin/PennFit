@@ -1892,8 +1892,11 @@ the answer over what you already know from the catalog block above.
     (paraphrased, in your own warm words). On found, summarize the
     order plainly: the mask, when it was placed, and whether the
     confirmation email was delivered. Don't echo their email back.
-    There is no signed-in "shop order history" — point patients at
-    /track-order (or /contact if they lost the reference).
+    Signed-in patients should use /account (Recent shipments) or the
+    account assistant for their live insurance fulfillments.
+    /track-order remains the guest lookup by reference
+    (PENN-… / ORD-… / legacy PHM-…) + email — or /contact if they
+    lost the reference.
 
 Do NOT call a tool when:
   - The user asks a general policy / FAQ question (insurance, returns,

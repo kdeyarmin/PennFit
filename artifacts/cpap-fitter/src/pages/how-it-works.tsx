@@ -57,8 +57,8 @@ const steps = [
   },
   {
     icon: PackageCheck,
-    title: "6. Place Your Order",
-    body: "Pick a mask, fill in your shipping, insurance, and prescription details, and submit. We receive the order and follow up directly.",
+    title: "6. Send a Fit Request",
+    body: "Choose a recommended mask and send your details (or ask for a callback). Our team reviews the request and follows up — you do not place a self-service retail order.",
   },
 ];
 
@@ -113,7 +113,7 @@ const faqs = [
   },
   {
     q: "Do I need a prescription to order a CPAP mask?",
-    a: "Yes. CPAP masks are prescription medical devices. The order form lets you indicate that you have an existing prescription on file with us, or our team will reach out to coordinate getting one from your provider.",
+    a: "Yes. CPAP masks are prescription medical devices. When you send a fit request you can note that you already have a prescription on file with us, or our team will reach out to coordinate getting one from your provider.",
   },
 ];
 
@@ -325,8 +325,8 @@ export function HowItWorks() {
                 Your photo is processed entirely in your browser and is never
                 uploaded. The only information sent to {contact.name} is your
                 numerical face measurements, your questionnaire answers, and —
-                if you place an order — the contact, insurance, and prescription
-                details you submit on the order form.
+                if you send a fit request — the contact, insurance, and
+                prescription details you submit on that form.
               </p>
               <Link
                 href="/privacy"
