@@ -210,12 +210,10 @@ router.put(
         .eq("id", d.patientId)
         .maybeSingle();
       if (patientErr) {
-        res
-          .status(500)
-          .json({
-            error: "patient_lookup_failed",
-            message: patientErr.message,
-          });
+        res.status(500).json({
+          error: "patient_lookup_failed",
+          message: patientErr.message,
+        });
         return;
       }
       if (!patient) {
