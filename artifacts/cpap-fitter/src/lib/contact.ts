@@ -6,10 +6,10 @@
 // static SPA bundle, so the first paint never waits on the network.
 // At runtime the module fetches GET /api/storefront-company-info once
 // (the values the admin saved on /admin/company-information) and
-// publishes them to every subscriber. `/api/company-info` remains as a
-// back-compat alias on the API.
-// components using `useCompanyContact()` re-render with the live
-// values. A fetch failure just leaves the fallbacks in place.
+// publishes them to every subscriber. If that path 404s (rolling
+// deploy: new SPA + API that has not yet remounted the alias), it
+// falls back to GET /api/company-info — same handler once both are
+// live. A total fetch failure just leaves the fallbacks in place.
 
 import { useSyncExternalStore } from "react";
 
@@ -84,11 +84,17 @@ function nonEmpty(v: unknown): v is string {
 function startCompanyContactFetch(): void {
   if (fetchStarted || typeof window === "undefined") return;
   fetchStarted = true;
-  void fetch("/api/storefront-company-info", {
-    headers: { Accept: "application/json" },
-    cache: "no-store",
-  })
-    .then((res) => (res.ok ? (res.json() as Promise<unknown>) : null))
+  const headers = { Accept: "application/json" };
+  const opts: RequestInit = { headers, cache: "no-store" };
+  void fetch("/api/storefront-company-info", opts)
+    .then(async (res) => {
+      if (res.ok) return res.json() as Promise<unknown>;
+      // Alias missing on an older API build — fall back to the
+      // historical path so a rolling deploy does not leave the
+      // storefront stuck on CareMetric compile-time defaults.
+      const legacy = await fetch("/api/company-info", opts);
+      return legacy.ok ? (legacy.json() as Promise<unknown>) : null;
+    })
     .then((data) => {
       if (!data || typeof data !== "object") return;
       const d = data as Record<string, unknown>;
