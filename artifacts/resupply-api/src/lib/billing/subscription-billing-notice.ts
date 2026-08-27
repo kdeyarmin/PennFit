@@ -23,7 +23,7 @@
 // Idempotency: the webhook's stripe_webhook_events event-id gate dedupes
 // redelivered events upstream, so this module does no claiming of its own.
 
-import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import {
   sendSubscriptionBillingEmail,
@@ -32,9 +32,9 @@ import {
 
 export interface SubscriptionBillingNoticeInput {
   /**
-   * Tenant the subscription belongs to. The webhook resolves this from the
-   * connected account (or seed org); when null we fall back to the seed
-   * org so single-tenant deployments still resolve cleanly.
+   * Tenant the subscription belongs to. The webhook must resolve this from
+   * the connected account / tenant mapping before calling. Blank/null
+   * skips the notice (we never invent a seed org for PHI/billing mail).
    */
   orgId: string | null;
   kind: SubscriptionBillingEmailKind;
@@ -81,8 +81,18 @@ export async function sendSubscriptionBillingNoticeOrThrow(
   const { stripeCustomerId, kind, log } = input;
   if (!stripeCustomerId) return;
 
-  const orgId = input.orgId ?? (await resolveSeedOrgId());
-  if (!orgId) return;
+  const orgId = input.orgId?.trim();
+  if (!orgId) {
+    log?.info?.(
+      {
+        event: "subscription_billing_notice_skipped",
+        reason: "tenant_context_missing",
+        kind,
+      },
+      "billing: subscription notice skipped (no orgId)",
+    );
+    return;
+  }
   const supabase = getOrgScopedClient(orgId);
 
   // Stripe customer → shop_customers.email_lower. This is the storefront

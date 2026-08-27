@@ -139,6 +139,7 @@ describe("GET /admin/business-targets", () => {
 
     const res = await request(makeApp()).get("/admin/business-targets");
     expect(res.status).toBe(200);
+    expect(res.body.windowTruncated).toBe(false);
     const pace = res.body.targets[0].pace;
     expect(pace).not.toBeNull();
     expect(pace.actualToDate).toBe(90); // 40 + 50, Feb row excluded

@@ -525,19 +525,28 @@ router.get(
       return;
     }
     const supabase = getOrgScopedClient(orgId);
-    const { data, error } = await supabase
-      .from("recall_notifications")
-      .select(
-        "id, asset_id, patient_id, status, channel, notified_at, failed_at, failed_reason, delivery_status, delivery_error_code, created_at",
-      )
-      .eq("recall_id", idCheck.data)
-      .order("created_at", { ascending: false })
-      .limit(2000);
-    if (error) throw error;
+    // Page past PostgREST max_rows — a bare high `.limit(...)` silently
+    // truncated notification counts past ~1000 unordered rows.
+    const PAGE = 1000;
+    const notifRows: RecallNotificationRow[] = [];
+    for (let from = 0; ; from += PAGE) {
+      const { data, error } = await supabase
+        .from("recall_notifications")
+        .select(
+          "id, asset_id, patient_id, status, channel, notified_at, failed_at, failed_reason, delivery_status, delivery_error_code, created_at",
+        )
+        .eq("recall_id", idCheck.data)
+        .order("created_at", { ascending: false })
+        .order("id", { ascending: false })
+        .range(from, from + PAGE - 1);
+      if (error) throw error;
+      const page = (data ?? []) as RecallNotificationRow[];
+      notifRows.push(...page);
+      if (page.length < PAGE) break;
+    }
 
     // Group counts by status so the SPA can render a summary row
     // without doing the arithmetic itself.
-    const notifRows = (data ?? []) as RecallNotificationRow[];
     const counts = notifRows.reduce(
       (acc, r) => {
         acc[r.status] = (acc[r.status] ?? 0) + 1;
@@ -709,17 +718,26 @@ router.get(
       return;
     }
     const supabase = getOrgScopedClient(orgId);
-    const { data, error } = await supabase
-      .from("recall_remediation_actions")
-      .select(
-        "id, recall_id, asset_id, action, evidence_url, notes, performed_by_user_id, performed_at, created_at",
-      )
-      .eq("recall_id", idCheck.data)
-      .order("performed_at", { ascending: false })
-      .limit(2000);
-    if (error) throw error;
+    // Page past PostgREST max_rows — a bare high `.limit(...)` silently
+    // truncated remediation counts past ~1000 unordered rows.
+    const PAGE = 1000;
+    const remediationRows: RecallRemediationActionRow[] = [];
+    for (let from = 0; ; from += PAGE) {
+      const { data, error } = await supabase
+        .from("recall_remediation_actions")
+        .select(
+          "id, recall_id, asset_id, action, evidence_url, notes, performed_by_user_id, performed_at, created_at",
+        )
+        .eq("recall_id", idCheck.data)
+        .order("performed_at", { ascending: false })
+        .order("id", { ascending: false })
+        .range(from, from + PAGE - 1);
+      if (error) throw error;
+      const page = (data ?? []) as RecallRemediationActionRow[];
+      remediationRows.push(...page);
+      if (page.length < PAGE) break;
+    }
 
-    const remediationRows = (data ?? []) as RecallRemediationActionRow[];
     const counts = remediationRows.reduce(
       (acc, r) => {
         acc[r.action] = (acc[r.action] ?? 0) + 1;
@@ -771,31 +789,57 @@ router.get(
       res.status(404).json({ error: "recall_not_found" });
       return;
     }
-    const [notifs, remediations, assets] = await Promise.all([
-      supabase
+    // Page past PostgREST max_rows (~1000). A bare high `.limit(...)` silently
+    // truncated the roster CSV to an unordered first page — surveyors
+    // would get an incomplete binder. Stable id order so pages don't drift.
+    const PAGE = 1000;
+    type NotifSelect = Pick<
+      RecallNotificationRow,
+      | "asset_id"
+      | "patient_id"
+      | "status"
+      | "channel"
+      | "notified_at"
+      | "failed_at"
+      | "failed_reason"
+    >;
+    type RemediationSelect = Pick<
+      RecallRemediationActionRow,
+      "asset_id" | "action" | "evidence_url" | "performed_at"
+    >;
+    const notifList: NotifSelect[] = [];
+    for (let from = 0; ; from += PAGE) {
+      const { data, error } = await supabase
         .from("recall_notifications")
         .select(
           "asset_id, patient_id, status, channel, notified_at, failed_at, failed_reason",
         )
         .eq("recall_id", idCheck.data)
-        .limit(5000),
-      supabase
+        .order("id", { ascending: true })
+        .range(from, from + PAGE - 1);
+      if (error) throw error;
+      const page = (data ?? []) as NotifSelect[];
+      notifList.push(...page);
+      if (page.length < PAGE) break;
+    }
+    const remediationRows: RemediationSelect[] = [];
+    for (let from = 0; ; from += PAGE) {
+      const { data, error } = await supabase
         .from("recall_remediation_actions")
         .select("asset_id, action, evidence_url, performed_at")
         .eq("recall_id", idCheck.data)
-        .limit(5000),
-      // Asset detail is over-fetched via the notification list's
-      // ids; PostgREST doesn't do JOINs, so we follow with an .in().
-      Promise.resolve(null),
-    ]);
-    if (notifs.error) throw notifs.error;
-    if (remediations.error) throw remediations.error;
-    const notifList = (notifs.data ?? []) as RecallNotificationRow[];
+        .order("id", { ascending: true })
+        .range(from, from + PAGE - 1);
+      if (error) throw error;
+      const page = (data ?? []) as RemediationSelect[];
+      remediationRows.push(...page);
+      if (page.length < PAGE) break;
+    }
     const remediationByAsset = new Map<
       string,
       { action: string; evidence_url: string | null; performed_at: string }
     >();
-    for (const r of (remediations.data ?? []) as RecallRemediationActionRow[]) {
+    for (const r of remediationRows) {
       if (!remediationByAsset.has(r.asset_id)) {
         remediationByAsset.set(r.asset_id, {
           action: r.action,
@@ -804,27 +848,29 @@ router.get(
         });
       }
     }
-    void assets;
     const assetIds = Array.from(new Set(notifList.map((n) => n.asset_id)));
     let assetMeta = new Map<
       string,
       { manufacturer: string; model: string; serial_number: string }
     >();
     if (assetIds.length > 0) {
-      const { data: assetData } = await supabase
-        .from("equipment_assets")
-        .select("id, manufacturer, model, serial_number")
-        .in("id", assetIds);
-      assetMeta = new Map(
-        ((assetData ?? []) as EquipmentAssetRow[]).map((a) => [
-          a.id,
-          {
+      // Chunk `.in()` past PostgREST URL/row caps on large recall rosters.
+      const IN_CHUNK = 200;
+      for (let i = 0; i < assetIds.length; i += IN_CHUNK) {
+        const chunk = assetIds.slice(i, i + IN_CHUNK);
+        const { data: assetData, error: assetErr } = await supabase
+          .from("equipment_assets")
+          .select("id, manufacturer, model, serial_number")
+          .in("id", chunk);
+        if (assetErr) throw assetErr;
+        for (const a of (assetData ?? []) as EquipmentAssetRow[]) {
+          assetMeta.set(a.id, {
             manufacturer: a.manufacturer,
             model: a.model,
             serial_number: a.serial_number,
-          },
-        ]),
-      );
+          });
+        }
+      }
     }
 
     const filename = `recall-${(recall.recall_reference ?? recall.id).replace(/[^A-Za-z0-9_-]/g, "_")}-roster.csv`;

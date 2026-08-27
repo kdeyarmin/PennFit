@@ -124,12 +124,14 @@ operators can't see or act on it yet:
 
 ## 4. Performance / correctness hygiene (carried forward, still open)
 
-- **JS-side aggregation caps.** 13 `.limit(20000/50000)`-then-aggregate-in-JS
-  sites remain across `routes/admin/` (`analytics.ts`, `billing-director.ts`,
-  `ltv-cac.ts`, `payer-profitability.ts`, `billing-collections-forecast.ts`,
-  `billing-benchmarks.ts`, `mask-fit-worklist.ts`, `voice-metrics.ts`,
-  `staffing-live.ts`). Silent truncation past the cap; push into SQL RPCs.
-  _Effort: S–M._
+- **JS-side aggregation caps.** Silent truncation past PostgREST
+  `max_rows` (~1000) on bare `.limit(N>1000)` aggregation reads. Prefer
+  SQL RPCs or newest-first / keyset paging + `windowTruncated` where a
+  safety bound still applies. **Shipped / mitigated (this sweep):** every
+  executable `.limit(N>1000)` under `artifacts/resupply-api/src` (admin
+  dashboards, worklists, CSV exports, workers, billing helpers) now
+  `.range()`-pages; comments that mention the old trap are not call sites.
+  _Residual:_ none known in resupply-api source; re-grep after new reads.
 - **`count:'exact'` on hot dashboards.** ~100+ across admin files vs a handful
   of `'estimated'`. **Caveat (verified this branch):** this is **not** a safe
   blanket change. The `inbox-counts.ts` calls are **user-visible nav badges**

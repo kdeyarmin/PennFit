@@ -11,6 +11,9 @@
 // the PDF renderer, and the org-scoped Supabase client.
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import path from "node:path";
 
 const isFeatureEnabledMock = vi.hoisted(() => vi.fn());
 vi.mock("../../lib/feature-flags", () => ({
@@ -67,6 +70,13 @@ vi.mock("../../lib/fax-document-token", () => ({
 
 import { runReferralAdherenceReport } from "./referral-adherence-report";
 
+const REFERRAL_SRC = readFileSync(
+  path.join(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "referral-adherence-report.ts",
+  ),
+  "utf8",
+);
 // ── Org-scoped client fake ───────────────────────────────────────────────
 //
 // A minimal chainable PostgREST stand-in. Each `.from(table)` returns a
@@ -120,7 +130,7 @@ function makeClient(cfg: FakeConfig) {
       const builder: Record<string, unknown> = {};
       const ret = () => builder;
       // chainable no-ops
-      for (const m of ["select", "not", "in", "order", "limit"]) {
+      for (const m of ["select", "not", "in", "order", "limit", "range"]) {
         builder[m] = vi.fn(ret);
       }
       builder.maybeSingle = vi.fn(async () => {
@@ -464,5 +474,17 @@ describe("runReferralAdherenceReport", () => {
     expect(renderPdfMock).not.toHaveBeenCalled();
     expect(stats.skippedNotDue).toBe(1);
     expect(stats.sent).toBe(0);
+  });
+});
+
+describe("buildCandidates — paginated referring-provider reads", () => {
+  it("does not use a raw high .limit() that PostgREST would silently cap", () => {
+    expect(REFERRAL_SRC).not.toContain(".limit(5000)");
+  });
+
+  it("pages insurance_claims and prescriptions with .range()", () => {
+    expect(REFERRAL_SRC).toContain(".range(from, from + PAGE - 1)");
+    expect(REFERRAL_SRC).toContain('.from("insurance_claims")');
+    expect(REFERRAL_SRC).toContain('.from("prescriptions")');
   });
 });

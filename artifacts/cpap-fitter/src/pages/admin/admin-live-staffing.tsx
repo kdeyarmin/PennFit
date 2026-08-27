@@ -62,6 +62,12 @@ export function AdminLiveStaffingPage() {
 function StaffingBody({ data }: { data: LiveStaffingSnapshot }) {
   return (
     <div className="space-y-4">
+      {data.windowTruncated ? (
+        <p className="text-sm" style={{ color: "hsl(var(--ink-3))" }}>
+          Tallies cover the newest 20,000 open conversations. Older threads
+          exist and are not included in these counts.
+        </p>
+      ) : null}
       <div className="flex flex-wrap gap-3 text-sm">
         <Stat
           label="On shift"

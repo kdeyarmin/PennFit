@@ -737,14 +737,22 @@ router.get(
     );
     const seen = new Set<string>();
     if (orderIds.length > 0) {
-      const { data: itemRows, error: itemErr } = await supabase
-        .from("shop_order_items")
-        .select("product_id")
-        .in("order_id", orderIds)
-        .limit(2000);
-      if (itemErr) throw itemErr;
-      for (const r of (itemRows ?? []) as Array<{ product_id: string }>) {
-        seen.add(r.product_id);
+      // Page past PostgREST max_rows — a bare high `.limit(...)` silently
+      // truncated product coverage for large XPS batches.
+      const PAGE = 1000;
+      for (let from = 0; ; from += PAGE) {
+        const { data: itemRows, error: itemErr } = await supabase
+          .from("shop_order_items")
+          .select("product_id")
+          .in("order_id", orderIds)
+          .order("id", { ascending: true })
+          .range(from, from + PAGE - 1);
+        if (itemErr) throw itemErr;
+        const page = (itemRows ?? []) as Array<{ product_id: string }>;
+        for (const r of page) {
+          seen.add(r.product_id);
+        }
+        if (page.length < PAGE) break;
       }
     }
     const known = new Set(specs.map((s) => s.productId));

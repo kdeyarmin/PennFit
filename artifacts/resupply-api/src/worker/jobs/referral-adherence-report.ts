@@ -118,37 +118,51 @@ async function buildCandidates(
 ): Promise<Candidate[]> {
   // 1. Referring provider per patient. Claims' referring_provider_id is the
   //    most explicit signal; prescriptions.provider_id is the fallback.
+  //    Page past PostgREST max_rows (~1000): a bare high `.limit(...)` silently
+  //    truncated, so patients past the first unordered page never entered
+  //    the candidate set (and the next cron rebuilt the same truncated list).
   const patientToProvider = new Map<string, string>();
+  const PAGE = 1000;
 
-  const { data: claimRows, error: claimErr } = await db
-    .from("insurance_claims")
-    .select("patient_id, referring_provider_id")
-    .not("referring_provider_id", "is", null)
-    .limit(5000);
-  if (claimErr) throw claimErr;
-  for (const r of (claimRows ?? []) as Array<{
-    patient_id: string | null;
-    referring_provider_id: string | null;
-  }>) {
-    if (r.patient_id && r.referring_provider_id) {
-      patientToProvider.set(r.patient_id, r.referring_provider_id);
+  for (let from = 0; ; from += PAGE) {
+    const { data: claimRows, error: claimErr } = await db
+      .from("insurance_claims")
+      .select("patient_id, referring_provider_id")
+      .not("referring_provider_id", "is", null)
+      .order("id", { ascending: true })
+      .range(from, from + PAGE - 1);
+    if (claimErr) throw claimErr;
+    const page = (claimRows ?? []) as Array<{
+      patient_id: string | null;
+      referring_provider_id: string | null;
+    }>;
+    for (const r of page) {
+      if (r.patient_id && r.referring_provider_id) {
+        patientToProvider.set(r.patient_id, r.referring_provider_id);
+      }
     }
+    if (page.length < PAGE) break;
   }
 
-  const { data: rxRows, error: rxErr } = await db
-    .from("prescriptions")
-    .select("patient_id, provider_id")
-    .not("provider_id", "is", null)
-    .limit(5000);
-  if (rxErr) throw rxErr;
-  for (const r of (rxRows ?? []) as Array<{
-    patient_id: string;
-    provider_id: string | null;
-  }>) {
-    // Don't overwrite a claims-derived referring provider.
-    if (r.provider_id && !patientToProvider.has(r.patient_id)) {
-      patientToProvider.set(r.patient_id, r.provider_id);
+  for (let from = 0; ; from += PAGE) {
+    const { data: rxRows, error: rxErr } = await db
+      .from("prescriptions")
+      .select("patient_id, provider_id")
+      .not("provider_id", "is", null)
+      .order("id", { ascending: true })
+      .range(from, from + PAGE - 1);
+    if (rxErr) throw rxErr;
+    const page = (rxRows ?? []) as Array<{
+      patient_id: string;
+      provider_id: string | null;
+    }>;
+    for (const r of page) {
+      // Don't overwrite a claims-derived referring provider.
+      if (r.provider_id && !patientToProvider.has(r.patient_id)) {
+        patientToProvider.set(r.patient_id, r.provider_id);
+      }
     }
+    if (page.length < PAGE) break;
   }
 
   if (patientToProvider.size === 0) return [];

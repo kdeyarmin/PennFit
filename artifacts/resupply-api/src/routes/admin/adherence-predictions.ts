@@ -102,26 +102,31 @@ router.get(
       return;
     }
     const supabase = getOrgScopedClient(orgId);
-    const { data } = await supabase
-      .from("adherence_predictions")
-      .select("patient_id, probability_compliant, days_of_therapy, scored_at")
-      .order("scored_at", { ascending: false })
-      .limit(2000);
-    const latestByPatient = new Map<
-      string,
-      {
-        patient_id: string;
-        probability_compliant: number;
-        days_of_therapy: number;
-        scored_at: string;
-      }
-    >();
-    for (const row of (data ?? []) as Array<{
+    // Page past PostgREST max_rows — a bare high `.limit(...)` silently
+    // truncated newest-first scores so at-risk patients past page 1
+    // never surfaced.
+    const PAGE = 1000;
+    type PredRow = {
       patient_id: string;
       probability_compliant: number;
       days_of_therapy: number;
       scored_at: string;
-    }>) {
+    };
+    const predRows: PredRow[] = [];
+    for (let from = 0; ; from += PAGE) {
+      const { data, error } = await supabase
+        .from("adherence_predictions")
+        .select("patient_id, probability_compliant, days_of_therapy, scored_at")
+        .order("scored_at", { ascending: false })
+        .order("patient_id", { ascending: true })
+        .range(from, from + PAGE - 1);
+      if (error) throw error;
+      const page = (data ?? []) as PredRow[];
+      predRows.push(...page);
+      if (page.length < PAGE) break;
+    }
+    const latestByPatient = new Map<string, PredRow>();
+    for (const row of predRows) {
       if (!latestByPatient.has(row.patient_id)) {
         latestByPatient.set(row.patient_id, row);
       }

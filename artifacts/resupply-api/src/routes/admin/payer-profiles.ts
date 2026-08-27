@@ -313,21 +313,31 @@ router.get(
       return;
     }
     const supabase = getOrgScopedClient(orgId);
-    let query = supabase
-      .from("payer_profiles")
-      .select(FULL_SELECT)
-      .eq("is_active", true)
-      .order("display_name", { ascending: true })
-      .limit(2000);
-    if (!includeNonElectronic) {
-      query = query
-        .eq("paper_only", false)
-        .not("office_ally_payer_id", "is", null);
+    // Page past PostgREST max_rows — a bare high `.limit(...)` silently
+    // truncated the CSV export mid-roster.
+    const PAGE = 1000;
+    const rawRows: PayerRow[] = [];
+    for (let from = 0; ; from += PAGE) {
+      let query = supabase
+        .from("payer_profiles")
+        .select(FULL_SELECT)
+        .eq("is_active", true)
+        .order("display_name", { ascending: true })
+        .order("id", { ascending: true })
+        .range(from, from + PAGE - 1);
+      if (!includeNonElectronic) {
+        query = query
+          .eq("paper_only", false)
+          .not("office_ally_payer_id", "is", null);
+      }
+      const { data, error } = await query;
+      if (error) throw error;
+      const page = (data ?? []) as PayerRow[];
+      rawRows.push(...page);
+      if (page.length < PAGE) break;
     }
-    const { data, error } = await query;
-    if (error) throw error;
 
-    const rows = (data ?? []).map(rowToApi);
+    const rows = rawRows.map(rowToApi);
     const filename = `pa-payer-profiles-${new Date()
       .toISOString()
       .slice(0, 10)}.csv`;

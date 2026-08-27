@@ -81,6 +81,7 @@ describe("submitClaimStatusCheck — scoping + payer gates", () => {
         claimId: CLAIM_ID,
         patientId: PATIENT_ID,
         requestedByEmail: "biller@pennpaps.com",
+        orgId: "org-1",
       }),
     ).rejects.toBeInstanceOf(ClaimNotForPatientError);
   });
@@ -92,6 +93,7 @@ describe("submitClaimStatusCheck — scoping + payer gates", () => {
         claimId: CLAIM_ID,
         patientId: PATIENT_ID,
         requestedByEmail: "biller@pennpaps.com",
+        orgId: "org-1",
       }),
     ).rejects.toThrow(/insurance_claim not found/);
   });
@@ -114,6 +116,7 @@ describe("submitClaimStatusCheck — scoping + payer gates", () => {
         claimId: CLAIM_ID,
         patientId: PATIENT_ID,
         requestedByEmail: "biller@pennpaps.com",
+        orgId: "org-1",
       }),
     ).rejects.toThrow(/does not accept electronic 276/);
   });
@@ -139,6 +142,7 @@ describe("submitClaimStatusCheck — scoping + payer gates", () => {
       claimId: CLAIM_ID,
       patientId: PATIENT_ID,
       requestedByEmail: "biller@pennpaps.com",
+      orgId: "org-1",
     });
     expect(r.claimStatusCheckId).toBe("csc_1");
     expect(r.uploadOk).toBe(true);

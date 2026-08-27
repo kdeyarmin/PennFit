@@ -400,33 +400,41 @@ async function dispensedModelIds(orgId: string): Promise<{
   error: { message: string } | null;
 }> {
   const supabase = getOrgScopedClient(orgId);
-  const [rules, availability] = await Promise.all([
-    supabase
+  // Page past PostgREST max_rows — a bare `.limit(20000)` silently
+  // truncates to ~1000 unordered rows and drops formulary/stock signals.
+  const PAGE = 1000;
+  const MAX = 20000;
+  const rulesRows: Row[] = [];
+  const availabilityRows: Row[] = [];
+  for (let offset = 0; offset < MAX; offset += PAGE) {
+    const { data, error } = await supabase
       .from("formulary_rules")
       .select("target_kind, target_mask_model_id, target_manufacturer, effect")
       .in("effect", ["allow", "prefer"])
-      .limit(20000),
-    supabase
+      .order("id", { ascending: true })
+      .range(offset, offset + PAGE - 1);
+    if (error) return { modelIds: null, manufacturers: [], error };
+    const page = (data ?? []) as Row[];
+    rulesRows.push(...page);
+    if (page.length < PAGE) break;
+  }
+  for (let offset = 0; offset < MAX; offset += PAGE) {
+    const { data, error } = await supabase
       .from("mask_availability")
       .select("mask_model_id, availability")
       .in("availability", ["in_stock", "low", "special_order"])
-      .limit(20000),
-  ]);
-
-  const rulesResult = rules as unknown as {
-    data: Row[] | null;
-    error: { message: string } | null;
-  };
-  const availabilityResult = availability as unknown as {
-    data: Row[] | null;
-    error: { message: string } | null;
-  };
-  const error = rulesResult.error ?? availabilityResult.error;
-  if (error) return { modelIds: null, manufacturers: [], error };
+      .order("mask_model_id", { ascending: true })
+      .order("id", { ascending: true })
+      .range(offset, offset + PAGE - 1);
+    if (error) return { modelIds: null, manufacturers: [], error };
+    const page = (data ?? []) as Row[];
+    availabilityRows.push(...page);
+    if (page.length < PAGE) break;
+  }
 
   const modelIds = new Set<string>();
   const manufacturers = new Set<string>();
-  for (const r of rulesResult.data ?? []) {
+  for (const r of rulesRows) {
     if (r.target_mask_model_id) {
       modelIds.add(String(r.target_mask_model_id));
     } else if (r.target_manufacturer) {
@@ -436,7 +444,7 @@ async function dispensedModelIds(orgId: string): Promise<{
       manufacturers.add(String(r.target_manufacturer));
     }
   }
-  for (const a of availabilityResult.data ?? []) {
+  for (const a of availabilityRows) {
     if (a.mask_model_id) modelIds.add(String(a.mask_model_id));
   }
 
@@ -455,38 +463,41 @@ async function pendingReviewModelIds(orgId: string): Promise<{
   error: { message: string } | null;
 }> {
   const supabase = getOrgScopedClient(orgId);
-  const [unreviewed, approvals] = await Promise.all([
-    supabase
+  const PAGE = 1000;
+  const MAX = 20000;
+  const unreviewedRows: Row[] = [];
+  const approvalRows: Row[] = [];
+  for (let offset = 0; offset < MAX; offset += PAGE) {
+    const { data, error } = await supabase
       .raw()
       .schema("resupply")
       .from("mask_size_variants")
       .select("id, mask_model_id")
       .eq("needs_clinical_review", true)
       .eq("status", "current")
-      .limit(20000),
-    supabase
+      .order("id", { ascending: true })
+      .range(offset, offset + PAGE - 1);
+    if (error) return { modelIds: [], error };
+    const page = (data ?? []) as Row[];
+    unreviewedRows.push(...page);
+    if (page.length < PAGE) break;
+  }
+  for (let offset = 0; offset < MAX; offset += PAGE) {
+    const { data, error } = await supabase
       .from("mask_variant_reviews")
       .select("size_variant_id")
       .eq("approved", true)
-      .limit(20000),
-  ]);
+      .order("size_variant_id", { ascending: true })
+      .range(offset, offset + PAGE - 1);
+    if (error) return { modelIds: [], error };
+    const page = (data ?? []) as Row[];
+    approvalRows.push(...page);
+    if (page.length < PAGE) break;
+  }
 
-  const unreviewedResult = unreviewed as {
-    data: Row[] | null;
-    error: { message: string } | null;
-  };
-  const approvalsResult = approvals as unknown as {
-    data: Row[] | null;
-    error: { message: string } | null;
-  };
-  const error = unreviewedResult.error ?? approvalsResult.error;
-  if (error) return { modelIds: [], error };
-
-  const approved = new Set(
-    (approvalsResult.data ?? []).map((r) => String(r.size_variant_id)),
-  );
+  const approved = new Set(approvalRows.map((r) => String(r.size_variant_id)));
   const modelIds = new Set<string>();
-  for (const v of unreviewedResult.data ?? []) {
+  for (const v of unreviewedRows) {
     if (!approved.has(String(v.id))) modelIds.add(String(v.mask_model_id));
   }
   return { modelIds: [...modelIds], error: null };
@@ -511,7 +522,7 @@ router.get(
     const client = getOrgScopedClient(orgId);
     const supabase = client.raw().schema("resupply");
 
-    const [model, variants, components, contras, reviews] = await Promise.all([
+    const [model, variants, components, contras] = await Promise.all([
       supabase
         .from("mask_models")
         .select(MODEL_COLUMNS)
@@ -530,14 +541,6 @@ router.get(
         .from("mask_contraindications")
         .select("*")
         .eq("mask_model_id", id.data),
-      // This tenant's sign-off rows, so the table shows who cleared each
-      // size and when — for this DME only.
-      client
-        .from("mask_variant_reviews")
-        .select(
-          "size_variant_id, approved, reviewed_by_email, reviewed_at, source_kind, source_ref",
-        )
-        .limit(20000),
     ]);
 
     const modelRow = (model as { data: Row | null }).data;
@@ -546,12 +549,34 @@ router.get(
       return;
     }
 
-    const reviewByVariant = new Map<string, Row>();
-    for (const r of ((reviews as unknown as { data: Row[] | null }).data ??
-      []) as Row[]) {
-      reviewByVariant.set(String(r.size_variant_id), r);
-    }
     const variantRows = (variants as { data: Row[] | null }).data ?? [];
+    // This tenant's sign-off rows for THESE variants only — not a bare
+    // `.limit(20000)` over every review in the org (that silently
+    // truncated at PostgREST max_rows and could miss this model's
+    // sign-offs on a large tenant).
+    const reviewByVariant = new Map<string, Row>();
+    const variantIds = variantRows
+      .map((v) => (typeof v.id === "string" ? v.id : null))
+      .filter((v): v is string => v != null);
+    const REVIEW_CHUNK = 100;
+    for (let i = 0; i < variantIds.length; i += REVIEW_CHUNK) {
+      const chunk = variantIds.slice(i, i + REVIEW_CHUNK);
+      const { data: reviewRows, error: reviewErr } = await client
+        .from("mask_variant_reviews")
+        .select(
+          "size_variant_id, approved, reviewed_by_email, reviewed_at, source_kind, source_ref",
+        )
+        .in("size_variant_id", chunk);
+      if (reviewErr) {
+        res
+          .status(500)
+          .json({ error: "query_failed", message: reviewErr.message });
+        return;
+      }
+      for (const r of (reviewRows ?? []) as Row[]) {
+        reviewByVariant.set(String(r.size_variant_id), r);
+      }
+    }
     const pendingHere = variantRows.some(
       (v) =>
         v.status === "current" &&

@@ -18,6 +18,8 @@ export interface LiveStaffingSnapshot {
   totalOpenConversations: number;
   activeAgents: number;
   onShiftAgents: number;
+  /** True when open-conversation tallies cover only the newest 20k threads. */
+  windowTruncated?: boolean;
 }
 
 export async function getLiveStaffing(): Promise<LiveStaffingSnapshot> {

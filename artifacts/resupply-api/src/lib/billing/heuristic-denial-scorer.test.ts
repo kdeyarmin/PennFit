@@ -43,7 +43,7 @@ describe("scoreClaim", () => {
 
   it("returns null when the claim doesn't exist", async () => {
     stageSupabaseResponse("insurance_claims", "select", { data: null });
-    const r = await scoreClaim(CLAIM_ID);
+    const r = await scoreClaim(CLAIM_ID, "org-1");
     expect(r).toBeNull();
   });
 
@@ -73,7 +73,7 @@ describe("scoreClaim", () => {
         },
       ],
     });
-    const r = await scoreClaim(CLAIM_ID);
+    const r = await scoreClaim(CLAIM_ID, "org-1");
     expect(r).not.toBeNull();
     expect(r!.probability).toBeLessThan(0.2);
   });
@@ -101,7 +101,7 @@ describe("scoreClaim", () => {
     });
     // prior_authorizations lookup returns no rows.
     stageSupabaseResponse("prior_authorizations", "select", { data: [] });
-    const r = await scoreClaim(CLAIM_ID);
+    const r = await scoreClaim(CLAIM_ID, "org-1");
     expect(r!.probability).toBeGreaterThan(0.3);
     expect(
       r!.factors.some((f) => f.key === "missing_prior_auth_required"),
@@ -129,7 +129,7 @@ describe("scoreClaim", () => {
         },
       ],
     });
-    const r = await scoreClaim(CLAIM_ID);
+    const r = await scoreClaim(CLAIM_ID, "org-1");
     expect(
       r!.factors.some((f) => f.key === "missing_referring_provider_medicare"),
     ).toBe(true);
@@ -156,7 +156,7 @@ describe("scoreClaim", () => {
         },
       ],
     });
-    const r = await scoreClaim(CLAIM_ID);
+    const r = await scoreClaim(CLAIM_ID, "org-1");
     expect(r!.factors.some((f) => f.key === "pap_without_osa_diagnosis")).toBe(
       true,
     );
@@ -167,7 +167,7 @@ describe("scoreClaim", () => {
     stageSupabaseResponse("sleep_studies", "select", { data: null });
     stageSupabaseResponse("patients", "select", { data: { address: null } });
     stageSupabaseResponse("insurance_claim_line_items", "select", { data: [] });
-    const r = await scoreClaim(CLAIM_ID);
+    const r = await scoreClaim(CLAIM_ID, "org-1");
     expect(r!.probability).toBeLessThanOrEqual(0.95);
     expect(r!.probability).toBeGreaterThan(0.5);
   });
@@ -224,7 +224,7 @@ describe("scoreClaim — fee-schedule date filtering (payer_fee_schedules)", () 
       data: { allowed_cents: 20000 },
     });
 
-    await scoreClaim(CLAIM_ID);
+    await scoreClaim(CLAIM_ID, "org-1");
 
     const filters = supabaseMock.filterCalls("payer_fee_schedules", "select");
     const lteCall = filters.find((f) => f.verb === "lte");
@@ -263,7 +263,7 @@ describe("scoreClaim — fee-schedule date filtering (payer_fee_schedules)", () 
       data: { allowed_cents: 20000 },
     });
 
-    await scoreClaim(CLAIM_ID);
+    await scoreClaim(CLAIM_ID, "org-1");
 
     const filters = supabaseMock.filterCalls("payer_fee_schedules", "select");
     const orCall = filters.find((f) => f.verb === "or");
@@ -302,7 +302,7 @@ describe("scoreClaim — fee-schedule date filtering (payer_fee_schedules)", () 
       data: { allowed_cents: 20000 },
     });
 
-    await scoreClaim(CLAIM_ID);
+    await scoreClaim(CLAIM_ID, "org-1");
 
     const filters = supabaseMock.filterCalls("payer_fee_schedules", "select");
     const lteCall = filters.find((f) => f.verb === "lte");
@@ -343,7 +343,7 @@ describe("scoreClaim — fee-schedule date filtering (payer_fee_schedules)", () 
       data: { allowed_cents: 20000 },
     });
 
-    const r = await scoreClaim(CLAIM_ID);
+    const r = await scoreClaim(CLAIM_ID, "org-1");
     expect(
       r!.factors.some((f) => f.key === "billed_over_fee_schedule_2x"),
     ).toBe(true);
@@ -380,7 +380,7 @@ describe("scoreClaim — fee-schedule date filtering (payer_fee_schedules)", () 
       data: { allowed_cents: 20000 },
     });
 
-    const r = await scoreClaim(CLAIM_ID);
+    const r = await scoreClaim(CLAIM_ID, "org-1");
     expect(
       r!.factors.some((f) => f.key === "billed_over_fee_schedule_2x"),
     ).toBe(false);
@@ -412,9 +412,20 @@ describe("scoreClaim — fee-schedule date filtering (payer_fee_schedules)", () 
       ],
     });
 
-    await scoreClaim(CLAIM_ID);
+    await scoreClaim(CLAIM_ID, "org-1");
 
     // payer_fee_schedules should never be queried
     expect(supabaseMock.callCount("payer_fee_schedules", "select")).toBe(0);
+  });
+});
+
+describe("scoreClaim — tenant required", () => {
+  beforeEach(() => supabaseMock.reset());
+
+  it("returns null without inventing the seed org when orgId is omitted", async () => {
+    stageClaim();
+    const r = await scoreClaim(CLAIM_ID);
+    expect(r).toBeNull();
+    expect(supabaseMock.callCount("insurance_claims", "select")).toBe(0);
   });
 });

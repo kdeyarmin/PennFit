@@ -22,7 +22,13 @@ import { requireAdmin } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
 
+/** PostgREST page size (matches max_rows default). */
+const PAGE = 1000;
+/** Safety bound on open-AR / paid-claim rows folded into each report. */
+const CLAIMS_MAX = 5000;
+
 type AgingBucket = "0_30" | "31_60" | "61_90" | "90_plus";
+type ClaimRow = Database["resupply"]["Tables"]["insurance_claims"]["Row"];
 
 function bucketForDays(days: number): AgingBucket {
   if (days <= 30) return "0_30";
@@ -46,16 +52,26 @@ router.get(
     // payment (incl. partially_paid, migration 0430). Deliberately EXCLUDES
     // denied / appealed / rejected / draft / paid / closed — a denied or
     // appealed claim isn't collectible AR, and counting it (on gross billed)
-    // overstated the aging report. Bounded by status; a few thousand rows in
-    // flight for a 10k-patient book — under PostgREST's cap.
-    const { data, error } = await supabase
-      .from("insurance_claims")
-      .select(
-        "id, payer_name, status, total_billed_cents, submitted_at, date_of_service",
-      )
-      .in("status", ["submitted", "accepted", "partially_paid"])
-      .limit(5000);
-    if (error) throw error;
+    // overstated the aging report.
+    //
+    // Page past PostgREST max_rows — a bare `.limit(5000)` silently
+    // truncates to ~1000 unordered rows and understates open AR.
+    const data: ClaimRow[] = [];
+    for (let offset = 0; offset < CLAIMS_MAX; offset += PAGE) {
+      const { data: page, error } = await supabase
+        .from("insurance_claims")
+        .select(
+          "id, payer_name, status, total_billed_cents, submitted_at, date_of_service",
+        )
+        .in("status", ["submitted", "accepted", "partially_paid"])
+        .order("submitted_at", { ascending: false, nullsFirst: false })
+        .order("id", { ascending: false })
+        .range(offset, offset + PAGE - 1);
+      if (error) throw error;
+      const rows = (page ?? []) as ClaimRow[];
+      data.push(...rows);
+      if (rows.length < PAGE) break;
+    }
     const now = Date.now();
     const buckets: Record<
       AgingBucket,
@@ -70,8 +86,7 @@ router.get(
       string,
       Record<AgingBucket, { claimCount: number; billedCents: number }>
     >();
-    for (const row of (data ??
-      []) as Database["resupply"]["Tables"]["insurance_claims"]["Row"][]) {
+    for (const row of data) {
       const baseline = row.submitted_at ?? row.date_of_service;
       if (!baseline) continue;
       const baseMs = new Date(baseline).getTime();
@@ -102,7 +117,8 @@ router.get(
         .map(([payerName, buckets]) => ({ payerName, buckets }))
         .sort((a, b) => totalBilled(b.buckets) - totalBilled(a.buckets)),
       totalOpenBilledCents,
-      totalOpenClaimCount: (data ?? []).length,
+      totalOpenClaimCount: data.length,
+      windowTruncated: data.length >= CLAIMS_MAX,
       generatedAt: new Date().toISOString(),
     });
   },
@@ -121,23 +137,31 @@ router.get(
     const supabase = getOrgScopedClient(orgId);
     // DSO requires submitted_at AND paid_at. Pull the last 180 days of
     // paid claims; older data drags the metric without telling us
-    // anything actionable.
+    // anything actionable. Page past PostgREST max_rows — a bare
+    // `.limit(5000)` silently truncated the population.
     const cutoff = new Date(Date.now() - 180 * 24 * 3600 * 1000).toISOString();
-    const { data, error } = await supabase
-      .from("insurance_claims")
-      .select("payer_name, submitted_at, paid_at, total_paid_cents")
-      .eq("status", "paid")
-      .gte("paid_at", cutoff)
-      .not("submitted_at", "is", null)
-      .not("paid_at", "is", null)
-      .limit(5000);
-    if (error) throw error;
+    const data: ClaimRow[] = [];
+    for (let offset = 0; offset < CLAIMS_MAX; offset += PAGE) {
+      const { data: page, error } = await supabase
+        .from("insurance_claims")
+        .select("payer_name, submitted_at, paid_at, total_paid_cents")
+        .eq("status", "paid")
+        .gte("paid_at", cutoff)
+        .not("submitted_at", "is", null)
+        .not("paid_at", "is", null)
+        .order("paid_at", { ascending: false })
+        .order("id", { ascending: false })
+        .range(offset, offset + PAGE - 1);
+      if (error) throw error;
+      const rows = (page ?? []) as ClaimRow[];
+      data.push(...rows);
+      if (rows.length < PAGE) break;
+    }
     const perPayer = new Map<
       string,
       { sumDays: number; sumPaidCents: number; count: number }
     >();
-    for (const row of (data ??
-      []) as Database["resupply"]["Tables"]["insurance_claims"]["Row"][]) {
+    for (const row of data) {
       if (!row.submitted_at || !row.paid_at) continue;
       const days =
         (new Date(row.paid_at).getTime() -
@@ -166,6 +190,7 @@ router.get(
     res.json({
       payers: rows,
       windowDays: 180,
+      windowTruncated: data.length >= CLAIMS_MAX,
       generatedAt: new Date().toISOString(),
     });
   },

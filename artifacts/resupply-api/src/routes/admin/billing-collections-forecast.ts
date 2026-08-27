@@ -29,6 +29,12 @@ import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
 
+/** PostgREST page size (matches max_rows default). */
+const PAGE = 1000;
+const OUTSTANDING_CLAIMS_MAX = 5000;
+const ACTIVE_RX_MAX = 5000;
+const FULFILLMENTS_MAX = 20000;
+
 const querySchema = z
   .object({
     expectedDaysToPay: z.coerce.number().int().min(1).max(365).optional(),
@@ -54,28 +60,39 @@ router.get(
       return;
     }
     const supabase = getOrgScopedClient(orgId);
-    const { data, error } = await supabase
-      .from("insurance_claims")
-      .select(
-        "status, total_billed_cents, total_allowed_cents, total_paid_cents, submitted_at",
-      )
-      .in("status", [...OUTSTANDING_AR_STATUSES])
-      .limit(5000);
-    if (error) {
-      res.status(500).json({ error: "query_failed", message: error.message });
-      return;
+
+    // Page past PostgREST max_rows — a bare `.limit(5000)` silently
+    // truncates to ~1000 unordered rows and understates AR.
+    const rows: OutstandingClaim[] = [];
+    for (let offset = 0; offset < OUTSTANDING_CLAIMS_MAX; offset += PAGE) {
+      const { data, error } = await supabase
+        .from("insurance_claims")
+        .select(
+          "status, total_billed_cents, total_allowed_cents, total_paid_cents, submitted_at",
+        )
+        .in("status", [...OUTSTANDING_AR_STATUSES])
+        .order("submitted_at", { ascending: false, nullsFirst: false })
+        .order("id", { ascending: false })
+        .range(offset, offset + PAGE - 1);
+      if (error) {
+        res.status(500).json({ error: "query_failed", message: error.message });
+        return;
+      }
+      const page = (data ?? []) as OutstandingClaim[];
+      rows.push(...page);
+      if (page.length < PAGE) break;
     }
 
-    const forecast = projectClaimCollections(
-      (data ?? []) as unknown as OutstandingClaim[],
-      {
-        expectedDaysToPay: parsed.data.expectedDaysToPay,
-        defaultAllowedRatio: parsed.data.defaultAllowedRatio,
-        collectionProbability: parsed.data.collectionProbability,
-      },
-    );
+    const forecast = projectClaimCollections(rows, {
+      expectedDaysToPay: parsed.data.expectedDaysToPay,
+      defaultAllowedRatio: parsed.data.defaultAllowedRatio,
+      collectionProbability: parsed.data.collectionProbability,
+    });
 
-    res.json(forecast);
+    res.json({
+      ...forecast,
+      windowTruncated: rows.length >= OUTSTANDING_CLAIMS_MAX,
+    });
   },
 );
 
@@ -112,42 +129,70 @@ router.get(
     }
     const supabase = getOrgScopedClient(orgId);
 
-    const { data: rx, error: rxErr } = await supabase
-      .from("prescriptions")
-      .select("patient_id, item_sku, cadence_days")
-      .eq("status", "active")
-      .limit(5000);
-    if (rxErr) {
-      res.status(500).json({ error: "query_failed", message: rxErr.message });
-      return;
-    }
-    const prescriptions = (rx ?? []) as Array<{
+    type RxRow = {
       patient_id: string;
       item_sku: string;
       cadence_days: number;
-    }>;
-
-    // Most-recent fulfillment per (patient, sku) — the resupply anchor.
-    const lastFill = new Map<string, string>();
-    if (prescriptions.length > 0) {
-      const { data: fills, error: fErr } = await supabase
-        .from("fulfillments")
-        .select("patient_id, item_sku, created_at")
-        .order("created_at", { ascending: false })
-        .limit(20000);
-      if (fErr) {
-        res.status(500).json({ error: "query_failed", message: fErr.message });
+    };
+    const prescriptions: RxRow[] = [];
+    for (let offset = 0; offset < ACTIVE_RX_MAX; offset += PAGE) {
+      const { data: rx, error: rxErr } = await supabase
+        .from("prescriptions")
+        .select("patient_id, item_sku, cadence_days")
+        .eq("status", "active")
+        .order("id", { ascending: true })
+        .range(offset, offset + PAGE - 1);
+      if (rxErr) {
+        res.status(500).json({ error: "query_failed", message: rxErr.message });
         return;
       }
-      for (const f of (fills ?? []) as Array<{
-        patient_id: string;
-        item_sku: string;
-        created_at: string;
-      }>) {
-        const k = `${f.patient_id}|${f.item_sku}`;
-        if (!lastFill.has(k)) lastFill.set(k, f.created_at); // first = newest
+      const page = (rx ?? []) as RxRow[];
+      prescriptions.push(...page);
+      if (page.length < PAGE) break;
+    }
+    const rxWindowTruncated = prescriptions.length >= ACTIVE_RX_MAX;
+
+    // Most-recent fulfillment per needed (patient, sku). Page newest-first
+    // and stop once every active-rx key has an anchor (or the safety
+    // window fills). A bare `.limit(20000)` was truncated by PostgREST to
+    // ~1000 unordered rows, so many last-fills looked "never filled".
+    const needed = new Set(
+      prescriptions.map((p) => `${p.patient_id}|${p.item_sku}`),
+    );
+    const lastFill = new Map<string, string>();
+    let fillsScanned = 0;
+    if (needed.size > 0) {
+      for (let offset = 0; offset < FULFILLMENTS_MAX; offset += PAGE) {
+        if (lastFill.size >= needed.size) break;
+        const { data: fills, error: fErr } = await supabase
+          .from("fulfillments")
+          .select("patient_id, item_sku, created_at")
+          .order("created_at", { ascending: false })
+          .order("id", { ascending: false })
+          .range(offset, offset + PAGE - 1);
+        if (fErr) {
+          res
+            .status(500)
+            .json({ error: "query_failed", message: fErr.message });
+          return;
+        }
+        const page = (fills ?? []) as Array<{
+          patient_id: string;
+          item_sku: string;
+          created_at: string;
+        }>;
+        fillsScanned += page.length;
+        for (const f of page) {
+          const k = `${f.patient_id}|${f.item_sku}`;
+          if (needed.has(k) && !lastFill.has(k)) {
+            lastFill.set(k, f.created_at);
+          }
+        }
+        if (page.length < PAGE) break;
       }
     }
+    const fillsWindowTruncated =
+      fillsScanned >= FULFILLMENTS_MAX && lastFill.size < needed.size;
 
     const due: DuePrescription[] = prescriptions.map((p) => ({
       lastFillIso: lastFill.get(`${p.patient_id}|${p.item_sku}`) ?? null,
@@ -159,7 +204,10 @@ router.get(
       confirmRate: parsed.data.confirmRate,
       horizonDays: parsed.data.horizonDays,
     });
-    res.json(book);
+    res.json({
+      ...book,
+      windowTruncated: rxWindowTruncated || fillsWindowTruncated,
+    });
   },
 );
 

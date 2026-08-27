@@ -106,6 +106,7 @@ router.get(
     ];
 
     let metricRows: Array<Record<string, unknown>> = [];
+    let metricsWindowTruncated = false;
     if (metricKeys.length > 0) {
       const parsedRanges = ranges.filter(
         (r): r is NonNullable<typeof r> => r != null,
@@ -118,23 +119,37 @@ router.get(
       // metrics_daily is now per-tenant (migration 0380). It's not in the
       // typed Database, so it's reached via raw() and the org filter must
       // be explicit — the pace-to-goal actuals are THIS tenant's only.
-      const { data: metrics, error: metricsErr } = await supabase
-        .raw()
-        .schema("resupply")
-        .from("metrics_daily")
-        .select("metric_key, metric_date, metric_value")
-        .eq("org_id", orgId)
-        .in("metric_key", metricKeys)
-        .gte("metric_date", minStart)
-        .lt("metric_date", maxEnd)
-        .limit(5000);
-      if (metricsErr) {
-        res
-          .status(500)
-          .json({ error: "query_failed", message: metricsErr.message });
-        return;
+      //
+      // Page past PostgREST max_rows. Newest-first so a safety cap keeps
+      // the most recent snapshots (pace-to-goal cares about today, not
+      // the oldest days of the window).
+      const PAGE = 1000;
+      const MAX_ROWS = 5000;
+      for (let offset = 0; offset < MAX_ROWS; offset += PAGE) {
+        const { data: metrics, error: metricsErr } = await supabase
+          .raw()
+          .schema("resupply")
+          .from("metrics_daily")
+          .select("metric_key, metric_date, metric_value")
+          .eq("org_id", orgId)
+          .in("metric_key", metricKeys)
+          .gte("metric_date", minStart)
+          .lt("metric_date", maxEnd)
+          .order("metric_date", { ascending: false })
+          .order("metric_key", { ascending: true })
+          .range(offset, offset + PAGE - 1);
+        if (metricsErr) {
+          res
+            .status(500)
+            .json({ error: "query_failed", message: metricsErr.message });
+          return;
+        }
+        const page = (metrics ?? []) as Array<Record<string, unknown>>;
+        metricRows.push(...page);
+        if (page.length < PAGE) break;
       }
-      metricRows = (metrics ?? []) as Array<Record<string, unknown>>;
+      // Cap hit — older days in the selected window may be missing.
+      metricsWindowTruncated = metricRows.length >= MAX_ROWS;
     }
 
     const withPace = targets.map((t, i) => {
@@ -169,7 +184,12 @@ router.get(
       };
     });
 
-    res.json({ targets: withPace });
+    res.json({
+      targets: withPace,
+      // True when the metrics_daily window filled — older/extra daily
+      // rows beyond MAX_ROWS exist and are not in the pace sums.
+      windowTruncated: metricsWindowTruncated,
+    });
   },
 );
 

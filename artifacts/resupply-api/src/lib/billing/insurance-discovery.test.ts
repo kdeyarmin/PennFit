@@ -13,10 +13,6 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("@workspace/resupply-db", () => ({
-  resolveSeedOrgId: vi.fn(async () => "org-1"),
-}));
-
 const discoverMock = vi.fn();
 vi.mock("@workspace/resupply-integrations-office-ally", () => ({
   createInsuranceDiscoveryTransport: vi.fn(() => ({

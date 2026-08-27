@@ -182,43 +182,65 @@ router.get(
     const playbookIds = ((playbooksRes.data ?? []) as PlaybookRow[]).map(
       (p) => p.id,
     );
-    // Steps are fetched for exactly the playbooks on this page so a
-    // large library can't truncate another playbook's cadence. The
-    // limit is the structural max for the page (200 playbooks × 20
-    // steps), not a global cap.
-    const [stepsRes, activeRunsRes] = await Promise.all([
-      playbookIds.length > 0
-        ? supabase
-            .from("outreach_playbook_steps")
-            .select(
-              "id, playbook_id, step_index, day_offset, channel, subject, body",
-            )
-            .in("playbook_id", playbookIds)
-            .order("step_index", { ascending: true })
-            .limit(4000)
-        : Promise.resolve({ data: [], error: null }),
-      supabase
-        .from("outreach_playbook_runs")
-        .select("playbook_id")
-        .eq("status", "active")
-        .limit(5000),
-    ]);
-    if (stepsRes.error || activeRunsRes.error) {
-      const message = (stepsRes.error ?? activeRunsRes.error)?.message;
+    // Steps + active-run tallies page past PostgREST max_rows (~1000).
+    // Bare high `.limit(...)` caps silently truncated both reads.
+    let stepsRes: StepRow[];
+    let activeRuns: Array<{ playbook_id: string }>;
+    try {
+      [stepsRes, activeRuns] = await Promise.all([
+        (async () => {
+          if (playbookIds.length === 0) return [] as StepRow[];
+          const PAGE = 1000;
+          const steps: StepRow[] = [];
+          for (let from = 0; ; from += PAGE) {
+            const { data, error } = await supabase
+              .from("outreach_playbook_steps")
+              .select(
+                "id, playbook_id, step_index, day_offset, channel, subject, body",
+              )
+              .in("playbook_id", playbookIds)
+              .order("step_index", { ascending: true })
+              .order("id", { ascending: true })
+              .range(from, from + PAGE - 1);
+            if (error) throw error;
+            const page = (data ?? []) as StepRow[];
+            steps.push(...page);
+            if (page.length < PAGE) break;
+          }
+          return steps;
+        })(),
+        (async () => {
+          const PAGE = 1000;
+          const runs: Array<{ playbook_id: string }> = [];
+          for (let from = 0; ; from += PAGE) {
+            const { data, error } = await supabase
+              .from("outreach_playbook_runs")
+              .select("playbook_id")
+              .eq("status", "active")
+              .order("id", { ascending: true })
+              .range(from, from + PAGE - 1);
+            if (error) throw error;
+            const page = (data ?? []) as Array<{ playbook_id: string }>;
+            runs.push(...page);
+            if (page.length < PAGE) break;
+          }
+          return runs;
+        })(),
+      ]);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
       res.status(500).json({ error: "query_failed", message });
       return;
     }
 
     const stepsByPlaybook = new Map<string, StepRow[]>();
-    for (const s of (stepsRes.data ?? []) as StepRow[]) {
+    for (const s of stepsRes) {
       const list = stepsByPlaybook.get(s.playbook_id) ?? [];
       list.push(s);
       stepsByPlaybook.set(s.playbook_id, list);
     }
     const activeRunCounts = new Map<string, number>();
-    for (const r of (activeRunsRes.data ?? []) as Array<{
-      playbook_id: string;
-    }>) {
+    for (const r of activeRuns) {
       activeRunCounts.set(
         r.playbook_id,
         (activeRunCounts.get(r.playbook_id) ?? 0) + 1,

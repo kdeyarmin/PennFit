@@ -197,8 +197,9 @@ describe("POST /patients/:id/insurance-claims/:claimId/ai-scrub", () => {
     )[0] as Record<string, unknown>;
     expect(denorm.latest_scrub_verdict).toBe("fixable");
     expect(denorm.latest_scrub_result_id).toBe(SCRUB);
-    // The cheap heuristic scorer is kicked off (fire-and-forget).
-    expect(scoreMock).toHaveBeenCalledWith(CLAIM);
+    // The cheap heuristic scorer is kicked off (fire-and-forget) with the
+    // request tenant — never invent seed for scoring/persist.
+    expect(scoreMock).toHaveBeenCalledWith(CLAIM, MOCK_ORG_ID);
   });
 
   it("provider-offline: persists the errored verdict the brain returns", async () => {

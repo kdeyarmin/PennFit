@@ -530,22 +530,42 @@ router.get("/admin/reminders", async (req, res) => {
     return;
   }
   const supabase = getOrgScopedClient(orgId);
-  const { data: rows, error } = await supabase
-    .raw()
-    .schema("public")
-    .from("reminder_subscriptions")
-    .select(
-      "id, email, manage_token, status, items, last_sent_at, created_at, updated_at",
-    )
-    // Tenant-scoped (migration 0378) — a tenant admin sees only ITS subscribers.
-    .eq("org_id", orgId)
-    .order("created_at", { ascending: false })
-    .limit(2000);
-  if (error) throw error;
+  // Page past PostgREST max_rows — a bare high `.limit(...)` silently
+  // truncated the subscriber list past ~1000 unordered rows.
+  const PAGE = 1000;
+  type SubRow = {
+    id: string;
+    email: string;
+    manage_token: string;
+    status: string;
+    items: unknown;
+    last_sent_at: string | null;
+    created_at: string;
+    updated_at: string;
+  };
+  const rows: SubRow[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await supabase
+      .raw()
+      .schema("public")
+      .from("reminder_subscriptions")
+      .select(
+        "id, email, manage_token, status, items, last_sent_at, created_at, updated_at",
+      )
+      // Tenant-scoped (migration 0378) — a tenant admin sees only ITS subscribers.
+      .eq("org_id", orgId)
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: false })
+      .range(from, from + PAGE - 1);
+    if (error) throw error;
+    const page = (data ?? []) as SubRow[];
+    rows.push(...page);
+    if (page.length < PAGE) break;
+  }
 
   const today = new Date().toISOString().slice(0, 10);
   res.json({
-    subscribers: (rows ?? []).map((r) => {
+    subscribers: rows.map((r) => {
       const items = (r.items ?? []) as unknown as Array<{
         sku: string;
         lastReplacedAt: string;
