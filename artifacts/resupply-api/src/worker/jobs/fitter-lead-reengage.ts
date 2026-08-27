@@ -290,22 +290,39 @@ async function fitterLeadReengageSweepForOrg(
   const convertedSet = new Set<string>();
   for (let i = 0; i < emails.length; i += CHUNK) {
     const chunk = emails.slice(i, i + CHUNK);
-    const orClauses = chunk
+    const orderOr = chunk
       .map((e) => `patient_email.ilike.${escapePostgRESTFilterValue(e)}`)
       .join(",");
-    const { data: converted, error: convErr } = await supabase
-      .raw()
-      .schema("public")
-      .from("orders")
-      .select("patient_email")
-      // Tenant-scoped (migration 0463): a conversion only counts if the order
-      // was placed in THIS tenant's org.
-      .eq("org_id", orgId)
-      .or(orClauses);
-    if (convErr) throw convErr;
-    for (const r of converted ?? []) {
+    const requestOr = chunk
+      .map((e) => `email.ilike.${escapePostgRESTFilterValue(e)}`)
+      .join(",");
+    const [orderRes, fulfilledRes] = await Promise.all([
+      supabase
+        .raw()
+        .schema("public")
+        .from("orders")
+        .select("patient_email")
+        // Tenant-scoped (migration 0463): a conversion only counts if the order
+        // was placed in THIS tenant's org.
+        .eq("org_id", orgId)
+        .or(orderOr),
+      // Insurance path: staff closed a fit request as fulfilled.
+      supabase
+        .from("fitter_fit_requests")
+        .select("email")
+        .eq("closed_outcome", "fulfilled")
+        .or(requestOr),
+    ]);
+    if (orderRes.error) throw orderRes.error;
+    if (fulfilledRes.error) throw fulfilledRes.error;
+    for (const r of orderRes.data ?? []) {
       if (typeof r.patient_email === "string") {
         convertedSet.add(r.patient_email.toLowerCase());
+      }
+    }
+    for (const r of fulfilledRes.data ?? []) {
+      if (typeof r.email === "string") {
+        convertedSet.add(r.email.toLowerCase());
       }
     }
   }

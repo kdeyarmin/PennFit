@@ -246,11 +246,11 @@ export function AdminFitterLeadsPage() {
             Patients who started or finished the at-home mask fitter on{" "}
             <span className="font-mono text-xs">/consent → /results</span>.
             Completing the fitter enrolls a lead into a{" "}
-            <strong>6-touch pre-purchase nurture</strong> over 60 days. Placing
-            an order flips them into the{" "}
-            <strong>4-touch post-purchase re-order nurture</strong> (cushion at
-            30d, filter at 60d, headgear at 90d, full refresh at 180d) so
-            first-time buyers turn into recurring supply orders.
+            <strong>6-touch nurture</strong> over 60 days while staff work the
+            fit request. Closing a request as fulfilled (patient has their mask)
+            flips them into the <strong>4-touch resupply nurture</strong>{" "}
+            (cushion at 30d, filter at 60d, headgear at 90d, full refresh at
+            180d) so a first fitting becomes ongoing insurance resupply.
           </>
         }
       />
@@ -264,7 +264,7 @@ export function AdminFitterLeadsPage() {
         >
           <div>
             <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
-              Fitter → Order conversion
+              Fitter → fulfilled conversion
             </div>
             <div
               className="text-3xl font-semibold tabular-nums"
