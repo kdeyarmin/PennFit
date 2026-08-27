@@ -126,12 +126,13 @@ operators can't see or act on it yet:
 
 - **JS-side aggregation caps.** Several `.limit(20000/50000)`-then-aggregate-in-JS
   sites remain across `routes/admin/` (`analytics.ts`, `billing-director.ts`,
-  `payer-profitability.ts`, and related). Silent truncation past PostgREST
-  `max_rows` (~1000). Prefer SQL RPCs or newest-first paging +
-  `windowTruncated`. **Shipped / mitigated:** `ltv-cac` + `resupply-kpis`
-  RPCs (#1209); `billing-benchmarks` / `voice-metrics` / `mask-fit-worklist`
-  keyset or range paging; `staffing-live` paging (#1350); collections-forecast
-  - forward-order-book paging (this branch). _Effort: S–M for residual sites._
+  and related). Silent truncation past PostgREST `max_rows` (~1000). Prefer
+  SQL RPCs or newest-first paging + `windowTruncated`. **Shipped /
+  mitigated:** `ltv-cac` + `resupply-kpis` RPCs (#1209); `billing-benchmarks`
+  / `voice-metrics` / `mask-fit-worklist` keyset or range paging;
+  `staffing-live` (#1350); collections-forecast + forward-order-book (#1351);
+  `payer-profitability` claims + line COGS paging (this branch). _Effort: S–M
+  for residual sites._
 - **`count:'exact'` on hot dashboards.** ~100+ across admin files vs a handful
   of `'estimated'`. **Caveat (verified this branch):** this is **not** a safe
   blanket change. The `inbox-counts.ts` calls are **user-visible nav badges**

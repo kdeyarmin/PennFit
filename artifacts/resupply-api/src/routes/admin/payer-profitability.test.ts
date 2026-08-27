@@ -167,5 +167,6 @@ describe("GET /admin/billing/payer-profitability", () => {
     expect(aetna.claimsWithoutCost).toBe(1);
     expect(aetna.netCents).toBe(5000);
     expect(res.body.totals.paidCents).toBe(8000);
+    expect(res.body.windowTruncated).toBe(false);
   });
 });
