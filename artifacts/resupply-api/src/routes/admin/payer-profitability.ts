@@ -158,6 +158,13 @@ const querySchema = z
   .object({ days: z.coerce.number().int().min(1).max(730).optional() })
   .strip();
 
+/** PostgREST page size (matches max_rows default). */
+const PAGE = 1000;
+/** Safety bound on claims folded into the window. */
+const CLAIMS_MAX = 5000;
+/** Chunk size for `.in("claim_id", …)` line-item lookups. */
+const CLAIM_ID_CHUNK = 100;
+
 router.get(
   "/admin/billing/payer-profitability",
   // Rate-limit before the auth gate (CodeQL "missing rate limiting").
@@ -176,48 +183,66 @@ router.get(
       return;
     }
     const supabase = getOrgScopedClient(orgId);
-    const { data: claims, error } = await supabase
-      .from("insurance_claims")
-      .select(
-        "id, payer_name, payer_profile_id, status, total_billed_cents, total_allowed_cents, total_paid_cents",
-      )
-      .gte("date_of_service", cutoff)
-      .limit(5000);
-    if (error) {
-      res.status(500).json({ error: "query_failed", message: error.message });
-      return;
+
+    // Page past PostgREST max_rows — a bare `.limit(5000)` silently
+    // truncates to ~1000 unordered rows and understates payer yield.
+    type ClaimRow = Record<string, unknown>;
+    const claimRows: ClaimRow[] = [];
+    for (let offset = 0; offset < CLAIMS_MAX; offset += PAGE) {
+      const { data: claims, error } = await supabase
+        .from("insurance_claims")
+        .select(
+          "id, payer_name, payer_profile_id, status, total_billed_cents, total_allowed_cents, total_paid_cents",
+        )
+        .gte("date_of_service", cutoff)
+        .order("date_of_service", { ascending: false })
+        .order("id", { ascending: false })
+        .range(offset, offset + PAGE - 1);
+      if (error) {
+        res.status(500).json({ error: "query_failed", message: error.message });
+        return;
+      }
+      const page = (claims ?? []) as ClaimRow[];
+      claimRows.push(...page);
+      if (page.length < PAGE) break;
     }
-    const claimRows = (claims ?? []) as Array<Record<string, unknown>>;
 
     // Batch the line-item COGS for those claims; sum the KNOWN per-line
-    // costs per claim_id.
+    // costs per claim_id. Chunk the `.in()` filter and page each chunk —
+    // a bare `.limit(20000)` was truncated at ~1000 unordered lines.
     const claimIds = claimRows
       .map((c) => (typeof c.id === "string" ? c.id : null))
       .filter((v): v is string => v != null);
     const costByClaim = new Map<string, number>();
     const claimHasCost = new Set<string>();
-    if (claimIds.length > 0) {
-      const { data: lines, error: linesErr } = await supabase
-        .from("insurance_claim_line_items")
-        .select("claim_id, quantity, unit_cost_cents")
-        .in("claim_id", claimIds)
-        .limit(20000);
-      if (linesErr) {
-        res
-          .status(500)
-          .json({ error: "query_failed", message: linesErr.message });
-        return;
-      }
-      for (const l of (lines ?? []) as Array<Record<string, unknown>>) {
-        const cid = typeof l.claim_id === "string" ? l.claim_id : "";
-        if (cid === "" || typeof l.unit_cost_cents !== "number") continue;
-        const qty =
-          typeof l.quantity === "number" && l.quantity > 0 ? l.quantity : 1;
-        costByClaim.set(
-          cid,
-          (costByClaim.get(cid) ?? 0) + l.unit_cost_cents * qty,
-        );
-        claimHasCost.add(cid);
+    for (let i = 0; i < claimIds.length; i += CLAIM_ID_CHUNK) {
+      const chunk = claimIds.slice(i, i + CLAIM_ID_CHUNK);
+      for (let offset = 0; ; offset += PAGE) {
+        const { data: lines, error: linesErr } = await supabase
+          .from("insurance_claim_line_items")
+          .select("claim_id, quantity, unit_cost_cents")
+          .in("claim_id", chunk)
+          .order("id", { ascending: true })
+          .range(offset, offset + PAGE - 1);
+        if (linesErr) {
+          res
+            .status(500)
+            .json({ error: "query_failed", message: linesErr.message });
+          return;
+        }
+        const page = (lines ?? []) as Array<Record<string, unknown>>;
+        for (const l of page) {
+          const cid = typeof l.claim_id === "string" ? l.claim_id : "";
+          if (cid === "" || typeof l.unit_cost_cents !== "number") continue;
+          const qty =
+            typeof l.quantity === "number" && l.quantity > 0 ? l.quantity : 1;
+          costByClaim.set(
+            cid,
+            (costByClaim.get(cid) ?? 0) + l.unit_cost_cents * qty,
+          );
+          claimHasCost.add(cid);
+        }
+        if (page.length < PAGE) break;
       }
     }
 
@@ -244,6 +269,9 @@ router.get(
     res.json({
       windowDays: days,
       ...report,
+      // True when the newest-first claims window filled — older DOS
+      // rows beyond CLAIMS_MAX exist and are not in this rollup.
+      windowTruncated: claimRows.length >= CLAIMS_MAX,
       generatedAt: new Date().toISOString(),
     });
   },
