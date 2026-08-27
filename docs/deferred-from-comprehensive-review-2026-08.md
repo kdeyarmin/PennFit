@@ -37,19 +37,14 @@ them up without re-discovering scope.
 ## Production deploy note (2026-08-27)
 
 After #1330 merged (`6fb33f837`), GitHub deployment `6115697681`
-(`PennPaps / production`) stayed `in_progress` for **30+ minutes** with no
-status updates while `https://pennpaps.com` and `https://pennfit.up.railway.app`
-continued to 404 `GET /api/storefront-company-info` and serve CareMetric on
-`/api/company-info`. `/api/storefront-branding` on pennpaps already returns
-Penn Home Medical Supply (DB/host resolution is fine — the live process is
-simply the pre-merge build).
+(`PennPaps / production`) stayed `in_progress` for ~32 minutes, then
+succeeded at **03:27 UTC**. Post-deploy smoke on `https://pennpaps.com`:
 
-This is a **Railway production roll-out hang**, not an application bug in
-#1333. Unblock by checking the Railway production environment build/deploy
-logs for `6fb33f837` (migrations / build queue). Re-run:
-
-```bash
-pnpm --filter @workspace/scripts verify:deploy -- https://pennpaps.com
+```text
+verify:deploy → 4 passed
+/api/company-info            → "Penn Home Medical Supply"
+/api/storefront-company-info → "Penn Home Medical Supply"
+/api/storefront-branding     → Penn Home Medical Supply
 ```
 
-Expect both company-info endpoints → `"Penn Home Medical Supply"`.
+Platform host `pennfit.up.railway.app` correctly stays CareMetric-branded.
