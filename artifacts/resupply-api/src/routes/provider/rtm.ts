@@ -608,11 +608,7 @@ router.get(
     }
 
     const anchorDate = parsedQuery.data.anchor ?? setupDate;
-    const nightRows = await loadCmsHorizonNights(
-      orgId,
-      patient.id,
-      anchorDate,
-    );
+    const nightRows = await loadCmsHorizonNights(orgId, patient.id, anchorDate);
     if (nightRows.length === 0) {
       res.status(422).json({
         error: "no_therapy_data",
