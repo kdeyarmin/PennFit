@@ -1,9 +1,8 @@
 # Provider portal multi-tenant host routing
 
-Status: **deferred-backlog complete** for host fail-closed + SPA honesty.
-**Slice 1 of the multi-org epic shipped:** platform-host membership deep
-links (`GET /api/provider/orgs` + WrongTenantHost picker). Session-pinned
-active-org for platform-hosted PHI remains a **future slice**.
+Status: **Slice 2 shipped** — session-pinned `provider_active_org_id` lets
+queue/RTM run on the platform host under a membership-validated org. Brand
+host still wins; seed soft-fallback never returns for PHI lists.
 
 ## Problem
 
@@ -16,32 +15,36 @@ under multi-tenant deployments.
 
 ## Shipped posture
 
-| Surface                              | Resolver                         | Missing host tenant                                         |
-| ------------------------------------ | -------------------------------- | ----------------------------------------------------------- |
-| `GET /api/provider/me` pending count | `resolveBrandOrgIdByHost`        | **403** `provider_tenant_host_required`                     |
-| `GET /api/provider/queue` list       | same                             | **403**                                                     |
-| RTM (`attachProviderOrgId`)          | same                             | **403**                                                     |
-| SPA `/provider/*` gate               | reads error code / platform host | **WrongTenantHost** card with membership deep links         |
-| `GET /api/provider/orgs`             | session `provider_id` only       | Works on platform host; names + portal URLs, **no PHI**     |
-| Admin invite                         | `resolveProviderPortalBaseUrl`   | **422** `tenant_domain_required` + Company Information link |
-| Single-doc view / sign / batch       | row-owned by `provider_id`       | unchanged                                                   |
+| Surface                              | Resolver                                   | Missing host tenant / pin                                    |
+| ------------------------------------ | ------------------------------------------ | ------------------------------------------------------------ |
+| `GET /api/provider/me` pending count | `resolveProviderTenantOrgId` (brand → pin) | **403** `provider_tenant_host_required`                      |
+| `GET /api/provider/queue` list       | same                                       | **403**                                                      |
+| RTM (`attachProviderOrgId`)          | same                                       | **403**                                                      |
+| SPA `/provider/*` gate               | reads error code / platform host           | **WrongTenantHost** — select (session pin) and/or deep links |
+| `GET /api/provider/orgs`             | session `provider_id` only                 | Works on platform host; names + portal URLs + `activeOrgId`  |
+| `POST /api/provider/orgs/select`     | CSRF + active `provider_dme_links`         | Pins `sessions.provider_active_org_id` (migration 0533)      |
+| Admin invite                         | `resolveProviderPortalBaseUrl`             | **422** `tenant_domain_required` + Company Information link  |
+| Single-doc view / sign / batch       | row-owned by `provider_id`                 | unchanged                                                    |
 
-Providers must use the tenant's **verified custom domain** (or active tenant
-subdomain), e.g. `pennpaps.com` for Penn Home Medical Supply — not the
-platform host. On the platform host, WrongTenantHost lists linked DMEs and
-deep-links to each verified `/provider` URL.
+### Resolve order (`resolveProviderTenantOrgId`)
 
-## Future epic (remaining)
+1. **Brand host** (verified custom domain / tenant subdomain) always wins.
+2. Else **session pin** if `provider_active_org_id` is set and the provider
+   still has an active `provider_dme_links` row (stale pins are cleared).
+3. Else **null** → 403. Never seed-org soft-fallback.
 
-1. **Provider ↔ org membership session.** Explicit active-org on the
-   session (not host-only) plus CSRF-safe org switching, so queue/RTM can
-   run on the platform host under a membership-validated org.
-2. **In-SPA org switcher** on tenant hosts for multi-linked providers.
-3. Keep fail-closed on platform host for PHI lists until (1) ships — do
-   not reintroduce seed soft-fallback for PHI list routes.
+`provider_active_org_id` is distinct from admin `impersonated_org_id` —
+admin gates must not read it.
+
+## Remaining
+
+1. **In-SPA org switcher** on tenant hosts for multi-linked providers
+   (chrome while already on a brand host).
+2. Ops: enable `BILLING_PAYWALL_ENFORCED` in prod when ready (runbook).
 
 ## Non-goals
 
 - Do not reintroduce seed soft-fallback for PHI list routes.
 - Do not scope row-owned referral signing by host (that 404'd cross-tenant
   referral orders — migration 0487).
+- Do not reuse `impersonated_org_id` for provider active-org.

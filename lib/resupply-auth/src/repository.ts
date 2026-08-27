@@ -67,6 +67,13 @@ export interface AuthSession {
   impersonatedOrgId: string | null;
   /** The platform admin's `auth.users.id` behind an impersonation session. */
   impersonatorUserId: string | null;
+  /**
+   * Provider portal active DME (migration 0533). When non-null on a
+   * platform-host request (no brand org), queue/RTM may use this org after
+   * re-validating an active provider_dme_links row. Distinct from
+   * impersonatedOrgId — never read by admin gates.
+   */
+  providerActiveOrgId: string | null;
 }
 
 export interface AuthEmailTokenRow {
@@ -128,6 +135,15 @@ export interface AuthRepository {
     at: Date,
   ): Promise<void>;
   bumpSession(sessionId: string, expiresAt: Date, at: Date): Promise<void>;
+  /**
+   * Pin or clear the provider portal's active DME org on an existing
+   * session. Pass null to clear. Does not mint a new session.
+   */
+  setProviderActiveOrgId(
+    sessionId: string,
+    orgId: string | null,
+  ): Promise<void>;
+  findSessionById(sessionId: string): Promise<AuthSession | null>;
 
   insertEmailToken(input: {
     tokenHash: Buffer;

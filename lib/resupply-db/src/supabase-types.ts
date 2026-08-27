@@ -7377,6 +7377,8 @@ export interface Database {
           // Platform-admin act-as-tenant impersonation (migration 0356).
           impersonated_org_id: string | null;
           impersonator_user_id: string | null;
+          // Provider portal active DME (migration 0533).
+          provider_active_org_id: string | null;
         };
         Insert: {
           id?: string;
@@ -7390,6 +7392,7 @@ export interface Database {
           user_agent_hash?: string | null;
           impersonated_org_id?: string | null;
           impersonator_user_id?: string | null;
+          provider_active_org_id?: string | null;
         };
         Update: Partial<
           Database["resupply_auth"]["Tables"]["sessions"]["Insert"]

@@ -11,45 +11,37 @@
 // who hasn't set up two-factor is bounced to enrollment first. /me is
 // reachable without MFA so the SPA can decide where to route.
 
-import { Router, type IRouter, type Request } from "express";
+import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { appendSignatureEvent } from "../../lib/provider-portal/signature-events";
-import { requestHost } from "../../lib/request-host";
-import { resolveBrandOrgIdByHost } from "../../lib/tenant-branding";
 import {
   requireProvider,
   requireProviderMfaEnrolled,
 } from "../../middlewares/requireProvider";
-import { providerPortalRateLimiter } from "./shared";
+import {
+  providerPortalRateLimiter,
+  resolveProviderTenantOrgId,
+} from "./shared";
 import { asOrgId } from "./referral-shared.js";
 
 const router: IRouter = Router();
 
 /**
- * Resolve the tenant for a provider-portal LIST/count request from its host.
+ * Resolve the tenant for a provider-portal LIST/count request.
  *
- * The e-signature queue is org-scoped (`provider_signature_requests`), so a
- * provider on a verified custom-domain tenant must see THAT tenant's queue.
- * Uses `resolveBrandOrgIdByHost` (null on platform / unbound hosts) and
- * refuses soft-fallback to the seed org — otherwise cmbreathe.com would
- * expose the seed tenant's pending signature PHI. Providers must use the
- * tenant's verified domain (or subdomain). Row-owned single-document
- * sign/view paths intentionally do NOT use this helper (see loadOwnRequest).
- *
- * NOTE: the provider account / MFA tables are GLOBAL (no `org_id`) and
- * are read via the raw client off the org-scoped chokepoint, which
- * ignores the orgId entirely — so threading the host org through here
- * changes ONLY the org-scoped signature tables, never the global account
- * lookups.
+ * Brand host wins; on the platform host a membership-validated session
+ * pin (`provider_active_org_id`) may apply. Never seed soft-fallback.
+ * Row-owned single-document sign/view paths intentionally do NOT use
+ * this helper (see loadOwnRequest).
  */
 async function resolveTenantOrgId(
-  req: Pick<Request, "headers">,
+  req: Parameters<typeof resolveProviderTenantOrgId>[0],
 ): Promise<string | null> {
-  return resolveBrandOrgIdByHost(requestHost(req));
+  return resolveProviderTenantOrgId(req);
 }
 
 const SUBJECT_LABELS: Record<string, string> = {

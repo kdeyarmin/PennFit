@@ -82,6 +82,7 @@ interface SessionRow {
   user_agent_hash: string | null;
   impersonated_org_id: string | null;
   impersonator_user_id: string | null;
+  provider_active_org_id: string | null;
 }
 
 function rowToSession(row: SessionRow): AuthSession {
@@ -96,6 +97,7 @@ function rowToSession(row: SessionRow): AuthSession {
     userAgentHash: hexByteaToBufferOrNull(row.user_agent_hash),
     impersonatedOrgId: row.impersonated_org_id ?? null,
     impersonatorUserId: row.impersonator_user_id ?? null,
+    providerActiveOrgId: row.provider_active_org_id ?? null,
   };
 }
 
@@ -124,7 +126,7 @@ const USER_COLS =
 const CRED_COLS =
   "user_id, password_hash, algo, must_change, set_by_admin_at, updated_at";
 const SESSION_COLS =
-  "id, user_id, issued_at, expires_at, last_seen_at, revoked_at, ip, user_agent_hash, impersonated_org_id, impersonator_user_id";
+  "id, user_id, issued_at, expires_at, last_seen_at, revoked_at, ip, user_agent_hash, impersonated_org_id, impersonator_user_id, provider_active_org_id";
 const EMAIL_TOKEN_COLS =
   "token_hash, user_id, purpose, expires_at, consumed_at, created_at";
 
@@ -360,6 +362,28 @@ export function supabaseAuthRepository(
           expires_at: expiresAt.toISOString(),
           last_seen_at: at.toISOString(),
         })
+        .eq("id", sessionId)
+        .is("revoked_at", null);
+      if (error) throw error;
+    },
+
+    async findSessionById(sessionId) {
+      const { data, error } = await supabase
+        .schema("resupply_auth")
+        .from("sessions")
+        .select(SESSION_COLS)
+        .eq("id", sessionId)
+        .limit(1)
+        .maybeSingle<SessionRow>();
+      if (error) throw error;
+      return data ? rowToSession(data) : null;
+    },
+
+    async setProviderActiveOrgId(sessionId, orgId) {
+      const { error } = await supabase
+        .schema("resupply_auth")
+        .from("sessions")
+        .update({ provider_active_org_id: orgId })
         .eq("id", sessionId)
         .is("revoked_at", null);
       if (error) throw error;

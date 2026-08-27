@@ -21,9 +21,11 @@ describe("ProviderPortalRoute host gating", () => {
     expect(SRC).toContain("isPlatformHomeHost");
   });
 
-  it("loads membership deep links on the platform-host card", () => {
+  it("offers session-pin select and deep links on the platform-host card", () => {
     expect(SRC).toContain("getProviderOrgs");
-    expect(SRC).toContain("provider-org-deeplinks");
+    expect(SRC).toContain("selectProviderOrg");
+    expect(SRC).toContain("provider-org-select");
+    expect(SRC).toContain("provider-org-deeplink");
   });
 
   it("still renders a generic NoAccess card for other 403s", () => {
