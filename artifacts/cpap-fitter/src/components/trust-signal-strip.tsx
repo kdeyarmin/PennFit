@@ -1,48 +1,21 @@
 // Trust-signal strip — compact badges of social proof and
-// reassurance, rendered just under the home-page hero. The ★ rating
-// + review count comes live from /shop/reviews/site-aggregate; the
-// other badges are static brand promises that already appear (in
-// long form) on /consent (on-device privacy), /insurance,
-// /comfort-guarantee, and the footer. The privacy badge surfaces the
-// mask-fitter's on-device guarantee — images never leave the browser —
-// as a headline marketing signal, not just consent-gate fine print.
+// reassurance, rendered just under the home-page hero. Badges are
+// static brand promises that already appear (in long form) on
+// /consent (on-device privacy), /insurance, /comfort-guarantee, and
+// the footer. The privacy badge surfaces the mask-fitter's on-device
+// guarantee — images never leave the browser — as a headline marketing
+// signal, not just consent-gate fine print.
 //
-// The strip self-hides the rating chip if the live aggregate request
-// fails or the shop has zero approved reviews — better to show the
-// static trust badges alone than to add a dishonest "0.0★ from 0
-// reviews" chip.
+// A live star-rating chip used to load from the public shop reviews
+// aggregate. Reviews collection and that endpoint were retired when
+// patient card checkout was removed (migration 0530 /
+// DELIBERATELY_OFF_FLAGS). Static badges alone are honest; a silent
+// 404 fetch is not.
 
-import React, { useEffect, useState } from "react";
-import { ShieldCheck, RefreshCw, PackageCheck, Star, Lock } from "lucide-react";
-import { getShopReviewsSiteAggregate } from "@/lib/shop-api";
-
-interface Aggregate {
-  count: number;
-  averageRating: number;
-}
+import React from "react";
+import { ShieldCheck, RefreshCw, PackageCheck, Lock } from "lucide-react";
 
 export function TrustSignalStrip() {
-  const [agg, setAgg] = useState<Aggregate | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    getShopReviewsSiteAggregate()
-      .then((r) => {
-        if (!cancelled) setAgg(r);
-      })
-      .catch(() => {
-        // Silent fallback — strip just renders without the rating
-        // chip if the API hiccups. Marketing surface, not a
-        // critical path.
-        if (!cancelled) setAgg(null);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const showRating = agg !== null && agg.count > 0;
-
   const items: Array<{
     Icon: React.ComponentType<{ className?: string }>;
     label: React.ReactNode;
@@ -89,23 +62,6 @@ export function TrustSignalStrip() {
             <span className="font-medium text-foreground/90">{label}</span>
           </span>
         ))}
-        {showRating && (
-          <span
-            className="inline-flex items-center gap-1.5 text-muted-foreground"
-            data-testid="trust-rating"
-          >
-            <Star
-              className="w-4 h-4 fill-[hsl(var(--penn-gold))] text-[hsl(var(--penn-gold))]"
-              aria-hidden="true"
-            />
-            <span className="font-semibold text-foreground/90 tabular-nums">
-              {agg!.averageRating.toFixed(1)}
-            </span>
-            <span className="tabular-nums">
-              from {agg!.count} customer{agg!.count === 1 ? "" : "s"}
-            </span>
-          </span>
-        )}
       </div>
     </div>
   );

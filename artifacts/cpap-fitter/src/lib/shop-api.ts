@@ -656,10 +656,13 @@ export async function cancelOrder(
 
 // ────────────────────────────────────────── site-wide reviews aggregate
 //
-// Powers the trust-signal strip on the marketing home page. One
-// number (count) and one float (averageRating) across ALL approved
-// reviews — the rating chip self-hides when count === 0 so a fresh
-// install never shows "0.0★ from 0 reviews".
+// Retired with cash-pay. Reviews collection is OFF (migration 0530);
+// the public aggregate route is no longer mounted. Callers must not
+// hit a 404 — throw the same hard-fail shape as other retired shop
+// helpers so silent marketing fetches cannot paper over a dead path.
+
+const CASH_PAY_REVIEWS_RETIRED =
+  "cash_pay_reviews_retired: storefront reviews collection and the site-aggregate endpoint were removed with patient cash-pay.";
 
 export interface ShopReviewsSiteAggregate {
   count: number;
@@ -668,18 +671,7 @@ export interface ShopReviewsSiteAggregate {
 }
 
 export async function getShopReviewsSiteAggregate(): Promise<ShopReviewsSiteAggregate> {
-  const res = await fetch("/resupply-api/shop/reviews/site-aggregate", {
-    headers: { Accept: "application/json" },
-  });
-  if (!res.ok) {
-    throw new Error(`http_${res.status}`);
-  }
-  const body = (await res.json()) as ShopReviewsSiteAggregate;
-  return {
-    count: typeof body.count === "number" ? body.count : 0,
-    averageRating:
-      typeof body.averageRating === "number" ? body.averageRating : 0,
-  };
+  throw new Error(CASH_PAY_REVIEWS_RETIRED);
 }
 
 // ─────────────────────────────────────────── insurance lead-capture form
