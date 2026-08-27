@@ -45,6 +45,28 @@ describe("plan feature-flag presets", () => {
     }
   });
 
+  it("never re-arms retired patient cash-pay or front-desk flags", () => {
+    const retired = [
+      "storefront.checkout",
+      "storefront.pickup",
+      "cart_abandonment.dispatcher",
+      "billing.patient_autopay",
+      "billing.payment_plan_autocharge",
+      "frontdesk.counter_orders",
+    ] as const;
+    for (const off of retired) {
+      expect(DELIBERATELY_OFF_FLAGS).toContain(off);
+    }
+    for (const [code, keys] of Object.entries(PLAN_FEATURE_FLAG_PRESETS)) {
+      const set = new Set(keys);
+      for (const off of retired) {
+        expect(set.has(off), `${code} must not enable retired ${off}`).toBe(
+          false,
+        );
+      }
+    }
+  });
+
   it("has no duplicate keys within a preset", () => {
     for (const [code, keys] of Object.entries(PLAN_FEATURE_FLAG_PRESETS)) {
       expect(new Set(keys).size, `${code} has duplicates`).toBe(keys.length);
