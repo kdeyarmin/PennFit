@@ -153,12 +153,12 @@ Stripe is SaaS-only (`STRIPE_PLATFORM_*`, single platform webhook).
 
 **Broken / incomplete:**
 
-| Sev  | Finding                                                                                                                                                        | Evidence                                                                                                                  |
-| ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| High | Secondary COB worklist/auto-workflow select `paid` **and** `partially_paid`, but `deriveSecondaryCob` requires exact `paid` → typical ERA outcomes never draft | `secondary-claims.ts` (~62–64); `auto-workflow-engine.ts` (~437–438); `lib/resupply-domain/src/secondary-cob.ts` (~80–82) |
-| High | Claim status machine / ERA map omit live `submitting` → crash mid-upload leaves claims stuck; admin PATCH cannot release                                       | DB admits `submitting` (0298); `insurance-claims.ts` `STATUS_VALUES` / `VALID_TRANSITIONS`; `era-reconciler.ts`           |
-| Med  | `eligibility-verifier` / `era-reconciler` default `orgId` to seed if caller omits (live callers pass it; footgun for new sites)                                | `eligibility-verifier.ts` (~123–125); `era-reconciler.ts` (~116–118)                                                      |
-| Low  | Denied-primary COB explicitly unfinished                                                                                                                       | `secondary-cob.ts` comments                                                                                               |
+| Sev  | Finding                                                                                                                                                        | Evidence                                                                                                                                        |
+| ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| High | Secondary COB worklist/auto-workflow select `paid` **and** `partially_paid`, but `deriveSecondaryCob` requires exact `paid` → typical ERA outcomes never draft | `secondary-claims.ts` (~62–64); `auto-workflow-engine.ts` (~437–438); `lib/resupply-domain/src/secondary-cob.ts` (~80–82)                       |
+| High | Claim status machine / ERA map omit live `submitting` → crash mid-upload leaves claims stuck; admin PATCH cannot release                                       | **Shipped** — admin `submitting→draft` + ERA map; worker `billing.claims-submitting-watchdog` auto-releases abandoned locks (skips transmitted) |
+| Med  | `eligibility-verifier` / `era-reconciler` default `orgId` to seed if caller omits (live callers pass it; footgun for new sites)                                | `eligibility-verifier.ts` (~123–125); `era-reconciler.ts` (~116–118)                                                                            |
+| Low  | Denied-primary COB explicitly unfinished                                                                                                                       | `secondary-cob.ts` comments                                                                                                                     |
 
 ### 5. Multi-tenant branding, fax, messaging, platform billing
 
@@ -225,8 +225,8 @@ row-owned.
    already has it).
 4. **Secondary COB accept `partially_paid`** (or stop selecting it in
    worklists).
-5. **`submitting` escape hatch** — admin transition back to `draft` /
-   ERA map entry / watchdog job.
+5. **`submitting` escape hatch** — **shipped** (admin `submitting→draft`,
+   ERA map, `billing.claims-submitting-watchdog`).
 6. **Fitter close requires `closed_outcome`**; surface
    `dispenseStamped` to UI; optional lightweight `fit_sessions` row on
    legacy path.

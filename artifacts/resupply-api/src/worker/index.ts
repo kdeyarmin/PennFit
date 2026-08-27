@@ -61,6 +61,7 @@ import { registerEligibilityReverifyBatchJob } from "./jobs/eligibility-reverify
 import { registerAutoSubmitBatchJob } from "./jobs/auto-submit-batch.js";
 import { registerPriorAuthAutoSubmitJob } from "./jobs/prior-auth-auto-submit.js";
 import { registerBillHoldSweepJob } from "./jobs/bill-hold-sweep.js";
+import { registerClaimsSubmittingWatchdogJob } from "./jobs/claims-submitting-watchdog.js";
 import { registerClinicalOutreachBatchJob } from "./jobs/clinical-outreach-batch.js";
 import { registerOutreachPlaybookTickJob } from "./jobs/outreach-playbook-tick.js";
 import { registerSlaEscalationSweepJob } from "./jobs/sla-escalation-sweep.js";
@@ -770,6 +771,16 @@ async function doStartWorker(): Promise<void> {
   // is set (opt-in — it seeds holds across the draft-claim backlog).
   await safeRegister("registerBillHoldSweepJob", registrationFailures, () =>
     registerBillHoldSweepJob(boss),
+  );
+
+  // Claims stuck in the transient `submitting` Office Ally batch lock
+  // (migration 0298). Crash mid-upload leaves rows out of the draft
+  // selector forever; this watchdog releases abandoned locks back to
+  // draft while refusing anything with transmission evidence.
+  await safeRegister(
+    "registerClaimsSubmittingWatchdogJob",
+    registrationFailures,
+    () => registerClaimsSubmittingWatchdogJob(boss),
   );
 
   // Proactive clinical outreach (RT #23). Queue + worker always register;
