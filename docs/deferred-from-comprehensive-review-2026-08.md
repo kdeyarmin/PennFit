@@ -15,12 +15,20 @@ them up without re-discovering scope.
 | Platform billing payment wall                          | SaaS billing for tenants, not patient cash-pay                                 | Separate platform-billing epic                            |
 | LTV including insurance claim dollars                  | UI already labeled historical shop-only                                        | New insurance LTV metric once claim dollars are trusted   |
 | Back-in-stock auto-dispatch                            | Catalog copy fixed; automated dispatch soft-deferred                           | Opt-in dispatcher behind env flag when stock RPC is ready |
+| Review-request emails still CTA to `/contact`          | Flag still ON; shop_orders dispatcher half-retired                             | Migration OFF + drop from presets, or rewrite CTA/copy    |
+| Lapsed winback uses shop `paid_at` not fulfillments    | Cron env-gated; copy says “shipped” but math is last cash-pay                  | Gate on fulfillment/`shipped_at` or retire dispatcher     |
+| Account “Track a shipment” → `/track-order` only       | Tracker accepts PENN/PHM/ORD refs; insurance rows are fulfillment UUIDs        | Hide Track for fulfillment-only rows or fulfillment track |
+| Help / prefs still describe cart/refund/review flows   | Copy + toggles lag insurance-only                                              | Align labels with resupply / fit requests                 |
+| Account chatbot tools still coach refunds/subscriptions | Tool descriptors/`get_my_subscriptions` leftover                               | Scrub tool text to insurance shipments + escalate-only    |
 
-## Started in this follow-up
+## Started in this follow-up (PR #1333)
 
-| Item                                                              | Status                                                            |
-| ----------------------------------------------------------------- | ----------------------------------------------------------------- |
-| Provider RTM roster `setupDate` truncated by PostgREST `max_rows` | Fixed: per-patient first-night lookup in `routes/provider/rtm.ts` |
+| Item                                                              | Status                                                                                         |
+| ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| Provider RTM roster `setupDate` truncated by PostgREST `max_rows` | Fixed: per-patient first-night lookup in `routes/provider/rtm.ts`                              |
+| Provider RTM caseload list truncated at `max_rows`                | Fixed: page `prescriptions` with `.range()` in `listProviderPatientIds`                        |
+| Provider RTM detail / attestation oldest-1000-nights only         | Fixed: CMS horizon fetch (`ATTESTATION_HORIZON_DAYS`) with `.range()` paging                   |
+| Roster recent-nights chunk still hit `max_rows`                   | Fixed: page each id-chunk’s recent-window nights                                               |
 
 ## Already shipped in #1330 / #1332
 

@@ -82,7 +82,7 @@ function makeBuilder(table: string) {
   const ins: Record<string, unknown[]> = {};
   const builder: Record<string, unknown> = {};
   const passthrough = () => builder;
-  for (const m of ["select", "gte", "order", "limit"]) {
+  for (const m of ["select", "gte", "lte", "order", "limit", "range"]) {
     builder[m] = passthrough;
   }
   builder.eq = (col: string, val: unknown) => {
