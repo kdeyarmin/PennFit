@@ -40,7 +40,7 @@ import { logger } from "../../lib/logger";
 import { createTenantSendgridClient } from "../../lib/email/tenant-sender.js";
 import {
   resolveBrandingByOrgId,
-  resolveTenantBaseUrl,
+  resolveTenantLinkBaseUrl,
 } from "../../lib/tenant-branding.js";
 import { recordOutboundMessageUsage } from "../../lib/metering/usage.js";
 import { resolveTenantSmsClientOptions } from "../../lib/messaging/tenant-telecom";
@@ -281,8 +281,16 @@ async function videoVisitReminderSweepForOrg(
   const practiceName = brand.storefrontName;
   // Build patient links from the tenant's own storefront origin (its verified
   // custom domain) when it has one; the seed tenant falls through to the env/
-  // default, so single-tenant is unchanged. Resolved once per tenant sweep.
-  const base = publicBaseUrl((await resolveTenantBaseUrl(orgId)) ?? undefined);
+  // default. Non-seed without a domain: skip — never SMS/email a join link
+  // that lands on the platform host / wrong org.
+  const base = await resolveTenantLinkBaseUrl(orgId, publicBaseUrl());
+  if (!base) {
+    logger.info(
+      { org_id: orgId },
+      "video-visit-reminders: skipped (no tenant domain)",
+    );
+    return;
+  }
 
   for (const visit of visits) {
     stats.scanned += 1;

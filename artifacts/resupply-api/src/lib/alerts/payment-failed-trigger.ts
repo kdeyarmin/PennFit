@@ -25,6 +25,8 @@
 import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import { isFeatureEnabled } from "../feature-flags";
+import { resolveTenantLinkBaseUrl } from "../tenant-branding";
+import { getAuthDeps } from "../auth-deps";
 import { dispatchAlert } from "./dispatch";
 
 export interface PaymentFailedTriggerInput {
@@ -156,6 +158,20 @@ export async function dispatchPaymentFailedAlertOrThrow(
     return;
   }
 
+  const billingBase = await resolveTenantLinkBaseUrl(
+    orgId,
+    getAuthDeps().publicBaseUrl,
+  );
+  if (!billingBase) {
+    log?.info?.(
+      {
+        event: "payment_failed_alert_skipped",
+        reason: "tenant_domain_required",
+      },
+      "alerts: payment_failed trigger — no safe tenant billing URL",
+    );
+    return;
+  }
   const outcome = await dispatchAlert({
     alertKey: "payment_failed",
     channel: "email",
@@ -166,10 +182,9 @@ export async function dispatchPaymentFailedAlertOrThrow(
     orgId,
     variables: {
       amount: formatAmount(input.amountDueCents, input.currency),
-      // No deep-link to a Stripe billing portal here — the patient
-      // /account page already reflects past_due. Operators can wire a
-      // real portal URL later; the template leaves {{update_payment_url}}
-      // literal if unset, which is QA-visible.
+      // Patients are insurance-only — point at the statements page, not a
+      // Stripe payment-method portal (cash-pay checkout is retired).
+      billing_url: `${billingBase}/account/billing`,
     },
   });
 

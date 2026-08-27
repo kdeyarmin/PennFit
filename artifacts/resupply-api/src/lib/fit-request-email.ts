@@ -31,7 +31,7 @@ import { createTenantSendgridClient } from "./email/tenant-sender.js";
 import {
   resolveBrandingByOrgId,
   resolveOrgNotificationEmail,
-  resolveTenantBaseUrl,
+  resolveTenantLinkBaseUrl,
 } from "./tenant-branding.js";
 
 export interface FitRequestEmailPayload {
@@ -276,8 +276,14 @@ export async function sendFitRequestEmails(
 
   const brandName = (await resolveBrandingByOrgId(payload.orgId))
     .storefrontName;
-  const baseUrl =
-    (await resolveTenantBaseUrl(payload.orgId)) ?? "https://cmbreathe.com";
+  const platformBase = "https://cmbreathe.com";
+  // Patient /faq must land on the tenant host. Staff queue may use the
+  // platform admin host when the tenant has no verified domain yet.
+  const tenantBase = await resolveTenantLinkBaseUrl(
+    payload.orgId,
+    platformBase,
+  );
+  const staffBase = tenantBase ?? platformBase;
   const team = await teamRecipient(payload.orgId);
   let notificationDelivered = false;
   let confirmationDelivered = false;
@@ -295,8 +301,8 @@ export async function sendFitRequestEmails(
       await client.sendEmail({
         to: team,
         subject: "New mask fitting request",
-        html: renderNotificationHtml(payload, brandName, baseUrl),
-        text: renderNotificationText(payload, brandName, baseUrl),
+        html: renderNotificationHtml(payload, brandName, staffBase),
+        text: renderNotificationText(payload, brandName, staffBase),
         // Deliberately no replyTo. The submitting form is patient-facing
         // and the address is whatever was typed into it, so a CSR hitting
         // Reply must not be aimed at an attacker-chosen mailbox. The real
@@ -311,17 +317,21 @@ export async function sendFitRequestEmails(
     errors.push("notification: no team recipient configured");
   }
 
-  try {
-    await client.sendEmail({
-      to: payload.email,
-      subject: `We have your ${brandName} fitting request`,
-      html: renderConfirmationHtml(payload, brandName, baseUrl),
-      text: renderConfirmationText(payload, brandName, baseUrl),
-      customArgs: { kind: "fit_request_confirmation_v1" },
-    });
-    confirmationDelivered = true;
-  } catch (err) {
-    errors.push(`confirmation: ${describe(err)}`);
+  if (!tenantBase) {
+    errors.push("confirmation: tenant_domain_required");
+  } else {
+    try {
+      await client.sendEmail({
+        to: payload.email,
+        subject: `We have your ${brandName} fitting request`,
+        html: renderConfirmationHtml(payload, brandName, tenantBase),
+        text: renderConfirmationText(payload, brandName, tenantBase),
+        customArgs: { kind: "fit_request_confirmation_v1" },
+      });
+      confirmationDelivered = true;
+    } catch (err) {
+      errors.push(`confirmation: ${describe(err)}`);
+    }
   }
 
   return {

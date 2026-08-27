@@ -292,8 +292,8 @@ const COPY: Record<
       "Your leak rate has trended up over the last two weeks — usually a sign your cushion seal is wearing out. " +
       "A fresh cushion is a 5-minute swap and typically clears the readings overnight.",
     cta: {
-      label: "Shop replacement cushions",
-      url: "/shop#shop-section-cushion",
+      label: "Request a replacement cushion",
+      url: "/account#messages",
     },
   },
   usage_dropping: {
@@ -301,19 +301,19 @@ const COPY: Record<
     body:
       "Your therapy hours have dropped over the last couple of weeks. That's the most common point where small adjustments " +
       "(refit, ramp tweak, humidifier nudge) make the biggest difference. We'd love to help.",
-    cta: { label: "Talk to our team", url: "/account" },
+    cta: { label: "Talk to our team", url: "/account#messages" },
   },
   cushion_wear: {
     headline: "Time for a fresh cushion",
     body:
       "Both your leak rate and AHI ticked up over the last two weeks — usually the end of a cushion's working life. " +
       "Replacing it takes about 5 minutes and typically clears both readings.",
-    cta: { label: "Order a replacement", url: "/shop#shop-section-cushion" },
+    cta: { label: "Message us about a replacement", url: "/account#messages" },
   },
   humidifier_drop: {
     headline: "Refresh your tubing",
     body: "With seasonal warmth your tubing may be due for a refresh — older tubing collects condensation and reduces airflow.",
-    cta: { label: "Shop tubing", url: "/shop#shop-section-tubing" },
+    cta: { label: "Ask about tubing", url: "/contact" },
   },
 };
 

@@ -40,7 +40,10 @@ import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import { readSmsConfigOrNull } from "../../lib/messaging/messaging-config";
 import { resolveTenantSmsClientOptions } from "../../lib/messaging/tenant-telecom";
-import { resolveBrandingByOrgId } from "../../lib/tenant-branding.js";
+import {
+  resolveBrandingByOrgId,
+  resolveTenantLinkBaseUrl,
+} from "../../lib/tenant-branding.js";
 import { resolveIceServers } from "../../lib/video/ice-servers";
 import { signVideoVisitToken } from "../../lib/video/video-visit-token";
 import {
@@ -70,11 +73,13 @@ const inviteLimiter = expressRateLimit({
   },
 });
 
-/** Public origin patient join links are built against. Mirrors the
- *  helper in patient-payment-link.ts so staff-originated links are
- *  consistent across features. */
-function publicBaseUrl(): string {
+/** Public origin patient join links are built against. Prefer the
+ *  tenant's verified custom domain so invites land on the tenant host
+ *  (e.g. pennpaps.com). Seed may fall back to platform; non-seed without
+ *  a verified domain returns null. */
+function publicBaseUrl(override?: string): string {
   return (
+    override ??
     process.env.SHOP_PUBLIC_BASE_URL ??
     process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL ??
     (process.env.RAILWAY_PUBLIC_DOMAIN
@@ -83,9 +88,15 @@ function publicBaseUrl(): string {
   ).replace(/\/$/, "");
 }
 
-function patientJoinUrl(visitId: string, linkVersion: number): string {
+async function patientJoinUrl(
+  orgId: string,
+  visitId: string,
+  linkVersion: number,
+): Promise<string | null> {
+  const base = await resolveTenantLinkBaseUrl(orgId, publicBaseUrl());
+  if (!base) return null;
   const token = signVideoVisitToken(visitId, "patient", linkVersion);
-  return `${publicBaseUrl()}/video-visit?token=${encodeURIComponent(token)}`;
+  return `${base}/video-visit?token=${encodeURIComponent(token)}`;
 }
 
 /** Twilio delivery status callback for an invite SMS. The visit id
@@ -396,6 +407,16 @@ async function createVisitAndRespond(
     res.status(500).json({ error: "tenant_context_missing" });
     return;
   }
+  // Gate before insert so we never leave a visit with no deliverable join URL.
+  const joinBase = await resolveTenantLinkBaseUrl(orgId, publicBaseUrl());
+  if (!joinBase) {
+    res.status(422).json({
+      error: "tenant_domain_required",
+      message:
+        "Verify a custom domain for this tenant before creating video visits. Without one, the join link would open on the platform host and land on the wrong portal.",
+    });
+    return;
+  }
   const supabase = getOrgScopedClient(orgId);
   const { data: created, error: insertErr } = await supabase
     .from("video_visits")
@@ -416,7 +437,15 @@ async function createVisitAndRespond(
   if (insertErr) throw insertErr;
   const visit = created as unknown as VisitListRow;
 
-  const joinUrl = patientJoinUrl(visit.id, visit.link_version);
+  const joinUrl = await patientJoinUrl(orgId, visit.id, visit.link_version);
+  if (!joinUrl) {
+    res.status(422).json({
+      error: "tenant_domain_required",
+      message:
+        "Verify a custom domain for this tenant before creating video visits. Without one, the join link would open on the platform host and land on the wrong portal.",
+    });
+    return;
+  }
 
   const greetingName =
     subject.kind === "patient"
@@ -731,7 +760,15 @@ router.post(
       return;
     }
 
-    const joinUrl = patientJoinUrl(visit.id, visit.link_version);
+    const joinUrl = await patientJoinUrl(orgId, visit.id, visit.link_version);
+    if (!joinUrl) {
+      res.status(422).json({
+        error: "tenant_domain_required",
+        message:
+          "Verify a custom domain for this tenant before inviting patients to video visits. Without one, the join link would open on the platform host and land on the wrong portal.",
+      });
+      return;
+    }
     const delivery = await deliverInvite({
       visitId: visit.id,
       channel: body.channel,
@@ -836,7 +873,7 @@ router.post(
       staffToken,
       wsPath: VIDEO_SIGNAL_WS_PATH,
       iceServers: await resolveIceServers(),
-      patientJoinUrl: patientJoinUrl(visit.id, visit.link_version),
+      patientJoinUrl: await patientJoinUrl(orgId, visit.id, visit.link_version),
     });
   },
 );

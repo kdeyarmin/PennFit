@@ -32,7 +32,7 @@ import { createTenantSendgridClient } from "./email/tenant-sender.js";
 import {
   resolveBrandingByOrgId,
   resolveOrgNotificationEmail,
-  resolveTenantBaseUrl,
+  resolveTenantLinkBaseUrl,
 } from "./tenant-branding.js";
 
 /** Strip the scheme + trailing slash for inline link-text display. */
@@ -235,10 +235,14 @@ export async function sendInsuranceLeadEmails(
   // Brand the copy with the tenant's storefront name (seed → "Penn Home Medical Supply").
   const brandName = (await resolveBrandingByOrgId(payload.orgId))
     .storefrontName;
-  // Point the /insurance + /faq links at the tenant's own verified custom
-  // domain when it has one (seed → pennpaps.com, unchanged).
-  const baseUrl =
-    (await resolveTenantBaseUrl(payload.orgId)) ?? "https://cmbreathe.com";
+  const platformBase = "https://cmbreathe.com";
+  // Patient /insurance + /faq must land on the tenant host. Staff notice
+  // may use the platform host when the tenant has no verified domain yet.
+  const tenantBase = await resolveTenantLinkBaseUrl(
+    payload.orgId,
+    platformBase,
+  );
+  const staffBase = tenantBase ?? platformBase;
   const team = await teamRecipient(payload.orgId);
   let notificationDelivered = false;
   let confirmationDelivered = false;
@@ -253,7 +257,7 @@ export async function sendInsuranceLeadEmails(
         // notification banners on locked phones — keep PHI in the
         // body, behind the recipient's mailbox auth.
         subject: "New insurance verification request",
-        html: renderNotificationHtml(payload, brandName, baseUrl),
+        html: renderNotificationHtml(payload, brandName, staffBase),
         text: renderNotificationText(payload, brandName),
         // DO NOT set replyTo to payload.email. The /insurance-lead
         // form is unauthenticated, so anyone can submit an arbitrary
@@ -277,23 +281,27 @@ export async function sendInsuranceLeadEmails(
     errors.push("notification: no team recipient configured");
   }
 
-  try {
-    await client.sendEmail({
-      to: payload.email,
-      subject: `We have your ${brandName} insurance verification request`,
-      html: renderConfirmationHtml(payload, brandName, baseUrl),
-      text: renderConfirmationText(payload, brandName, baseUrl),
-      customArgs: { kind: "insurance_lead_confirmation_v1" },
-    });
-    confirmationDelivered = true;
-  } catch (err) {
-    const msg =
-      err instanceof EmailApiError
-        ? `SendGrid ${err.status ?? "?"}: ${err.message}`
-        : err instanceof Error
-          ? err.message
-          : String(err);
-    errors.push(`confirmation: ${msg}`);
+  if (!tenantBase) {
+    errors.push("confirmation: tenant_domain_required");
+  } else {
+    try {
+      await client.sendEmail({
+        to: payload.email,
+        subject: `We have your ${brandName} insurance verification request`,
+        html: renderConfirmationHtml(payload, brandName, tenantBase),
+        text: renderConfirmationText(payload, brandName, tenantBase),
+        customArgs: { kind: "insurance_lead_confirmation_v1" },
+      });
+      confirmationDelivered = true;
+    } catch (err) {
+      const msg =
+        err instanceof EmailApiError
+          ? `SendGrid ${err.status ?? "?"}: ${err.message}`
+          : err instanceof Error
+            ? err.message
+            : String(err);
+      errors.push(`confirmation: ${msg}`);
+    }
   }
 
   return {

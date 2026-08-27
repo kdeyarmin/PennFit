@@ -23,12 +23,11 @@ import {
 } from "@workspace/resupply-email";
 
 import { createTenantSendgridClient } from "../email/tenant-sender.js";
+import { resolveBrandingByOrgId } from "../tenant-branding.js";
 import {
-  resolveBrandingByOrgId,
-  resolveTenantBaseUrl,
-} from "../tenant-branding.js";
-
-const DEFAULT_BASE_URL = "https://cmbreathe.com";
+  resolvePatientEmailLinkBase,
+  TENANT_DOMAIN_REQUIRED,
+} from "./link-base.js";
 
 export interface SendRefundNotificationEmailInput {
   /** Recipient email — required. Caller resolves; helper does not look up. */
@@ -50,15 +49,6 @@ export interface SendRefundNotificationEmailResult {
   delivered: boolean;
   error?: string;
   messageId?: string;
-}
-
-function publicBaseUrl(override?: string): string {
-  const raw =
-    override ??
-    process.env.SHOP_PUBLIC_BASE_URL ??
-    process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL ??
-    DEFAULT_BASE_URL;
-  return raw.replace(/\/$/, "");
 }
 
 function formatAmount(cents: number | null, currency: string | null): string {
@@ -93,14 +83,18 @@ export async function sendRefundNotificationEmail(
     ? `A partial refund was issued on your ${brandName} order`
     : `Your ${brandName} order was refunded`;
 
-  const base = publicBaseUrl(
-    input.baseUrlOverride ??
-      (await resolveTenantBaseUrl(input.orgId)) ??
-      undefined,
+  const base = await resolvePatientEmailLinkBase(
+    input.orgId,
+    input.baseUrlOverride,
   );
-  const orderUrl = stripeSessionId
-    ? `${base}/shop/checkout-success?session_id=${encodeURIComponent(stripeSessionId)}`
-    : `${base}/account/orders`;
+  if (!base) {
+    return {
+      configured: true,
+      delivered: false,
+      error: TENANT_DOMAIN_REQUIRED,
+    };
+  }
+  const orderUrl = `${base}/contact`;
 
   const lead = isPartial
     ? `We've issued a partial refund of ${amount} to your original payment method.`
@@ -112,7 +106,7 @@ export async function sendRefundNotificationEmail(
     "",
     "Refunds typically take 5–10 business days to appear on your statement, depending on your bank.",
     "",
-    `View your order: ${orderUrl}`,
+    `Questions about your order? ${orderUrl}`,
     "",
     "Questions about this refund? Just reply to this message and we'll help.",
   ].join("\n");
@@ -130,7 +124,7 @@ export async function sendRefundNotificationEmail(
         "Refunds typically take 5–10 business days to appear on your statement, depending on your bank.",
       ),
     ].join("\n"),
-    button: { label: "View order", url: orderUrl },
+    button: { label: "Contact us", url: orderUrl },
     footerLines: [
       "Questions about this refund? Reply to this message and we'll help.",
     ],

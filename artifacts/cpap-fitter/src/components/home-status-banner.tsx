@@ -3,7 +3,6 @@ import { Link } from "wouter";
 import {
   Truck,
   CalendarClock,
-  ShoppingCart,
   CheckCircle2,
   ArrowRight,
   Sparkles,
@@ -21,10 +20,10 @@ import { formatAppDate } from "@/lib/utils";
  * customers. Single round-trip to /shop/me/dashboard, which aggregates
  * the digest the patient most wants to see on a home visit:
  *
- *   * Next insurance resupply / shipment date.
+ *   * Next insurance resupply due date (from open outreach episodes).
  *   * Latest order tracking / delivery status.
  *   * Pending order backlog count.
- *   * Optional nudge toward insurance reorder when items are ready.
+ *   * Optional nudge toward reminders / contact when items are due.
  *
  * Self-contained: <SignedIn> wraps it, so it returns nothing for
  * guests. Failures degrade silently — a network blip shouldn't
@@ -67,16 +66,17 @@ function SignedInBanner() {
 
   if (!loaded || !data) return null;
 
-  // If absolutely nothing is going on (no subs, no orders, no cart,
-  // no eligibility signal), skip rendering — a "you have no orders"
-  // banner is just noise on home. We only show the banner when
+  // If absolutely nothing is going on (no shipments, no orders, no
+  // eligibility / countdown signal), skip rendering — a "you have no
+  // orders" banner is just noise on home. We only show the banner when
   // there's signal worth hoisting above the marketing hero.
   const eligibleNowCount = data.eligibility?.eligibleNow?.length ?? 0;
+  const hasSoonest = data.eligibility?.soonest != null;
   const hasSignal =
     data.nextShipment !== null ||
     data.latestOrder !== null ||
     eligibleNowCount > 0 ||
-    (data.abandonedCart && data.abandonedCart.itemCount > 0);
+    hasSoonest;
   if (!hasSignal) return null;
 
   const firstName = ((displayName ?? "").trim().split(/\s+/)[0] ?? "").trim();
@@ -116,14 +116,13 @@ function SignedInBanner() {
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {data.latestOrder && <OrderTile order={data.latestOrder} />}
             {data.nextShipment && <ShipmentTile shipment={data.nextShipment} />}
-            {data.abandonedCart && <CartTile cart={data.abandonedCart} />}
           </div>
 
           {data.pendingOrders > 0 && (
             <div className="flex flex-wrap gap-2 pt-1">
               {data.pendingOrders > 0 && (
                 <Link
-                  href="/account/orders"
+                  href="/account"
                   className="inline-flex items-center gap-1.5 rounded-full bg-[hsl(var(--penn-gold)/0.18)] px-3 py-1 text-xs font-medium text-[hsl(var(--penn-navy))] hover:bg-[hsl(var(--penn-gold)/0.28)]"
                 >
                   <Truck className="w-3.5 h-3.5" />
@@ -172,7 +171,7 @@ function OrderTile({
   }
 
   return (
-    <Link href="/account/orders">
+    <Link href="/account">
       <div className="rounded-xl border bg-background/70 p-4 hover:border-[hsl(var(--penn-gold))] transition-colors cursor-pointer h-full">
         <div className="flex items-start gap-3">
           <div className="h-9 w-9 rounded-lg bg-[hsl(var(--penn-gold)/0.18)] flex items-center justify-center shrink-0">
@@ -200,11 +199,12 @@ function ShipmentTile({
     day: "numeric",
   });
   const itemLabel = shipment.firstItemName ?? "Resupply";
-  const subtitle = shipment.cancelAtPeriodEnd
-    ? "Final shipment in this cycle"
-    : `Next: ${itemLabel}`;
+  const subtitle =
+    shipment.daysUntil === 0
+      ? `Due now · ${itemLabel}`
+      : `Due in ${shipment.daysUntil} day${shipment.daysUntil === 1 ? "" : "s"} · ${itemLabel}`;
   return (
-    <Link href="/insurance">
+    <Link href="/reminders">
       <div className="rounded-xl border bg-background/70 p-4 hover:border-[hsl(var(--penn-gold))] transition-colors cursor-pointer h-full">
         <div className="flex items-start gap-3">
           <div className="h-9 w-9 rounded-lg bg-[hsl(var(--penn-navy)/0.10)] flex items-center justify-center shrink-0">
@@ -212,7 +212,7 @@ function ShipmentTile({
           </div>
           <div className="min-w-0 flex-1">
             <p className="text-sm font-semibold text-[hsl(var(--penn-navy))]">
-              Ships {dateLabel}
+              Due {dateLabel}
             </p>
             <p className="text-xs text-muted-foreground truncate">{subtitle}</p>
           </div>
@@ -223,13 +223,11 @@ function ShipmentTile({
 }
 
 /**
- * Phase A.1 — eligibility countdown / claim banner. Three states:
- *   1. eligibleNow.length > 0  → "N items ready to reorder now"
- *      with a CTA. This is the high-conversion S3-style nudge.
- *   2. soonest.daysUntil === 0 → "Eligible today" (subscription
- *      cycle rolled over today; stripe will dispatch shortly).
- *   3. soonest.daysUntil > 0   → "Your X is eligible in N days" so
- *      the patient gets the operational visibility without a CTA.
+ * Eligibility countdown / claim banner. Three states:
+ *   1. eligibleNow.length > 0  → "N items due for resupply"
+ *      with a CTA to /reminders.
+ *   2. soonest.daysUntil === 0 → "Eligible today".
+ *   3. soonest.daysUntil > 0   → "Your X is eligible in N days".
  *
  * Renders nothing when there's no eligibility signal at all.
  */
@@ -244,10 +242,10 @@ function EligibilityBanner({
     const sample = eligibleNow[0]?.firstItemName;
     const headline =
       eligibleNow.length === 1
-        ? `Your ${sample ?? "next supply"} is ready to reorder.`
-        : `${eligibleNow.length} items are ready to reorder.`;
+        ? `Your ${sample ?? "next supply"} is due for resupply.`
+        : `${eligibleNow.length} items are due for resupply.`;
     return (
-      <Link href="/account#autoship">
+      <Link href="/reminders">
         <div
           className="rounded-xl border border-[hsl(var(--penn-gold))] bg-[hsl(var(--penn-gold)/0.10)] p-4 hover:bg-[hsl(var(--penn-gold)/0.16)] transition-colors cursor-pointer"
           data-testid="home-eligibility-banner-now"
@@ -261,7 +259,8 @@ function EligibilityBanner({
                 {headline}
               </p>
               <p className="text-xs text-muted-foreground">
-                Insurance covers most patients in full. Tap to review and ship.
+                Insurance covers most patients in full. Tap to set reminders or
+                ask us to ship.
               </p>
             </div>
             <ArrowRight className="w-4 h-4 text-[hsl(var(--penn-navy))] mt-2 shrink-0" />
@@ -297,32 +296,5 @@ function EligibilityBanner({
         </div>
       </div>
     </div>
-  );
-}
-
-function CartTile({
-  cart,
-}: {
-  cart: NonNullable<ShopMeDashboardResponse["abandonedCart"]>;
-}) {
-  return (
-    <Link href="/insurance">
-      <div className="rounded-xl border bg-background/70 p-4 hover:border-[hsl(var(--penn-gold))] transition-colors cursor-pointer h-full">
-        <div className="flex items-start gap-3">
-          <div className="h-9 w-9 rounded-lg bg-[hsl(var(--penn-gold)/0.18)] flex items-center justify-center shrink-0">
-            <ShoppingCart className="w-4 h-4 text-[hsl(var(--penn-navy))]" />
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className="text-sm font-semibold text-[hsl(var(--penn-navy))]">
-              {cart.itemCount} supply item{cart.itemCount === 1 ? "" : "s"}{" "}
-              ready to order
-            </p>
-            <p className="text-xs text-muted-foreground">
-              Continue through insurance.
-            </p>
-          </div>
-        </div>
-      </div>
-    </Link>
   );
 }

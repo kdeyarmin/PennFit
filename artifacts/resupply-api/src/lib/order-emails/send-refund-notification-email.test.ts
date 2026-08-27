@@ -28,7 +28,9 @@ vi.mock("../tenant-branding.js", () => ({
     tagline: "tagline",
     logoUrl: null,
   })),
-  resolveTenantBaseUrl: vi.fn(async () => null),
+  resolveTenantLinkBaseUrl: vi.fn(
+    async (_orgId: string, platform: string) => platform,
+  ),
 }));
 
 import { EmailConfigError } from "@workspace/resupply-email";
@@ -98,9 +100,7 @@ describe("sendRefundNotificationEmail", () => {
     );
     expect(arg.html).toContain("Refund issued");
     expect(arg.html).toContain("$49.99");
-    expect(arg.html).toContain(
-      "https://test.example.com/shop/checkout-success?session_id=cs_full",
-    );
+    expect(arg.html).toContain("https://test.example.com/contact");
     expect(arg.customArgs).toEqual({
       kind: "shop_refund_notification_v1",
       stripe_session_id: "cs_full",
@@ -127,7 +127,7 @@ describe("sendRefundNotificationEmail", () => {
     expect(arg.html).toContain("$10.00");
   });
 
-  it("falls back to /account/orders when there is no session id", async () => {
+  it("links to /contact when there is no session id", async () => {
     process.env.SENDGRID_API_KEY = "SG.test";
     process.env.SENDGRID_FROM_EMAIL = "no-reply@penn.example";
     sendEmailMock.mockResolvedValueOnce({ messageId: "msg_nosess" });
@@ -140,7 +140,8 @@ describe("sendRefundNotificationEmail", () => {
       isPartial: false,
     });
     const arg = sendEmailMock.mock.calls[0]![0];
-    expect(arg.html).toContain("https://test.example.com/account/orders");
+    expect(arg.html).toContain("https://test.example.com/contact");
+    expect(arg.html).not.toContain("/account/orders");
     // No stripe_session_id customArg when the session is unknown.
     expect(arg.customArgs).toEqual({ kind: "shop_refund_notification_v1" });
   });

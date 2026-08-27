@@ -80,15 +80,11 @@ const REMINDERS = [
   "reminder_escalation.dispatcher",
 ] as const;
 
-/** Branded storefront + shop/checkout + customer touchpoints. */
+/** Branded storefront + customer touchpoints (insurance-only). */
 const STOREFRONT = [
   "storefront.chatbot",
-  "storefront.checkout",
-  "storefront.pickup",
-  "storefront.reviews_collection",
   "storefront.nps",
   "storefront.auto_reminder_enrollment",
-  "cart_abandonment.dispatcher",
   "support.tickets",
   "domains.tls_automation",
 ] as const;
@@ -134,8 +130,6 @@ const BILLING = [
   "billing.auto_submit_prior_auths",
   "billing.auto_secondary_claims",
   "billing.line_ordering_provider",
-  "billing.payment_plan_autocharge",
-  "billing.patient_autopay",
   "billing.bill_hold",
   "billing.bill_hold_auto_remind",
   "billing.adr_queue",
@@ -157,7 +151,6 @@ const SCALE_AUTOMATION = [
   "reminder_escalation.voice",
   "telehealth.video",
   "alerts.auto_dispatch",
-  "frontdesk.counter_orders",
   "slack.notifications",
   "slack.interactivity",
   "slack.digests",
@@ -193,6 +186,19 @@ export const DELIBERATELY_OFF_FLAGS = [
   "fitter.multiframe_capture",
   "fitter.fit_profile_v2",
   "fitter.refit_campaign",
+  // Patient cash-pay / front-desk counter paths are retired (insurance-only
+  // storefront; migration 0528 forced the checkout trio OFF). Keeping them
+  // in plan bundles re-armed them on every Launch+ onboard and Control
+  // Center "apply recommended preset".
+  "storefront.checkout",
+  "storefront.pickup",
+  "cart_abandonment.dispatcher",
+  "billing.patient_autopay",
+  "billing.payment_plan_autocharge",
+  "frontdesk.counter_orders",
+  // Post-delivery "leave a review" emails still target historical shop_orders
+  // and deep-link to /contact (no review form). Migration 0530 forces OFF.
+  "storefront.reviews_collection",
 ] as const;
 
 const uniq = (keys: readonly string[]): readonly string[] => [...new Set(keys)];

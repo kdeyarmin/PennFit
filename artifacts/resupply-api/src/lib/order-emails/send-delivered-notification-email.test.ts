@@ -31,7 +31,9 @@ vi.mock("../tenant-branding.js", () => ({
     tagline: "tagline",
     logoUrl: null,
   })),
-  resolveTenantBaseUrl: vi.fn(async () => null),
+  resolveTenantLinkBaseUrl: vi.fn(
+    async (_orgId: string, platform: string) => platform,
+  ),
 }));
 
 import { EmailConfigError } from "@workspace/resupply-email";
@@ -145,8 +147,9 @@ describe("sendDeliveredNotificationEmail", () => {
     // No tracking box / "Delivered by" section, no carrier lines in text.
     expect(arg.html).not.toContain("Delivered by");
     expect(arg.text).not.toContain("Tracking:");
-    // Still has the order CTA + address.
-    expect(arg.html).toContain("View order");
+    // Still has the contact CTA + address (cash-pay order pages retired).
+    expect(arg.html).toContain("Contact us");
+    expect(arg.html).toContain("/contact");
     expect(arg.html).toContain("Apt 4B");
   });
 

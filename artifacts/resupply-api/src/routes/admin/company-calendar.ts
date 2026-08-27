@@ -31,6 +31,7 @@ import {
   resolveAssignableStaff,
 } from "../../lib/calendar/assignable-staff";
 import { logger } from "../../lib/logger";
+import { resolveTenantLinkBaseUrl } from "../../lib/tenant-branding";
 import {
   adminRateLimit,
   adminReadRateLimiter,
@@ -109,8 +110,10 @@ const listQuery = z.object({
 const DAY_MS = 86_400_000;
 
 /** Absolute URL to the company calendar for the notification email. */
-function calendarDashboardUrl(): string {
-  return `${getAuthDeps().publicBaseUrl}/admin/company-calendar`;
+async function calendarDashboardUrl(orgId: string): Promise<string | null> {
+  const platform = getAuthDeps().publicBaseUrl.replace(/\/$/, "");
+  const base = await resolveTenantLinkBaseUrl(orgId, platform);
+  return base ? `${base}/admin/company-calendar` : null;
 }
 
 /** Fire-and-forget the assignment email; never throws into the request. */
@@ -123,17 +126,35 @@ function fireAssignmentEmail(args: {
   assignedByEmail: string | null;
   orgId: string;
 }): void {
-  void sendAppointmentAssignedEmail({
-    toEmail: args.assignee.email,
-    assigneeName: args.assignee.displayName,
-    startsAt: args.startsAt,
-    endsAt: args.endsAt,
-    eventType: args.eventType,
-    location: args.location,
-    assignedByEmail: args.assignedByEmail,
-    dashboardUrl: calendarDashboardUrl(),
-    orgId: args.orgId,
-  })
+  void (async () => {
+    const dashboardUrl = await calendarDashboardUrl(args.orgId);
+    if (!dashboardUrl) {
+      logger.warn(
+        {
+          event: "appointment_assigned_email_skipped",
+          reason: "tenant_domain_required",
+          org_id: args.orgId,
+        },
+        "appointment-assigned email skipped (no tenant domain)",
+      );
+      return {
+        configured: true,
+        delivered: false,
+        error: "tenant_domain_required",
+      };
+    }
+    return sendAppointmentAssignedEmail({
+      toEmail: args.assignee.email,
+      assigneeName: args.assignee.displayName,
+      startsAt: args.startsAt,
+      endsAt: args.endsAt,
+      eventType: args.eventType,
+      location: args.location,
+      assignedByEmail: args.assignedByEmail,
+      dashboardUrl,
+      orgId: args.orgId,
+    });
+  })()
     .then((r) => {
       if (!r.delivered) {
         // Metadata only — no patient data, no recipient address in the log.

@@ -66,6 +66,15 @@ vi.mock("express-rate-limit", () => ({
   ipKeyGenerator: (ip: string) => ip,
 }));
 
+const resolveTenantLinkBaseUrlMock = vi.hoisted(() =>
+  vi.fn<(orgId: string, platform: string) => Promise<string | null>>(
+    async (_orgId, platform) => platform,
+  ),
+);
+vi.mock("../../lib/tenant-branding", () => ({
+  resolveTenantLinkBaseUrl: resolveTenantLinkBaseUrlMock,
+}));
+
 import { TwilioConfigError } from "@workspace/resupply-telecom";
 import { EmailConfigError } from "@workspace/resupply-email";
 
@@ -120,6 +129,10 @@ beforeEach(() => {
   supabaseMock.reset();
   process.env.RESUPPLY_ADMIN_EMAILS = ALLOWED_EMAIL;
   readMessagingConfigMock.mockReturnValue(BASE_CFG);
+  resolveTenantLinkBaseUrlMock.mockReset();
+  resolveTenantLinkBaseUrlMock.mockImplementation(
+    async (_orgId: string, platform: string) => platform,
+  );
 });
 
 afterEach(() => {
@@ -367,6 +380,17 @@ describe("POST /episodes/bulk-send", () => {
       res.body.results.map((r: { episodeId: string }) => r.episodeId),
     ).toEqual([EP1, EP2]);
     expect(sendReminderSmsMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("returns 422 tenant_domain_required for email when click base is unavailable", async () => {
+    stubVerifiedAdmin();
+    resolveTenantLinkBaseUrlMock.mockResolvedValueOnce(null);
+    const res = await request(makeApp())
+      .post("/resupply-api/episodes/bulk-send")
+      .send({ episodeIds: [EP1], channel: "email" });
+    expect(res.status).toBe(422);
+    expect(res.body.error).toBe("tenant_domain_required");
+    expect(sendReminderEmailMock).not.toHaveBeenCalled();
   });
 
   it("routes to email helper when channel=email", async () => {

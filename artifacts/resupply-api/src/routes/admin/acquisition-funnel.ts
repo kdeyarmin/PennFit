@@ -8,7 +8,7 @@
 // usage-events.ts); until now nothing read them. This route runs the
 // acquisition_funnel_steps RPC (mig 0254 — per-step distinct-session +
 // event counts over a window) and arranges the steps into two ordered
-// funnels (the at-home fitter flow and the shop checkout flow), computing
+// funnels (the at-home fitter flow and historical storefront checkout), computing
 // step-to-step and top-of-funnel conversion so the team can see WHERE
 // patients drop out.
 //

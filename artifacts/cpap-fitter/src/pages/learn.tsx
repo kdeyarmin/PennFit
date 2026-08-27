@@ -1152,8 +1152,8 @@ export function Learn() {
               How <BrandName /> works
             </h3>
             <p className="text-sm text-muted-foreground leading-relaxed">
-              A walkthrough of every part of <BrandName /> — the fitter, the
-              shop, customer accounts, and how resupply works.
+              A walkthrough of every part of <BrandName /> — the fitter,
+              insurance ordering, customer accounts, and how resupply works.
             </p>
           </div>
           <ArrowRight className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors mt-1" />

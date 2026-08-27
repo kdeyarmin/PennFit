@@ -88,7 +88,7 @@ const steps: HelpStep[] = [
           href="/help/request-your-mask"
           className="text-primary hover:underline"
         >
-          place an order
+          send a fit request
         </Link>
         , and our team confirms your exact coverage as part of processing.
       </p>

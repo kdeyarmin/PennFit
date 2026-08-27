@@ -22,7 +22,9 @@ vi.mock("../tenant-branding.js", () => ({
     tagline: "tagline",
     logoUrl: null,
   })),
-  resolveTenantBaseUrl: vi.fn(async () => null),
+  resolveTenantLinkBaseUrl: vi.fn(
+    async (_orgId: string, platform: string) => platform,
+  ),
 }));
 
 import { EmailConfigError } from "@workspace/resupply-email";
@@ -93,6 +95,25 @@ describe("sendFitterOrderConfirmationEmail", () => {
     expect(sent.text).toContain("Selected mask: ResMed AirFit P10");
     expect(sent.text).not.toContain("Recommended size:");
     expect(sent.html).not.toContain("Recommended size:");
+  });
+
+  it("links the CTA to public /track-order (not the auth-gated account)", async () => {
+    sendEmailMock.mockResolvedValueOnce({ messageId: "msg_fitter_track" });
+    await sendFitterOrderConfirmationEmail({
+      toEmail: "pat@example.com",
+      orderReference: "PENN-TR9999",
+      maskName: "AirFit F20",
+      maskManufacturer: "ResMed",
+    });
+    const sent = sendEmailMock.mock.calls[0]?.[0] as {
+      text: string;
+      html: string;
+    };
+    expect(sent.text).toContain("https://test.example.com/track-order");
+    expect(sent.text).not.toContain("/account");
+    expect(sent.html).toContain("https://test.example.com/track-order");
+    expect(sent.html).toContain("Track your order");
+    expect(sent.html).not.toContain("Track in my account");
   });
 
   it("returns configured=false when SendGrid is not wired", async () => {

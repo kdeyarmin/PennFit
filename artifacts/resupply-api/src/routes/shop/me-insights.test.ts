@@ -130,7 +130,7 @@ describe("GET /shop/me/insights", () => {
     expect(leak.kind).toBe("leak_rising");
     expect(leak.notified).toBe(true);
     expect(leak.headline).toContain("seal");
-    expect(leak.cta.url).toBe("/shop#shop-section-cushion");
+    expect(leak.cta.url).toBe("/account#messages");
     expect(leak.detectedAt).toBe("2026-04-30T12:00:00.000Z");
 
     // The events read must restrict to the patient-facing kinds so the

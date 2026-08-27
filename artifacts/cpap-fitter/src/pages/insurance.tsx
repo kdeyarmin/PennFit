@@ -48,9 +48,10 @@ const steps: Step[] = [
     title: "You tell us your insurance",
     body: (
       <>
-        On the order form you enter your insurance carrier, member ID, group
-        number, and the patient's date of birth. That's it — we don't need a
-        paper card, and you don't need to call your plan first.
+        On the fit request form you enter your insurance carrier, member ID,
+        group number, and the patient&apos;s date of birth. That&apos;s it — we
+        don&apos;t need a paper card, and you don&apos;t need to call your plan
+        first.
       </>
     ),
   },
@@ -152,9 +153,9 @@ const faqs: FaqRow[] = [
         <LegalName /> works with <strong>Medicare</strong>,{" "}
         <strong>Medicaid</strong>, and most major commercial insurers (Aetna,
         Anthem/BCBS, Cigna, Humana, UnitedHealthcare, and many regional plans).
-        If you're not sure your plan is in-network, start an order — verifying
-        your coverage is the first thing we do and there's no obligation to
-        proceed.
+        If you're not sure your plan is in-network, start the mask fitter —
+        verifying your coverage is the first thing we do and there's no
+        obligation to proceed.
       </>
     ),
   },
@@ -299,11 +300,11 @@ export function Insurance() {
       <section className="space-y-5">
         <div className="text-center space-y-2 max-w-2xl mx-auto">
           <h2 className="text-display text-2xl md:text-3xl font-semibold tracking-tight">
-            How a <BrandName /> insurance order works
+            How a <BrandName /> insurance request works
           </h2>
           <p className="text-muted-foreground">
-            From the order form to your front door, here's exactly what happens
-            — and what we do for you behind the scenes.
+            From the fit request to your front door, here&apos;s exactly what
+            happens — and what we do for you behind the scenes.
           </p>
         </div>
         <div className="grid gap-4">
@@ -451,7 +452,7 @@ export function Insurance() {
               Common insurance questions
             </h2>
             <p className="text-sm text-muted-foreground">
-              The things patients ask us most before placing an order.
+              The things patients ask us most before sending a fit request.
             </p>
           </div>
           <Button
@@ -529,8 +530,9 @@ export function Insurance() {
           Ready when you are.
         </h2>
         <p className="text-muted-foreground max-w-xl mx-auto">
-          Start an insurance order in about three minutes. We'll verify your
-          benefits and reach out before any charge — no obligation to proceed.
+          Start the mask fitter in about three minutes. We&apos;ll verify your
+          benefits and reach out before any patient responsibility — no
+          obligation to proceed.
         </p>
         <div className="flex flex-col sm:flex-row gap-3 justify-center pt-2">
           <Link href="/consent">
@@ -540,7 +542,7 @@ export function Insurance() {
               data-testid="insurance-cta-start-order"
             >
               <Sparkles className="w-4 h-4" />
-              Start an insurance order
+              Start the mask fitter
             </Button>
           </Link>
           <Link href="/faq">

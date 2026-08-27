@@ -24,9 +24,11 @@
 //                          excluded from the messaging buckets to avoid
 //                          double-counting.
 //
-// Outcomes (purchases + cash revenue) come from resupply.shop_orders so
-// the page can pair engagement with the result it drives. No new schema;
-// no PHI (counts + statuses only — message bodies are never read here).
+// Outcomes (historical cash-pay purchases + revenue) come from
+// resupply.shop_orders — patient card checkout is retired; this KPI is
+// labeled historical in the admin UI so it is not read as live insurance
+// conversion. No new schema; no PHI (counts + statuses only — message
+// bodies are never read here).
 
 import {
   aggregateVoiceMetrics,

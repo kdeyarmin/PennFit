@@ -1,5 +1,5 @@
-// /admin/analytics/revenue-by-source — order volume + cash revenue by
-// channel (storefront cash-pay / insurance resupply / clinical form).
+// /admin/analytics/revenue-by-source — order volume by channel
+// (historical storefront / insurance resupply / clinical form).
 //
 // Closed-loop measurement: "where do orders and revenue come from?"
 // Pairs with /admin/analytics/outreach-attribution (which outreach
@@ -62,9 +62,8 @@ export function AdminAnalyticsRevenueBySourcePage() {
           </h1>
           <p className="text-sm mt-1" style={{ color: "hsl(var(--ink-3))" }}>
             Order volume split across insurance resupply, clinical-form, and any
-            remaining historical storefront rows. Dollar amounts only appear on
-            legacy storefront rows; insurance and clinical orders are counted by
-            volume.
+            remaining historical storefront rows. Historical storefront dollars
+            and ERA payer-paid remittance are shown separately; neither is LTV.
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -115,9 +114,14 @@ function HeadlineCards({ data }: { data: RevenueBySourceResponse }) {
   return (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
       <Metric
-        label="Cash revenue"
+        label="Historical shop revenue"
         value={money(data.totalCashRevenueCents)}
-        hint="Storefront paid orders"
+        hint="Legacy storefront paid orders"
+      />
+      <Metric
+        label="ERA payer paid"
+        value={money(data.totalPayerPaidCents)}
+        hint="Claim remittance — not LTV"
       />
       <Metric
         label="Total orders"
@@ -125,14 +129,9 @@ function HeadlineCards({ data }: { data: RevenueBySourceResponse }) {
         hint="All channels"
       />
       <Metric
-        label="Storefront paid"
-        value={num(storefront?.paidOrders ?? 0)}
-        hint={`${num(storefront?.orders ?? 0)} created`}
-      />
-      <Metric
         label="Resupply units"
         value={num(resupply?.units ?? 0)}
-        hint={`${num(resupply?.orders ?? 0)} fulfillment(s)`}
+        hint={`${num(resupply?.orders ?? 0)} fulfillment(s); ${num(storefront?.paidOrders ?? 0)} storefront paid`}
       />
     </div>
   );
@@ -198,7 +197,10 @@ function BySourceTable({ rows }: { rows: RevenueSourceBucket[] }) {
               Paid orders
             </th>
             <th scope="col" className="text-right px-3 py-2">
-              Cash revenue
+              Historical shop $
+            </th>
+            <th scope="col" className="text-right px-3 py-2">
+              ERA payer paid
             </th>
           </tr>
         </thead>
@@ -220,6 +222,9 @@ function BySourceTable({ rows }: { rows: RevenueSourceBucket[] }) {
               </td>
               <td className="px-3 py-2 text-right tabular-nums font-semibold">
                 {money(r.cashRevenueCents)}
+              </td>
+              <td className="px-3 py-2 text-right tabular-nums font-semibold">
+                {money(r.payerPaidCents)}
               </td>
             </tr>
           ))}

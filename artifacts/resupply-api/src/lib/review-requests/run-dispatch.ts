@@ -24,6 +24,7 @@ import {
 import { isInDndWindow } from "../comm-prefs";
 import { isFeatureEnabled } from "../feature-flags";
 import { sendReviewRequestEmail } from "../messaging/review-request-email";
+import { resolvePatientEmailLinkBase } from "../order-emails/link-base.js";
 
 const REVIEW_REQUEST_AGE_DAYS = 14;
 const SCAN_LIMIT = 100;
@@ -141,10 +142,14 @@ export async function runReviewRequestDispatch(opts: {
 
   const stats: ReviewRequestDispatchStats = { ...ZERO };
 
-  const baseUrl =
-    process.env.SHOP_PUBLIC_BASE_URL ??
-    process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL ??
-    "https://cmbreathe.com";
+  const baseUrl = await resolvePatientEmailLinkBase(orgId);
+  if (!baseUrl) {
+    log?.warn?.(
+      { orgId },
+      "review-request dispatch skipped (no tenant domain)",
+    );
+    return { ...ZERO, scanned: claimed.length, skippedFailed: claimed.length };
+  }
 
   const unclaim = async (id: string): Promise<void> => {
     const { error: unclaimErr } = await supabase
@@ -181,7 +186,9 @@ export async function runReviewRequestDispatch(opts: {
       continue;
     }
 
-    const productUrl = `${baseUrl}/shop/p/${encodeURIComponent(productId)}?utm_source=email&utm_medium=transactional&utm_campaign=review_request`;
+    // Cash-pay product pages are gone; send patients to contact so they
+    // can leave feedback with a human rather than a 404/redirect loop.
+    const productUrl = `${baseUrl}/contact?utm_source=email&utm_medium=transactional&utm_campaign=review_request`;
     const result = await sendReviewRequestEmail({
       to: email,
       productName: "your last order",

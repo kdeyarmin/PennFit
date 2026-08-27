@@ -1,31 +1,35 @@
-// pg-boss job: attribute newly-placed orders back to the fitter_leads
-// row whose email matches the order's patient_email.
+// pg-boss job: attribute newly-placed conversions back to the
+// fitter_leads row whose email matches.
 //
 // Why this exists
 // ---------------
-// A patient runs the fitter, sees a recommendation, and a few days
-// later places an order. The fitter_leads row and the orders row
-// live in different schemas with no FK between them — by design,
-// the lead is captured anonymously at /consent while the order
-// later collects full PII at checkout, so there is no shared key
-// at write-time other than the patient's email address.
+// A patient runs the fitter, sees a recommendation, and later gets
+// their mask through insurance (staff closes a fit request as
+// `fulfilled`) or — historically — places a cash-pay order. The
+// fitter_leads row and the conversion row live in different tables
+// with no FK between them — by design, the lead is captured
+// anonymously at /consent while fulfillment later collects full PII,
+// so there is no shared key at write-time other than the patient's
+// email address.
 //
 // This worker closes the loop. Hourly it:
-//   1. Pulls every public.orders row whose created_at falls in a
-//      look-back window (48h — wide enough to ride out worker
-//      outages; see ORDER_LOOKBACK_MS).
+//   1. Pulls every public.orders row (legacy cash-pay) AND every
+//      fitter_fit_requests row closed as `fulfilled` whose timestamp
+//      falls in a look-back window (48h — wide enough to ride out
+//      worker outages; see ORDER_LOOKBACK_MS).
 //   2. Looks up the matching fitter_leads row by (lowercased)
 //      email.
 //   3. Stamps first_order_id + first_order_placed_at on the lead
-//      and flips journey_stage='converted' if the lead is still
-//      in 'consent', 'completed', or 'campaign_active' — i.e.
-//      never overwrites a terminal state ('unsubscribed', already
-//      'converted').
+//      and flips journey_stage when the lead is still in
+//      'consent', 'completed', or 'campaign_active' — i.e. never
+//      overwrites a terminal state ('unsubscribed', already
+//      attributed).
 //
 // Side effect: the supply-campaign dispatcher's WHERE excludes
-// 'converted', so a stamped lead drops out of the touchpoint
-// pipeline on the next tick — no further nurture emails ship to
-// a patient who already bought.
+// 'converted' / 'reorder_active' terminals appropriately, so a
+// stamped lead drops out of pre-purchase nurture — no further
+// "you haven't bought yet" emails ship to a patient who already
+// has their mask.
 //
 // Schedule
 // --------
@@ -86,46 +90,60 @@ export async function runFitterConversionAttributionForOrg(
   const supabase = getOrgScopedClient(orgId);
   const sinceIso = new Date(Date.now() - ORDER_LOOKBACK_MS).toISOString();
 
-  // Pull recent orders. We only need id + email + created_at; the
-  // lead row carries the marketing attribution columns. We DON'T
-  // join on the DB side — PostgREST has no cross-schema joins, and
-  // a per-row lookup against fitter_leads is fine at the volumes
-  // we see (orders/hour is a one- to two-digit number).
-  const { data: orders, error: ordErr } = await supabase
-    .raw()
-    .schema("public")
-    .from("orders")
-    .select("id, patient_email, patient_first_name, created_at")
-    // Tenant-scoped (migration 0463): only attribute THIS tenant's orders.
-    .eq("org_id", orgId)
-    .gte("created_at", sinceIso)
-    .not("patient_email", "is", null)
-    .order("created_at", { ascending: true })
-    .limit(1000);
-  if (ordErr) throw ordErr;
-  stats.ordersScanned = orders?.length ?? 0;
-  if (stats.ordersScanned === 1000) {
+  // Pull recent legacy cash-pay orders AND fulfilled insurance fit
+  // requests. We only need id + email + created_at; the lead row
+  // carries the marketing attribution columns. We DON'T join on the
+  // DB side — PostgREST has no cross-schema joins, and a per-row
+  // lookup against fitter_leads is fine at the volumes we see.
+  const [ordersRes, fulfilledRes] = await Promise.all([
+    supabase
+      .raw()
+      .schema("public")
+      .from("orders")
+      .select("id, patient_email, patient_first_name, created_at")
+      // Tenant-scoped (migration 0463): only attribute THIS tenant's orders.
+      .eq("org_id", orgId)
+      .gte("created_at", sinceIso)
+      .not("patient_email", "is", null)
+      .order("created_at", { ascending: true })
+      .limit(1000),
+    supabase
+      .from("fitter_fit_requests")
+      .select("id, email, full_name, closed_at, created_at")
+      .eq("closed_outcome", "fulfilled")
+      .gte("closed_at", sinceIso)
+      .not("email", "is", null)
+      .order("closed_at", { ascending: true })
+      .limit(1000),
+  ]);
+  if (ordersRes.error) throw ordersRes.error;
+  if (fulfilledRes.error) throw fulfilledRes.error;
+  const orders = ordersRes.data;
+  const fulfilled = fulfilledRes.data;
+  stats.ordersScanned = (orders?.length ?? 0) + (fulfilled?.length ?? 0);
+  if ((orders?.length ?? 0) === 1000 || (fulfilled?.length ?? 0) === 1000) {
     // PostgREST caps responses at 1000 rows; hitting the cap means the
-    // window had MORE orders than we scanned and some were skipped this
-    // pass (the lookback overlap re-covers them next run).
+    // window had MORE conversions than we scanned and some were skipped
+    // this pass (the lookback overlap re-covers them next run).
     logger.warn(
       { sinceIso },
-      "fitter-attribution: order scan hit the 1000-row cap — window truncated",
+      "fitter-attribution: conversion scan hit the 1000-row cap — window truncated",
     );
   }
-  if (!orders || orders.length === 0) return stats;
+  if (stats.ordersScanned === 0) return stats;
 
-  // Build a map from lowercased email → most-recent order id +
-  // placed_at + patient_first_name. Multiple orders for the same
+  // Build a map from lowercased email → most-recent conversion id +
+  // placed_at + patient_first_name. Multiple conversions for the same
   // email collapse to the FIRST one (in createdAt-ascending order,
   // the first match wins so the lead's first_order_* columns reflect
-  // the genuinely first attributed order even if the scan window
-  // contains two).
+  // the genuinely first attributed conversion even if the scan window
+  // contains two). Legacy shop orders are merged first so a same-day
+  // cash-pay row wins over a fit-request fulfill when both exist.
   const byEmail = new Map<
     string,
     { orderId: string; placedAt: string; firstName: string | null }
   >();
-  for (const o of orders) {
+  for (const o of orders ?? []) {
     const e =
       typeof o.patient_email === "string"
         ? o.patient_email.toLowerCase()
@@ -147,6 +165,26 @@ export async function runFitterConversionAttributionForOrg(
     byEmail.set(e, {
       orderId: o.id as string,
       placedAt: (o.created_at as string) ?? new Date().toISOString(),
+      firstName,
+    });
+  }
+  for (const r of fulfilled ?? []) {
+    const e = typeof r.email === "string" ? r.email.toLowerCase() : null;
+    if (!e) continue;
+    if (byEmail.has(e)) continue;
+    let firstName: string | null = null;
+    if (typeof r.full_name === "string") {
+      const first = r.full_name.trim().split(/\s+/)[0] ?? "";
+      if (first.length > 0 && first.length <= 30) {
+        firstName = first;
+      }
+    }
+    byEmail.set(e, {
+      orderId: r.id as string,
+      placedAt:
+        (r.closed_at as string) ??
+        (r.created_at as string) ??
+        new Date().toISOString(),
       firstName,
     });
   }

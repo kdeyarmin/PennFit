@@ -560,6 +560,42 @@ describe("Stripe checks in production mode", () => {
     expect(exitCode).toBe(1);
     expect(stdout).toContain("STRIPE_PLATFORM_SECRET_KEY");
   });
+
+  it("fails when BILLING_PAYWALL_ENFORCED is on without any Stripe billing key", () => {
+    const { exitCode, stdout } = run(
+      withEnv({
+        BILLING_PAYWALL_ENFORCED: "1",
+        STRIPE_SECRET_KEY: undefined,
+        STRIPE_PLATFORM_SECRET_KEY: undefined,
+        STRIPE_PLATFORM_WEBHOOK_SIGNING_SECRET: undefined,
+      }),
+    );
+    expect(exitCode).toBe(1);
+    expect(stdout).toContain("BILLING_PAYWALL_ENFORCED");
+    expect(stdout).toMatch(/neither STRIPE_PLATFORM_SECRET_KEY nor STRIPE_SECRET_KEY/i);
+  });
+
+  it("passes when BILLING_PAYWALL_ENFORCED is on with shared STRIPE_SECRET_KEY", () => {
+    const { exitCode, stdout } = run(
+      withEnv({
+        BILLING_PAYWALL_ENFORCED: "true",
+      }),
+    );
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("BILLING_PAYWALL_ENFORCED");
+  });
+
+  it("fails when BILLING_PAYWALL_ENFORCED is on with platform key but no webhook secret", () => {
+    const { exitCode, stdout } = run(
+      withEnv({
+        BILLING_PAYWALL_ENFORCED: "1",
+        STRIPE_SECRET_KEY: undefined,
+        STRIPE_PLATFORM_SECRET_KEY: "sk_live" + "_platformbilling0987654321",
+      }),
+    );
+    expect(exitCode).toBe(1);
+    expect(stdout).toContain("BILLING_PAYWALL_ENFORCED");
+  });
 });
 
 // ---------------------------------------------------------------------------

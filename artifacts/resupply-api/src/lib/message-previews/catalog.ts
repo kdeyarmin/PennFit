@@ -259,9 +259,11 @@ function fromSeed(
 export function buildMessagePreviews(brand: PreviewBrand): MessagePreview[] {
   const { brandName, baseUrl } = brand;
   const first = SAMPLE.firstName;
-  const confirmUrl = `${baseUrl}/r/c/demo-signed-token`;
-  const editUrl = `${baseUrl}/r/e/demo-signed-token`;
-  const stopUrl = `${baseUrl}/r/s/demo-signed-token`;
+  // Live reminder emails mint HMAC tokens on /resupply-api/email/click
+  // — the short /r/c|/r/e|/r/s paths were never routed.
+  const confirmUrl = `${baseUrl}/resupply-api/email/click?t=demo-signed-token-confirm`;
+  const editUrl = `${baseUrl}/resupply-api/email/click?t=demo-signed-token-edit`;
+  const stopUrl = `${baseUrl}/resupply-api/email/click?t=demo-signed-token-stop`;
 
   const out: MessagePreview[] = [];
 
@@ -339,7 +341,7 @@ export function buildMessagePreviews(brand: PreviewBrand): MessagePreview[] {
         "What's in this shipment:",
         itemsText(),
         "",
-        `Track your order: ${baseUrl}/account/orders`,
+        `Track your order: ${baseUrl}/track-order`,
       ].join("\n"),
       html: shell(
         brand,
@@ -379,7 +381,7 @@ export function buildMessagePreviews(brand: PreviewBrand): MessagePreview[] {
         "",
         "If you can't find the parcel, reply to this email and we'll chase it with the carrier.",
         "",
-        `View your order: ${baseUrl}/account/orders`,
+        `View your order: ${baseUrl}/track-order`,
       ].join("\n"),
       html: shell(
         brand,
@@ -511,7 +513,7 @@ export function buildMessagePreviews(brand: PreviewBrand): MessagePreview[] {
   // (The `appointment.assigned.email` seed is deliberately NOT here — it
   // goes to a STAFF member about their own calendar, not to a patient.)
   const visitWhen = SAMPLE.appointmentAt;
-  const visitLink = `${baseUrl}/v/demo-signed-token`;
+  const visitLink = `${baseUrl}/video-visit?token=demo-signed-token`;
   out.push({
     id: "clinical.video_visit",
     group: "clinical",
@@ -567,7 +569,7 @@ export function buildMessagePreviews(brand: PreviewBrand): MessagePreview[] {
         "",
         `Your statement is ready. Balance due: ${money(SAMPLE.balanceCents)}.`,
         "",
-        `Pay online: ${baseUrl}/account/billing`,
+        `View your statement: ${baseUrl}/account/billing`,
         "",
         `If something looks wrong, reply to this email or call ${brand.supportPhoneDisplay} — we would rather fix it than have you pay it.`,
       ].join("\n"),
@@ -579,7 +581,7 @@ export function buildMessagePreviews(brand: PreviewBrand): MessagePreview[] {
             `Your statement is ready. Balance due: <strong>${money(SAMPLE.balanceCents)}</strong>.`,
           ),
           p(
-            `<a href="${escapeHtml(baseUrl)}/account/billing" style="display:inline-block;padding:10px 18px;background:#0a1f44;color:#ffffff;border-radius:6px;text-decoration:none;font-size:14px;">View and pay</a>`,
+            `<a href="${escapeHtml(baseUrl)}/account/billing" style="display:inline-block;padding:10px 18px;background:#0a1f44;color:#ffffff;border-radius:6px;text-decoration:none;font-size:14px;">View your statement</a>`,
           ),
           p(
             `If something looks wrong, reply to this email or call ${escapeHtml(brand.supportPhoneDisplay)} &mdash; we would rather fix it than have you pay it.`,

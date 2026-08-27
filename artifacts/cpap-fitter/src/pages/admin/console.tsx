@@ -1393,6 +1393,16 @@ function AdminConsole() {
             <Route path="/admin/pennpaps/orders">
               <Redirect to="/admin/fitter/orders" replace />
             </Route>
+            {/* Legacy short path used by ops digests before the fitter
+                console rename. */}
+            <Route path="/admin/orders/:id">
+              {(params) => (
+                <Redirect to={`/admin/fitter/orders/${params.id}`} replace />
+              )}
+            </Route>
+            <Route path="/admin/orders">
+              <Redirect to="/admin/fitter/orders" replace />
+            </Route>
             <Route path="/admin/pennpaps/reminders">
               <Redirect to="/admin/fitter/reminders" replace />
             </Route>

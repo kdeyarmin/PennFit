@@ -60,6 +60,10 @@ inbox-counts chrome). Do **not** broaden that list to operational PHI routes.
 - The Stripe **webhook** endpoint is receiving events (`checkout.session.completed`,
   `invoice.paid`, `invoice.payment_failed`, `customer.subscription.*`) — same
   endpoint platform billing already uses (`handlePlatformTenantStripeEvent`).
+- `preflight:prod` passes with `BILLING_PAYWALL_ENFORCED` set (it FAILs if the
+  flag is on without `STRIPE_PLATFORM_SECRET_KEY` or shared
+  `STRIPE_SECRET_KEY`, and without the platform webhook secret when using the
+  dedicated platform key).
 - Migrations through **0427** applied (`RUN_DB_MIGRATIONS=true` on deploy, or
   run `migrate.mjs`).
 - A **throwaway test tenant** you can create via the public sign-up (you do NOT

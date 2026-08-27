@@ -11,7 +11,7 @@ import { Link, useLocation } from "wouter";
 import { LogOut, ShieldCheck } from "lucide-react";
 
 import { providerAuthHooks } from "@/lib/provider/provider-auth";
-import { useCompanyContact } from "@/lib/contact";
+import { PLATFORM_NAME } from "@/lib/branding";
 import { formatAppDateTime } from "@/lib/utils";
 
 export function Button({
@@ -144,7 +144,6 @@ export function ProviderShell({
   children: ReactNode;
 }) {
   const signOut = providerAuthHooks.useSignOut();
-  const { legalName } = useCompanyContact();
   return (
     <div className="provider-portal min-h-screen bg-slate-50 text-slate-900">
       <header className="border-b border-slate-200 bg-white">
@@ -159,7 +158,7 @@ export function ProviderShell({
             <span className="flex flex-col leading-tight">
               <span className="text-sm">Provider Portal</span>
               <span className="text-[11px] font-normal uppercase tracking-wider text-slate-400">
-                {legalName}
+                {PLATFORM_NAME}
               </span>
             </span>
           </Link>
@@ -193,7 +192,6 @@ export function ProviderShell({
 
 /** Centered card layout for the sign-in / MFA screens. */
 export function ProviderAuthLayout({ children }: { children: ReactNode }) {
-  const { legalName } = useCompanyContact();
   return (
     <div className="provider-portal flex min-h-screen flex-col items-center justify-center bg-slate-50 px-4 py-10 text-slate-900">
       <div className="mb-6 flex items-center gap-2.5 font-semibold">
@@ -203,7 +201,7 @@ export function ProviderAuthLayout({ children }: { children: ReactNode }) {
         <span className="flex flex-col leading-tight">
           <span className="text-base">Provider Portal</span>
           <span className="text-[11px] font-normal uppercase tracking-wider text-slate-400">
-            {legalName}
+            {PLATFORM_NAME}
           </span>
         </span>
       </div>

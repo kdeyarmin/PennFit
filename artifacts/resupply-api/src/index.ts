@@ -519,9 +519,9 @@ async function start(): Promise<void> {
   // resolved, and a worker failure exited the process — so a transient
   // DB/queue problem at deploy time took the ENTIRE site dark: with no
   // healthy instance, Railway's edge returns a 404 for every path,
-  // including the static storefront and the public shop catalog,
-  // neither of which needs the worker or even the database (the catalog
-  // has a Stripe-less preview fallback). The /readyz probe still
+  // including the static storefront and company-info / health probes,
+  // neither of which needs the worker or even the database. The /readyz
+  // probe still
   // reports the worker's true state for monitoring and alerting; we
   // just no longer hold the front door shut on it. (Railway's health
   // check is /healthz — liveness — so a worker hiccup can't blackhole

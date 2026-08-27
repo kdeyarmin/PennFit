@@ -64,8 +64,18 @@ const resolveBrandingByOrgIdMock = vi.hoisted(() =>
     logoUrl: null,
   })),
 );
+const resolveTenantBaseUrlMock = vi.hoisted(() =>
+  vi.fn(async (_orgId?: string) => "https://shop.acme.example"),
+);
+const resolveTenantLinkBaseUrlMock = vi.hoisted(() =>
+  vi.fn(
+    async (_orgId?: string, _fallback?: string) => "https://shop.acme.example",
+  ),
+);
 vi.mock("../../lib/tenant-branding", () => ({
   resolveBrandingByOrgId: resolveBrandingByOrgIdMock,
+  resolveTenantBaseUrl: resolveTenantBaseUrlMock,
+  resolveTenantLinkBaseUrl: resolveTenantLinkBaseUrlMock,
 }));
 
 // Keep the real exports (roleHasPermission for the auth mock) and stub
@@ -118,6 +128,8 @@ beforeEach(() => {
   emailMock.mockResolvedValue(undefined);
   vi.mocked(renderPatientPortalInviteEmail).mockClear();
   resolveBrandingByOrgIdMock.mockClear();
+  resolveTenantLinkBaseUrlMock.mockReset();
+  resolveTenantLinkBaseUrlMock.mockResolvedValue("https://shop.acme.example");
 });
 
 /** Stage the DB round-trips a fresh invite makes:
@@ -208,6 +220,7 @@ describe("POST /admin/patients/:id/portal-invite/resend", () => {
     const ctx = vi.mocked(renderPatientPortalInviteEmail).mock.calls[0]![0];
     expect(ctx.productName).toBe("Acme Sleep");
     expect(ctx.signatureName).toBe("Acme Sleep Supply LLC");
+    expect(ctx.publicBaseUrl).toBe("https://shop.acme.example");
     expect(ctx.productName).not.toContain("Penn Home Medical Supply");
   });
 });

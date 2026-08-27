@@ -22,11 +22,16 @@ import { timingSafeEqual } from "node:crypto";
 import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 /**
- * Reference is "PENN-" + 6 alphanumerics; allow either the full thing
- * or just the 6-char tail. 6 alphanumerics is ~36^6 ≈ 2B — combined
- * with the rate limit + the email guard, that's the deterrent we want.
+ * Reference shapes accepted by track:
+ *   - "PENN-" + 6 alphanumerics (current fitter mint), or just the 6-char tail
+ *   - legacy "PHM-XXX-XXX" (hyphenated) from an earlier mint format
+ *   - "ORD-" + 6 alphanumerics (CSR signature-order mint)
+ *
+ * 6 alphanumerics is ~36^6 ≈ 2B — combined with the rate limit + the
+ * email guard, that's the deterrent we want.
  */
-export const ORDER_REFERENCE_PATTERN = /^(PENN-)?[A-Z0-9]{6}$/;
+export const ORDER_REFERENCE_PATTERN =
+  /^(?:(?:PENN-|ORD-)?[A-Z0-9]{6}|PHM-[A-Z0-9]{3}-[A-Z0-9]{3})$/;
 
 const RATE_WINDOW_MS = 15 * 60 * 1000;
 const RATE_MAX = 10;
@@ -70,12 +75,17 @@ export function _resetTrackOrderRateBucketForTests(): void {
 }
 
 /**
- * Uppercase, validate, and PENN- prefix a user-supplied reference.
- * Returns null when the input can't be a Penn Home Medical Supply reference.
+ * Uppercase and validate a user-supplied reference. PENN- prefixes the
+ * 6-char tail when missing; ORD-… / PHM-XXX-XXX refs are kept as-is so
+ * already-emailed invites and confirmations still look up.
+ * Returns null when the input can't be a known order reference.
  */
 export function normalizeOrderReference(raw: string): string | null {
   const candidate = raw.trim().toUpperCase();
   if (!ORDER_REFERENCE_PATTERN.test(candidate)) return null;
+  if (candidate.startsWith("PHM-") || candidate.startsWith("ORD-")) {
+    return candidate;
+  }
   return candidate.startsWith("PENN-") ? candidate : `PENN-${candidate}`;
 }
 
@@ -114,6 +124,10 @@ export async function lookupTrackedOrder(
   }
   const supabase = getOrgScopedClient(orgId);
 
+  if (normalizedReference.startsWith("ORD-")) {
+    return lookupCsrOrder(supabase, normalizedReference, email);
+  }
+
   // Fitter orders live in public.orders; the shop orders live in
   // resupply.shop_orders. We probe public.orders first (fitter is
   // the only path that mints a PENN- reference today) and fall back
@@ -148,18 +162,10 @@ export async function lookupTrackedOrder(
   // Treat "found but email doesn't match" the same as "not found"
   // so an attacker who guesses a reference can't infer which email
   // it belongs to.
-  const storedEmail = (legacyRow?.patient_email ?? "").toLowerCase();
-  const probedEmail = email.toLowerCase();
-  let emailMatches = false;
-  if (legacyRow) {
-    const pad = Math.max(storedEmail.length, probedEmail.length, 320);
-    const a = Buffer.alloc(pad);
-    const b = Buffer.alloc(pad);
-    a.write(storedEmail, "utf8");
-    b.write(probedEmail, "utf8");
-    emailMatches = timingSafeEqual(a, b);
+  if (!emailsMatchConstantTime(legacyRow?.patient_email, email)) {
+    return { outcome: "not_found" };
   }
-  if (!legacyRow || !emailMatches) {
+  if (!legacyRow) {
     return { outcome: "not_found" };
   }
 
@@ -178,6 +184,91 @@ export async function lookupTrackedOrder(
       // Future expansion: shop_orders linkage for shipped/delivered
       // timestamps + tracking carrier/number. Today public.orders
       // doesn't store fulfillment-side state.
+    },
+  };
+}
+
+function emailsMatchConstantTime(
+  storedRaw: string | null | undefined,
+  probedRaw: string,
+): boolean {
+  const storedEmail = (storedRaw ?? "").toLowerCase();
+  const probedEmail = probedRaw.toLowerCase();
+  // Empty stored email can never authenticate a guest lookup.
+  if (!storedEmail) return false;
+  const pad = Math.max(storedEmail.length, probedEmail.length, 320);
+  const a = Buffer.alloc(pad);
+  const b = Buffer.alloc(pad);
+  a.write(storedEmail, "utf8");
+  b.write(probedEmail, "utf8");
+  return timingSafeEqual(a, b);
+}
+
+/**
+ * Map CSR link-lifecycle status onto the TrackResult.emailStatus values
+ * the SPA already understands (sent / pending / failed), plus a few
+ * CSR-specific labels the SPA formats explicitly.
+ */
+function csrStatusToTrackEmailStatus(
+  status: "sent" | "viewed" | "signed" | "canceled",
+): string {
+  switch (status) {
+    case "signed":
+      return "signed";
+    case "canceled":
+      return "canceled";
+    case "viewed":
+      return "awaiting_signature";
+    case "sent":
+    default:
+      return "awaiting_signature";
+  }
+}
+
+async function lookupCsrOrder(
+  supabase: ReturnType<typeof getOrgScopedClient>,
+  normalizedReference: string,
+  email: string,
+): Promise<TrackOrderLookup> {
+  // raw-org-scope-exempt: ORD- references are globally UNIQUE
+  // (csr_order_requests.order_reference) and the email match is the
+  // second factor — same capability-token posture as fitter PENN refs.
+  const { data: row, error } = await supabase
+    .raw()
+    .schema("resupply")
+    .from("csr_order_requests")
+    .select("order_reference, customer_email, status, items, created_at")
+    .eq("order_reference", normalizedReference)
+    .limit(1)
+    .maybeSingle();
+  if (error) {
+    return { outcome: "lookup_failed", detail: error.message };
+  }
+  if (!emailsMatchConstantTime(row?.customer_email, email) || !row) {
+    return { outcome: "not_found" };
+  }
+
+  const items = Array.isArray(row.items) ? row.items : [];
+  const first = items[0] as { description?: unknown } | undefined;
+  const firstDesc =
+    typeof first?.description === "string" && first.description.trim()
+      ? first.description.trim()
+      : null;
+
+  return {
+    outcome: "found",
+    order: {
+      orderReference: row.order_reference,
+      mask: {
+        name: firstDesc,
+        manufacturer: null,
+        modelNumber: null,
+      },
+      createdAt: row.created_at,
+      emailStatus: csrStatusToTrackEmailStatus(
+        row.status as "sent" | "viewed" | "signed" | "canceled",
+      ),
+      emailDeliveredAt: null,
     },
   };
 }

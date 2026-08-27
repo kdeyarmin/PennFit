@@ -434,10 +434,14 @@ router.post(
       await import("../../lib/provider-portal-token");
     const token = signProviderPortalToken(idParse.data, undefined, {
       portalLinkVersion: existing.portal_link_version,
+      orgId,
     });
     res.json({
       token,
-      path: `/provider-portal/${token}`,
+      // Mounted under the resupply-api router (routes/index.ts), not at
+      // the SPA root — a bare /provider-portal/:token hits history
+      // fallback with no matching React route.
+      path: `/resupply-api/provider-portal/${token}`,
       expiresInDays: 30,
     });
   },

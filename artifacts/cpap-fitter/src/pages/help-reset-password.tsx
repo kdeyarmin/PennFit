@@ -131,7 +131,7 @@ export function HelpResetPassword() {
         {
           href: "/help/track-your-order",
           label: "Track your order",
-          blurb: "Once you're signed in, see all your orders.",
+          blurb: "Look up a shipment by reference and email.",
         },
       ]}
     />

@@ -322,52 +322,39 @@ async function loadAccountContext(
     const patientId = await resolvePatientIdForCustomer(supabase, customerId);
     // Run the four reads in parallel — the original SQL path
     // ran them sequentially but they're independent and indexed.
-    const [customerRes, orderCountRes, latestOrderRes, subsRes] =
-      await Promise.all([
-        supabase
-          .from("shop_customers")
-          .select("cpap_device_json, created_at")
-          .eq("customer_id", customerId)
-          .limit(1)
-          .maybeSingle(),
-        // Shipment counts + the latest shipment come from the live
-        // fulfillment path, keyed by patient. `patientId` is null when
-        // the caller's email did not resolve to exactly one chart, and
-        // both queries then return nothing rather than guessing.
-        patientId
-          ? supabase
-              .from("fulfillments")
-              .select("*", { count: "exact", head: true })
-              .eq("patient_id", patientId)
-          : Promise.resolve({ data: null, error: null, count: 0 }),
-        patientId
-          ? supabase
-              .from("fulfillments")
-              .select(
-                "id, item_sku, quantity, status, created_at, shipped_at, delivered_at",
-              )
-              .eq("patient_id", patientId)
-              .order("created_at", { ascending: false })
-              .order("id", { ascending: false })
-              .limit(1)
-              .maybeSingle()
-          : Promise.resolve({ data: null, error: null }),
-        // "Non-canceled" — anything still billable or recoverable. We
-        // deliberately INCLUDE paused / past_due / unpaid so the bot
-        // can warn the user about a card failure on its own. Terminal
-        // states (canceled, incomplete_expired) are filtered
-        // client-side; the count stays well under any practical
-        // upper bound (tens at most per customer) so a single SELECT
-        // is fine.
-        supabase
-          .from("shop_subscriptions")
-          .select("status")
-          .eq("customer_id", customerId),
-      ]);
+    const [customerRes, orderCountRes, latestOrderRes] = await Promise.all([
+      supabase
+        .from("shop_customers")
+        .select("cpap_device_json, created_at")
+        .eq("customer_id", customerId)
+        .limit(1)
+        .maybeSingle(),
+      // Shipment counts + the latest shipment come from the live
+      // fulfillment path, keyed by patient. `patientId` is null when
+      // the caller's email did not resolve to exactly one chart, and
+      // both queries then return nothing rather than guessing.
+      patientId
+        ? supabase
+            .from("fulfillments")
+            .select("*", { count: "exact", head: true })
+            .eq("patient_id", patientId)
+        : Promise.resolve({ data: null, error: null, count: 0 }),
+      patientId
+        ? supabase
+            .from("fulfillments")
+            .select(
+              "id, item_sku, quantity, status, created_at, shipped_at, delivered_at",
+            )
+            .eq("patient_id", patientId)
+            .order("created_at", { ascending: false })
+            .order("id", { ascending: false })
+            .limit(1)
+            .maybeSingle()
+        : Promise.resolve({ data: null, error: null }),
+    ]);
     if (customerRes.error) throw customerRes.error;
     if (orderCountRes.error) throw orderCountRes.error;
     if (latestOrderRes.error) throw latestOrderRes.error;
-    if (subsRes.error) throw subsRes.error;
 
     const customerRow = customerRes.data;
     const cpapDevice = (customerRow?.cpap_device_json ??
@@ -405,17 +392,13 @@ async function loadAccountContext(
         }
       : null;
 
-    const activeSubscriptionCount = (subsRes.data ?? []).filter(
-      (s: { status: string }) =>
-        s.status !== "canceled" && s.status !== "incomplete_expired",
-    ).length;
-
     return {
       displayName,
       memberSince,
       totalShipments,
       latestOrder: latestOrderCtx,
-      activeSubscriptionCount,
+      // Subscribe & Save is retired — never surface shop_subscriptions.
+      activeSubscriptionCount: 0,
       device,
     };
   } catch (err) {
@@ -620,6 +603,7 @@ router.post(
       // customer_id.
       supabase: supabase.raw(),
       customerId,
+      orgId,
       // Non-PHI label used only by escalate_to_human to tag the
       // CSR-inbox notification — same label the admin inbox already shows.
       customerDisplayName: req.shopCustomerDisplayName ?? null,

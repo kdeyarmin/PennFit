@@ -8,15 +8,14 @@
 //
 //   1. A provider on tenant-A's host scopes its `provider_signature_requests`
 //      read to tenant-A's org_id (NOT the seed org / tenant-B's).
-//   2. The platform host (host resolves to no tenant) falls back to the seed
-//      org — byte-for-byte the historical single-tenant behavior.
+//   2. The platform host (brand resolve returns null) fails CLOSED with
+//      403 `provider_tenant_host_required` — never soft-falls to seed PHI.
 //   3. Provider isolation still holds — every read carries the
 //      `.eq("provider_id", …)` filter for the signed-in provider.
 //   4. The MFA gate still applies to the PHI-bearing data routes.
 //
-// We mock `resolveOrgIdByHost` (host → org) and let the shared Supabase
-// mock stub `resolveSeedOrgId` to a fixed seed org. The mock captures the
-// `.eq(...)` filters applied to each (table, op) so we can assert the
+// We mock `resolveBrandOrgIdByHost` (host → org or null). The mock captures
+// the `.eq(...)` filters applied to each (table, op) so we can assert the
 // org_id the route actually scoped to.
 
 import express, { type Express } from "express";
@@ -41,12 +40,12 @@ vi.mock("../../lib/logger", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
-// Host → org resolver. Default: no tenant resolves (platform host).
-const resolveOrgIdByHostMock = vi.hoisted(() =>
+// Host → brand org. Default: no tenant resolves (platform host).
+const resolveBrandOrgIdByHostMock = vi.hoisted(() =>
   vi.fn(async (_host: string): Promise<string | null> => null),
 );
 vi.mock("../../lib/tenant-branding", () => ({
-  resolveOrgIdByHost: resolveOrgIdByHostMock,
+  resolveBrandOrgIdByHost: resolveBrandOrgIdByHostMock,
 }));
 
 // Append-only signature-event log — exercised by the view side effect.
@@ -117,8 +116,8 @@ function providerFilterValue(op: "select" | "update"): unknown {
 
 beforeEach(() => {
   supabaseMock.reset();
-  resolveOrgIdByHostMock.mockReset();
-  resolveOrgIdByHostMock.mockResolvedValue(null);
+  resolveBrandOrgIdByHostMock.mockReset();
+  resolveBrandOrgIdByHostMock.mockResolvedValue(null);
   appendSignatureEventMock.mockReset();
   appendSignatureEventMock.mockResolvedValue(undefined);
   mfaEnrolledMock.value = true;
@@ -126,7 +125,7 @@ beforeEach(() => {
 
 describe("provider portal — multi-tenant scoping of the signature queue", () => {
   it("scopes the queue read to the HOST tenant's org, not the seed org", async () => {
-    resolveOrgIdByHostMock.mockResolvedValueOnce(TENANT_A_ORG);
+    resolveBrandOrgIdByHostMock.mockResolvedValueOnce(TENANT_A_ORG);
     stageSupabaseResponse("provider_signature_requests", "select", {
       data: [],
     });
@@ -142,27 +141,24 @@ describe("provider portal — multi-tenant scoping of the signature queue", () =
     // Provider isolation preserved.
     expect(providerFilterValue("select")).toBe(PROVIDER_ID);
     // The host actually fed the resolver.
-    expect(resolveOrgIdByHostMock).toHaveBeenCalledWith("tenant-a.example.com");
+    expect(resolveBrandOrgIdByHostMock).toHaveBeenCalledWith(
+      "tenant-a.example.com",
+    );
   });
 
-  it("falls back to the SEED org on the platform host (no tenant resolved)", async () => {
-    // Default mock returns null → seed-org fallback (unchanged behavior).
-    stageSupabaseResponse("provider_signature_requests", "select", {
-      data: [],
-    });
-
+  it("fails CLOSED on the platform host (no seed-org PHI fallback)", async () => {
+    // Default mock returns null → brand host required.
     const res = await request(makeApp())
       .get("/api/provider/queue")
       .set("Host", "cmbreathe.com");
 
-    expect(res.status).toBe(200);
-    // No tenant resolved → seed org, exactly as before the fix.
-    expect(orgFilterValue("select")).toBe(SEED_ORG);
-    expect(providerFilterValue("select")).toBe(PROVIDER_ID);
+    expect(res.status).toBe(403);
+    expect(res.body.error).toBe("provider_tenant_host_required");
+    expect(orgFilterValue("select")).toBeUndefined();
   });
 
   it("scopes the /me pending count to the host tenant's org", async () => {
-    resolveOrgIdByHostMock.mockResolvedValueOnce(TENANT_A_ORG);
+    resolveBrandOrgIdByHostMock.mockResolvedValueOnce(TENANT_A_ORG);
     // /me reads provider_portal_accounts (update), providers (select),
     // then counts provider_signature_requests (select). Only the last is
     // org-scoped; the count value flows through unset → defaults fine.
@@ -180,13 +176,22 @@ describe("provider portal — multi-tenant scoping of the signature queue", () =
     expect(providerFilterValue("select")).toBe(PROVIDER_ID);
   });
 
+  it("rejects /me on the platform host without leaking seed pending counts", async () => {
+    const res = await request(makeApp())
+      .get("/api/provider/me")
+      .set("Host", "cmbreathe.com");
+
+    expect(res.status).toBe(403);
+    expect(res.body.error).toBe("provider_tenant_host_required");
+  });
+
   it("applies the host tenant's org_id filter to the queue select (the mechanism that excludes other tenants' rows)", async () => {
     // PostgREST itself enforces the cross-tenant exclusion server-side, so
     // the staged client cannot return a tenant-B row to assert against.
     // What this test proves is the precondition: the route applied
     // tenant-A's org_id filter to the queue select — the filter that makes
     // a tenant-B row impossible to return.
-    resolveOrgIdByHostMock.mockResolvedValueOnce(TENANT_A_ORG);
+    resolveBrandOrgIdByHostMock.mockResolvedValueOnce(TENANT_A_ORG);
     stageSupabaseResponse("provider_signature_requests", "select", {
       data: [
         {
@@ -237,7 +242,7 @@ describe("provider portal — sign route scopes the org-guarded update", () => {
   // single org — now the row's own. The queue LIST above stays
   // host-scoped, which is why those tests are untouched.
   it("signs against the request's own org, and keeps provider isolation", async () => {
-    resolveOrgIdByHostMock.mockResolvedValue(TENANT_A_ORG);
+    resolveBrandOrgIdByHostMock.mockResolvedValue(TENANT_A_ORG);
     stageSupabaseResponse("provider_signature_requests", "select", {
       data: {
         id: REQUEST_ID,
@@ -271,7 +276,7 @@ describe("provider portal — sign route scopes the org-guarded update", () => {
     // The case the row-owned lookup exists for. Before this change the
     // load 404'd and the provider could not sign their own referral order.
     const TENANT_B_ORG = "bbbbbbbb-0000-4000-8000-000000000002";
-    resolveOrgIdByHostMock.mockResolvedValue(TENANT_A_ORG);
+    resolveBrandOrgIdByHostMock.mockResolvedValue(TENANT_A_ORG);
     stageSupabaseResponse("provider_signature_requests", "select", {
       data: {
         id: REQUEST_ID,
@@ -295,6 +300,43 @@ describe("provider portal — sign route scopes the org-guarded update", () => {
 
     expect(res.status).toBe(200);
     // The signature lands in B's tenant — the host never decides it.
+    expect(orgFilterValue("update")).toBe(TENANT_B_ORG);
+    expect(providerFilterValue("select")).toBe(PROVIDER_ID);
+  });
+});
+
+describe("provider portal — batch sign route scopes each row to its own org", () => {
+  it("batch-signs a request staged by another tenant", async () => {
+    const TENANT_B_ORG = "bbbbbbbb-0000-4000-8000-000000000002";
+    const BATCH_ID = "44444444-4444-4444-8444-444444444444";
+    resolveBrandOrgIdByHostMock.mockResolvedValue(TENANT_A_ORG);
+    stageSupabaseResponse("provider_signature_requests", "select", {
+      data: {
+        id: BATCH_ID,
+        org_id: TENANT_B_ORG,
+        status: "pending",
+        expires_at: null,
+        subject_type: "referral",
+      },
+    });
+    stageSupabaseResponse("providers", "select", {
+      data: { npi: "1234567890" },
+    });
+    stageSupabaseResponse("provider_signature_requests", "update", {
+      data: { id: BATCH_ID },
+    });
+
+    const res = await request(makeApp())
+      .post("/api/provider/queue/sign-batch")
+      .set("Host", "tenant-a.example.com")
+      .send({
+        ids: [BATCH_ID],
+        consentEsign: true,
+        signerName: "Dr Pat Example",
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.signed).toEqual([BATCH_ID]);
     expect(orgFilterValue("update")).toBe(TENANT_B_ORG);
     expect(providerFilterValue("select")).toBe(PROVIDER_ID);
   });

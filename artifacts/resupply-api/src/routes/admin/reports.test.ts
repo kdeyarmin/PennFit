@@ -320,7 +320,7 @@ describe("GET /admin/reports/orders.pdf", () => {
 
     expect(renderTablePdfMock).toHaveBeenCalledOnce();
     const call = renderTablePdfMock.mock.calls[0]![0] as { title: string };
-    expect(call.title).toBe("Cash-pay orders");
+    expect(call.title).toBe("Historical storefront orders");
   });
 });
 

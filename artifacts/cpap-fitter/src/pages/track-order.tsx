@@ -1,4 +1,4 @@
-// /track-order — public order-status lookup for guest checkouts.
+// /track-order — public order-status lookup (no login).
 //
 // What this is
 // ------------
@@ -7,9 +7,9 @@
 // Captures the single largest "where's my order?" inbound CSR
 // contact deflectable with a simple self-service surface.
 //
-// The full /shop/orders page (signed-in only) stays the canonical
-// detailed view; this page is for the guest patient who didn't
-// create an account and just wants to confirm we got their order.
+// Accepts mint `PENN-XXXXXX` (or bare 6), legacy `PHM-XXX-XXX`, and
+// CSR signature-order `ORD-XXXXXX` still in flight. Signed-in account
+// history remains on /account.
 
 import React, { useState } from "react";
 import { Link } from "wouter";
@@ -29,7 +29,9 @@ import { useCompanyContact } from "@/lib/contact";
 import { formatAppDate } from "@/lib/utils";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const REF_RE = /^(PENN-)?[A-Za-z0-9]{4,12}$/;
+/** Matches mint (`PENN-`/`ORD-`+6 / bare 6) plus legacy `PHM-XXX-XXX`. */
+const REF_RE =
+  /^(?:(?:PENN-|ORD-)?[A-Za-z0-9]{6}|PHM-[A-Za-z0-9]{3}-[A-Za-z0-9]{3})$/i;
 
 interface TrackResult {
   orderReference: string;
@@ -49,6 +51,24 @@ function formatStatus(s: string | null): {
         label: "Received",
         description:
           "Our fulfillment team has your order. A team member contacts you within 1 business day.",
+      };
+    case "signed":
+      return {
+        label: "Signed",
+        description:
+          "Your paperwork is signed. We are preparing your insurance shipment.",
+      };
+    case "awaiting_signature":
+      return {
+        label: "Awaiting your signature",
+        description:
+          "Open the secure link from your invite email or text to review and sign. Call us if you need the link resent.",
+      };
+    case "canceled":
+      return {
+        label: "Canceled",
+        description:
+          "This order request was canceled. Call us if that looks wrong.",
       };
     case "failed":
       return {
@@ -156,12 +176,20 @@ export function TrackOrder() {
             Order lookup
           </CardTitle>
           <CardDescription>
-            For full order history, sign in to{" "}
+            Lost the reference?{" "}
             <Link
-              href="/account"
+              href="/contact"
               className="text-primary underline-offset-4 hover:underline"
             >
-              your account
+              Contact us
+            </Link>{" "}
+            and we&apos;ll look it up. Signed-in patients can also message the
+            team from{" "}
+            <Link
+              href="/account#messages"
+              className="text-primary underline-offset-4 hover:underline"
+            >
+              Account → Messages
             </Link>
             .
           </CardDescription>

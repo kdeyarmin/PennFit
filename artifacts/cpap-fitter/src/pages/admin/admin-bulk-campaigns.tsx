@@ -869,12 +869,9 @@ function CampaignDetailBody({
                         {r.recipientId.slice(0, 8)}
                       </Link>
                     ) : (
-                      <Link
-                        href={`/admin/shop/customers/${r.recipientId}`}
-                        className="text-[hsl(var(--penn-navy))] hover:underline"
-                      >
+                      <span title="Historical storefront account">
                         {r.recipientId.slice(0, 8)}
-                      </Link>
+                      </span>
                     )}
                   </td>
                   <td className="py-1">

@@ -469,6 +469,7 @@ export interface RescanResult {
     | "no_contact"
     | "no_channel_config"
     | "in_office_handoff"
+    | "tenant_domain_required"
     | "send_failed";
   /** A usable link when automated delivery had nowhere to send it. */
   inviteLink: string | null;
@@ -500,6 +501,8 @@ export function rescanNotifyMessage(result: RescanResult): string {
       return "Session flagged for rescan, but the invite has no email or phone on file. Use the link below.";
     case "no_channel_config":
       return "Session flagged for rescan, but this channel isn't configured for your organization. Use the link below.";
+    case "tenant_domain_required":
+      return "Session flagged for rescan, but your organization needs a verified custom domain before patient invite links can be sent. Configure the domain under Company Information, then try again.";
     default:
       return "Session flagged for rescan, but the message could not be sent. Use the link below, or try again.";
   }

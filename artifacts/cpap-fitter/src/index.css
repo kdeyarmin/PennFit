@@ -1251,7 +1251,7 @@
 
   /* Hero headline — fluid display type. A clamp() keeps the
      headline from outgrowing narrow phones (where the fixed
-     text-4xl wrapped "Fit. Shop. Resupply." onto two lines and
+     text-4xl wrapped "Fit. Order. Resupply." onto two lines and
      orphaned the gold swoosh under just one word) while still
      reaching the full 3.75rem on desktop. The vw term shrinks the
      type in lockstep with the viewport so the swoosh phrase stays
@@ -1263,7 +1263,7 @@
   /* Hand-drawn gold swoosh beneath an accented headline line —
      echoes the logo's signature swoosh under "PennPaps", which
      dips DOWN through the middle (Q60 56 120 48 in the logo SVG).
-     Use as `<span class="hero-headline-swoosh">Fit. Shop. Resupply.</span>`. */
+     Use as `<span class="hero-headline-swoosh">Fit. Order. Resupply.</span>`. */
   .hero-headline-swoosh {
     position: relative;
     display: inline-block;

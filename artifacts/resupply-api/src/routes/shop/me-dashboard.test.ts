@@ -2,10 +2,10 @@
 //
 // Coverage:
 //   * 401 without sign-in
-//   * Empty digest when no subs / orders / cart
-//   * nextShipment.daysUntil computed against "now" (Phase A.1)
-//   * eligibility.eligibleNow surfaces subs whose period has rolled past
-//   * eligibility.soonest mirrors the next-future shipment
+//   * Empty digest when no orders
+//   * Retired Subscribe & Save / abandoned-cart rows never surface
+//   * latestOrder + pendingOrders from shop_orders (legacy) and
+//     fulfillments when email resolves to one patient chart
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import express, { type Express } from "express";
@@ -42,12 +42,9 @@ beforeEach(() => {
   supabaseMock.reset();
 });
 
-// All four reads run concurrently in `Promise.all`. Stage in order.
-function stageEmpty(): void {
-  stageSupabaseResponse("shop_subscriptions", "select", { data: [] });
+function stageEmptyOrders(): void {
   stageSupabaseResponse("shop_orders", "select", { data: null });
   stageSupabaseResponse("shop_orders", "select", { data: null, count: 0 });
-  stageSupabaseResponse("shop_abandoned_carts", "select", { data: null });
 }
 
 describe("GET /shop/me/dashboard", () => {
@@ -58,7 +55,7 @@ describe("GET /shop/me/dashboard", () => {
 
   it("returns an empty digest when the customer has nothing", async () => {
     mockSignedIn.current = USER_ID;
-    stageEmpty();
+    stageEmptyOrders();
 
     const res = await request(makeApp()).get("/shop/me/dashboard");
     expect(res.status).toBe(200);
@@ -72,91 +69,132 @@ describe("GET /shop/me/dashboard", () => {
     });
   });
 
-  it("computes daysUntil + eligibleNow from active subscriptions", async () => {
-    vi.useFakeTimers();
-    try {
-      const now = new Date("2024-01-15T12:00:00.000Z");
-      vi.setSystemTime(now);
-
-      mockSignedIn.current = USER_ID;
-      const inFiveDaysIso = new Date(
-        now.getTime() + 5 * 24 * 60 * 60 * 1000,
-      ).toISOString();
-      const yesterdayIso = new Date(
-        now.getTime() - 24 * 60 * 60 * 1000,
-      ).toISOString();
-      stageSupabaseResponse("shop_subscriptions", "select", {
-        data: [
-          // Active sub eligible NOW (period rolled yesterday).
-          {
-            id: "sub_now",
-            status: "active",
-            current_period_end: yesterdayIso,
-            cancel_at_period_end: false,
-            items: [{ name: "Mask cushion" }],
-          },
-          // Active sub eligible in ~5 days — drives nextShipment.
-          {
-            id: "sub_soon",
-            status: "active",
-            current_period_end: inFiveDaysIso,
-            cancel_at_period_end: false,
-            items: [{ name: "Tubing" }],
-          },
-        ],
-      });
-      stageSupabaseResponse("shop_orders", "select", { data: null });
-      stageSupabaseResponse("shop_orders", "select", {
-        data: null,
-        count: 0,
-      });
-      stageSupabaseResponse("shop_abandoned_carts", "select", { data: null });
-
-      const res = await request(makeApp()).get("/shop/me/dashboard");
-      expect(res.status).toBe(200);
-      // Soonest future shipment is the 5-day-out tubing.
-      expect(res.body.nextShipment).toMatchObject({
-        subscriptionId: "sub_soon",
-        firstItemName: "Tubing",
-      });
-      expect(res.body.nextShipment.daysUntil).toBeGreaterThanOrEqual(4);
-      expect(res.body.nextShipment.daysUntil).toBeLessThanOrEqual(5);
-      // Eligibility-now picks up the rolled-past mask cushion.
-      expect(res.body.eligibility.eligibleNow).toEqual([
-        { subscriptionId: "sub_now", firstItemName: "Mask cushion" },
-      ]);
-      expect(res.body.eligibility.soonest).toMatchObject({
-        firstItemName: "Tubing",
-      });
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it("excludes cancelAtPeriodEnd subs from eligibleNow", async () => {
-    // A sub that's cancelling at period end shouldn't suggest a
-    // reorder — Stripe will let it lapse rather than auto-renew.
+  it("never surfaces retired Subscribe & Save or abandoned-cart signals", async () => {
+    // The handler must not query shop_subscriptions / shop_abandoned_carts
+    // at all — staging those tables would hang if they were still read.
     mockSignedIn.current = USER_ID;
-    const yesterdayIso = new Date(
-      Date.now() - 24 * 60 * 60 * 1000,
-    ).toISOString();
-    stageSupabaseResponse("shop_subscriptions", "select", {
-      data: [
-        {
-          id: "sub_cancel",
-          status: "active",
-          current_period_end: yesterdayIso,
-          cancel_at_period_end: true,
-          items: [{ name: "Mask cushion" }],
-        },
-      ],
-    });
-    stageSupabaseResponse("shop_orders", "select", { data: null });
-    stageSupabaseResponse("shop_orders", "select", { data: null, count: 0 });
-    stageSupabaseResponse("shop_abandoned_carts", "select", { data: null });
+    stageEmptyOrders();
 
     const res = await request(makeApp()).get("/shop/me/dashboard");
     expect(res.status).toBe(200);
-    expect(res.body.eligibility.eligibleNow).toEqual([]);
+    expect(res.body.nextShipment).toBeNull();
+    expect(res.body.eligibility).toEqual({ eligibleNow: [], soonest: null });
+    expect(res.body.activeSubscriptions).toBe(0);
+    expect(res.body.abandonedCart).toBeNull();
+  });
+
+  it("returns latestOrder + pendingOrders from historical shop_orders", async () => {
+    mockSignedIn.current = USER_ID;
+    stageSupabaseResponse("shop_orders", "select", {
+      data: {
+        id: "ord_1",
+        stripe_session_id: "cs_test",
+        status: "paid",
+        paid_at: "2024-01-10T12:00:00.000Z",
+        shipped_at: null,
+        delivered_at: null,
+        tracking_carrier: null,
+        tracking_number: null,
+        created_at: "2024-01-10T12:00:00.000Z",
+      },
+    });
+    stageSupabaseResponse("shop_orders", "select", {
+      data: null,
+      count: 2,
+    });
+
+    const res = await request(makeApp()).get("/shop/me/dashboard");
+    expect(res.status).toBe(200);
+    expect(res.body.latestOrder).toMatchObject({
+      id: "ord_1",
+      sessionId: "cs_test",
+      paidAt: "2024-01-10T12:00:00.000Z",
+    });
+    expect(res.body.pendingOrders).toBe(2);
+    expect(res.body.nextShipment).toBeNull();
+  });
+
+  it("returns latestOrder + pendingOrders from insurance fulfillments", async () => {
+    mockSignedIn.current = USER_ID;
+    stageSupabaseResponse("shop_orders", "select", { data: null });
+    stageSupabaseResponse("shop_orders", "select", { data: null, count: 0 });
+    stageSupabaseResponse("shop_customers", "select", {
+      data: {
+        customer_id: USER_ID,
+        email_lower: "patient@example.com",
+      },
+    });
+    stageSupabaseResponse("patients", "select", {
+      data: [{ id: "pat_1" }],
+    });
+    stageSupabaseResponse("fulfillments", "select", {
+      data: {
+        id: "ful_1",
+        status: "queued",
+        created_at: "2024-02-01T12:00:00.000Z",
+        shipped_at: null,
+        delivered_at: null,
+        shipment_metadata: { carrier: "UPS", tracking: "1Z999" },
+      },
+    });
+    stageSupabaseResponse("fulfillments", "select", {
+      data: null,
+      count: 1,
+    });
+    stageSupabaseResponse("episodes", "select", { data: [] });
+
+    const res = await request(makeApp()).get("/shop/me/dashboard");
+    expect(res.status).toBe(200);
+    expect(res.body.latestOrder).toMatchObject({
+      id: "ful_1",
+      paidAt: "2024-02-01T12:00:00.000Z",
+      trackingCarrier: "UPS",
+      trackingNumber: "1Z999",
+    });
+    expect(res.body.pendingOrders).toBe(1);
+    expect(res.body.nextShipment).toBeNull();
+  });
+
+  it("populates nextShipment + eligibility from in-progress episodes", async () => {
+    mockSignedIn.current = USER_ID;
+    stageSupabaseResponse("shop_orders", "select", { data: null });
+    stageSupabaseResponse("shop_orders", "select", { data: null, count: 0 });
+    stageSupabaseResponse("shop_customers", "select", {
+      data: {
+        customer_id: USER_ID,
+        email_lower: "patient@example.com",
+      },
+    });
+    stageSupabaseResponse("patients", "select", {
+      data: [{ id: "pat_1" }],
+    });
+    stageSupabaseResponse("fulfillments", "select", { data: null });
+    stageSupabaseResponse("fulfillments", "select", { data: null, count: 0 });
+    stageSupabaseResponse("episodes", "select", {
+      data: [
+        {
+          id: "ep_due",
+          prescription_id: "rx_1",
+          due_at: "2020-01-01T00:00:00.000Z",
+        },
+      ],
+    });
+    stageSupabaseResponse("prescriptions", "select", {
+      data: [{ id: "rx_1", item_sku: "MASK-NASAL-M" }],
+    });
+
+    const res = await request(makeApp()).get("/shop/me/dashboard");
+    expect(res.status).toBe(200);
+    expect(res.body.nextShipment).toMatchObject({
+      subscriptionId: "ep_due",
+      date: "2020-01-01T00:00:00.000Z",
+      daysUntil: 0,
+      firstItemName: "MASK-NASAL-M",
+      cancelAtPeriodEnd: false,
+    });
+    expect(res.body.eligibility.eligibleNow).toEqual([
+      { subscriptionId: "ep_due", firstItemName: "MASK-NASAL-M" },
+    ]);
+    expect(res.body.activeSubscriptions).toBe(0);
   });
 });

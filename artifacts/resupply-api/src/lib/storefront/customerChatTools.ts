@@ -10,9 +10,9 @@
  *     async and require the customerId to be passed in by the route.
  *
  * Tools implemented:
- *   - get_my_recent_orders(limit?)  → last N paid orders + tracking
- *   - get_order_details(orderId)    → line items for one order
- *   - get_my_subscriptions()        → active resupply subscriptions
+ *   - get_my_recent_orders(limit?)  → last N insurance shipments
+ *   - get_order_details(orderId)    → line items for one shipment
+ *   - get_my_subscriptions()        → always empty (cash-pay retired)
  *   - get_my_device()               → saved CPAP machine on file
  *
  * Privacy posture:
@@ -87,6 +87,9 @@ const escalateArgsSchema = z
     category: z
       .enum([
         "order_issue",
+        "shipment_issue",
+        // Legacy model / client values — still accepted so in-flight tool
+        // calls do not fail validation after the insurance-only scrub.
         "subscription",
         "returns_refund",
         "insurance_billing",
@@ -146,7 +149,7 @@ export const CUSTOMER_CHAT_TOOLS: OpenAiToolDescriptor[] = [
     function: {
       name: "get_my_subscriptions",
       description:
-        "List any standing auto-ship lines on the signed-in customer's account. These come from the retained cash-pay-era tables, so a line may be historical rather than current — describe what it returns without promising it is what will arrive next, and never invite the patient to start, renew or pay for one. For what is actually due next, use get_my_recent_orders or escalate_to_human.",
+        "Always returns an empty list — patients do not have cash-pay auto-ship or Subscribe & Save lines. Do not offer to start, renew, cancel, or bill a subscription. For upcoming insurance resupply, use get_my_recent_orders or escalate_to_human.",
       parameters: {
         type: "object",
         additionalProperties: false,
@@ -172,7 +175,7 @@ export const CUSTOMER_CHAT_TOOLS: OpenAiToolDescriptor[] = [
     function: {
       name: "escalate_to_human",
       description:
-        "Forward the customer's request to Penn Home Medical Supply's human customer-service team by posting it to their in-app message thread (the same thread at /account → Messages, which a CSR monitors and replies to). Use this ONLY after the customer has confirmed they want a person — for things you cannot resolve yourself: refund requests, changing or canceling an order/subscription on their behalf, ANY shipping-address change (a patient address change has to be reviewed by a person before the next shipment goes out — you cannot make it yourself), insurance/prescription/prior-auth issues, reporting a wrong or damaged item, complaints, or anything the read-only tools and self-serve pages don't cover. Do NOT use it for questions you already answered or that a self-serve page handles. Compose `summary` as a clear, first-person message FROM the customer's perspective that includes any relevant order id, subscription, dates, or specifics gathered in the conversation, so the CSR has full context without asking again. After it succeeds, tell the customer their message was sent and the team will reply in /account → Messages (or to call (814) 471-0627 if it's urgent).",
+        "Forward the customer's request to the tenant's human customer-service team by posting it to their in-app message thread (the same thread at /account → Messages, which a CSR monitors and replies to). Use this ONLY after the customer has confirmed they want a person — for things you cannot resolve yourself: insurance shipment questions you cannot answer from the read-only tools, ANY shipping-address change (a patient address change has to be reviewed by a person before the next shipment goes out — you cannot make it yourself), insurance/prescription/prior-auth issues, reporting a wrong or damaged supply item, fit-request follow-ups, complaints, or anything the read-only tools and self-serve pages don't cover. Do NOT promise refunds, card charges, subscription cancels, or cash-pay order changes — those paths are retired. Do NOT use it for questions you already answered or that a self-serve page handles. Compose `summary` as a clear, first-person message FROM the customer's perspective that includes any relevant shipment id, dates, or specifics gathered in the conversation, so the CSR has full context without asking again. After it succeeds, tell the customer their message was sent and the team will reply in /account → Messages (or to call the support number on the site if it's urgent).",
       parameters: {
         type: "object",
         additionalProperties: false,
@@ -181,14 +184,13 @@ export const CUSTOMER_CHAT_TOOLS: OpenAiToolDescriptor[] = [
           summary: {
             type: "string",
             description:
-              "The message to send to the support team, written in plain English from the customer's point of view. Include the specific ask and any relevant order id / subscription / dates discussed. Do NOT include SSNs, full card numbers, or insurance member IDs.",
+              "The message to send to the support team, written in plain English from the customer's point of view. Include the specific ask and any relevant shipment id / dates discussed. Do NOT include SSNs, full card numbers, or insurance member IDs.",
           },
           category: {
             type: "string",
             enum: [
               "order_issue",
-              "subscription",
-              "returns_refund",
+              "shipment_issue",
               "insurance_billing",
               "prescription",
               "account",
@@ -196,7 +198,7 @@ export const CUSTOMER_CHAT_TOOLS: OpenAiToolDescriptor[] = [
               "other",
             ],
             description:
-              "Optional best-guess category so the CSR team can triage. Defaults to 'other'.",
+              "Optional best-guess category so the CSR team can triage. Defaults to 'other'. Prefer shipment_issue for wrong/damaged/missing supplies; order_issue for insurance resupply status.",
           },
         },
       },
@@ -271,7 +273,7 @@ export type CustomerChatToolResult =
       ok: true;
       data: { patientLinked: true; found: true } & OrderDetailsEntry;
     }
-  | { ok: true; data: { subscriptions: SubscriptionEntry[] } }
+  | { ok: true; data: { subscriptions: SubscriptionEntry[]; note?: string } }
   | { ok: true; data: DeviceEntry }
   | { ok: true; data: { found: false; kind: "device" | "order" } }
   | { ok: true; data: EscalationResult }
@@ -296,6 +298,8 @@ const RECENT_ORDERS_DEFAULT_LIMIT = 5;
 export interface CustomerChatToolContext {
   supabase: ResupplySupabaseClient;
   customerId: string;
+  /** Owning tenant — used when filing CSR-inbox notifications. */
+  orgId: string;
   /**
    * Display name + email of the signed-in caller. Used only by
    * `escalate_to_human` to label the CSR-inbox notification (the same
@@ -316,14 +320,6 @@ export interface CustomerChatToolContext {
    * CUSTOMER_CHAT_TOOLS placeholders.
    */
   tools?: OpenAiToolDescriptor[];
-}
-
-interface SubscriptionItemPayload {
-  name?: string | null;
-  quantity?: number | null;
-  unitAmountCents?: number | null;
-  currency?: string | null;
-  intervalLabel?: string | null;
 }
 
 /**
@@ -498,7 +494,7 @@ async function executeGetOrderDetails(
 }
 
 async function executeGetSubscriptions(
-  ctx: CustomerChatToolContext,
+  _ctx: CustomerChatToolContext,
   rawArgs: unknown,
 ): Promise<CustomerChatToolResult> {
   const parsed = noArgsSchema.safeParse(rawArgs ?? {});
@@ -509,38 +505,16 @@ async function executeGetSubscriptions(
     };
   }
 
-  const { data: rows, error } = await ctx.supabase
-    .schema("resupply")
-    .from("shop_subscriptions")
-    .select(
-      "id, status, items, current_period_end, cancel_at_period_end, canceled_at, created_at",
-    )
-    .eq("customer_id", ctx.customerId)
-    .order("created_at", { ascending: false });
-  if (error) throw error;
-
-  const subscriptions: SubscriptionEntry[] = (rows ?? []).map((r) => {
-    const items = (Array.isArray(r.items) ? r.items : []) as
-      | SubscriptionItemPayload[]
-      | [];
-    return {
-      subscriptionId: r.id,
-      status: r.status,
-      currentPeriodEnd: r.current_period_end,
-      cancelAtPeriodEnd: r.cancel_at_period_end,
-      canceledAt: r.canceled_at,
-      items: items.map((it) => ({
-        name: it.name ?? null,
-        quantity: typeof it.quantity === "number" ? it.quantity : 0,
-        unitAmountCents:
-          typeof it.unitAmountCents === "number" ? it.unitAmountCents : null,
-        currency: it.currency ?? null,
-        intervalLabel: it.intervalLabel ?? null,
-      })),
-    };
-  });
-
-  return { ok: true, data: { subscriptions } };
+  // Subscribe & Save / cash-pay auto-ship is retired. Always return an
+  // empty list so the account chatbot cannot invent standing auto-ship
+  // lines from historical shop_subscriptions rows.
+  return {
+    ok: true,
+    data: {
+      subscriptions: [] as SubscriptionEntry[],
+      note: "No standing auto-ship lines. Supplies ship through insurance reminders — use get_my_recent_orders for what went out, or escalate_to_human for cadence questions.",
+    },
+  };
 }
 
 async function executeGetDevice(
@@ -579,9 +553,10 @@ async function executeGetDevice(
 }
 
 const ESCALATION_CATEGORY_LABELS: Record<string, string> = {
-  order_issue: "Order issue",
-  subscription: "Subscription",
-  returns_refund: "Return / refund",
+  order_issue: "Shipment / resupply",
+  shipment_issue: "Wrong or damaged supply",
+  subscription: "Resupply schedule",
+  returns_refund: "Wrong or damaged supply",
   insurance_billing: "Insurance / billing",
   prescription: "Prescription",
   account: "Account",
@@ -666,6 +641,7 @@ async function executeEscalateToHuman(
     threadCreated: result.threadCreated,
     customerEmail: ctx.customerEmail ?? null,
     customerDisplayName: ctx.customerDisplayName ?? null,
+    orgId: ctx.orgId,
     source: "chatbot",
     assistantName,
   }).catch((err) => {

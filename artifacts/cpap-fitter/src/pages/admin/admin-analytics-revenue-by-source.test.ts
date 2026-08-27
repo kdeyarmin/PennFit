@@ -31,8 +31,10 @@ describe("admin-analytics-revenue-by-source page", () => {
     expect(SRC).toContain("revenueBySourceCsvUrl");
   });
 
-  it("renders order volume + cash revenue per source", () => {
-    expect(SRC).toContain("Cash revenue");
+  it("renders order volume + historical shop + ERA payer-paid per source", () => {
+    expect(SRC).toContain("Historical shop revenue");
+    expect(SRC).toContain("ERA payer paid");
+    expect(SRC).not.toContain("Cash revenue");
     expect(SRC).toContain("BySourceTable");
   });
 });

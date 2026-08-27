@@ -158,11 +158,13 @@ export const closeAccount = (password: string) =>
  * surface a friendly "billing not available in this environment"
  * message instead of a generic error.
  */
-export const openBillingPortal = (returnPath = "/account") =>
-  meFetch<{ url: string }>("/shop/me/billing-portal", {
-    method: "POST",
-    body: JSON.stringify({ returnPath }),
-  });
+export async function openBillingPortal(
+  _returnPath = "/account",
+): Promise<{ url: string }> {
+  throw new Error(
+    "billing_portal_retired: patient cash-pay billing portal was removed; contact support for insurance billing questions.",
+  );
+}
 
 /**
  * Designated authorized contact (caregiver / spouse / adult child).
@@ -256,8 +258,14 @@ export const updateShopClinicalInfo = (input: {
 export interface ShopMyOrdersResponse {
   orders: Array<ShopRecentOrder & { paidAt: string | null }>;
 }
-export const fetchShopMyOrders = () =>
-  meFetch<ShopMyOrdersResponse>("/shop/me/orders");
+
+const MY_ORDERS_RETIRED =
+  "my_orders_retired: cash-pay order history was removed; use insurance fulfillments via /account and billing statements.";
+
+/** Retired — `/shop/me/orders` no longer exists. Insurance shipments are on the account + chatbot surfaces. */
+export async function fetchShopMyOrders(): Promise<ShopMyOrdersResponse> {
+  throw new Error(MY_ORDERS_RETIRED);
+}
 
 export interface QuickCheckoutInput {
   items?: Array<{
@@ -311,36 +319,37 @@ export interface ShopSubscriptionView {
 export interface ShopSubscriptionsResponse {
   subscriptions: ShopSubscriptionView[];
 }
-export const fetchShopMySubscriptions = () =>
-  meFetch<ShopSubscriptionsResponse>("/shop/me/subscriptions");
 
-export const cancelShopSubscription = (id: string) =>
-  meFetch<{ ok: true; alreadyCanceled?: boolean }>(
-    `/shop/me/subscriptions/${encodeURIComponent(id)}/cancel`,
-    { method: "POST" },
-  );
+const SUBSCRIPTIONS_RETIRED =
+  "subscriptions_retired: patient auto-ship subscriptions were removed; supplies are insurance-only.";
+
+export async function fetchShopMySubscriptions(): Promise<ShopSubscriptionsResponse> {
+  throw new Error(SUBSCRIPTIONS_RETIRED);
+}
+
+export async function cancelShopSubscription(
+  _id: string,
+): Promise<{ ok: true; alreadyCanceled?: boolean }> {
+  throw new Error(SUBSCRIPTIONS_RETIRED);
+}
 
 /**
  * T-C5 — pause / resume / cadence change.
  *
- * `pause` and `resume` mirror Stripe's `pause_collection` field. We
- * don't track paused state in our local schema yet (no-schema slice),
- * so the UI shows BOTH options whenever the subscription is active
- * and not pending cancellation. Both endpoints are idempotent server-
- * side; clicking the wrong one returns 200 without making a no-op
- * Stripe round-trip needlessly visible to the patient.
+ * Retired with patient cash-pay. Endpoints no longer exist on the API;
+ * these client helpers hard-fail so a reintroduced UI cannot 404 silently.
  */
-export const pauseShopSubscription = (id: string) =>
-  meFetch<{ ok: true }>(
-    `/shop/me/subscriptions/${encodeURIComponent(id)}/pause`,
-    { method: "POST" },
-  );
+export async function pauseShopSubscription(
+  _id: string,
+): Promise<{ ok: true }> {
+  throw new Error(SUBSCRIPTIONS_RETIRED);
+}
 
-export const resumeShopSubscription = (id: string) =>
-  meFetch<{ ok: true }>(
-    `/shop/me/subscriptions/${encodeURIComponent(id)}/resume`,
-    { method: "POST" },
-  );
+export async function resumeShopSubscription(
+  _id: string,
+): Promise<{ ok: true }> {
+  throw new Error(SUBSCRIPTIONS_RETIRED);
+}
 
 export interface ShopCadenceOption {
   priceId: string;
@@ -352,46 +361,51 @@ export interface ShopCadenceOption {
 export interface ShopCadenceOptionsResponse {
   options: ShopCadenceOption[];
 }
-export const fetchShopCadenceOptions = (id: string) =>
-  meFetch<ShopCadenceOptionsResponse>(
-    `/shop/me/subscriptions/${encodeURIComponent(id)}/cadence-options`,
-  );
 
-export const changeShopSubscriptionCadence = (id: string, priceId: string) =>
-  meFetch<{ ok: true; unchanged?: boolean }>(
-    `/shop/me/subscriptions/${encodeURIComponent(id)}/cadence`,
-    { method: "POST", body: JSON.stringify({ priceId }) },
-  );
+export async function fetchShopCadenceOptions(
+  _id: string,
+): Promise<ShopCadenceOptionsResponse> {
+  throw new Error(SUBSCRIPTIONS_RETIRED);
+}
 
-export const startQuickCheckout = (input: QuickCheckoutInput) =>
-  meFetch<{ url: string; sessionId: string }>("/shop/me/quick-checkout", {
-    method: "POST",
-    headers: { "Idempotency-Key": crypto.randomUUID() },
-    body: JSON.stringify(input),
-  });
+export async function changeShopSubscriptionCadence(
+  _id: string,
+  _priceId: string,
+): Promise<{ ok: true; unchanged?: boolean }> {
+  throw new Error(SUBSCRIPTIONS_RETIRED);
+}
+
+export async function startQuickCheckout(
+  _input: QuickCheckoutInput,
+): Promise<{ url: string; sessionId: string }> {
+  throw new Error(
+    "quick_checkout_retired: patient cash-pay express checkout was removed; use insurance ordering.",
+  );
+}
 
 /**
  * Aggregated status digest powering the signed-in home banner.
- * One round-trip across orders + subscriptions + abandoned cart.
+ * One round-trip: latest fulfillment/order + insurance episode due dates.
  */
 export interface ShopMeDashboardResponse {
+  /**
+   * Soonest open outreach episode (`due_at`). `subscriptionId` is the
+   * episode id — field name kept for older SPA builds.
+   */
   nextShipment: {
     subscriptionId: string;
     /** ISO 8601 string. */
     date: string;
     /**
-     * Phase A.1 — non-negative day countdown until this shipment is
-     * eligible. 0 means today / past.
+     * Non-negative day countdown until due. 0 means today / past.
      */
     daysUntil: number;
     firstItemName: string | null;
     cancelAtPeriodEnd: boolean;
   } | null;
   /**
-   * Phase A.1 — eligibility-claim payload. `eligibleNow` is the list
-   * of subscriptions whose period has already rolled past (the
-   * customer can reorder right now); `soonest` is the closest future
-   * eligibility for the countdown text.
+   * Overdue episodes in `eligibleNow`; closest future (or overdue)
+   * episode in `soonest` for the countdown text.
    */
   eligibility: {
     eligibleNow: Array<{
@@ -414,6 +428,7 @@ export interface ShopMeDashboardResponse {
   } | null;
   activeSubscriptions: number;
   pendingOrders: number;
+  /** Always null — cash-pay abandoned carts are retired; kept for older SPA builds. */
   abandonedCart: {
     itemCount: number;
     updatedAt: string;
@@ -538,10 +553,16 @@ export interface ReorderSuggestion {
   totalQuantityHistorical: number;
 }
 
-export const fetchReorderSuggestions = () =>
-  meFetch<{ suggestions: ReorderSuggestion[]; previewMode?: boolean }>(
-    "/shop/me/reorder-suggestions",
-  );
+const REORDER_SUGGESTIONS_RETIRED =
+  "reorder_suggestions_retired: cash-pay reorder suggestions were removed; supplies are insurance-only.";
+
+/** Retired — `/shop/me/reorder-suggestions` no longer exists. */
+export async function fetchReorderSuggestions(): Promise<{
+  suggestions: ReorderSuggestion[];
+  previewMode?: boolean;
+}> {
+  throw new Error(REORDER_SUGGESTIONS_RETIRED);
+}
 
 export type CustomerInsightKind =
   | "leak_rising"

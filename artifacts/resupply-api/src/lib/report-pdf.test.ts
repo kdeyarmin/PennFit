@@ -23,7 +23,7 @@ function sampleInput(rowCount: number): PdfReportInput {
     ]);
   }
   return {
-    title: "Cash-pay orders",
+    title: "Historical storefront orders",
     range: "2026-04-01 to 2026-04-30",
     practiceName: "Penn Home Medical Supply",
     columns: [

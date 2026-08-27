@@ -16,6 +16,8 @@ import {
 import { resolveBillingIdentity } from "../../lib/billing/identity-resolver";
 import { renderStatementPdf } from "../../lib/billing/statement-pdf";
 import { persistStatementPdfCopy } from "../../lib/billing/statement-storage";
+import { getAuthDeps } from "../../lib/auth-deps";
+import { resolveTenantLinkBaseUrl } from "../../lib/tenant-branding";
 import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
 import { publishEvent } from "../../lib/webhooks/publisher";
@@ -33,14 +35,14 @@ const body = z
       .regex(/^\d{4}-\d{2}-\d{2}$/)
       .nullable()
       .optional(),
+    // Accepted for back-compat but ignored. Patient cash-pay links are
+    // retired — statements always deep-link to the tenant's insurance
+    // billing portal (/account/billing) when a tenant link base exists.
     paymentUrl: z
       .string()
       .trim()
       .url()
       .max(500)
-      // http(s) only — a bare z.string().url() accepts javascript:/data: URLs,
-      // and this value is rendered into mailed statement PDFs. Matches the
-      // httpUrl() guard used on shop-returns / equipment-recalls.
       .refine(
         (u) => /^https?:\/\//i.test(u),
         "URL must use http or https protocol",
@@ -188,6 +190,13 @@ router.post(
       state?: string;
       zip?: string;
     } | null;
+    // Never embed a caller-supplied pay URL — pin to the tenant
+    // insurance billing portal (or omit when no safe tenant base).
+    const linkBase = await resolveTenantLinkBaseUrl(
+      orgId,
+      getAuthDeps().publicBaseUrl,
+    );
+    const statementPortalUrl = linkBase ? `${linkBase}/account/billing` : null;
     const result = await renderStatementPdf({
       patient: {
         name: `${patient.legal_first_name} ${patient.legal_last_name}`,
@@ -223,7 +232,7 @@ router.post(
         patientResponsibilityCents: c.patient_responsibility_cents,
       })),
       payByDate: bodyParsed.data?.payByDate,
-      paymentUrl: bodyParsed.data?.paymentUrl,
+      paymentUrl: statementPortalUrl,
     });
 
     const insertRow: Database["resupply"]["Tables"]["patient_billing_statements"]["Insert"] =

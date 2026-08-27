@@ -209,7 +209,7 @@ function ProductTable({ products }: { products: InvProductRow[] }) {
               <td className="px-3 py-2">
                 {/* A slow mover is only actionable if you can open it. */}
                 <Link
-                  href={`/admin/shop/inventory/${p.productId}/edit`}
+                  href="/admin/catalog"
                   className="underline decoration-dotted hover:text-slate-700"
                 >
                   {p.productName ?? (

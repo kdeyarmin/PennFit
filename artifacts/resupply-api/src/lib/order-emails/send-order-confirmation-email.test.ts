@@ -36,7 +36,9 @@ vi.mock("../tenant-branding.js", () => ({
     tagline: "tagline",
     logoUrl: null,
   })),
-  resolveTenantBaseUrl: vi.fn(async () => null),
+  resolveTenantLinkBaseUrl: vi.fn(
+    async (_orgId: string, platform: string) => platform,
+  ),
 }));
 
 import { EmailApiError, EmailConfigError } from "@workspace/resupply-email";
@@ -230,14 +232,14 @@ describe("sendOrderConfirmationEmail", () => {
     });
     expect(result.delivered).toBe(true);
     const arg = sendEmailMock.mock.calls[0]![0];
-    // Fallback summary copy is present when there are no items.
-    expect(arg.html).toContain("itemized order is available online");
+    expect(arg.html).toContain("Questions about your order?");
     // No "Shipping to" block when address is null.
     expect(arg.html).not.toContain("Shipping to");
     // Plain-text body still includes total + view-order link.
     expect(arg.text).toContain("Total: $0.00");
-    expect(arg.text).toContain(
-      "/shop/checkout-success?session_id=cs_test_empty",
-    );
+    expect(arg.text).toContain("/contact");
+    expect(arg.text).toContain("/insurance");
+    expect(arg.html).toContain("Insurance coverage");
+    expect(arg.html).not.toContain("Browse the shop");
   });
 });

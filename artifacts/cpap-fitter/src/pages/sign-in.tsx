@@ -63,6 +63,8 @@ function readRedirect(): string {
   if (!raw || !raw.startsWith("/") || raw.startsWith("//")) return "/account";
   const pathOnly = raw.split(/[?#]/)[0];
   if (pathOnly === "/sign-in" || pathOnly === "/sign-up") return "/account";
+  // Legacy shop deep links — insurance-only storefront now.
+  if (pathOnly.startsWith("/shop/")) return "/insurance";
   return raw;
 }
 
@@ -154,7 +156,7 @@ export function SignInPage() {
               Welcome back
             </h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              Sign in to view your orders and saved shipping info.
+              Sign in to manage therapy, messages, and shipping details.
             </p>
           </div>
 

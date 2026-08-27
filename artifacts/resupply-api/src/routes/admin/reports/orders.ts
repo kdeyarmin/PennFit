@@ -161,7 +161,7 @@ export const ordersReport: ReportModule = {
           0,
         );
         const pdf = await renderTablePdf({
-          title: "Cash-pay orders",
+          title: "Historical storefront orders",
           range: rangeLabel(from, to),
           practiceName: await practiceName(orgId),
           columns: [
@@ -259,7 +259,7 @@ export const ordersReport: ReportModule = {
       0,
     );
     const pdf = await renderTablePdf({
-      title: "Cash-pay orders",
+      title: "Historical storefront orders",
       range: rangeLabel(from, to),
       practiceName: await practiceName(orgId),
       columns: [

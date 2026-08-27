@@ -385,6 +385,17 @@ router.post("/fit/assess", assessLimiter, async (req, res) => {
     profile = { ...profile, population: invite.chartPopulation };
   }
 
+  // Population is asked, never assumed — same contract as /api/recommend.
+  // Chart-linked invites may supply it from date of birth; otherwise the
+  // client must send the questionnaire gate answer explicitly.
+  if (!invite.chartPopulation && !body.population) {
+    res.status(400).json({
+      error: "Invalid input",
+      details: ["population: required (adult or pediatric)"],
+    });
+    return;
+  }
+
   // Grossly impossible numbers are rejected outright — they indicate a
   // broken or hostile client, not a patient. Values that are merely
   // outside the sizing window fall through to the engine, which returns

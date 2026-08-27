@@ -4,8 +4,11 @@
 // is a latent crash." That rule was previously enforced by hope, and it failed:
 // `tiers` (GET /shop/membership/options) was never seeded, so in demo mode
 // `MembershipSection` read `res.tiers` as undefined and `tiers.length` took the
-// whole /account page to the ErrorBoundary. The same gap crashed every
-// /platform/* page via `data?.tickets.length` in the console sidebar.
+// whole /account page to the ErrorBoundary. Membership checkout is now retired
+// (getMembershipOptions hard-fails), so `tiers` is no longer extracted from
+// the client layer — empty.ts keeps seeding it harmlessly for any stale demo
+// route that still returns it. The same gap crashed every /platform/* page
+// via `data?.tickets.length` in the console sidebar.
 //
 // How the rule is computed
 // ------------------------
@@ -132,13 +135,9 @@ describe("demo fallback body covers every array-typed API response field", () =>
     expect(keys.has("aliases")).toBe(false);
   });
 
-  it("seeds the two names whose absence caused real crashes", () => {
-    // Regression pins: `tiers` bricked /account/orders, `tickets` bricked
-    // every /platform/* page through the console sidebar's badge query.
+  it("seeds tickets — absence crashed every /platform/* sidebar badge query", () => {
     const body = emptyGetFallbackBody();
-    expect(keys.has("tiers")).toBe(true);
     expect(keys.has("tickets")).toBe(true);
-    expect(Array.isArray(body.tiers)).toBe(true);
     expect(Array.isArray(body.tickets)).toBe(true);
   });
 

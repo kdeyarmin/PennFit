@@ -35,6 +35,7 @@ function makeCtx(): CustomerChatToolContext {
   return {
     supabase: getSupabaseServiceRoleClient(),
     customerId: "cust_123",
+    orgId: "org_test",
     customerDisplayName: "Pat Patient",
     customerEmail: "pat@example.com",
   };
@@ -103,7 +104,9 @@ describe("escalate_to_human", () => {
     const msgInserts = getSupabaseWritePayloads("messages", "insert");
     expect(msgInserts).toHaveLength(1);
     const body = (msgInserts[0] as { body: string }).body;
-    expect(body).toContain("[Via CareMetric Assistant · Return / refund]");
+    expect(body).toContain(
+      "[Via CareMetric Assistant · Wrong or damaged supply]",
+    );
     expect(body).toContain("cracked");
     expect((msgInserts[0] as { sender_role: string }).sender_role).toBe(
       "customer",

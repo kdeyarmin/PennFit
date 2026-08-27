@@ -5,8 +5,9 @@
 //     providerId; a patient not linked to the provider is a 404.
 //   * MFA gate — the routes sit behind requireProviderMfaEnrolled.
 //   * orgId threading — the routes read req.orgId (threaded by
-//     attachProviderOrgId, host-resolved), and fail CLOSED (500) when it
-//     is missing rather than widening to all tenants.
+//     attachProviderOrgId). The real attacher fails CLOSED at 403 on a
+//     platform host; these tests stub it and assert the route still
+//     returns 500 `tenant_context_missing` if orgId is somehow absent.
 //
 // We mock the provider gate + the org-id attacher + the org-scoped DB so
 // the route's own scoping/threading logic is exercised without a live DB.
@@ -80,11 +81,21 @@ const dbState = vi.hoisted(() => ({
 function makeBuilder(table: string) {
   const eqs: Record<string, unknown> = {};
   const ins: Record<string, unknown[]> = {};
+  const orders: Array<{ col: string; ascending: boolean }> = [];
+  let limit: number | null = null;
   const builder: Record<string, unknown> = {};
   const passthrough = () => builder;
-  for (const m of ["select", "gte", "order", "limit"]) {
+  for (const m of ["select", "gte", "lte", "range"]) {
     builder[m] = passthrough;
   }
+  builder.order = (col: string, opts?: { ascending?: boolean }) => {
+    orders.push({ col, ascending: opts?.ascending !== false });
+    return builder;
+  };
+  builder.limit = (n: number) => {
+    limit = n;
+    return builder;
+  };
   builder.eq = (col: string, val: unknown) => {
     eqs[col] = val;
     return builder;
@@ -112,6 +123,18 @@ function makeBuilder(table: string) {
     for (const [col, vals] of Object.entries(ins)) {
       rows = rows.filter((r) => vals.includes(r[col]));
     }
+    for (const { col, ascending } of orders) {
+      rows = [...rows].sort((a, b) => {
+        const av = a[col];
+        const bv = b[col];
+        if (av === bv) return 0;
+        if (av == null) return 1;
+        if (bv == null) return -1;
+        const cmp = av < bv ? -1 : 1;
+        return ascending ? cmp : -cmp;
+      });
+    }
+    if (limit != null) rows = rows.slice(0, limit);
     return rows;
   };
   builder.maybeSingle = async () => {
@@ -274,6 +297,71 @@ describe("GET /api/provider/patients (roster)", () => {
       expect(list.length).toBeLessThanOrEqual(200);
     }
     expect(patientInLists.flat().sort()).toEqual([...ids].sort());
+  });
+
+  it("returns the earliest therapy night as setupDate for every patient in a large panel", async () => {
+    const PANEL = 250;
+    const pad = (n: number) => n.toString().padStart(4, "0");
+    const ids = Array.from(
+      { length: PANEL },
+      (_, i) => `99999999-9999-4999-8999-0000000${pad(i)}`,
+    );
+    dbState.rowsByTable.prescriptions = ids.map((id) => ({
+      provider_id: PROVIDER_ID,
+      patient_id: id,
+    }));
+    dbState.rowsByTable.patients = ids.map((id, i) => ({
+      id,
+      legal_first_name: `First${i}`,
+      legal_last_name: `Last${i}`,
+      date_of_birth: "1950-01-01",
+      status: "active",
+      created_at: "2026-01-01T00:00:00.000Z",
+    }));
+    // Each patient has multiple nights; setupDate must be the earliest.
+    // Patient index 249 is the regression case: a truncated chunk read used
+    // to drop later patients and leave setupDate null.
+    dbState.rowsByTable.patient_therapy_nights = ids.flatMap((id, i) => {
+      const setupDay = String(10 + (i % 20)).padStart(2, "0");
+      const laterDay = String(Number(setupDay) + 3).padStart(2, "0");
+      return [
+        {
+          patient_id: id,
+          night_date: `2026-06-${setupDay}`,
+          source: "resmed_airview",
+          usage_minutes: 360,
+          ahi: 3.1,
+          leak_rate_l_min: 12,
+        },
+        {
+          patient_id: id,
+          night_date: `2026-06-${laterDay}`,
+          source: "resmed_airview",
+          usage_minutes: 300,
+          ahi: 2.5,
+          leak_rate_l_min: 10,
+        },
+      ];
+    });
+
+    const res = await request(makeApp()).get("/api/provider/patients");
+    expect(res.status).toBe(200);
+    expect(res.body.patients).toHaveLength(PANEL);
+
+    const byId = new Map(
+      res.body.patients.map((p: { patientId: string; setupDate: string }) => [
+        p.patientId,
+        p.setupDate,
+      ]),
+    );
+    for (let i = 0; i < PANEL; i++) {
+      const id = ids[i];
+      const setupDay = String(10 + (i % 20)).padStart(2, "0");
+      expect(byId.get(id)).toBe(`2026-06-${setupDay}`);
+    }
+
+    const lastPatient = ids[PANEL - 1];
+    expect(byId.get(lastPatient)).not.toBeNull();
   });
 });
 

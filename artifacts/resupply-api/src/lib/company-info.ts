@@ -35,6 +35,7 @@ import {
   resolveBrandingByOrgId,
   resolveTenantBaseUrl,
 } from "./tenant-branding.js";
+import { resolveTenantSender } from "./email/tenant-sender.js";
 
 /**
  * The platform/parent-company brand. PennFit is the codename of this
@@ -277,19 +278,62 @@ export function getPlatformIdentity(): CompanyInfo {
  */
 async function orgDirectoryFallbackInfo(orgId: string): Promise<CompanyInfo> {
   const base = platformFallbackInfo();
-  const [branding, tenantBaseUrl] = await Promise.all([
+  const [branding, tenantBaseUrl, sender] = await Promise.all([
     resolveBrandingByOrgId(orgId),
     resolveTenantBaseUrl(orgId),
+    resolveTenantSender(orgId),
   ]);
   const legalName = branding.legalName.trim() || base.legalName;
+  // Prefer the tenant's verified From address as the public contact mailbox
+  // when Company Information is empty — Penn seeds info@pennpaps.com on
+  // organizations.from_email (migration 0377), which is what patients
+  // should see instead of support@cmbreathe.com.
+  const tenantEmail = trimmed(sender.fromEmail) || null;
   return {
     ...base,
     name: branding.storefrontName.trim() || legalName,
     legalName,
-    // A verified custom domain is the tenant's own site; otherwise the
-    // platform's, so `identityReplacements()` still rewrites the historical
-    // "pennpaps.com" placeholder to a host that actually resolves.
     websiteUrl: tenantBaseUrl || base.websiteUrl,
+    ...(tenantEmail
+      ? {
+          supportEmail: tenantEmail,
+          generalEmail: tenantEmail,
+          billingEmail: tenantEmail,
+        }
+      : {}),
+  };
+}
+
+/**
+ * When a `dme_organization` row still carries the platform default name
+ * and/or mailbox (rebrand leftover, empty admin form saved as CareMetric),
+ * overlay the organizations-directory brand so company-info matches
+ * storefront-branding. Used for every explicit orgId — seed and non-seed.
+ */
+async function overlayPlatformDefaultsFromDirectory(
+  fromDb: CompanyInfo,
+  orgId: string,
+): Promise<CompanyInfo> {
+  const needsNameOverlay = fromDb.name === DEFAULTS.name;
+  const needsEmailOverlay = fromDb.supportEmail === DEFAULTS.supportEmail;
+  if (!needsNameOverlay && !needsEmailOverlay) return fromDb;
+
+  const dir = await orgDirectoryFallbackInfo(orgId);
+  const useName = needsNameOverlay && dir.name !== DEFAULTS.name;
+  const useEmail =
+    needsEmailOverlay && dir.supportEmail !== DEFAULTS.supportEmail;
+  if (!useName && !useEmail) return fromDb;
+
+  return {
+    ...fromDb,
+    name: useName ? dir.name : fromDb.name,
+    legalName: useName ? dir.legalName : fromDb.legalName,
+    websiteUrl: useName
+      ? dir.websiteUrl || fromDb.websiteUrl
+      : fromDb.websiteUrl,
+    supportEmail: useEmail ? dir.supportEmail : fromDb.supportEmail,
+    generalEmail: useEmail ? dir.generalEmail : fromDb.generalEmail,
+    billingEmail: useEmail ? dir.billingEmail : fromDb.billingEmail,
   };
 }
 
@@ -412,20 +456,79 @@ export async function getCompanyInfo(orgId?: string): Promise<CompanyInfo> {
           "company info: dme_organization read failed; falling back to the org directory",
         );
       }
-      info = fromDb ?? (await orgDirectoryFallbackInfo(explicitOrgId));
+      info = fromDb
+        ? await overlayPlatformDefaultsFromDirectory(fromDb, explicitOrgId)
+        : await orgDirectoryFallbackInfo(explicitOrgId);
     } else {
-      // The seed tenant (explicit or default). Single-tenant behavior is
-      // unchanged: its DB row wins, else the env-folded practice name. The
-      // org-directory step above deliberately does NOT apply here — the seed
-      // org row is created by the migrations carrying THIS repo's tenant
-      // name, so reading it would hand a fresh, unrelated deployment the seed
-      // tenant's brand, which is the leak the platform fallback exists to
-      // prevent. An operator names a seed deployment with
-      // RESUPPLY_PRACTICE_NAME or on /admin/company-information.
+      // The seed tenant (explicit or default). Its dme_organization row
+      // wins when present. When it is missing:
+      //
+      //   * Explicit orgId (host-resolved pennpaps.com, branded mail, etc.)
+      //     falls through to the organizations directory so company-info
+      //     matches storefront-branding. Without this, a seed storefront
+      //     whose Company Information page is empty shows the platform
+      //     DEFAULTS ("CareMetric Breathe") in the footer while the logo
+      //     still reads the organizations.storefront_name ("Penn Home
+      //     Medical Supply"). RESUPPLY_PRACTICE_NAME is intentionally NOT
+      //     preferred here — after the platform rebrand that env often
+      //     holds "CareMetric Breathe", which would reintroduce the
+      //     footer/chat mismatch with storefront-branding.
+      //   * Implicit / no-orgId callers (boot hydration, getCompanyInfoSync
+      //     warm path) keep envFallbackInfo() — they must NOT read the
+      //     migration-seeded organizations row, or a fresh unrelated
+      //     deployment would inherit this repo's tenant name as the
+      //     process-wide default.
       const effectiveOrgId = explicitOrgId || seedOrgId;
-      info = effectiveOrgId
-        ? ((await loadFromDb(effectiveOrgId)) ?? envFallbackInfo())
-        : envFallbackInfo();
+      if (!effectiveOrgId) {
+        info = envFallbackInfo();
+      } else {
+        let fromDb: CompanyInfo | null = null;
+        try {
+          fromDb = await loadFromDb(effectiveOrgId);
+        } catch (err) {
+          logger.warn(
+            {
+              event: "company_info_org_row_load_failed",
+              orgId: effectiveOrgId,
+              err:
+                err instanceof Error
+                  ? err
+                  : new Error(String((err as unknown) ?? "unknown")),
+            },
+            "company info: seed dme_organization read failed; falling back",
+          );
+        }
+        if (fromDb) {
+          // Host-resolved / explicit only: overlay platform defaults from
+          // the organizations directory. Skip on the implicit warm path —
+          // that must not read the migration-seeded org row.
+          info = explicitOrgId
+            ? await overlayPlatformDefaultsFromDirectory(fromDb, explicitOrgId)
+            : fromDb;
+        } else if (explicitOrgId) {
+          // Prefer the organizations directory when it names a real tenant.
+          // Production often sets RESUPPLY_PRACTICE_NAME to the platform
+          // identity after the CareMetric rebrand; that must not keep a
+          // host-resolved seed storefront (pennpaps.com) saying
+          // "CareMetric Breathe" in the footer/chat while
+          // storefront-branding correctly reads Penn from organizations.
+          //
+          // If the directory cannot name the tenant (still platform
+          // DEFAULTS — empty mock, unbound org), fall back to an
+          // operator-set RESUPPLY_PRACTICE_NAME so unit tests and
+          // env-only single-tenant deploys keep working. Never prefer
+          // env when the directory already has a non-platform name.
+          const fromOrg = await orgDirectoryFallbackInfo(explicitOrgId);
+          info =
+            fromOrg.name !== DEFAULTS.name
+              ? fromOrg
+              : trimmed(process.env.RESUPPLY_PRACTICE_NAME)
+                ? envFallbackInfo()
+                : fromOrg;
+        } else {
+          info = envFallbackInfo();
+        }
+      }
     }
   } catch (err) {
     const normalized =

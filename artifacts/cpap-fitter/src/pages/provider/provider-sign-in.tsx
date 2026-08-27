@@ -29,6 +29,9 @@ export function ProviderSignIn() {
   const signIn = providerAuthHooks.useSignIn();
   const verifyMfa = providerAuthHooks.useVerifySignInMfa();
   const [, setLocation] = useLocation();
+  const resetSuccess =
+    typeof window !== "undefined" &&
+    new URLSearchParams(window.location.search).get("reset") === "success";
 
   function onPasswordSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -102,6 +105,15 @@ export function ProviderSignIn() {
                 Review and electronically sign documents for your patients.
               </p>
             </div>
+            {resetSuccess ? (
+              <p
+                role="status"
+                className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900"
+              >
+                Password saved. Sign in with your work email to open the
+                provider portal.
+              </p>
+            ) : null}
             {error ? <ErrorNote>{error}</ErrorNote> : null}
             <div className="space-y-1">
               <label className="text-sm font-medium text-slate-700">

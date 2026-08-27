@@ -385,7 +385,7 @@ export function CpapMasksReactHealth() {
               },
               {
                 q: "What if I want to try it but I'm not sure?",
-                a: "Our 30-day comfort guarantee covers a one-time mask exchange — including into a different brand. Try the Rio II, and if it doesn't work, exchange it for an AirFit P10 or an F&P Brevida. No re-stocking fee, no insurance impact.",
+                a: "Our 60-day comfort guarantee covers a one-time mask exchange — including into a different brand. Try the Rio II, and if it doesn't work, exchange it for an AirFit P10 or an F&P Brevida. No re-stocking fee, no insurance impact.",
               },
             ].map((item, idx) => (
               <AccordionItem

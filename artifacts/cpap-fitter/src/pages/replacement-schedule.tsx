@@ -463,8 +463,9 @@ export function ReplacementSchedule() {
           Stop tracking it yourself.
         </h2>
         <p className="text-muted-foreground max-w-xl mx-auto leading-relaxed">
-          <LegalName /> makes resupply easy — pick a mask, place an order, and
-          we handle delivery on a cadence that matches your insurance allowance.
+          <LegalName /> makes resupply easy — get fitted, send a request through
+          insurance, and we handle delivery on a cadence that matches your
+          allowance.
         </p>
         <div className="flex flex-col sm:flex-row gap-3 justify-center pt-2">
           <Link href="/consent">

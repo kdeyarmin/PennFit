@@ -409,7 +409,9 @@ function CreateCsrOrderModal({
       });
     }
     if (totalCents < 50) {
-      setFormError("Order total must be at least $0.50.");
+      setFormError(
+        "Enter a billed amount (minimum $0.50 catches blank entries).",
+      );
       return;
     }
 
@@ -456,7 +458,7 @@ function CreateCsrOrderModal({
     return (
       <AdminModal
         title={`Order ${result.orderReference} sent`}
-        description="The customer received a secure link to review, sign, and pay."
+        description="The customer received a secure link to review and e-sign."
         onClose={onClose}
       >
         <div className="space-y-4">

@@ -12,13 +12,12 @@
 // own patients. All three routes are MFA-gated (requireProviderMfaEnrolled)
 // because they surface PHI (patient names + therapy data).
 //
-// Tenant scoping: unlike the legacy e-sign portal (which resolves the
-// SEED org for its GLOBAL account/MFA tables), the RTM reads touch TENANT
-// PHI tables (patients, prescriptions, patient_therapy_nights) which carry
-// org_id — so they MUST be scoped to the tenant that owns THIS host.
-// `attachProviderOrgId` (in each chain, after requireProvider) resolves
-// the org by host and pins it onto req.orgId; we fail CLOSED if it is
-// absent rather than widening to all tenants.
+// Tenant scoping: RTM reads touch TENANT PHI tables (patients,
+// prescriptions, patient_therapy_nights) which carry org_id — so they MUST
+// be scoped to the tenant that owns THIS host. `attachProviderOrgId` (in
+// each chain, after requireProvider) uses the brand host resolver and
+// fails CLOSED (403 `provider_tenant_host_required`) on platform /
+// unbound hosts rather than soft-falling to the seed org.
 //
 // PHI posture: the app logger sees provider/patient ids + numeric counts
 // only — never patient names, never therapy free-text, never image bytes.
@@ -37,6 +36,7 @@ import {
 import {
   findBestAdherenceWindow,
   renderComplianceAttestation,
+  ATTESTATION_HORIZON_DAYS,
   type AdherenceNight,
   type AttestationInputs,
 } from "../../lib/compliance-attestation";
@@ -57,12 +57,54 @@ const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
  *  of the repo chunks roster id-lists at 200 (worker bulk-campaign-tick). */
 const ID_CHUNK_SIZE = 200;
 
+/** Cap concurrent per-patient setup-date reads inside one id chunk.
+ *  Unbounded `Promise.all` over ID_CHUNK_SIZE (200) PostgREST calls can
+ *  429 the data API on large panels. */
+const SETUP_DATE_LOOKUP_CONCURRENCY = 15;
+
+async function mapWithConcurrency<T, R>(
+  items: readonly T[],
+  concurrency: number,
+  fn: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  if (items.length === 0) return [];
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+  const workerCount = Math.min(concurrency, items.length);
+
+  async function worker(): Promise<void> {
+    for (;;) {
+      const i = nextIndex;
+      nextIndex += 1;
+      if (i >= items.length) return;
+      results[i] = await fn(items[i], i);
+    }
+  }
+
+  await Promise.all(Array.from({ length: workerCount }, () => worker()));
+  return results;
+}
+
+/**
+ * PostgREST `max_rows` (see `supabase/config.toml`) silently truncates any
+ * response larger than this. `.limit(N)` with N > max_rows does NOT raise
+ * the cap — callers must page with `.range()`. Match reminders.ts / other
+ * roster scanners.
+ */
+const POSTGREST_PAGE = 1000;
+
 function chunk<T>(items: readonly T[], size: number): T[][] {
   const out: T[][] = [];
   for (let i = 0; i < items.length; i += size) {
     out.push(items.slice(i, i + size));
   }
   return out;
+}
+
+function addDaysIso(isoDate: string, days: number): string {
+  const d = new Date(`${isoDate}T00:00:00.000Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
 }
 
 const ROSTER_WINDOW_DAYS = 30;
@@ -105,23 +147,84 @@ function toSnapshotNight(n: NightRow): SnapshotNight {
  *  patient who has at least one prescription with provider_id =
  *  providerId in THIS tenant. The org-scoped client appends the org_id
  *  filter on the tenant `prescriptions` table; we add the provider_id
- *  filter (the portal isolation primitive) explicitly. */
+ *  filter (the portal isolation primitive) explicitly.
+ *
+ *  Pages past PostgREST `max_rows` — a single `.limit(20_000)` still
+ *  truncates at 1000 and silently drops the rest of a large panel. */
 async function listProviderPatientIds(
   orgId: string,
   providerId: string,
 ): Promise<string[]> {
   const db = getOrgScopedClient(orgId);
-  const { data, error } = await db
-    .from("prescriptions")
-    .select("patient_id")
-    .eq("provider_id", providerId)
-    .limit(20_000);
-  if (error) throw error;
   const ids = new Set<string>();
-  for (const row of (data ?? []) as Array<{ patient_id: string | null }>) {
-    if (row.patient_id) ids.add(row.patient_id);
+  for (let from = 0; ; from += POSTGREST_PAGE) {
+    const { data, error } = await db
+      .from("prescriptions")
+      .select("patient_id")
+      .eq("provider_id", providerId)
+      .order("patient_id", { ascending: true })
+      .range(from, from + POSTGREST_PAGE - 1);
+    if (error) throw error;
+    const rows = (data ?? []) as Array<{ patient_id: string | null }>;
+    if (rows.length === 0) break;
+    for (const row of rows) {
+      if (row.patient_id) ids.add(row.patient_id);
+    }
+    if (rows.length < POSTGREST_PAGE) break;
   }
   return Array.from(ids);
+}
+
+/**
+ * Load therapy nights needed for CMS adherence (first
+ * {@link ATTESTATION_HORIZON_DAYS} from the patient's setup / anchor).
+ * Pages under `max_rows` so multi-source nights in the horizon are never
+ * truncated mid-window (a bare `.limit(20_000)` ascending read used to
+ * keep only the oldest 1000 rows and drop the qualifying window).
+ */
+async function loadCmsHorizonNights(
+  orgId: string,
+  patientId: string,
+  anchorDate: string | null,
+): Promise<NightRow[]> {
+  if (!anchorDate) return [];
+  const db = getOrgScopedClient(orgId);
+  const horizonEnd = addDaysIso(anchorDate, ATTESTATION_HORIZON_DAYS - 1);
+  const out: NightRow[] = [];
+  for (let from = 0; ; from += POSTGREST_PAGE) {
+    const { data, error } = await db
+      .from("patient_therapy_nights")
+      .select("night_date, source, usage_minutes, ahi, leak_rate_l_min")
+      .eq("patient_id", patientId)
+      .gte("night_date", anchorDate)
+      .lte("night_date", horizonEnd)
+      .order("night_date", { ascending: true })
+      .order("source", { ascending: true })
+      .range(from, from + POSTGREST_PAGE - 1);
+    if (error) throw error;
+    const rows = (data ?? []) as NightRow[];
+    if (rows.length === 0) break;
+    out.push(...rows);
+    if (rows.length < POSTGREST_PAGE) break;
+  }
+  return out;
+}
+
+async function loadPatientSetupDate(
+  orgId: string,
+  patientId: string,
+): Promise<string | null> {
+  const db = getOrgScopedClient(orgId);
+  const { data, error } = await db
+    .from("patient_therapy_nights")
+    .select("night_date")
+    .eq("patient_id", patientId)
+    .order("night_date", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  const row = data as { night_date: string } | null;
+  return row?.night_date ?? null;
 }
 
 interface OwnedPatient {
@@ -252,37 +355,53 @@ router.get(
         }>),
       );
 
-      // The recent-window date filter bounds this read per chunk, so no
-      // global cap is needed and no patient's nights are dropped.
-      const { data: chunkNights, error: nErr } = await db
-        .from("patient_therapy_nights")
-        .select(
-          "patient_id, night_date, source, usage_minutes, ahi, leak_rate_l_min",
-        )
-        .in("patient_id", ids)
-        .gte("night_date", startIso);
-      if (nErr) throw nErr;
-      for (const row of (chunkNights ?? []) as Array<
-        NightRow & { patient_id: string }
-      >) {
-        const list = nightsByPatient.get(row.patient_id) ?? [];
-        list.push(row);
-        nightsByPatient.set(row.patient_id, list);
+      // Recent-window nights for the rollup. Date-filtered alone is NOT
+      // enough: 200 patients × ~30 nights still exceeds PostgREST
+      // `max_rows` (1000), which would silently drop later patients in
+      // the chunk. Page every chunk to completion.
+      for (let from = 0; ; from += POSTGREST_PAGE) {
+        const { data: chunkNights, error: nErr } = await db
+          .from("patient_therapy_nights")
+          .select(
+            "patient_id, night_date, source, usage_minutes, ahi, leak_rate_l_min",
+          )
+          .in("patient_id", ids)
+          .gte("night_date", startIso)
+          .order("patient_id", { ascending: true })
+          .order("night_date", { ascending: true })
+          .order("source", { ascending: true })
+          .range(from, from + POSTGREST_PAGE - 1);
+        if (nErr) throw nErr;
+        const rows = (chunkNights ?? []) as Array<
+          NightRow & { patient_id: string }
+        >;
+        if (rows.length === 0) break;
+        for (const row of rows) {
+          const list = nightsByPatient.get(row.patient_id) ?? [];
+          list.push(row);
+          nightsByPatient.set(row.patient_id, list);
+        }
+        if (rows.length < POSTGREST_PAGE) break;
       }
 
-      const { data: chunkFirstNights, error: fErr } = await db
-        .from("patient_therapy_nights")
-        .select("patient_id, night_date")
-        .in("patient_id", ids)
-        .order("night_date", { ascending: true });
-      if (fErr) throw fErr;
-      for (const row of (chunkFirstNights ?? []) as Array<{
-        patient_id: string;
-        night_date: string;
-      }>) {
-        const prior = setupByPatient.get(row.patient_id);
-        if (prior == null || row.night_date < prior) {
-          setupByPatient.set(row.patient_id, row.night_date);
+      // First therapy night per patient (= setupDate). A single
+      // ordered `.in(ids)` read is truncated by PostgREST `max_rows`
+      // (1000), so later-starting patients in a large chunk silently
+      // got `setupDate: null`. One ascending limit-1 read per patient
+      // stays under the URI/row caps and never drops a panel member.
+      const setupDates = await mapWithConcurrency(
+        ids,
+        SETUP_DATE_LOOKUP_CONCURRENCY,
+        async (patientId) => ({
+          patientId,
+          setupDate: await loadPatientSetupDate(orgId, patientId),
+        }),
+      );
+      for (const { patientId, setupDate } of setupDates) {
+        if (setupDate == null) continue;
+        const prior = setupByPatient.get(patientId);
+        if (prior == null || setupDate < prior) {
+          setupByPatient.set(patientId, setupDate);
         }
       }
     }
@@ -405,35 +524,18 @@ router.get(
       todayIso,
     );
 
-    // All nights for the authoritative CMS 90-day window determination.
-    const { data: allRowsRaw, error: aErr } = await db
-      .from("patient_therapy_nights")
-      .select("night_date, source, usage_minutes")
-      .eq("patient_id", patient.id)
-      .order("night_date", { ascending: true })
-      .limit(20_000);
-    if (aErr) throw aErr;
-
+    // CMS window lives in the first ATTESTATION_HORIZON_DAYS from setup.
+    // Do NOT load "all nights ever" with a fake `.limit(20_000)` — PostgREST
+    // still caps at max_rows and keeps only the oldest 1000, dropping the
+    // qualifying window for long-therapy patients.
+    const setupDate = await loadPatientSetupDate(orgId, patient.id);
     const allDeduped = dedupeNights(
-      (
-        (allRowsRaw ?? []) as Array<{
-          night_date: string;
-          source: string;
-          usage_minutes: number | null;
-        }>
-      ).map((r) => ({
-        night_date: r.night_date,
-        source: r.source,
-        usage_minutes: r.usage_minutes,
-        ahi: null,
-        leak_rate_l_min: null,
-      })),
+      await loadCmsHorizonNights(orgId, patient.id, setupDate),
     );
     const adherenceNights: AdherenceNight[] = allDeduped
       .map((r) => ({ date: r.night_date, usageMinutes: r.usage_minutes }))
       .sort((a, b) => (a.date < b.date ? -1 : 1));
 
-    const setupDate = adherenceNights[0]?.date ?? null;
     const cms =
       setupDate != null
         ? findBestAdherenceWindow(adherenceNights, setupDate, todayIso)
@@ -517,20 +619,18 @@ router.get(
       return;
     }
 
-    const db = getOrgScopedClient(orgId);
-    const { data: nightRowsRaw, error: nErr } = await db
-      .from("patient_therapy_nights")
-      .select("night_date, source, usage_minutes")
-      .eq("patient_id", patient.id)
-      .order("night_date", { ascending: true })
-      .limit(20_000);
-    if (nErr) throw nErr;
+    const setupDate = await loadPatientSetupDate(orgId, patient.id);
+    if (!setupDate) {
+      res.status(422).json({
+        error: "no_therapy_data",
+        message:
+          "No therapy-night data on file for this patient yet. Once the device reports nights, the attestation can be generated.",
+      });
+      return;
+    }
 
-    const nightRows = (nightRowsRaw ?? []) as Array<{
-      night_date: string;
-      source: string;
-      usage_minutes: number | null;
-    }>;
+    const anchorDate = parsedQuery.data.anchor ?? setupDate;
+    const nightRows = await loadCmsHorizonNights(orgId, patient.id, anchorDate);
     if (nightRows.length === 0) {
       res.status(422).json({
         error: "no_therapy_data",
@@ -540,20 +640,11 @@ router.get(
       return;
     }
 
-    const deduped = dedupeNights(
-      nightRows.map((r) => ({
-        night_date: r.night_date,
-        source: r.source,
-        usage_minutes: r.usage_minutes,
-        ahi: null,
-        leak_rate_l_min: null,
-      })),
-    );
+    const deduped = dedupeNights(nightRows);
     const nights: AdherenceNight[] = deduped
       .map((r) => ({ date: r.night_date, usageMinutes: r.usage_minutes }))
       .sort((a, b) => (a.date < b.date ? -1 : 1));
 
-    const anchorDate = parsedQuery.data.anchor ?? nights[0]!.date;
     const asOfDate = new Date().toISOString().slice(0, 10);
     const result = findBestAdherenceWindow(nights, anchorDate, asOfDate);
 

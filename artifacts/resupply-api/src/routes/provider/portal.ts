@@ -19,7 +19,7 @@ import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 import { logger } from "../../lib/logger";
 import { appendSignatureEvent } from "../../lib/provider-portal/signature-events";
 import { requestHost } from "../../lib/request-host";
-import { resolveOrgIdByHost } from "../../lib/tenant-branding";
+import { resolveBrandOrgIdByHost } from "../../lib/tenant-branding";
 import {
   requireProvider,
   requireProviderMfaEnrolled,
@@ -30,21 +30,15 @@ import { asOrgId } from "./referral-shared.js";
 const router: IRouter = Router();
 
 /**
- * Resolve the tenant for a provider-portal request from its host.
+ * Resolve the tenant for a provider-portal LIST/count request from its host.
  *
- * The provider e-signature surface reads/writes the org-scoped
- * `provider_signature_requests` / `provider_signature_events` tables, so
- * a provider arriving on a verified custom-domain tenant must see THAT
- * tenant's signature queue — not the seed org's. We prefer the
- * host-resolved tenant (the same primitive the storefront uses) and fall
- * back to the seed org so platform-host / single-tenant deployments are
- * unaffected: `resolveOrgIdByHost` already fails SOFT to the seed org for
- * any host that doesn't resolve to a tenant (platform host, unverified,
- * miss, error), so on those hosts it returns the seed org id — and the
- * `?? resolveSeedOrgId()` below only matters in the narrow case where it
- * returns null (DB down such that even the seed org can't be resolved).
- * Either way single-tenant behavior is byte-for-byte identical to the
- * historical seed-org behavior.
+ * The e-signature queue is org-scoped (`provider_signature_requests`), so a
+ * provider on a verified custom-domain tenant must see THAT tenant's queue.
+ * Uses `resolveBrandOrgIdByHost` (null on platform / unbound hosts) and
+ * refuses soft-fallback to the seed org — otherwise cmbreathe.com would
+ * expose the seed tenant's pending signature PHI. Providers must use the
+ * tenant's verified domain (or subdomain). Row-owned single-document
+ * sign/view paths intentionally do NOT use this helper (see loadOwnRequest).
  *
  * NOTE: the provider account / MFA tables are GLOBAL (no `org_id`) and
  * are read via the raw client off the org-scoped chokepoint, which
@@ -55,7 +49,7 @@ const router: IRouter = Router();
 async function resolveTenantOrgId(
   req: Pick<Request, "headers">,
 ): Promise<string | null> {
-  return (await resolveOrgIdByHost(requestHost(req))) ?? resolveSeedOrgId();
+  return resolveBrandOrgIdByHost(requestHost(req));
 }
 
 const SUBJECT_LABELS: Record<string, string> = {
@@ -91,7 +85,7 @@ router.get(
     const account = req.providerAccount!;
     const orgId = await resolveTenantOrgId(req);
     if (!orgId) {
-      res.status(500).json({ error: "tenant_context_missing" });
+      res.status(403).json({ error: "provider_tenant_host_required" });
       return;
     }
     const supabase = getOrgScopedClient(orgId);
@@ -168,7 +162,7 @@ router.get(
       .parse(req.query.status);
     const orgId = await resolveTenantOrgId(req);
     if (!orgId) {
-      res.status(500).json({ error: "tenant_context_missing" });
+      res.status(403).json({ error: "provider_tenant_host_required" });
       return;
     }
     const supabase = getOrgScopedClient(orgId);
@@ -617,50 +611,27 @@ router.post(
     }
     const ids = [...new Set(parsed.data.ids)];
 
-    const orgId = await resolveTenantOrgId(req);
-    if (!orgId) {
-      res.status(500).json({ error: "tenant_context_missing" });
-      return;
-    }
-    const supabase = getOrgScopedClient(orgId);
-    // provider_signature_requests is a BLOCKED TENANT table — raw client
-    // + MANUAL org_id filter.
-    const { data: rows, error } = await supabase
-      .raw()
-      .schema("resupply")
-      .from("provider_signature_requests")
-      .select("id, status, expires_at")
-      .eq("provider_id", account.providerId)
-      .eq("org_id", orgId)
-      .in("id", ids);
-    if (error) throw error;
-    const byId = new Map(
-      (
-        (rows ?? []) as Array<{
-          id: string;
-          status: string;
-          expires_at: string | null;
-        }>
-      ).map((r) => [r.id, r]),
-    );
-
     const capture: SignCapture = {
       signerName: parsed.data.signerName,
       signerTitle: parsed.data.signerTitle ?? null,
       signatureImage: parsed.data.signatureImage ?? null,
     };
-    const npi = await loadProviderNpi(orgId, account.providerId);
     const ip = req.ip ?? null;
     const userAgent = req.get("user-agent") ?? null;
 
     const signed: string[] = [];
     const skipped: Array<{ id: string; reason: string }> = [];
+    const npiByOrg = new Map<
+      string,
+      Awaited<ReturnType<typeof loadProviderNpi>>
+    >();
     for (const id of ids) {
-      const row = byId.get(id);
-      if (!row) {
+      const found = await loadOwnRequest(account.providerId, id);
+      if (!found) {
         skipped.push({ id, reason: "not_found" });
         continue;
       }
+      const { orgId, row } = found;
       if (row.status !== "pending") {
         skipped.push({ id, reason: "not_pending" });
         continue;
@@ -668,6 +639,11 @@ router.post(
       if (row.expires_at && new Date(row.expires_at as string) < new Date()) {
         skipped.push({ id, reason: "expired" });
         continue;
+      }
+      let npi = npiByOrg.get(orgId);
+      if (npi === undefined) {
+        npi = await loadProviderNpi(orgId, account.providerId);
+        npiByOrg.set(orgId, npi);
       }
       const result = await executeSignature({
         orgId,

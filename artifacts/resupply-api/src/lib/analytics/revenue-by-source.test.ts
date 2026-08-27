@@ -23,8 +23,10 @@ describe("aggregateRevenueBySource", () => {
     });
     expect(r.totalOrders).toBe(0);
     expect(r.totalCashRevenueCents).toBe(0);
+    expect(r.totalPayerPaidCents).toBe(0);
     expect(r.bySource).toHaveLength(3);
     expect(bucket(r, "storefront").cashRevenueCents).toBe(0);
+    expect(bucket(r, "resupply_fulfillment").payerPaidCents).toBe(0);
   });
 
   it("counts only paid storefront orders toward cash revenue", () => {
@@ -44,6 +46,7 @@ describe("aggregateRevenueBySource", () => {
     expect(s.paidOrders).toBe(3); // 3 paid
     expect(s.cashRevenueCents).toBe(7900 + 4500); // null amount adds 0
     expect(r.totalCashRevenueCents).toBe(12400);
+    expect(r.totalPayerPaidCents).toBe(0);
   });
 
   it("sums fulfillment units, treating a null quantity as one", () => {
@@ -61,6 +64,25 @@ describe("aggregateRevenueBySource", () => {
     expect(f.units).toBe(6); // 2 + 1 + 3
     expect(f.cashRevenueCents).toBeNull();
     expect(f.paidOrders).toBeNull();
+    expect(f.payerPaidCents).toBe(0);
+  });
+
+  it("sums ERA payer-paid cents without mixing into shop cash", () => {
+    const r = aggregateRevenueBySource({
+      shopOrders: [{ status: "paid", amount_total_cents: 1000 }],
+      fulfillments: [{ status: "shipped", quantity: 1 }],
+      clinicalFormOrderCount: 0,
+      claimPayments: [
+        { total_paid_cents: 28000 },
+        { total_paid_cents: 5000 },
+        { total_paid_cents: null },
+        { total_paid_cents: -100 }, // clamp negatives
+      ],
+    });
+    expect(r.totalCashRevenueCents).toBe(1000);
+    expect(r.totalPayerPaidCents).toBe(33000);
+    expect(bucket(r, "resupply_fulfillment").payerPaidCents).toBe(33000);
+    expect(bucket(r, "storefront").payerPaidCents).toBeNull();
   });
 
   it("passes clinical-form count through and clamps negatives", () => {
@@ -90,5 +112,14 @@ describe("aggregateRevenueBySource", () => {
     });
     expect(r.totalOrders).toBe(2 + 1 + 3);
     expect(r.totalCashRevenueCents).toBe(1000);
+  });
+
+  it("labels storefront as historical (not live cash-pay)", () => {
+    const r = aggregateRevenueBySource({
+      shopOrders: [],
+      fulfillments: [],
+      clinicalFormOrderCount: 0,
+    });
+    expect(bucket(r, "storefront").label).toBe("Storefront (historical)");
   });
 });

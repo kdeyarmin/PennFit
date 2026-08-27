@@ -10,18 +10,17 @@
 //   * attachProviderOrgId — resolve the TENANT that owns this request's
 //     host and pin it onto req.orgId, so the RTM PHI reads (which touch
 //     tenant tables carrying org_id: patients / prescriptions /
-//     patient_therapy_nights) are scoped to the right tenant rather than
-//     the seed org. The legacy e-sign portal reads GLOBAL account/MFA
-//     tables and keeps its own seed-org resolution; only the RTM routes
-//     need a tenant-scoped req.orgId.
+//     patient_therapy_nights) are scoped to the right tenant. Uses the
+//     brand resolver (null on platform / unbound hosts) and fails CLOSED
+//     rather than falling soft to the seed org — otherwise cmbreathe.com
+//     / Railway would serve the seed tenant's patient PHI. Providers must
+//     hit a verified tenant custom domain (or tenant subdomain).
 
 import type { NextFunction, Request, Response } from "express";
 import expressRateLimit, { ipKeyGenerator } from "express-rate-limit";
 
-import { resolveSeedOrgId } from "@workspace/resupply-db";
-
 import { requestHost } from "../../lib/request-host";
-import { resolveOrgIdByHost } from "../../lib/tenant-branding";
+import { resolveBrandOrgIdByHost } from "../../lib/tenant-branding";
 
 export const providerPortalRateLimiter = expressRateLimit({
   windowMs: 15 * 60 * 1000,
@@ -35,23 +34,23 @@ export const providerPortalRateLimiter = expressRateLimit({
 /**
  * Resolve the tenant that owns this request's host and pin it onto
  * req.orgId. A verified custom domain (e.g. a tenant's own provider
- * portal domain) resolves to that tenant; the platform host (and any
- * miss) falls back to the seed org, so single-tenant behaviour is
- * unchanged. Fail-soft to seed org; the downstream RTM routes fail
- * CLOSED (500) only if even the seed org can't be resolved.
+ * portal domain) or tenant subdomain resolves to that tenant. The
+ * platform host and unbound domains return 403
+ * `provider_tenant_host_required` — never seed-org soft-fallback.
  *
  * Mount AFTER requireProvider so it never runs for unauthenticated
  * requests, and BEFORE the RTM data handlers that read req.orgId.
  */
 export async function attachProviderOrgId(
   req: Request,
-  _res: Response,
+  res: Response,
   next: NextFunction,
 ): Promise<void> {
-  const orgId =
-    (await resolveOrgIdByHost(requestHost(req))) ??
-    (await resolveSeedOrgId().catch(() => null)) ??
-    undefined;
+  const orgId = await resolveBrandOrgIdByHost(requestHost(req));
+  if (!orgId) {
+    res.status(403).json({ error: "provider_tenant_host_required" });
+    return;
+  }
   req.orgId = orgId;
   next();
 }

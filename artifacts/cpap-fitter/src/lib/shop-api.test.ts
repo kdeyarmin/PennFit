@@ -14,6 +14,7 @@ import {
   submitFitterLead,
   submitFitterComplete,
   fetchShopProducts,
+  startCheckout,
 } from "./shop-api";
 
 const ORIGINAL_FETCH = globalThis.fetch;
@@ -489,5 +490,12 @@ describe("fetchShopProducts", () => {
       expect(result.purchasingEnabled).toBe(false);
       expect(result.previewMode).toBe(false);
     }
+  });
+});
+
+describe("startCheckout", () => {
+  test("throws checkout_retired without calling the network", async () => {
+    await expect(startCheckout([])).rejects.toThrow(/checkout_retired/);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

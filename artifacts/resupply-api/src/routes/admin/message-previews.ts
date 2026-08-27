@@ -58,9 +58,10 @@ import {
   resolveTenantSmsClientOptions,
   resolveTenantSmsFrom,
 } from "../../lib/messaging/tenant-telecom";
+import { platformPublicBaseUrl } from "../../lib/order-emails/link-base.js";
 import {
   resolveBrandingByOrgId,
-  resolveTenantBaseUrl,
+  resolveTenantLinkBaseUrl,
 } from "../../lib/tenant-branding";
 import {
   adminReadRateLimiter,
@@ -71,11 +72,16 @@ import { requirePermission } from "../../middlewares/requireAdmin";
 const router: IRouter = Router();
 
 /** Resolve the brand values every preview renders against. */
-async function previewBrand(orgId: string | undefined): Promise<PreviewBrand> {
-  const [branding, company, baseUrl] = await Promise.all([
+async function previewBrand(
+  orgId: string | undefined,
+): Promise<PreviewBrand & { tenantDomainRequired: boolean }> {
+  const platform = platformPublicBaseUrl();
+  const [branding, company, linkBase] = await Promise.all([
     resolveBrandingByOrgId(orgId),
     getCompanyInfo(orgId),
-    resolveTenantBaseUrl(orgId),
+    orgId?.trim()
+      ? resolveTenantLinkBaseUrl(orgId, platform)
+      : Promise.resolve(platform),
   ]);
   return {
     brandName: branding.storefrontName,
@@ -85,7 +91,8 @@ async function previewBrand(orgId: string | undefined): Promise<PreviewBrand> {
     legalName: company.legalName,
     supportPhoneDisplay: company.supportPhoneDisplay,
     supportEmail: company.supportEmail,
-    baseUrl: baseUrl ?? "https://cmbreathe.com",
+    baseUrl: linkBase ?? "",
+    tenantDomainRequired: linkBase === null,
   };
 }
 
@@ -160,6 +167,7 @@ router.get(
       const sending = await sendingReadiness(req.orgId);
       res.json({
         sending,
+        tenantDomainRequired: brand.tenantDomainRequired,
         brand: {
           name: brand.brandName,
           companyName: brand.companyName,
@@ -215,6 +223,10 @@ router.post(
       const email = preview.email;
       if (!email) {
         res.status(400).json({ error: "no_email_variant" });
+        return;
+      }
+      if (brand.tenantDomainRequired) {
+        res.status(422).json({ error: "tenant_domain_required" });
         return;
       }
       if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)) {

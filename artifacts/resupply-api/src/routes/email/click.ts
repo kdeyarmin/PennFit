@@ -196,8 +196,11 @@ router.get("/email/click", emailClickLimiter, async (req, res) => {
     userAgent: req.get("user-agent") ?? null,
   });
 
-  // Build the form action URL so the POST carries the same signed token.
-  const formActionUrl = `${cfg.email.publicBaseUrl}/resupply-api/email/click?t=${encodeURIComponent(typeof req.query.t === "string" ? req.query.t : "")}`;
+  // Host-relative form action: the GET already landed on whichever
+  // origin minted the link (tenant custom domain or platform). Posting
+  // back to the same host avoids bouncing a pennpaps.com click onto
+  // cmbreathe.com / Railway via cfg.email.publicBaseUrl.
+  const formActionUrl = `/resupply-api/email/click?t=${encodeURIComponent(typeof req.query.t === "string" ? req.query.t : "")}`;
 
   // Enrich the confirm landing page with the supplies that are due so
   // the patient sees exactly what's shipping before they tap. Fail

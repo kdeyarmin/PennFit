@@ -16,6 +16,12 @@
 // misses Nov 1 picks up the next morning, and customers added
 // to the table mid-month still get caught.
 //
+// Feature flag
+// ------------
+// Off by default. Set `RESUPPLY_DEDUCTIBLE_RESET_PUSH_CRON_ENABLED=1`
+// to turn it on. Cash-pay storefront accounts are historical; a
+// credentialed staging deploy must not auto-email shop customers.
+//
 // Eligibility predicate
 // ---------------------
 // A shop_customers row is sent the year-N email iff:
@@ -323,6 +329,16 @@ async function deductibleResetPushForOrg(
 export async function registerDeductibleResetPushJob(
   boss: PgBoss,
 ): Promise<void> {
+  if (process.env.RESUPPLY_DEDUCTIBLE_RESET_PUSH_CRON_ENABLED !== "1") {
+    logger.info(
+      { event: "shop-customers.deductible-reset.disabled" },
+      "shop-customers.deductible-reset: not registered (RESUPPLY_DEDUCTIBLE_RESET_PUSH_CRON_ENABLED!=1)",
+    );
+    if (typeof boss.unschedule === "function") {
+      await boss.unschedule(JOB_NAME).catch(() => undefined);
+    }
+    return;
+  }
   await createQueueWithDlq(boss, JOB_NAME, VENDOR_SEND_QUEUE_OPTS);
 
   await boss.work(JOB_NAME, async () => {

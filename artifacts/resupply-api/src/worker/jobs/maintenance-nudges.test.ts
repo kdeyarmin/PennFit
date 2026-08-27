@@ -32,7 +32,12 @@ vi.mock("../../lib/tenant-branding.js", () => ({
     tagline: "tagline",
     logoUrl: null,
   })),
-  resolveTenantBaseUrl: vi.fn(async () => null),
+  // Pin the platform fallback so fan-out tests exercise the roster
+  // scan (production skips non-seed orgs without a verified domain).
+  resolveTenantLinkBaseUrl: vi.fn(
+    async (_orgId: string, platformFallback: string) =>
+      platformFallback.replace(/\/$/, ""),
+  ),
 }));
 
 const supabaseMock = installSupabaseMock();

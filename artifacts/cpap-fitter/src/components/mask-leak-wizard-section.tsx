@@ -158,7 +158,7 @@ function WizardBody({
                 "Try the 30-second seal test: lie back, run a finger along the cushion edge to find the gap.",
                 "Loosen the headgear straps a notch; over-tight straps actually create leaks.",
               ],
-              learnSlug: "/learn/mask-fit-basics",
+              learnSlug: "/learn/mask-leaks",
             },
           },
           {
@@ -172,7 +172,7 @@ function WizardBody({
                 "If the cushion still looks good, focus on fit (sizing / strap tension).",
                 "If it's lost its shape, order a replacement.",
               ],
-              learnSlug: "/learn/persistent-leaks",
+              learnSlug: "/learn/mask-leaks",
             },
           },
           {
@@ -210,7 +210,7 @@ function WizardBody({
                 "Consider switching to a nasal-pillow or low-profile mask that doesn't extend off your face.",
                 "A small strap-tension reduction often helps once the pillow is right.",
               ],
-              learnSlug: "/learn/side-sleeping",
+              learnSlug: "/learn/sleep-hygiene",
             },
           },
           {
@@ -224,7 +224,7 @@ function WizardBody({
                 "Try a thinner pillow or a CPAP-friendly pillow shape.",
                 "If the leak coincides with mouth-breathing, a chin strap can help.",
               ],
-              learnSlug: "/learn/persistent-leaks",
+              learnSlug: "/learn/mask-leaks",
             },
           },
         ]}

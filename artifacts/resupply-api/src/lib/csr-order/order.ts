@@ -24,6 +24,7 @@ import { createTenantSendgridClient } from "../email/tenant-sender.js";
 import { logger } from "../logger";
 import { resolveTenantSmsClientOptions } from "../messaging/tenant-telecom";
 import { recordOutboundMessageUsage } from "../metering/usage";
+import { resolveTenantLinkBaseUrl } from "../tenant-branding";
 import { resolveCompanyProfile } from "../patient-packet/company";
 import {
   effectiveTemplateContent,
@@ -169,13 +170,26 @@ export function parseOrderDocuments(raw: Json): CsrOrderDocumentSnapshot[] {
   });
 }
 
-export function buildCsrOrderSigningLink(
+/**
+ * Mint a patient `/order-sign` link. Prefer the tenant's verified custom
+ * domain so SMS/email invites land on the tenant host, not the platform
+ * Railway / cmbreathe fallback. Returns null when a non-seed tenant has
+ * no verified domain (callers must refuse rather than mint a wrong-org
+ * platform link). When `orgId` is unset, falls back to the platform
+ * public base for legacy/test callers.
+ */
+export async function buildCsrOrderSigningLink(
   orderRequestId: string,
   linkVersion: number,
   ttlSeconds = DEFAULT_CSR_ORDER_TTL_DAYS * 24 * 60 * 60,
-): string {
+  orgId?: string | null,
+): Promise<string | null> {
   const token = signCsrOrderToken(orderRequestId, linkVersion, ttlSeconds);
-  const base = getAuthDeps().publicBaseUrl.replace(/\/$/, "");
+  const platform = getAuthDeps().publicBaseUrl;
+  const base = !orgId?.trim()
+    ? platform.replace(/\/$/, "")
+    : await resolveTenantLinkBaseUrl(orgId, platform);
+  if (!base) return null;
   return `${base}/order-sign?token=${encodeURIComponent(token)}`;
 }
 

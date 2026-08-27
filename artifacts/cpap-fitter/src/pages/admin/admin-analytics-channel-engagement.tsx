@@ -2,8 +2,9 @@
 // outreach system across every channel it talks to patients/customers
 // through: SMS, email, and chat (messages sent, replies received,
 // delivery health) plus phone (the AI voice agent: calls answered vs
-// missed). Paired with the purchases that engagement drives so the admin
-// can read "is the automation working?" at a glance.
+// missed). Paired with historical cash-pay purchase outcomes (legacy
+// shop_orders) so ops can still read engagement against that retired
+// path; insurance fulfillments are tracked elsewhere.
 //
 // reports.read-gated server-side; aggregates only — no per-message PHI.
 
@@ -98,8 +99,8 @@ export function AdminAnalyticsChannelEngagementPage() {
           <p className="text-sm mt-1" style={{ color: "hsl(var(--ink-3))" }}>
             How the automated outreach system is performing across every channel
             — messages sent and replies received over SMS, email, and chat;
-            calls answered vs missed on the AI phone agent — paired with the
-            purchases that engagement drives.
+            calls answered vs missed on the AI phone agent — plus historical
+            cash-pay purchases from the retired storefront path.
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -157,9 +158,9 @@ function HeadlineCards({ data }: { data: ChannelEngagementResponse }) {
         hint={`${pct(data.summary.overallEngagementRate)} engagement rate`}
       />
       <Metric
-        label="Purchases"
+        label="Historical purchases"
         value={num(data.outcomes.purchases)}
-        hint={`${money(data.outcomes.purchaseRevenueCents)} revenue`}
+        hint={`${money(data.outcomes.purchaseRevenueCents)} legacy shop revenue`}
       />
       <Metric
         label="Inbound total"

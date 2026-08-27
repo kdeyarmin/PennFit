@@ -31,7 +31,7 @@ import {
   signSlackOAuthState,
   verifySlackOAuthState,
 } from "../../lib/slack/oauth-state";
-import { resolveTenantBaseUrl } from "../../lib/tenant-branding";
+import { resolveTenantLinkBaseUrl } from "../../lib/tenant-branding";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
 
@@ -126,8 +126,9 @@ router.get("/slack/oauth/callback", async (req: Request, res) => {
   // started from a tenant custom domain (pf_session is host-only), so finish
   // the round-trip on the tenant's own base URL. Derived from the resolved
   // tenant (not user input) → no open-redirect.
+  const platform = platformBaseUrl() ?? "";
   const returnBase =
-    (await resolveTenantBaseUrl(orgId)) ?? platformBaseUrl() ?? "";
+    (await resolveTenantLinkBaseUrl(orgId, platform)) ?? platform;
   const returnTo = (status: string): string =>
     `${returnBase}${CONFIG_PAGE}?slack=${status}`;
 

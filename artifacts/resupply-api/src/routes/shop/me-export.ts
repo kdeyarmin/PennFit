@@ -142,7 +142,7 @@ router.get(
     const customers = customersRes.data ?? [];
     const orders = ordersRes.data ?? [];
     const items = itemsRes.data ?? [];
-    const subs = subsRes.data ?? [];
+    const subscriptions = subsRes.data ?? [];
     const returns = returnsRes.data ?? [];
     const reviews = reviewsRes.data ?? [];
     const carts = cartsRes.data ?? [];
@@ -179,13 +179,15 @@ router.get(
             ...o,
             items: itemsByOrder.get(o.id) ?? [],
           })),
-          subscriptions: subs,
+          // Historical cash-pay rows retained for CCPA/CPRA access requests.
+          // New patient checkout is retired; empty arrays mean no legacy data.
+          subscriptions,
           returns,
           reviews,
           abandonedCart: carts[0] ?? null,
           notes: {
             coverage:
-              "This file contains every record the cash-pay shop holds for your account.",
+              "This file contains the storefront records we still hold for your account (profile, historical orders, returns, reviews, and any legacy cash-pay subscriptions or saved-card metadata). New patient checkout is insurance-only; standing auto-ship is no longer offered.",
             // Support address resolved per TENANT: this file is handed to
             // the customer, and a hardcoded mailbox pointed every tenant's
             // customers at the seed tenant's inbox. An unconfigured tenant

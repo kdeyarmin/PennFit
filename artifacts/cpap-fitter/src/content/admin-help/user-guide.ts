@@ -95,7 +95,7 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
     blocks: [
       {
         kind: "para",
-        text: "Home is the queue-driven landing page — today's work and the signals worth reacting to. Front Desk is a purpose-built counter flow for a walk-in: find or create the person, add items, take payment, done. Conversations is one inbox for inbound SMS, MMS, and email, with a channel filter when you want just one.",
+        text: "Home is the queue-driven landing page — today's work and the signals worth reacting to. Conversations is one inbox for inbound SMS, MMS, and email, with a channel filter when you want just one. For walk-ins, look the person up under Patients, start a conversation, or send a fitter invite — there is no cash-pay counter checkout.",
       },
       {
         kind: "para",

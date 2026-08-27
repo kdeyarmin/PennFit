@@ -133,7 +133,7 @@ function composeDigestEmail(opts: {
     `${totalCount} fitter order ${totalCount === 1 ? "had its" : "had their"} ` +
     `confirmation email marked email_status="failed" in the last ${windowHours} ` +
     `hours. The order rows persisted; the patient saw a success page. Action ` +
-    `for ops: open each in /admin/orders, confirm the customer reached out, and ` +
+    `for ops: open each in /admin/fitter/orders, confirm the customer reached out, and ` +
     `re-send manually if needed.`;
 
   const listText = rows
@@ -142,7 +142,7 @@ function composeDigestEmail(opts: {
   const overflowText =
     totalCount > rows.length
       ? `\n  ...and ${totalCount - rows.length} more. ` +
-        `Run the /admin/orders failed-status filter for the complete list.`
+        `Open /admin/fitter/orders and filter status to Failed for the complete list.`
       : "";
   const text = `${introText}\n\n${listText}${overflowText}\n`;
 
@@ -154,8 +154,8 @@ function composeDigestEmail(opts: {
     .join("\n");
   const overflowHtml =
     totalCount > rows.length
-      ? `      <p>&hellip;and ${totalCount - rows.length} more. Run the ` +
-        `<code>/admin/orders</code> failed-status filter for the complete list.</p>`
+      ? `      <p>&hellip;and ${totalCount - rows.length} more. Open ` +
+        `<code>/admin/fitter/orders</code> and filter status to Failed for the complete list.</p>`
       : "";
   // Chrome comes from the shared CareMetric Breathe email design system.
   const html = renderBrandedEmail({

@@ -21,8 +21,9 @@ const steps: HelpStep[] = [
         <Link href="/sign-up" className="text-primary hover:underline">
           Create an account
         </Link>
-        . An account is free and optional — you can always order as a guest —
-        but it saves your details and order history for next time.
+        . An account is free and optional — you can request a fit or ask our
+        team to contact you without one — but it saves your details, order
+        history, and reminder preferences for next time.
       </p>
     ),
   },
@@ -84,31 +85,38 @@ const steps: HelpStep[] = [
         </p>
         <ul className="list-disc pl-5 space-y-1">
           <li>
-            <strong>Profile &amp; addresses</strong> — saved so resupply and fit
-            requests are faster.
+            <strong>Overview</strong> — a snapshot of your therapy and what is
+            due next.
           </li>
           <li>
-            <strong>Orders</strong> — full history with status and a{" "}
-            <strong>Reorder</strong> button.
+            <strong>Therapy &amp; supplies</strong> — registered equipment and
+            resupply status.
           </li>
           <li>
-            <strong>Billing</strong> — your payment and statement details.
+            <strong>Messages</strong> — threaded chat with your care team.
           </li>
           <li>
-            <strong>Reminders</strong> — your{" "}
+            <strong>Account</strong> — profile, addresses, security, and your{" "}
             <Link
               href="/help/resupply-reminders"
               className="text-primary hover:underline"
             >
               resupply reminder
             </Link>{" "}
-            preferences.
+            preferences. Insurance statements live at{" "}
+            <Link
+              href="/account/billing"
+              className="text-primary hover:underline"
+            >
+              /account/billing
+            </Link>
+            .
           </li>
         </ul>
       </>
     ),
     shot: (
-      <Screenshot caption="Your dashboard groups profile, orders, addresses, billing, and reminders into one sidebar.">
+      <Screenshot caption="Your dashboard groups Overview, Therapy &amp; supplies, Messages, and Account into tabs.">
         <AccountShot />
       </Screenshot>
     ),
@@ -122,14 +130,14 @@ export function HelpCreateAnAccount() {
       title="Create an account & sign in"
       Icon={UserCircle}
       minutes="3 min"
-      metaDescription="How to create an account, verify your email, sign in, and use your dashboard to manage profile, addresses, orders, billing, and resupply reminders."
-      intro="A free account saves your shipping details and order history and gives you one-tap reordering. Here's how to set one up and find your way around the dashboard."
+      metaDescription="How to create an account, verify your email, sign in, and use your dashboard for profile, therapy, messages, billing, and resupply reminders."
+      intro="A free account saves your shipping details, therapy schedule, and messages with our team. Here's how to set one up and find your way around the dashboard."
       summary={
         <>
           Tap the account icon → <strong>Create an account</strong>, enter your
           email and a password, click the verification link we email you, and
-          you&apos;re in. Your dashboard then keeps your profile, addresses,
-          orders, billing, and reminders together.
+          you&apos;re in. Your dashboard then keeps your profile, therapy,
+          messages, billing, and reminders together.
         </>
       }
       prerequisites={[

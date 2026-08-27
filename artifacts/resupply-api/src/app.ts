@@ -441,8 +441,8 @@ logger.info(
 // including the UNIFIED MFA probe (lib/auth-deps.ts), so an enrolled
 // provider is challenged for a TOTP code here exactly as on the other
 // mounts. allowSignUp stays false (providers are invited by staff);
-// password-reset / verify-email links land on the storefront pages
-// (uiPathPrefix unset) which work for any auth.users row. Mounted
+// invite set-password links land on /provider/reset-password (provider
+// SPA chrome → /provider/sign-in). Mounted
 // BEFORE the provider data router below so /api/provider/auth/* resolves
 // to the auth handlers.
 const providerAuthDeps: AuthDeps = { ...authDeps, allowSignUp: false };
@@ -459,6 +459,13 @@ app.use(
   makeAuthRouter(providerAuthDeps, {
     productName: `${PLATFORM_NAME} Provider Portal`,
     signatureName: PLATFORM_NAME,
+    // Match the admin mount: reset/verify links must land on the
+    // provider SPA (`/provider/reset-password`), never the patient
+    // `/reset-password` surface. Provider sign-in deliberately hides
+    // forgot-password (recovery is coordinator-mediated), but the
+    // POST still exists — wrong-prefixed mail would lock a clinician
+    // into the patient auth flow.
+    uiPathPrefix: "/provider",
   }),
 );
 logger.info(
@@ -737,7 +744,7 @@ app.use("/resupply-api", router);
 
 // Storefront routes (lifted in from the deleted `api-server`
 // artifact). Mounted under /api so the cpap-fitter SPA's existing
-// fetch calls — `/api/orders`, `/api/recommend`, `/api/admin/*`,
+// fetch calls — `/api/orders`, `/api/recommend`, `/api/admin/…`,
 // `/api/usage-events`, `/api/reminders`, `/api/healthz` — keep
 // working unchanged. Both `/api` and `/resupply-api` are served by
 // this same Express process on Railway.
@@ -913,12 +920,23 @@ if (existsSync(SPA_INDEX_HTML)) {
     }
     if (p.startsWith("/assets/")) return next();
     if (path.basename(p).includes(".")) return next();
+    // Serve the SPA for browser navigations and for clients that omit
+    // Accept (curl, some prefetchers, uptime probes). Skip only when the
+    // caller explicitly asks for a non-HTML representation (e.g. JSON)
+    // without also accepting HTML — otherwise `/` and `/admin/sign-in`
+    // 404 as Express "Cannot GET …" for anything that forgot text/html.
     const acceptHeader = req.headers.accept;
-    if (
-      typeof acceptHeader !== "string" ||
-      !acceptHeader.toLowerCase().includes("text/html")
-    ) {
-      return next();
+    if (typeof acceptHeader === "string") {
+      const accept = acceptHeader.toLowerCase();
+      // Join so this source file never contains the two-char closer that
+      // stripComments (app.face-model-check.test.ts) would treat as ending
+      // a block comment started by a star-slash inside an earlier note.
+      const starSlashStar = ["*", "/", "*"].join("");
+      const wantsHtml =
+        accept.includes("text/html") ||
+        accept.includes(starSlashStar) ||
+        accept.trim() === "";
+      if (!wantsHtml) return next();
     }
     res.set("Cache-Control", "no-cache, no-store, must-revalidate");
     res.sendFile(SPA_INDEX_HTML);

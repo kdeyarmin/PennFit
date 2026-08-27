@@ -17,15 +17,11 @@
 //     leak. The subject line mentions item count only.
 //
 // Template:
-//   - Subject:   "You left {N} items in your Penn Home Medical Supply cart"
+//   - Subject:   "You started an order at {brand} — let's finish through insurance"
 //   - HTML body: brand banner, item list (qty × name @ unit price),
-//                subtotal, primary CTA "Return to your cart" linking
-//                to ${SHOP_PUBLIC_BASE_URL}/shop/cart?resume=1, footer
-//                "You're receiving this because you started a checkout
-//                at Penn Home Medical Supply. Reply STOP if you don't want to hear
-//                about your cart again." (the STOP wording is for
-//                customer reassurance — there's no opt-out wiring in
-//                v1; one nudge per cart-event is the entire policy).
+//                subtotal, primary CTA "Contact us to finish" linking
+//                to /contact (cash-pay cart is retired), footer
+//                explaining the one-nudge-per-incomplete-order policy.
 
 import {
   BREATHE_COLORS,
@@ -41,12 +37,11 @@ import {
 import type { ShopAbandonedCartItem } from "@workspace/resupply-db";
 
 import { createTenantSendgridClient } from "../email/tenant-sender.js";
+import { resolveBrandingByOrgId } from "../tenant-branding.js";
 import {
-  resolveBrandingByOrgId,
-  resolveTenantBaseUrl,
-} from "../tenant-branding.js";
-
-const DEFAULT_BASE_URL = "https://cmbreathe.com";
+  resolvePatientEmailLinkBase,
+  TENANT_DOMAIN_REQUIRED,
+} from "../order-emails/link-base.js";
 
 export interface SendCartAbandonmentEmailInput {
   toEmail: string;
@@ -94,15 +89,6 @@ function formatMoney(cents: number, currency: string): string {
   }
 }
 
-function publicBaseUrl(override?: string): string {
-  const raw =
-    override ??
-    process.env.SHOP_PUBLIC_BASE_URL ??
-    process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL ??
-    DEFAULT_BASE_URL;
-  return raw.replace(/\/$/, "");
-}
-
 export async function sendCartAbandonmentEmail(
   input: SendCartAbandonmentEmailInput,
 ): Promise<SendCartAbandonmentEmailResult> {
@@ -130,39 +116,44 @@ export async function sendCartAbandonmentEmail(
   const brand = await resolveBrandingByOrgId(input.orgId);
   const brandName = brand.storefrontName;
 
-  const itemCount = items.reduce((sum, it) => sum + it.quantity, 0);
-  const subject = `You left ${itemCount} item${itemCount === 1 ? "" : "s"} in your ${brandName} cart`;
+  const subject = `You started an order at ${brandName} — let's finish through insurance`;
 
-  const base = publicBaseUrl(
-    input.baseUrlOverride ??
-      (await resolveTenantBaseUrl(input.orgId)) ??
-      undefined,
+  const base = await resolvePatientEmailLinkBase(
+    input.orgId,
+    input.baseUrlOverride,
   );
-  const cartUrl = `${base}/shop/cart?resume=1`;
-  const browseUrl = `${base}/shop`;
+  if (!base) {
+    return {
+      configured: true,
+      delivered: false,
+      error: TENANT_DOMAIN_REQUIRED,
+    };
+  }
+  const cartUrl = `${base}/contact`;
+  const browseUrl = `${base}/insurance`;
 
   // Plain-text body — many corporate filters drop HTML-only mail.
   const textLines: string[] = [
-    `You still have ${itemCount} item${itemCount === 1 ? "" : "s"} waiting in your cart at ${brandName}.`,
+    `You started an order at ${brandName} but didn't finish. Cash-pay checkout is retired — reply or call and we'll confirm coverage and ship through insurance.`,
     "",
   ];
   for (const it of items) {
     textLines.push(
       `  - ${it.quantity} x ${it.name} (${formatMoney(it.unitAmountCents, it.currency)} each)` +
         (it.mode === "subscription" && it.recurringIntervalLabel
-          ? ` -- subscribe & ship every ${it.recurringIntervalLabel}`
+          ? ` -- was recurring every ${it.recurringIntervalLabel}; we now ship on your insurance schedule`
           : ""),
     );
   }
   textLines.push("");
   textLines.push(`Subtotal: ${formatMoney(subtotalCents, currency)}`);
   textLines.push("");
-  textLines.push(`Return to your cart: ${cartUrl}`);
-  textLines.push(`Browse the shop: ${browseUrl}`);
+  textLines.push(`Contact us to finish through insurance: ${cartUrl}`);
+  textLines.push(`How insurance ordering works: ${browseUrl}`);
   textLines.push("");
   textLines.push(
-    `You're receiving this because you started a checkout at ${brandName}. ` +
-      "We send one of these per cart at most.",
+    `You're receiving this because you started an order at ${brandName}. ` +
+      "We send one of these per incomplete order at most.",
   );
   const text = textLines.join("\n");
 
@@ -170,18 +161,18 @@ export async function sendCartAbandonmentEmail(
   // design system; this builder supplies only copy + data.
   const html = renderBrandedEmail({
     brandName,
-    heading: "You left items in your cart",
-    preheader: `Your cart at ${brandName} is still saved — pick up where you left off.`,
+    heading: "You started an order",
+    preheader: `Your list at ${brandName} is still saved — reply and we'll finish through insurance.`,
     contentHtml: [
       textParagraph(
-        `You started a checkout at ${brandName} but didn't finish. Your cart is still saved — pick up right where you left off.`,
+        `You started an order at ${brandName} but didn't finish. Cash-pay checkout is retired — reply or call and we'll confirm coverage and ship through insurance.`,
       ),
       lineItemsTable(
         items.map((it) => ({
           name: it.name,
           detail:
             it.mode === "subscription" && it.recurringIntervalLabel
-              ? `Subscribe & ship every ${it.recurringIntervalLabel}`
+              ? `Was recurring every ${it.recurringIntervalLabel} — we now ship on your insurance schedule`
               : undefined,
           amount: `${it.quantity} × ${formatMoney(it.unitAmountCents, it.currency)}`,
         })),
@@ -194,10 +185,10 @@ export async function sendCartAbandonmentEmail(
         },
       ]),
     ].join("\n"),
-    button: { label: "Return to your cart", url: cartUrl },
-    footerHtml: `<a href="${escapeHtml(browseUrl)}" style="color:${BREATHE_COLORS.blue};text-decoration:underline;">Browse the shop</a>`,
+    button: { label: "Contact us to finish", url: cartUrl },
+    footerHtml: `<a href="${escapeHtml(browseUrl)}" style="color:${BREATHE_COLORS.blue};text-decoration:underline;">How insurance ordering works</a>`,
     footerLines: [
-      `You're receiving this because you started a checkout at ${brandName}. We send one of these per cart at most.`,
+      `You're receiving this because you started an order at ${brandName}. We send one of these per incomplete order at most.`,
     ],
     copyrightName: brandName,
   });

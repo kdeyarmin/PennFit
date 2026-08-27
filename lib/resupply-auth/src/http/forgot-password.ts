@@ -162,9 +162,16 @@ export function makeForgotPasswordHandler(
     // Brand the reset email to the site the user is actually on. Fail-soft:
     // a reset link that never arrives locks someone out of their account, so
     // this can only ever downgrade to the mount's static name.
+    const brand = await resolveAuthEmailBrand(options, req);
     const ctx: AuthEmailContext = {
-      ...(await resolveAuthEmailBrand(options, req)),
-      publicBaseUrl: deps.publicBaseUrl,
+      productName: brand.productName,
+      ...(brand.signatureName !== undefined
+        ? { signatureName: brand.signatureName }
+        : {}),
+      // Prefer a verified tenant origin from the brand resolver so a
+      // patient on pennpaps.com gets a pennpaps.com reset link; fall
+      // back to the mount's platform publicBaseUrl.
+      publicBaseUrl: brand.publicBaseUrl ?? deps.publicBaseUrl,
       uiPathPrefix: options.uiPathPrefix,
     };
     const rendered = renderPasswordResetEmail(ctx, token.raw, resetTokenTtlMs);

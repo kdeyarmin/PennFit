@@ -495,7 +495,7 @@ export const OPENAI_TOOL_DESCRIPTORS: readonly OpenAiToolDescriptor[] = [
     type: "function",
     name: "get_customer_chart",
     description:
-      "Return a SAFE-TO-READ snapshot of the verified caller's account: their first name, any supplies due, whether they have a recent order or an active subscription, and whether there are open follow-ups. Never read back full addresses, full order contents, date of birth, phone, or email. Requires identity verification first.",
+      "Return a SAFE-TO-READ snapshot of the verified caller's account: their first name, any supplies due, whether they have a recent order, and whether there are open follow-ups. Never mention subscriptions or auto-ship. Never read back full addresses, full order contents, date of birth, phone, or email. Requires identity verification first.",
     parameters: {
       type: "object",
       properties: {},

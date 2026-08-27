@@ -19,9 +19,11 @@
 //     looks at DEFAULT_COMMUNICATION_PREFERENCES.emailMarketing
 //     to decide the default).
 //   * email_lower is non-null (we need an address to send to).
-//   * has shipped at least one paid order in the past 730 days
-//     (so we don't email a stale registration that never paid),
-//   * has NOT shipped any paid order in the past 180 days,
+//   * has shipped or queued insurance resupply (fulfillment activity) OR
+//     at least one historical paid shop order in the past 730 days
+//     (legacy cash-pay rows — we never email a stale registration that
+//     never received anything),
+//   * has NOT had shipment/resupply activity in the past 180 days,
 //   * winback_sent_at is NULL or older than 365 days (max one
 //     win-back per customer per 12 months).
 //
@@ -32,6 +34,12 @@
 // limit the per-run batch to a soft cap so a backlog of newly-
 // eligible customers doesn't single-day-burst the SendGrid quota
 // in regions with rate caps.
+//
+// Feature flag
+// ------------
+// Off by default. Set `RESUPPLY_LAPSED_CUSTOMER_WINBACK_CRON_ENABLED=1`
+// to turn it on. Cash-pay storefront accounts are historical; a
+// credentialed staging deploy must not auto-email lapsed shoppers.
 
 import type PgBoss from "pg-boss";
 
@@ -50,6 +58,7 @@ import {
 import { sendWinbackEmail } from "../../lib/order-emails/send-winback-email";
 import { shouldSendEmail } from "../../lib/comm-prefs";
 import { logger } from "../../lib/logger";
+import { resolvePatientIdForCustomer } from "../../lib/shop-customer/resolve-patient";
 import { forEachActiveOrg } from "../lib/for-each-active-org.js";
 import {
   createQueueWithDlq,
@@ -95,6 +104,77 @@ function readPrefs(raw: Json | null): CommunicationPreferences {
     ...DEFAULT_COMMUNICATION_PREFERENCES,
     ...(raw as Partial<CommunicationPreferences>),
   };
+}
+
+type FulfillmentActivityRow = {
+  shipped_at: string | null;
+  delivered_at: string | null;
+  created_at: string;
+};
+
+type ShopOrderActivityRow = {
+  paid_at: string | null;
+  shipped_at: string | null;
+  delivered_at: string | null;
+  created_at: string;
+};
+
+function activityIsoFromFulfillment(row: FulfillmentActivityRow): string {
+  return row.delivered_at ?? row.shipped_at ?? row.created_at;
+}
+
+function activityIsoFromShopOrder(row: ShopOrderActivityRow): string {
+  return row.delivered_at ?? row.shipped_at ?? row.paid_at ?? row.created_at;
+}
+
+/**
+ * Most recent resupply/shipment activity for a signed-in shop customer.
+ * Insurance patients resolve through fulfillments; legacy cash-pay rows
+ * still contribute via shop_orders. Returns null when the customer never
+ * received anything we can measure.
+ */
+export async function resolveLastCustomerShipmentActivityIso(
+  supabase: ReturnType<typeof getOrgScopedClient>,
+  customerId: string,
+): Promise<string | null> {
+  const patientId = await resolvePatientIdForCustomer(supabase, customerId);
+  const activities: string[] = [];
+
+  if (patientId) {
+    const { data, error } = await supabase
+      .from("fulfillments")
+      .select("shipped_at, delivered_at, created_at")
+      .eq("patient_id", patientId)
+      .not("status", "in", "(cancelled,canceled)")
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
+    if (data) {
+      activities.push(
+        activityIsoFromFulfillment(data as FulfillmentActivityRow),
+      );
+    }
+  }
+
+  const { data: lastShopOrder, error: shopErr } = await supabase
+    .from("shop_orders")
+    .select("paid_at, shipped_at, delivered_at, created_at")
+    .eq("customer_id", customerId)
+    .eq("status", "paid")
+    .order("paid_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (shopErr) throw shopErr;
+  if (lastShopOrder) {
+    activities.push(
+      activityIsoFromShopOrder(lastShopOrder as ShopOrderActivityRow),
+    );
+  }
+
+  if (activities.length === 0) return null;
+  return activities.reduce((max, iso) => (iso > max ? iso : max));
 }
 
 /**
@@ -210,20 +290,13 @@ async function winbackSweepForOrg(
         continue;
       }
 
-      // 2. Per-customer order-history gate. Two queries; could be one
-      //    with a CASE expression but PostgREST doesn't support raw
-      //    CASE in select(). Both reads hit the existing
-      //    shop_orders(customer_id, paid_at) index.
-      const { data: lastOrder } = await supabase
-        .from("shop_orders")
-        .select("paid_at")
-        .eq("customer_id", row.customer_id)
-        .eq("status", "paid")
-        .not("paid_at", "is", null)
-        .order("paid_at", { ascending: false })
-        .limit(1);
-
-      const last = lastOrder?.[0]?.paid_at ?? null;
+      // 2. Per-customer shipment-activity gate. Prefer insurance
+      //    fulfillments when the email resolves to a patient chart;
+      //    fall back to historical shop_orders for legacy cash-pay.
+      const last = await resolveLastCustomerShipmentActivityIso(
+        supabase,
+        row.customer_id,
+      );
       // Never ordered → skip (these are stale registrations).
       if (!last) {
         stats.skipped += 1;
@@ -343,6 +416,16 @@ async function winbackSweepForOrg(
 export async function registerLapsedCustomerWinbackJob(
   boss: PgBoss,
 ): Promise<void> {
+  if (process.env.RESUPPLY_LAPSED_CUSTOMER_WINBACK_CRON_ENABLED !== "1") {
+    logger.info(
+      { event: "shop-customers.winback.disabled" },
+      "shop-customers.winback: not registered (RESUPPLY_LAPSED_CUSTOMER_WINBACK_CRON_ENABLED!=1)",
+    );
+    if (typeof boss.unschedule === "function") {
+      await boss.unschedule(JOB_NAME).catch(() => undefined);
+    }
+    return;
+  }
   await createQueueWithDlq(boss, JOB_NAME, VENDOR_SEND_QUEUE_OPTS);
 
   await boss.work(JOB_NAME, async () => {

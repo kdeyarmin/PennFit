@@ -196,11 +196,12 @@ function demoRevenueBySource(days: number) {
   const bySource = [
     {
       source: "storefront" as const,
-      label: "Historical storefront (retired)",
+      label: "Storefront (historical)",
       orders: 241,
       units: null,
       paidOrders: 187,
       cashRevenueCents: 2_414_900,
+      payerPaidCents: null,
     },
     {
       source: "resupply_fulfillment" as const,
@@ -209,6 +210,7 @@ function demoRevenueBySource(days: number) {
       units: 712,
       paidOrders: null,
       cashRevenueCents: null,
+      payerPaidCents: 8_920_000,
     },
     {
       source: "clinical_form" as const,
@@ -217,6 +219,7 @@ function demoRevenueBySource(days: number) {
       units: null,
       paidOrders: null,
       cashRevenueCents: null,
+      payerPaidCents: null,
     },
   ];
   return {
@@ -224,6 +227,7 @@ function demoRevenueBySource(days: number) {
     bySource,
     totalOrders: bySource.reduce((s, b) => s + b.orders, 0),
     totalCashRevenueCents: 2_414_900,
+    totalPayerPaidCents: 8_920_000,
   };
 }
 
@@ -348,6 +352,12 @@ function demoLtvCac() {
       cacPaybackMonths: null,
     },
     generatedAt: NOW_ISO(),
+    insuranceRemittance: {
+      eraPayerPaidCents: 8_920_000,
+      paidClaimCount: 412,
+      includedInLtvRatio: false as const,
+      possiblyIncomplete: false,
+    },
   };
 }
 

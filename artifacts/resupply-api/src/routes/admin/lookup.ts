@@ -5,6 +5,7 @@
 //   * 10-15 digits / +E.164 → patient by direct phone_e164 equality
 //   * contains "@"           → shop customer by email_lower
 //   * UUIDv4 shape           → patient / conversation / episode / fulfillment
+//   * PENN-/PHM-/ORD-/bare-6 ref → fitter or CSR order by order_reference
 //   * starts with "cs_"      → shop order by stripe_session_id
 //   * 12+ hex chars (no @)   → shop order by stripe_session_id LIKE %tail
 //
@@ -21,6 +22,7 @@ import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
+import { normalizeOrderReference } from "../../lib/storefront/orderTracking";
 
 const router: IRouter = Router();
 
@@ -31,7 +33,9 @@ interface Hit {
     | "episode"
     | "fulfillment"
     | "shop_order"
-    | "shop_customer";
+    | "shop_customer"
+    | "fitter_order"
+    | "csr_order";
   id: string;
   label: string;
   href: string;
@@ -127,10 +131,11 @@ router.get(
           kind: "shop_customer",
           id: r.customer_id,
           label: r.display_name ?? r.email_lower ?? r.customer_id,
-          // Customers don't have an admin detail page yet; deep-link to
-          // the abandoned-cart list filtered on the user (close enough).
-          href: `/admin/shop/abandoned-carts?customerId=${encodeURIComponent(r.customer_id)}`,
-          hint: "Cash-pay shop customer",
+          // Cash-pay customer detail pages retired with the storefront
+          // checkout. Point operators at the patient roster (they can
+          // search by name/email) rather than a dead abandoned-cart URL.
+          href: "/admin/patients",
+          hint: "Historical storefront account",
         });
       }
     }
@@ -209,8 +214,61 @@ router.get(
       }
     }
 
-    // Stripe Checkout Session id (full or last-12).
-    if (STRIPE_SESSION_RE.test(q)) {
+    // Fitter / insurance order reference (PENN-…, bare 6-char tail, or
+    // legacy PHM-XXX-XXX) plus CSR signature-order ORD-…. CSRs paste
+    // confirmation refs into the global bar; without this branch they
+    // only find Stripe cs_ sessions.
+    // Must run BEFORE the hex-tail shop_orders LIKE — PHM refs also
+    // match HEX_TAIL_RE and would otherwise search the wrong table.
+    const orderRef = normalizeOrderReference(q);
+    if (orderRef) {
+      if (orderRef.startsWith("ORD-")) {
+        const { data: csr } = await db
+          .from("csr_order_requests")
+          .select("id, order_reference, status, customer_name")
+          .eq("order_reference", orderRef)
+          .limit(1)
+          .maybeSingle();
+        if (csr) {
+          hits.push({
+            kind: "csr_order",
+            id: csr.id,
+            label: csr.customer_name || csr.order_reference || "(CSR order)",
+            href: `/admin/fitter/orders`,
+            hint: `${csr.order_reference} · ${csr.status}`,
+          });
+        }
+      } else {
+        const { data: order } = await db
+          .raw()
+          .schema("public")
+          .from("orders")
+          .select(
+            "id, order_reference, patient_first_name, patient_last_name, email_status, mask_name",
+          )
+          .eq("org_id", orgId)
+          .eq("order_reference", orderRef)
+          .limit(1)
+          .maybeSingle();
+        if (order) {
+          const name = [order.patient_first_name, order.patient_last_name]
+            .filter(Boolean)
+            .join(" ")
+            .trim();
+          hits.push({
+            kind: "fitter_order",
+            id: order.id,
+            label:
+              name ||
+              order.mask_name ||
+              order.order_reference ||
+              "(fitter order)",
+            href: `/admin/fitter/orders/${order.id}`,
+            hint: `${order.order_reference}${order.email_status ? ` · ${order.email_status}` : ""}`,
+          });
+        }
+      }
+    } else if (STRIPE_SESSION_RE.test(q)) {
       const { data: order } = await db
         .from("shop_orders")
         .select("id, stripe_session_id, status, amount_total_cents")
@@ -222,8 +280,8 @@ router.get(
           kind: "shop_order",
           id: order.id,
           label: `Shop order · ${order.status}${order.amount_total_cents ? ` · $${(order.amount_total_cents / 100).toFixed(2)}` : ""}`,
-          href: `/admin/shop/returns?orderId=${order.id}`,
-          hint: order.stripe_session_id.slice(-12),
+          href: "/admin/patients",
+          hint: "Historical cash-pay order",
         });
       }
     } else if (HEX_TAIL_RE.test(q) && !UUID_RE.test(q) && !q.includes("@")) {
@@ -241,7 +299,9 @@ router.get(
           kind: "shop_order",
           id: order.id,
           label: `Shop order · ${order.status}`,
-          href: `/admin/shop/returns?orderId=${order.id}`,
+          // Returns/customer detail pages retired with cash-pay —
+          // same posture as shop_customer hits above.
+          href: "/admin/patients",
           hint: order.stripe_session_id.slice(-12),
         });
       }

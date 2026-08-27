@@ -2,41 +2,103 @@
 // home banner.
 //
 // What it returns (read-only, never errors when authenticated):
-//   * nextShipment        — soonest currentPeriodEnd from active
-//                            subscriptions (subscribe-and-ship), with
-//                            a `daysUntil` countdown (Phase A.1).
-//   * eligibility         — Phase A.1 eligibility-claim payload:
-//                            { eligibleNow: [items past their period
-//                            end], soonest: { firstItemName,
-//                            daysUntil } } so the dashboard banner can
-//                            say "ready now" or "eligible in N days".
-//   * latestOrder         — most-recent paid order with optional
-//                            tracking + delivery state.
-//   * activeSubscriptions — count of `status='active'` subs (after
-//                            "active" filter; trialing also counts).
-//   * pendingOrders       — count of `status='paid' AND shipped_at IS NULL`
-//                            for the user (their backlog).
-//   * cartItemCount       — number of items in the abandoned-cart
-//                            snapshot if the user left items behind
-//                            on another device.
+//   * nextShipment        — soonest in-progress insurance episode
+//                            `due_at` (outreach_pending / awaiting_response).
+//                            Field names reuse the retired Subscribe &
+//                            Save shape (`subscriptionId` = episode id).
+//   * eligibility         — overdue episodes in `eligibleNow`; closest
+//                            future (or overdue) in `soonest`.
+//   * latestOrder         — most-recent insurance fulfillment when the
+//                            signed-in email resolves to exactly one
+//                            patient chart; otherwise the latest paid
+//                            historical shop_orders row (legacy cash-pay).
+//                            Home banner links to /account.
+//   * activeSubscriptions — always 0 (Subscribe & Save takes no new
+//                            writes).
+//   * pendingOrders       — backlog of unshipped legacy shop_orders plus
+//                            queued insurance fulfillments (when linked).
+//   * abandonedCart       — always null. Abandoned cash-pay carts must
+//                            not nudge "ready to order" on the home page.
 //
 // Designed to be called once on the home page when the user is
-// signed in. All four sub-queries are O(rows-by-user) and indexed.
-// Returns a stable JSON shape even when the user has no orders /
-// subscriptions / cart — the home banner just renders whichever
-// fields are non-null.
+// signed in. Returns a stable JSON shape even when the user has no
+// orders — the home banner just renders whichever fields are non-null.
 
 import { Router, type IRouter } from "express";
 
-import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
+import { type Json, getOrgScopedClient } from "@workspace/resupply-db";
 
+import {
+  IN_PROGRESS_EPISODE_STATUSES,
+  buildInsuranceDueDigest,
+  type EpisodeDueRow,
+} from "../../lib/shop-customer/insurance-due-digest";
+import { resolvePatientIdForCustomer } from "../../lib/shop-customer/resolve-patient";
 import { requireSignedIn } from "../../middlewares/requireSignedIn";
 
-interface SubscriptionItem {
-  name?: string;
+const router: IRouter = Router();
+
+type DashboardLatestOrder = {
+  id: string;
+  sessionId: string;
+  paidAt: string | null;
+  shippedAt: string | null;
+  deliveredAt: string | null;
+  trackingCarrier: string | null;
+  trackingNumber: string | null;
+};
+
+function parseShipmentMetadata(json: Json | null): {
+  carrier: string | null;
+  tracking: string | null;
+} {
+  if (!json || typeof json !== "object" || Array.isArray(json)) {
+    return { carrier: null, tracking: null };
+  }
+  const row = json as Record<string, unknown>;
+  return {
+    carrier: typeof row.carrier === "string" ? row.carrier : null,
+    tracking: typeof row.tracking === "string" ? row.tracking : null,
+  };
 }
 
-const router: IRouter = Router();
+function orderActivityAt(iso: string | null | undefined): number {
+  return iso ? Date.parse(iso) : 0;
+}
+
+async function loadInsuranceDueDigest(
+  supabase: ReturnType<typeof getOrgScopedClient>,
+  patientId: string,
+): Promise<ReturnType<typeof buildInsuranceDueDigest>> {
+  const { data: episodes, error: episodesErr } = await supabase
+    .from("episodes")
+    .select("id, prescription_id, due_at")
+    .eq("patient_id", patientId)
+    .in("status", [...IN_PROGRESS_EPISODE_STATUSES])
+    .order("due_at", { ascending: true })
+    .limit(50);
+  if (episodesErr) throw episodesErr;
+
+  const rows = (episodes ?? []) as EpisodeDueRow[];
+  if (rows.length === 0) {
+    return buildInsuranceDueDigest([], new Map());
+  }
+
+  const rxIds = [...new Set(rows.map((r) => r.prescription_id))];
+  const { data: prescriptions, error: rxErr } = await supabase
+    .from("prescriptions")
+    .select("id, item_sku")
+    .in("id", rxIds);
+  if (rxErr) throw rxErr;
+
+  const skuByRx = new Map<string, string>();
+  for (const rx of prescriptions ?? []) {
+    if (rx.id && typeof rx.item_sku === "string") {
+      skuByRx.set(rx.id, rx.item_sku);
+    }
+  }
+  return buildInsuranceDueDigest(rows, skuByRx);
+}
 
 router.get("/shop/me/dashboard", requireSignedIn, async (req, res) => {
   const customerId = req.userCustomerId;
@@ -51,132 +113,115 @@ router.get("/shop/me/dashboard", requireSignedIn, async (req, res) => {
     return;
   }
   const supabase = getOrgScopedClient(orgId);
-  const now = new Date();
-  const nowIso = now.toISOString();
 
-  // All four reads run concurrently — they're independent and indexed
-  // on customer_id.
-  const [subsRes, latestOrderRes, pendingOrdersRes, cartRes] =
-    await Promise.all([
-      supabase
-        .from("shop_subscriptions")
-        .select("id, status, current_period_end, cancel_at_period_end, items")
-        .eq("customer_id", customerId),
-      supabase
-        .from("shop_orders")
-        .select(
-          "id, stripe_session_id, status, paid_at, shipped_at, delivered_at, tracking_carrier, tracking_number, created_at",
-        )
-        .eq("customer_id", customerId)
-        .eq("status", "paid")
-        .order("paid_at", { ascending: false })
-        .limit(1)
-        .maybeSingle(),
-      supabase
-        .from("shop_orders")
-        .select("*", { count: "exact", head: true })
-        .eq("customer_id", customerId)
-        .eq("status", "paid")
-        .is("shipped_at", null),
-      supabase
-        .from("shop_abandoned_carts")
-        .select("items, updated_at, recovered_at, cleared_at")
-        .eq("customer_id", customerId)
-        .limit(1)
-        .maybeSingle(),
-    ]);
-  if (subsRes.error) throw subsRes.error;
+  const patientIdPromise = resolvePatientIdForCustomer(supabase, customerId);
+
+  // Legacy cash-pay reads stay for historical rows. Insurance patients
+  // also get fulfillment-backed status when email resolves to one chart.
+  const [latestOrderRes, pendingOrdersRes, patientId] = await Promise.all([
+    supabase
+      .from("shop_orders")
+      .select(
+        "id, stripe_session_id, status, paid_at, shipped_at, delivered_at, tracking_carrier, tracking_number, created_at",
+      )
+      .eq("customer_id", customerId)
+      .eq("status", "paid")
+      .order("paid_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .from("shop_orders")
+      .select("*", { count: "exact", head: true })
+      .eq("customer_id", customerId)
+      .eq("status", "paid")
+      .is("shipped_at", null),
+    patientIdPromise,
+  ]);
   if (latestOrderRes.error) throw latestOrderRes.error;
   if (pendingOrdersRes.error) throw pendingOrdersRes.error;
-  if (cartRes.error) throw cartRes.error;
 
-  // Soonest upcoming shipment — pick the nearest `currentPeriodEnd`
-  // across the user's active/trialing subscriptions. We don't need
-  // the full row, just the date + a representative item label.
-  const liveStatuses = new Set(["active", "trialing", "past_due"]);
-  const liveSubs = (
-    (subsRes.data ?? []) as Array<
-      Database["resupply"]["Tables"]["shop_subscriptions"]["Row"]
-    >
-  ).filter((r) => liveStatuses.has(r.status));
-  const itemsOf = (raw: unknown): SubscriptionItem[] =>
-    Array.isArray(raw) ? (raw as SubscriptionItem[]) : [];
-  const upcoming = liveSubs
-    .filter((r) => r.current_period_end && r.current_period_end > nowIso)
-    .sort((a, b) =>
-      (a.current_period_end ?? "").localeCompare(b.current_period_end ?? ""),
-    )[0];
+  let latestFulfillment: DashboardLatestOrder | null = null;
+  let pendingFulfillments = 0;
+  let dueDigest = buildInsuranceDueDigest([], new Map());
+  if (patientId) {
+    const [latestFulfillmentRes, pendingFulfillmentsRes, digest] =
+      await Promise.all([
+        supabase
+          .from("fulfillments")
+          .select(
+            "id, status, created_at, shipped_at, delivered_at, shipment_metadata",
+          )
+          .eq("patient_id", patientId)
+          .order("created_at", { ascending: false })
+          .order("id", { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+        supabase
+          .from("fulfillments")
+          .select("*", { count: "exact", head: true })
+          .eq("patient_id", patientId)
+          .is("shipped_at", null)
+          .is("delivered_at", null)
+          .not("status", "in", "(cancelled,canceled)"),
+        loadInsuranceDueDigest(supabase, patientId),
+      ]);
+    if (latestFulfillmentRes.error) throw latestFulfillmentRes.error;
+    if (pendingFulfillmentsRes.error) throw pendingFulfillmentsRes.error;
 
-  const nextShipment = upcoming
+    dueDigest = digest;
+    pendingFulfillments = pendingFulfillmentsRes.count ?? 0;
+    const row = latestFulfillmentRes.data;
+    if (row) {
+      const tracking = parseShipmentMetadata(row.shipment_metadata);
+      latestFulfillment = {
+        id: row.id,
+        sessionId: "",
+        paidAt: row.created_at,
+        shippedAt: row.shipped_at,
+        deliveredAt: row.delivered_at,
+        trackingCarrier: tracking.carrier,
+        trackingNumber: tracking.tracking,
+      };
+    }
+  }
+
+  const latestShopOrderRow = latestOrderRes.data;
+  const latestShopOrder: DashboardLatestOrder | null = latestShopOrderRow
     ? {
-        subscriptionId: upcoming.id,
-        date: upcoming.current_period_end!,
-        // Phase A.1 — countdown to the next eligible date. Always >= 0;
-        // computed against the same `now` used for the cycle filter
-        // above so the two fields agree on "today" within a single
-        // request.
-        daysUntil: Math.max(
-          0,
-          Math.ceil(
-            (new Date(upcoming.current_period_end!).getTime() - now.getTime()) /
-              (24 * 60 * 60 * 1000),
-          ),
-        ),
-        firstItemName: itemsOf(upcoming.items)[0]?.name ?? null,
-        cancelAtPeriodEnd: upcoming.cancel_at_period_end ?? false,
+        id: latestShopOrderRow.id,
+        sessionId: latestShopOrderRow.stripe_session_id,
+        paidAt: latestShopOrderRow.paid_at,
+        shippedAt: latestShopOrderRow.shipped_at,
+        deliveredAt: latestShopOrderRow.delivered_at,
+        trackingCarrier: latestShopOrderRow.tracking_carrier,
+        trackingNumber: latestShopOrderRow.tracking_number,
       }
     : null;
 
-  const eligibleNow = liveSubs
-    .filter((r) => !r.cancel_at_period_end)
-    .filter((r) => r.current_period_end && r.current_period_end <= nowIso)
-    .map((r) => ({
-      subscriptionId: r.id,
-      firstItemName: itemsOf(r.items)[0]?.name ?? null,
-    }));
-  const eligibility = {
-    eligibleNow,
-    soonest: nextShipment
-      ? {
-          firstItemName: nextShipment.firstItemName,
-          daysUntil: nextShipment.daysUntil,
-        }
-      : null,
-  };
-
-  const latestOrderRow = latestOrderRes.data;
-  const latestOrder = latestOrderRow
-    ? {
-        id: latestOrderRow.id,
-        sessionId: latestOrderRow.stripe_session_id,
-        paidAt: latestOrderRow.paid_at,
-        shippedAt: latestOrderRow.shipped_at,
-        deliveredAt: latestOrderRow.delivered_at,
-        trackingCarrier: latestOrderRow.tracking_carrier,
-        trackingNumber: latestOrderRow.tracking_number,
-      }
-    : null;
-
-  const cartRow = cartRes.data;
-  const cartItems = cartRow ? itemsOf(cartRow.items) : [];
-  const stillAbandoned =
-    cartRow &&
-    !cartRow.recovered_at &&
-    !cartRow.cleared_at &&
-    cartItems.length > 0;
+  const latestOrder: DashboardLatestOrder | null =
+    latestFulfillment && latestShopOrder
+      ? orderActivityAt(
+          latestFulfillment.deliveredAt ??
+            latestFulfillment.shippedAt ??
+            latestFulfillment.paidAt,
+        ) >=
+        orderActivityAt(
+          latestShopOrder.deliveredAt ??
+            latestShopOrder.shippedAt ??
+            latestShopOrder.paidAt ??
+            latestShopOrderRow?.created_at,
+        )
+        ? latestFulfillment
+        : latestShopOrder
+      : (latestFulfillment ?? latestShopOrder);
 
   res.json({
-    nextShipment,
-    eligibility,
+    nextShipment: dueDigest.nextShipment,
+    eligibility: dueDigest.eligibility,
     latestOrder,
-    activeSubscriptions: liveSubs.length,
-    pendingOrders: pendingOrdersRes.count ?? 0,
-    abandonedCart: stillAbandoned
-      ? {
-          itemCount: cartItems.length,
-          updatedAt: cartRow!.updated_at,
-        }
-      : null,
+    activeSubscriptions: 0,
+    pendingOrders: (pendingOrdersRes.count ?? 0) + pendingFulfillments,
+    abandonedCart: null,
   });
 });
 

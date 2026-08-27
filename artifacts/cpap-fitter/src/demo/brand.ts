@@ -30,7 +30,7 @@ export const DEMO_LEGAL_NAME = "CareMetric Demo DME";
 export const DEMO_LEGAL_NAME_FULL = "CareMetric Demo DME, LLC";
 
 /** Storefront strapline; matches lib/branding.ts's platform default. */
-export const DEMO_TAGLINE = "Your CPAP, made simple. Fit. Shop. Resupply.";
+export const DEMO_TAGLINE = "Your CPAP, made simple. Fit. Order. Resupply.";
 
 /** Non-routable host for every sandbox domain, link, and address. */
 export const DEMO_DOMAIN = "demo.example";

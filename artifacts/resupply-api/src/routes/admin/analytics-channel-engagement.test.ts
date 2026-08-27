@@ -182,6 +182,6 @@ describe("GET /admin/analytics/channel-engagement", () => {
       "channel,conversations,outbound,inbound,reply_rate,delivered,failed,delivery_rate",
     );
     expect(res.text).toContain("Phone (voice)");
-    expect(res.text).toContain("Purchases,1");
+    expect(res.text).toContain("Historical purchases,1");
   });
 });

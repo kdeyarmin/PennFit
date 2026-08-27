@@ -41,12 +41,11 @@ import {
 } from "@workspace/resupply-email";
 
 import { createTenantSendgridClient } from "../email/tenant-sender.js";
+import { resolveBrandingByOrgId } from "../tenant-branding.js";
 import {
-  resolveBrandingByOrgId,
-  resolveTenantBaseUrl,
-} from "../tenant-branding.js";
-
-const DEFAULT_BASE_URL = "https://cmbreathe.com";
+  resolvePatientEmailLinkBase,
+  TENANT_DOMAIN_REQUIRED,
+} from "./link-base.js";
 
 export interface SendFitterOrderConfirmationInput {
   toEmail: string;
@@ -76,15 +75,6 @@ export interface SendFitterOrderConfirmationResult {
   messageId?: string;
 }
 
-function publicBaseUrl(override?: string): string {
-  const raw =
-    override ??
-    process.env.SHOP_PUBLIC_BASE_URL ??
-    process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL ??
-    DEFAULT_BASE_URL;
-  return raw.replace(/\/$/, "");
-}
-
 export async function sendFitterOrderConfirmationEmail(
   input: SendFitterOrderConfirmationInput,
 ): Promise<SendFitterOrderConfirmationResult> {
@@ -104,12 +94,20 @@ export async function sendFitterOrderConfirmationEmail(
   // tenant → "Penn Home Medical Supply" (unchanged); a second tenant → its own brand.
   const brand = await resolveBrandingByOrgId(input.orgId);
   const brandName = brand.storefrontName;
-  const base = publicBaseUrl(
-    input.baseUrlOverride ??
-      (await resolveTenantBaseUrl(input.orgId)) ??
-      undefined,
+  const base = await resolvePatientEmailLinkBase(
+    input.orgId,
+    input.baseUrlOverride,
   );
-  const accountUrl = `${base}/account`;
+  if (!base) {
+    return {
+      configured: true,
+      delivered: false,
+      error: TENANT_DOMAIN_REQUIRED,
+    };
+  }
+  // Public track page — /account is auth-gated and would bounce
+  // unsigned-in patients to sign-in before they could look up the ref.
+  const trackUrl = `${base}/track-order`;
   const greeting = input.firstName
     ? `Hi ${escapeHtml(input.firstName)},`
     : "Hi there,";
@@ -139,7 +137,7 @@ export async function sendFitterOrderConfirmationEmail(
     "You don't need to do anything yet. If we hit a snag with insurance",
     "or the prescription, we'll reach out before charging anything.",
     "",
-    `Track or update your order anytime: ${accountUrl}`,
+    `Track your order anytime: ${trackUrl}`,
     "",
     "Reply to this email if you have any questions — a real human picks",
     "it up.",
@@ -181,7 +179,7 @@ export async function sendFitterOrderConfirmationEmail(
         "You don't need to do anything yet. If we hit a snag with insurance or the prescription, we'll reach out before charging anything.",
       ),
     ].join("\n"),
-    button: { label: "Track in my account", url: accountUrl },
+    button: { label: "Track your order", url: trackUrl },
     footerLines: [
       "Reply to this email with questions — a real human picks it up.",
       `The ${brandName} team`,

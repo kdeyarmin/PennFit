@@ -150,11 +150,10 @@ export function ComfortGuaranteePage() {
             </div>
             <ul className="text-sm text-muted-foreground space-y-2 list-disc pl-5">
               <li>
-                Mask systems (frame + cushion + headgear) bought from{" "}
-                {contact.name}.
+                Mask systems (frame + cushion + headgear) we supplied to you.
               </li>
-              <li>Mask cushions purchased on their own.</li>
-              <li>Headgear and frames purchased on their own.</li>
+              <li>Mask cushions dispensed on their own.</li>
+              <li>Headgear and frames dispensed on their own.</li>
               <li>One swap per order (size, style, or different family).</li>
             </ul>
           </article>
@@ -168,7 +167,7 @@ export function ComfortGuaranteePage() {
                 Disposable supplies — filters, tubing, water chambers (hygiene).
               </li>
               <li>CPAP machines (covered by the manufacturer warranty).</li>
-              <li>Returns started after 60 days from payment.</li>
+              <li>Returns started after 60 days from delivery.</li>
               <li>Items missing original parts (frame, clips, headgear).</li>
             </ul>
           </article>
@@ -195,7 +194,14 @@ export function ComfortGuaranteePage() {
             {contact.phoneDisplay}
           </a>{" "}
           Monday–Friday, 8am–6pm ET. If you&apos;re signed in, you can also
-          start it directly from your order history.
+          message the team from{" "}
+          <a
+            className="font-medium text-[hsl(var(--penn-navy))] underline-offset-2 hover:underline"
+            href="/account#messages"
+          >
+            Account → Messages
+          </a>
+          .
         </p>
         <div className="flex flex-wrap gap-3">
           <a href={`mailto:${contact.email}`}>
@@ -222,9 +228,9 @@ export function ComfortGuaranteePage() {
             <Sparkles className="w-4 h-4 mr-2" /> Ask{" "}
             {contact.assistantStorefrontName}
           </Button>
-          <Link href="/account/orders">
+          <Link href="/track-order">
             <Button>
-              View my orders <ArrowRight className="w-4 h-4 ml-1" />
+              Track an order <ArrowRight className="w-4 h-4 ml-1" />
             </Button>
           </Link>
         </div>

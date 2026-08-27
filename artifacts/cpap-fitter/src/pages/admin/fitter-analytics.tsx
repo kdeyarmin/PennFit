@@ -48,9 +48,8 @@ export function AdminAnalytics() {
           Analytics
         </h1>
         <p className="text-muted-foreground mt-1 text-sm">
-          Storefront performance: total orders, email delivery health,
-          most-ordered masks, fitter funnel completion, and a 30-day order
-          trend.
+          Fitter performance: fit requests, email delivery health, most-fitted
+          masks, funnel completion, and a 30-day request trend.
         </p>
       </div>
 

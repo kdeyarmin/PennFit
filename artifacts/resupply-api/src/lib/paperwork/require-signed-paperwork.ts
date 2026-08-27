@@ -30,7 +30,7 @@
 
 import { getOrgScopedClient } from "@workspace/resupply-db";
 
-import { isFeatureEnabled } from "../feature-flags";
+import { getFeatureFlagState } from "../feature-flags";
 
 /** Why a paperwork requirement applies to an order. */
 export type PaperworkRequirementSource = "global" | "payer";
@@ -192,10 +192,17 @@ export async function evaluatePaperworkGateForCustomer(
   const patientId = await resolvePatientIdForCustomer(supabase, customerId);
   if (!patientId) return NOT_REQUIRED;
 
-  // Determine whether a requirement applies (global flag and/or payer). The
-  // feature flag is read for THIS tenant, not the seed org.
+  // Fail toward SAFETY for the global paperwork gate: `isFeatureEnabled`
+  // absorbs every lookup failure into false, which would silently drop an
+  // operator-enabled requirement and let unsigned orders ship. Match the
+  // magnet / lead-capture posture — `enabled || degraded` — so only an
+  // explicit OFF row (`enabled: false, degraded: false`) disables it.
   const sources: PaperworkRequirementSource[] = [];
-  if (await isFeatureEnabled("orders.require_signed_paperwork", orgId)) {
+  const paperworkFlag = await getFeatureFlagState(
+    "orders.require_signed_paperwork",
+    orgId,
+  );
+  if (paperworkFlag.enabled || paperworkFlag.degraded) {
     sources.push("global");
   }
   if (await payerRequiresPaperwork(supabase, patientId)) {

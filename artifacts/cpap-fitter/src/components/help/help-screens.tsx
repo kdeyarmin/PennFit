@@ -889,7 +889,7 @@ export function TrackOrderShot() {
         you@email.com
       </text>
       <Btn x={60} y={252} w={260} h={32} label="Find my order" variant="gold" />
-      {/* status timeline */}
+      {/* status card — matches live /track-order labels */}
       <rect
         x={360}
         y={104}
@@ -902,55 +902,19 @@ export function TrackOrderShot() {
       <text x={384} y={134} fontSize="12" fontWeight="800" fill={C.navy}>
         Status
       </text>
-      {[
-        ["Order received", true],
-        ["Insurance verified", true],
-        ["Shipped", true],
-        ["Out for delivery", false],
-        ["Delivered", false],
-      ].map(([label, done], i) => {
-        const cy = 168 + i * 36;
-        return (
-          <g key={label as string}>
-            {i < 4 ? (
-              <rect
-                x={397}
-                y={cy}
-                width="2"
-                height="36"
-                fill={done ? C.green : C.line}
-              />
-            ) : null}
-            <circle
-              cx={398}
-              cy={cy}
-              r="8"
-              fill={done ? C.green : C.panel}
-              stroke={done ? C.green : C.line}
-              strokeWidth="2"
-            />
-            {done ? (
-              <path
-                d={`M394 ${cy}l3 3 5-6`}
-                stroke="#fff"
-                strokeWidth="2"
-                fill="none"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            ) : null}
-            <text
-              x={418}
-              y={cy + 4}
-              fontSize="11"
-              fontWeight={done ? 700 : 500}
-              fill={done ? C.ink : C.faint}
-            >
-              {label}
-            </text>
-          </g>
-        );
-      })}
+      <text x={384} y={168} fontSize="18" fontWeight="800" fill={C.green}>
+        Received
+      </text>
+      <Line x={384} y={188} w={280} color={C.line} />
+      <text x={384} y={216} fontSize="11" fill={C.sub}>
+        ResMed AirFit F20
+      </text>
+      <text x={384} y={240} fontSize="11" fill={C.faint}>
+        Submitted Mar 12 · confirmation emailed
+      </text>
+      <text x={384} y={280} fontSize="11" fill={C.sub}>
+        Our team contacts you within 1 business day.
+      </text>
     </svg>
   );
 }
@@ -1018,7 +982,9 @@ export function SignInShot() {
 export function AccountShot() {
   return (
     <svg viewBox="0 0 800 440" role="img" {...svgProps}>
-      <title>Your account dashboard with saved details and order history</title>
+      <title>
+        Your account dashboard with therapy, messages, and reminders
+      </title>
       <rect width="800" height="440" fill={C.bg} />
       <AppHeader />
       <text x="40" y="82" fontSize="16" fontWeight="800" fill={C.navy}>
@@ -1034,46 +1000,37 @@ export function AccountShot() {
         fill={C.panel}
         stroke={C.line}
       />
-      {["Profile", "Orders", "Addresses", "Billing", "Reminders"].map(
-        (label, i) => {
-          const y = 122 + i * 44;
-          const on = i === 1;
-          return (
-            <g key={label}>
-              {on ? (
-                <rect
-                  x={52}
-                  y={y}
-                  width={156}
-                  height={30}
-                  rx="8"
-                  fill={C.blueSoft}
-                />
-              ) : null}
-              {on ? (
-                <rect
-                  x={52}
-                  y={y}
-                  width={3}
-                  height={30}
-                  rx="1.5"
-                  fill={C.gold}
-                />
-              ) : null}
-              <text
-                x={66}
-                y={y + 20}
-                fontSize="11"
-                fontWeight={on ? 800 : 500}
-                fill={on ? C.navy : C.sub}
-              >
-                {label}
-              </text>
-            </g>
-          );
-        },
-      )}
-      {/* main: order history */}
+      {["Overview", "Therapy", "Messages", "Account"].map((label, i) => {
+        const y = 122 + i * 44;
+        const on = i === 1;
+        return (
+          <g key={label}>
+            {on ? (
+              <rect
+                x={52}
+                y={y}
+                width={156}
+                height={30}
+                rx="8"
+                fill={C.blueSoft}
+              />
+            ) : null}
+            {on ? (
+              <rect x={52} y={y} width={3} height={30} rx="1.5" fill={C.gold} />
+            ) : null}
+            <text
+              x={66}
+              y={y + 20}
+              fontSize="11"
+              fontWeight={on ? 800 : 500}
+              fill={on ? C.navy : C.sub}
+            >
+              {label}
+            </text>
+          </g>
+        );
+      })}
+      {/* main: therapy & supplies (matches live account tabs) */}
       <rect
         x={240}
         y={104}
@@ -1084,12 +1041,17 @@ export function AccountShot() {
         stroke={C.line}
       />
       <text x={262} y={134} fontSize="12" fontWeight="800" fill={C.navy}>
-        Order history
+        Therapy &amp; supplies
       </text>
-      {[0, 1, 2].map((i) => {
+      {[
+        ["Nasal cushion", "Due soon"],
+        ["Filter", "On track"],
+        ["Tubing", "On track"],
+      ].map(([item, status], i) => {
         const y = 152 + i * 78;
+        const due = status === "Due soon";
         return (
-          <g key={i}>
+          <g key={item}>
             <rect
               x={262}
               y={y}
@@ -1107,32 +1069,39 @@ export function AccountShot() {
               rx="6"
               fill={C.blueSoft}
             />
-            <Line x={338} y={y + 16} w={150} color={C.line} />
-            <Line x={338} y={y + 32} w={110} color={C.line} />
+            <text
+              x={338}
+              y={y + 28}
+              fontSize="12"
+              fontWeight="700"
+              fill={C.navy}
+            >
+              {item}
+            </text>
             <rect
               x={338}
-              y={y + 42}
-              width={70}
+              y={y + 38}
+              width={due ? 64 : 58}
               height={14}
               rx="7"
-              fill={C.greenSoft}
+              fill={due ? C.goldSoft : C.greenSoft}
             />
             <text
-              x={373}
-              y={y + 52}
+              x={due ? 370 : 367}
+              y={y + 48}
               fontSize="8"
               fontWeight="700"
-              fill={C.green}
+              fill={due ? C.gold : C.green}
               textAnchor="middle"
             >
-              Delivered
+              {status}
             </text>
             <Btn
               x={620}
               y={y + 18}
               w={104}
               h={28}
-              label="Reorder"
+              label={due ? "I'm ready" : "Details"}
               variant="outline"
             />
           </g>

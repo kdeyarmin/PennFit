@@ -227,7 +227,7 @@ export function OrderSign() {
             </div>
             <CardTitle>Order link missing</CardTitle>
             <CardDescription>
-              Please open the secure link we sent you to review and pay for your
+              Please open the secure link we sent you to review and sign your
               order.
             </CardDescription>
           </CardHeader>

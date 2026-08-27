@@ -72,21 +72,6 @@ const INBOUND_GREETING =
   "Hi there, thanks for calling your CPAP resupply line! I can help you " +
   "reorder your supplies today.";
 
-const INBOUND_SHOP_CALL_CONTEXT =
-  "Inbound call: a storefront customer phoned to check on their account. " +
-  "Verify identity with verify_shop_customer_identity({email}) — the " +
-  "tool compares against the email on their account — then review their " +
-  "recent order status. Never ask for a card. For any change, hand off " +
-  "to a human.";
-
-const INBOUND_SHOP_GREETING =
-  "Hi there, thanks for calling Penn Home Medical Supply! I can help you check on your " +
-  "account today.";
-
-// Human fallback number, shared by the unidentified and no-actionable-
-// episode paths.
-const SUPPORT_DIAL_E164 = "+18144710627";
-
 const router: IRouter = Router();
 
 const inboundBody = z.object({
@@ -164,14 +149,11 @@ router.post("/voice/inbound-reorder", signatureMiddleware, async (req, res) => {
   const brand = (text: string): string =>
     text.split("Penn Home Medical Supply").join(brandName);
 
-  // Human-transfer dial target for THIS tenant. A non-seed tenant's caller
-  // must reach that tenant's own support line, not the seed (Penn) number.
-  // getCompanyInfo(orgId) returns the tenant's support_phone_e164 (or the
-  // neutral platform identity for an unconfigured tenant); fall back to the
-  // platform constant when the tenant has no support number on file so the
-  // seed/single-tenant deployment is unchanged.
+  // Human-transfer dial target for THIS tenant. Never fall back to another
+  // tenant's support line — an unconfigured tenant gets a polite hangup
+  // instead of routing to the seed org's Penn number.
   const dialNumber =
-    (await getCompanyInfo(orgId)).supportPhoneE164 || SUPPORT_DIAL_E164;
+    (await getCompanyInfo(orgId)).supportPhoneE164.trim() || null;
 
   // 1. Identify the caller. A DB failure here must NOT be silently treated
   // as "unidentified" — that would mask an outage and mis-route the caller.
@@ -256,137 +238,28 @@ router.post("/voice/inbound-reorder", signatureMiddleware, async (req, res) => {
       .status(200)
       .type("text/xml")
       .send(
-        [
-          '<?xml version="1.0" encoding="UTF-8"?>',
-          "<Response>",
-          `<Say>${escapeXmlText(brand("Hi! Welcome to your Penn Home Medical Supply reorder line. "))}`,
-          "Connecting you to our team now.</Say>",
-          `<Dial timeout="20">${dialNumber}</Dial>`,
-          "</Response>",
-        ].join(""),
+        buildHumanTransferTwiml({
+          preamble: brand(
+            "Hi! Welcome to your Penn Home Medical Supply reorder line. ",
+          ),
+          dialNumber,
+        }),
       );
   };
 
-  // 2b. Matched storefront (cash-pay) caller → connect to the storefront
-  // voice agent: verify by card last-4, read account status, hand off for
-  // any change. Same Connect/Stream machinery as the patient flow, but the
-  // conversation is bound to the shop customer (customer_id) and the agent
-  // runs in "shop_customer" mode. Falls back to a human on any hiccup.
+  // 2b. Matched historical storefront account → human transfer. The cash-pay
+  // shop_customer voice agent is retired (insurance-only); staff handle these
+  // callers on the phone.
   if (!patientId && shopCustomerId && !ambiguous) {
-    if (!(await isFeatureEnabled("voice.agent", orgId))) {
-      logger.info(
-        { event: "voice.inbound-reorder.agent_disabled", callSid: CallSid },
-        "voice.inbound-reorder: voice agent disabled; transferring shop caller",
-      );
-      await transferToHuman("voice_agent_disabled");
-      return;
-    }
-    let shopConversationId: string;
-    try {
-      const { data: conv, error: convErr } = await supabase
-        .from("conversations")
-        .insert({
-          customer_id: shopCustomerId,
-          // patient_id / episode_id stay null — the conversations subject-
-          // XOR check requires customer_id rows to have both null.
-          patient_id: null,
-          episode_id: null,
-          channel: "voice",
-          status: "open",
-          external_ref: CallSid,
-          last_message_at: new Date().toISOString(),
-        })
-        .select("id")
-        .single();
-      if (convErr) throw convErr;
-      shopConversationId = conv.id;
-    } catch (err) {
-      logger.warn(
-        {
-          err,
-          callSid: CallSid,
-        },
-        "voice.inbound-reorder: shop conversation create failed; transferring",
-      );
-      await transferToHuman("shop_conversation_create_failed");
-      return;
-    }
-
-    try {
-      await getPendingSessions().register({
-        conversationId: shopConversationId,
-        orgId,
-        // Patient/episode are empty for a storefront caller; callerKind +
-        // shopCustomerId drive the shop tool set + prompt.
-        patientId: "",
-        episodeId: "",
-        callerKind: "shop_customer",
-        shopCustomerId,
-        callContext: INBOUND_SHOP_CALL_CONTEXT,
-        greeting: brand(INBOUND_SHOP_GREETING),
-        // The caller dialed US — the agent must greet first, not wait for
-        // the caller to break the silence.
-        agentSpeaksFirst: true,
-      });
-    } catch (err) {
-      // DB-backed store can throw — fail soft to a human transfer rather
-      // than 500'ing the storefront caller into a Twilio app error.
-      logger.error(
-        {
-          event: "voice.inbound-reorder.shop_register_failed",
-          err,
-          callSid: CallSid,
-        },
-        "voice.inbound-reorder: shop pending-session register failed; transferring",
-      );
-      await transferToHuman("shop_pending_session_register_failed");
-      return;
-    }
-
-    // Best-effort metadata stamp — the TwiML response (and the call) must go
-    // out regardless, so log a warning on failure rather than throwing.
-    const { error: shopStampErr } = await supabase
-      .from("voice_reorder_sessions")
-      .update({
-        // The row was inserted as patient_not_identified (no patient), but a
-        // matched storefront caller IS being actively handled — mark it
-        // in_progress so ops/analytics don't misclassify the call.
-        status: "in_progress",
-        outcome_json: {
-          routed: "realtime_bridge",
-          conversation_id: shopConversationId,
-          caller_kind: "shop_customer",
-        } as unknown as Json,
-      })
-      .eq("id", session.id);
-    if (shopStampErr) {
-      logger.warn(
-        { err: shopStampErr.message, sessionId: session.id },
-        "inbound-reorder: failed to stamp shop session in_progress",
-      );
-    }
-
-    const shopWsUrl =
-      `${publicWsOriginFromBaseUrl(config.streamBaseUrl)}` +
-      `/resupply-api/voice/stream/${encodeURIComponent(shopConversationId)}`;
     logger.info(
       {
-        event: "voice.inbound-reorder.connected",
+        event: "voice.inbound-reorder.shop_customer",
         callSid: CallSid,
-        sessionId: session.id,
-        callerKind: "shop_customer",
+        shopCustomerId,
       },
-      "voice.inbound-reorder: connecting storefront caller to the realtime agent",
+      "voice.inbound-reorder: storefront account caller; transferring to human",
     );
-    res
-      .status(200)
-      .type("text/xml")
-      .send(
-        buildConnectStreamTwiml({
-          wsUrl: shopWsUrl,
-          customParameters: { conversationId: shopConversationId },
-        }),
-      );
+    await transferToHuman("storefront_account");
     return;
   }
 
@@ -412,14 +285,11 @@ router.post("/voice/inbound-reorder", signatureMiddleware, async (req, res) => {
       .status(200)
       .type("text/xml")
       .send(
-        [
-          '<?xml version="1.0" encoding="UTF-8"?>',
-          "<Response>",
-          "<Say>We couldn't match your phone number to an existing account.",
-          "Connecting you to our team now.</Say>",
-          `<Dial timeout="20">${dialNumber}</Dial>`,
-          "</Response>",
-        ].join(""),
+        buildHumanTransferTwiml({
+          preamble:
+            "We couldn't match your phone number to an existing account. ",
+          dialNumber,
+        }),
       );
     return;
   }
@@ -638,6 +508,24 @@ async function identifyCaller(
 // voice/checkin-twiml.ts.
 function escapeXmlText(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function buildHumanTransferTwiml(args: {
+  preamble: string;
+  dialNumber: string | null;
+}): string {
+  if (!args.dialNumber) {
+    return buildHangupTwiml(
+      "We're unable to connect you to our team right now. Please try again during business hours.",
+    );
+  }
+  return [
+    '<?xml version="1.0" encoding="UTF-8"?>',
+    "<Response>",
+    `<Say>${escapeXmlText(args.preamble)}Connecting you to our team now.</Say>`,
+    `<Dial timeout="20">${args.dialNumber}</Dial>`,
+    "</Response>",
+  ].join("");
 }
 
 export default router;
