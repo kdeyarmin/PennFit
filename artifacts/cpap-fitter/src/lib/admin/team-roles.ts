@@ -69,7 +69,8 @@ export type OfferedRole = (typeof ROLE_OPTIONS)[number];
  */
 export const ROLE_HINT: Record<OfferedRole, string> = {
   admin: "full privileges, including team and system configuration",
-  supervisor: "runs the practice day to day; everything but team management",
+  supervisor:
+    "runs the practice day to day; no team management or system configuration",
   csr: "conversations, patients, orders, fittings, returns",
   biller: "the billing area, plus the patient and cost context behind a claim",
   rt: "therapy monitoring, fit review, clinical documentation",
