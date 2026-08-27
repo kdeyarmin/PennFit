@@ -29,9 +29,10 @@ on:
 # Saves runner minutes on rapid push sequences and avoids a stale "passing"
 # check from a previous head sticking around.
 concurrency:
-  # Per-SHA group under a fresh prefix so a forever-queued legacy run
-  # cannot starve later synchronizes (PR 1330 / run 32984456339).
-  group: civ4-${{ github.workflow }}-${{ github.ref }}-${{ github.sha }}
+  # Fresh civ4 prefix breaks association with a stuck legacy run (PR 1330 /
+  # run 32984456339). Per-ref (not per-SHA) so cancel-in-progress cancels
+  # older runs on the same branch when a new commit lands.
+  group: civ4-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:

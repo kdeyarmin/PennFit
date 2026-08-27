@@ -627,6 +627,10 @@ router.post(
 
     const signed: string[] = [];
     const skipped: Array<{ id: string; reason: string }> = [];
+    const npiByOrg = new Map<
+      string,
+      Awaited<ReturnType<typeof loadProviderNpi>>
+    >();
     for (const id of ids) {
       const found = await loadOwnRequest(account.providerId, id);
       if (!found) {
@@ -642,12 +646,17 @@ router.post(
         skipped.push({ id, reason: "expired" });
         continue;
       }
+      let npi = npiByOrg.get(orgId);
+      if (npi === undefined) {
+        npi = await loadProviderNpi(orgId, account.providerId);
+        npiByOrg.set(orgId, npi);
+      }
       const result = await executeSignature({
         orgId,
         accountId: account.id,
         accountEmail: account.emailLower,
         requestId: id,
-        npi: await loadProviderNpi(orgId, account.providerId),
+        npi,
         capture,
         ip,
         userAgent,

@@ -843,7 +843,9 @@ function LegacyShopRedirect({ rest }: { rest: string }) {
     const hash = typeof window !== "undefined" ? window.location.hash : "";
     const normalized = rest.replace(/^\/+/, "").toLowerCase();
     let path = "/insurance";
-    if (normalized === "orders" || normalized.startsWith("orders/")) {
+    if (normalized === "nps" || normalized.startsWith("orders/nps")) {
+      path = "/nps";
+    } else if (normalized === "orders" || normalized.startsWith("orders/")) {
       path = "/track-order";
     } else if (
       normalized === "cart" ||
@@ -857,8 +859,6 @@ function LegacyShopRedirect({ rest }: { rest: string }) {
       // reference — /track-order would just reject the empty form.
       // Match abandonment-email CTAs and send them to a human.
       path = "/contact";
-    } else if (normalized === "nps" || normalized.startsWith("orders/nps")) {
-      path = "/nps";
     }
     setLocation(`${path}${search}${hash}`, { replace: true });
   }, [rest, setLocation]);

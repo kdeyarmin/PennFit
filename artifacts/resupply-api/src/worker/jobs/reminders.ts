@@ -1150,6 +1150,7 @@ export async function registerReminderJobs(boss: PgBoss): Promise<void> {
         },
         "reminders.send-email: skipped (no tenant domain for click links)",
       );
+      await releaseReminderDedupKey(supabase, dedupKey, j.id);
       return;
     }
 

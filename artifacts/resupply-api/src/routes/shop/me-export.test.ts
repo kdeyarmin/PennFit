@@ -3,8 +3,8 @@
 // Coverage:
 //   * 401 without sign-in
 //   * Sends Content-Disposition attachment with .json filename
-//   * Aggregates concurrent reads (customer, orders, items, returns, reviews, carts)
-//     — subscriptions are always empty (cash-pay auto-ship retired)
+//   * Aggregates concurrent reads (customer, orders, items, subscriptions,
+//     returns, reviews, carts) — historical cash-pay rows retained for access
 //   * Joins line items onto their order rows by order_id
 //   * Sets correct Content-Type
 //   * Includes the "phi: separate system" disclaimer in notes
@@ -41,6 +41,7 @@ function stageAllEmpty(): void {
   stageSupabaseResponse("shop_customers", "select", { data: [] });
   stageSupabaseResponse("shop_orders", "select", { data: [] });
   stageSupabaseResponse("shop_order_items", "select", { data: [] });
+  stageSupabaseResponse("shop_subscriptions", "select", { data: [] });
   stageSupabaseResponse("shop_returns", "select", { data: [] });
   stageSupabaseResponse("shop_reviews", "select", { data: [] });
   stageSupabaseResponse("shop_abandoned_carts", "select", { data: [] });
@@ -107,6 +108,7 @@ describe("GET /shop/me/export", () => {
         { id: "li_3", order_id: "ord_2", product_id: "prod_c", quantity: 1 },
       ],
     });
+    stageSupabaseResponse("shop_subscriptions", "select", { data: [] });
     stageSupabaseResponse("shop_returns", "select", { data: [] });
     stageSupabaseResponse("shop_reviews", "select", { data: [] });
     stageSupabaseResponse("shop_abandoned_carts", "select", { data: [] });

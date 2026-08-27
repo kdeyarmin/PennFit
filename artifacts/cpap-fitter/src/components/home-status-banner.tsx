@@ -172,7 +172,7 @@ function OrderTile({
   }
 
   return (
-    <Link href="/track-order">
+    <Link href="/account">
       <div className="rounded-xl border bg-background/70 p-4 hover:border-[hsl(var(--penn-gold))] transition-colors cursor-pointer h-full">
         <div className="flex items-start gap-3">
           <div className="h-9 w-9 rounded-lg bg-[hsl(var(--penn-gold)/0.18)] flex items-center justify-center shrink-0">
