@@ -21,7 +21,10 @@ describe("contact.ts company-info fetch", () => {
 
   it("ships CareMetric platform defaults, never the seed tenant brand", () => {
     expect(SRC).toContain('name: "CareMetric Breathe"');
-    expect(SRC).not.toMatch(/Penn Home Medical Supply/);
-    expect(SRC).not.toMatch(/PennPaps/);
+    expect(SRC).toContain('legalName: "CareMetric Breathe"');
+    // Compile-time defaults must not hardcode the seed tenant's name as
+    // the live display value (comments may still mention it for contrast).
+    expect(SRC).not.toMatch(/name:\s*"Penn/);
+    expect(SRC).not.toMatch(/legalName:\s*"Penn/);
   });
 });
