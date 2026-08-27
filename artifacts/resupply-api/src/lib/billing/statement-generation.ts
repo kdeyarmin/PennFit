@@ -10,7 +10,6 @@ import {
   type Database,
   type Json,
   getOrgScopedClient,
-  resolveSeedOrgId,
 } from "@workspace/resupply-db";
 
 import { resolveBillingIdentity } from "./identity-resolver";
@@ -49,9 +48,8 @@ export interface GeneratePatientBillingStatementInput {
   deliveryMethod?: "email" | "sms" | "mail" | "in_person";
   generatedByEmail: string;
   adminUserId?: string | null;
-  /** Tenant for the org-scoped reads/writes. Defaults to the seed org
-   *  (single-tenant bridge). */
-  orgId?: string;
+  /** Required — never invent the seed org for patient-responsibility PDFs. */
+  orgId: string;
 }
 
 export interface GeneratedPatientBillingStatement {
@@ -66,7 +64,7 @@ export interface GeneratedPatientBillingStatement {
 export async function generatePatientBillingStatement(
   input: GeneratePatientBillingStatementInput,
 ): Promise<GeneratedPatientBillingStatement> {
-  const orgId = input.orgId ?? (await resolveSeedOrgId());
+  const orgId = input.orgId?.trim();
   if (!orgId) {
     throw new Error("statement-generation: no tenant resolved");
   }

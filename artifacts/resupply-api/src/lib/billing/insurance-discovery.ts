@@ -18,7 +18,6 @@
 // feature flag (a tenant without the add-on can't reach the billable search);
 // this lib focuses on the transport and metering so it stays reusable.
 
-import { resolveSeedOrgId } from "@workspace/resupply-db";
 import {
   createInsuranceDiscoveryTransport,
   type DiscoveredCoverage,
@@ -45,8 +44,8 @@ export interface InsuranceDiscoveryInput {
   };
   /** As-of date for the coverage search (YYYY-MM-DD); defaults to today. */
   serviceDate?: string | null;
-  /** Tenant context. Defaults to the seed org (single-tenant bridge). */
-  orgId?: string;
+  /** Required — never invent the seed org for a billable discovery search. */
+  orgId: string;
 }
 
 export type { DiscoveredCoverage };
@@ -78,7 +77,7 @@ export type InsuranceDiscoveryCheckResult =
 export async function runInsuranceDiscovery(
   input: InsuranceDiscoveryInput,
 ): Promise<InsuranceDiscoveryCheckResult> {
-  const orgId = input.orgId ?? (await resolveSeedOrgId());
+  const orgId = input.orgId?.trim();
   if (!orgId) {
     throw new Error("tenant context missing");
   }

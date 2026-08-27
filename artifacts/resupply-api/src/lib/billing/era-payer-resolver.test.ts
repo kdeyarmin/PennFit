@@ -19,10 +19,13 @@ describe("resolvePayerProfileForEra", () => {
     stageSupabaseResponse("payer_profiles", "select", {
       data: [{ id: PROFILE_ID }],
     });
-    const out = await resolvePayerProfileForEra({
-      payerId: "54771",
-      payerName: "Highmark Inc.",
-    });
+    const out = await resolvePayerProfileForEra(
+      {
+        payerId: "54771",
+        payerName: "Highmark Inc.",
+      },
+      { orgId: "org-1" },
+    );
     expect(out).toEqual({
       payerProfileId: PROFILE_ID,
       matchReason: "era_payer_id",
@@ -43,10 +46,13 @@ describe("resolvePayerProfileForEra", () => {
     stageSupabaseResponse("payer_profiles", "select", {
       data: [{ id: PROFILE_ID }],
     });
-    const out = await resolvePayerProfileForEra({
-      payerId: "23281",
-      payerName: null,
-    });
+    const out = await resolvePayerProfileForEra(
+      {
+        payerId: "23281",
+        payerName: null,
+      },
+      { orgId: "org-1" },
+    );
     expect(out).toEqual({
       payerProfileId: PROFILE_ID,
       matchReason: "office_ally_payer_id",
@@ -59,10 +65,13 @@ describe("resolvePayerProfileForEra", () => {
     stageSupabaseResponse("payer_profiles", "select", {
       data: [{ id: PROFILE_ID }],
     });
-    const out = await resolvePayerProfileForEra({
-      payerId: "62308",
-      payerName: null,
-    });
+    const out = await resolvePayerProfileForEra(
+      {
+        payerId: "62308",
+        payerName: null,
+      },
+      { orgId: "org-1" },
+    );
     expect(out).toEqual({
       payerProfileId: PROFILE_ID,
       matchReason: "edi_5010_payer_id",
@@ -76,10 +85,13 @@ describe("resolvePayerProfileForEra", () => {
     stageSupabaseResponse("payer_profiles", "select", {
       data: [{ id: PROFILE_ID }],
     });
-    const out = await resolvePayerProfileForEra({
-      payerId: "ZZZZZ",
-      payerName: "Geisinger Health Plan",
-    });
+    const out = await resolvePayerProfileForEra(
+      {
+        payerId: "ZZZZZ",
+        payerName: "Geisinger Health Plan",
+      },
+      { orgId: "org-1" },
+    );
     expect(out).toEqual({
       payerProfileId: PROFILE_ID,
       matchReason: "name_ilike",
@@ -91,19 +103,28 @@ describe("resolvePayerProfileForEra", () => {
     stageSupabaseResponse("payer_profiles", "select", { data: [] });
     stageSupabaseResponse("payer_profiles", "select", { data: [] });
     stageSupabaseResponse("payer_profiles", "select", { data: [] });
-    const out = await resolvePayerProfileForEra({
-      payerId: "UNKNOWN",
-      payerName: "Random Insurer",
-    });
+    const out = await resolvePayerProfileForEra(
+      {
+        payerId: "UNKNOWN",
+        payerName: "Random Insurer",
+      },
+      { orgId: "org-1" },
+    );
     expect(out).toBeNull();
   });
 
   it("returns null when both hints are empty/null", async () => {
     expect(
-      await resolvePayerProfileForEra({ payerId: null, payerName: null }),
+      await resolvePayerProfileForEra(
+        { payerId: null, payerName: null },
+        { orgId: "org-1" },
+      ),
     ).toBeNull();
     expect(
-      await resolvePayerProfileForEra({ payerId: "   ", payerName: "   " }),
+      await resolvePayerProfileForEra(
+        { payerId: "   ", payerName: "   " },
+        { orgId: "org-1" },
+      ),
     ).toBeNull();
   });
 
@@ -111,10 +132,13 @@ describe("resolvePayerProfileForEra", () => {
     stageSupabaseResponse("payer_profiles", "select", {
       data: [{ id: PROFILE_ID }],
     });
-    const out = await resolvePayerProfileForEra({
-      payerId: null,
-      payerName: "Highmark",
-    });
+    const out = await resolvePayerProfileForEra(
+      {
+        payerId: null,
+        payerName: "Highmark",
+      },
+      { orgId: "org-1" },
+    );
     expect(out).toEqual({
       payerProfileId: PROFILE_ID,
       matchReason: "name_ilike",
@@ -128,7 +152,10 @@ describe("resolvePayerProfileForEra", () => {
     stageSupabaseResponse("payer_profiles", "select", {
       data: [{ id: PROFILE_ID }],
     });
-    await resolvePayerProfileForEra({ payerId: "60054", payerName: null });
+    await resolvePayerProfileForEra(
+      { payerId: "60054", payerName: null },
+      { orgId: "org-1" },
+    );
     const orderCols = getSupabaseFilterCalls("payer_profiles", "select")
       .filter((c) => c.verb === "order")
       .map((c) => c.args[0]);
