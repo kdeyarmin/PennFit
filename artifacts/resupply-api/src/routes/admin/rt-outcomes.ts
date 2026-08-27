@@ -202,25 +202,39 @@ router.get(
       return;
     }
     const supabase = getOrgScopedClient(orgId);
-    const { data, error } = await supabase
-      .from("clinical_encounters")
-      .select(
-        "author_user_id, author_email, encounter_type, patient_id, follow_up_at, created_at",
-      )
-      .gte("created_at", since)
-      .order("created_at", { ascending: false })
-      .limit(5000);
 
-    if (error) {
-      res.status(500).json({ error: "query_failed", message: error.message });
-      return;
+    // Page past PostgREST max_rows — a bare `.limit(5000)` silently
+    // truncates to ~1000 unordered rows and understates RT outcomes.
+    const PAGE = 1000;
+    const MAX_ROWS = 5000;
+    const data: EncounterRow[] = [];
+    for (let offset = 0; offset < MAX_ROWS; offset += PAGE) {
+      const { data: page, error } = await supabase
+        .from("clinical_encounters")
+        .select(
+          "author_user_id, author_email, encounter_type, patient_id, follow_up_at, created_at",
+        )
+        .gte("created_at", since)
+        .order("created_at", { ascending: false })
+        .order("id", { ascending: false })
+        .range(offset, offset + PAGE - 1);
+
+      if (error) {
+        res.status(500).json({ error: "query_failed", message: error.message });
+        return;
+      }
+      const rows = (page ?? []) as EncounterRow[];
+      data.push(...rows);
+      if (rows.length < PAGE) break;
     }
 
-    const report = buildRtOutcomes(
-      (data ?? []) as unknown as EncounterRow[],
-      windowDays,
-    );
-    res.json(report);
+    const report = buildRtOutcomes(data, windowDays);
+    res.json({
+      ...report,
+      // True when the newest-first window filled — older encounters
+      // beyond MAX_ROWS exist and are not in this rollup.
+      windowTruncated: data.length >= MAX_ROWS,
+    });
   },
 );
 

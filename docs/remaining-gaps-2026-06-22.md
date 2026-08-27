@@ -132,7 +132,8 @@ operators can't see or act on it yet:
   / `voice-metrics` / `mask-fit-worklist` keyset or range paging;
   `staffing-live` (#1350); collections-forecast + forward-order-book (#1351);
   `payer-profitability` (#1352); billing aging-report + dso-by-payer (#1353);
-  paging on this sweep branch. _Effort: S–M for residual sites._
+  `rt-outcomes` (#1354); `business-targets` (#1355); `mask-catalog` (#1356);
+  residual sites still on this sweep branch. _Effort: S–M for residual sites._
 - **`count:'exact'` on hot dashboards.** ~100+ across admin files vs a handful
   of `'estimated'`. **Caveat (verified this branch):** this is **not** a safe
   blanket change. The `inbox-counts.ts` calls are **user-visible nav badges**
