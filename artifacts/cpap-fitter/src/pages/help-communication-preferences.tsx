@@ -129,11 +129,11 @@ export function HelpCommunicationPreferences() {
       faqs={[
         {
           q: "I replied STOP but want texts again — what now?",
-          a: "Open Communication preferences and switch the text categories back on. STOP unsubscribes you from both account/order texts and promotion texts, so re-enable whichever you want.",
+          a: "Open Communication preferences and switch the text categories back on. STOP unsubscribes you from both account/shipment texts and reminder texts, so re-enable whichever you want.",
         },
         {
-          q: "Will I still get order receipts if I turn everything off?",
-          a: "Yes. Transactional messages like order receipts and shipping confirmations always send — the switches control reminders, review requests, replies, and promotions.",
+          q: "Will I still get shipping notices if I turn everything off?",
+          a: "Yes. Shipping and delivery notices for insurance resupply always send — the switches control resupply reminders, CSR reply emails, and optional updates.",
         },
         {
           q: "Whose timezone do quiet hours use?",

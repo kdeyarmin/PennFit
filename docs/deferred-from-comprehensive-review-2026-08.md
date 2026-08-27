@@ -20,6 +20,7 @@ them up without re-discovering scope.
 | Account “Track a shipment” → `/track-order` only        | ~~Tracker rejects fulfillment UUIDs~~ — CTA now `/contact`                          | Shipped in #1333                                           |
 | Help / prefs still describe cart/refund/review flows    | ~~Copy + toggles~~ — help + account prefs scrubbed; abandoned/review toggles hidden | Shipped in #1333                                           |
 | Account chatbot tools still coach refunds/subscriptions | ~~Tool descriptors leftover~~ — escalate + subscription tool scrubbed               | Shipped in #1333; knowledge KB still has seed placeholders |
+| Seed tenant `assistantAdminName` returns PennBot        | Prod company-info shows PennBot for both assistants (expect PennPilot for admin)    | Fix `RESUPPLY_ASSISTANT_ADMIN_NAME` in System Config       |
 
 ## Started in this follow-up (PR #1333)
 
