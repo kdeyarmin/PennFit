@@ -6,21 +6,29 @@ them up without re-discovering scope.
 
 ## Still open
 
-| Item                                                    | Why deferred                                                                        | Suggested next step                                        |
-| ------------------------------------------------------- | ----------------------------------------------------------------------------------- | ---------------------------------------------------------- |
-| Episode lifecycle factory has no production writer      | ~~No live enqueue path~~ — wired in #1326 (`openOutreachEpisode`)                   | Shipped: Rx create, bootstrap, post-confirm next cycle     |
-| Provider portal seed-org fallback on platform host      | Intentional for single-tenant Penn; full multi-tenant routing is architectural      | Design host→org routing for provider SPA before changing   |
-| Due math uses `MAX(shipped_at)` vs queued fulfillments  | Needs product decision on “due” vs “dispensed”                                      | Spec + migration if queue time should count                |
-| Chatbot PII scrub scope                                 | Round four (#1335): MBI, PO Box, ZIP, member-id, card patterns                      | Shipped in round-four PR                                   |
-| Platform billing payment wall                           | SaaS billing for tenants, not patient cash-pay                                      | Separate platform-billing epic                             |
-| LTV including insurance claim dollars                   | UI already labeled historical shop-only                                             | New insurance LTV metric once claim dollars are trusted    |
-| Back-in-stock auto-dispatch                             | ~~Catalog copy fixed; automated dispatch soft-deferred~~                            | Round five: env-gated hook on `adjustStock` restock        |
-| Review-request emails still CTA to `/contact`           | ~~Flag still ON~~ — migration 0530 + DELIBERATELY_OFF                               | Shipped in #1333                                           |
-| Lapsed winback uses shop `paid_at` not fulfillments     | ~~Cron env-gated; copy says “shipped” but math is last cash-pay~~                   | Fixed in round three: fulfillment activity gate            |
-| Account “Track a shipment” → `/track-order` only        | ~~Tracker rejects fulfillment UUIDs~~ — CTA now `/contact`                          | Shipped in #1333                                           |
-| Help / prefs still describe cart/refund/review flows    | ~~Copy + toggles~~ — help + account prefs scrubbed; abandoned/review toggles hidden | Shipped in #1333                                           |
-| Account chatbot tools still coach refunds/subscriptions | ~~Tool descriptors leftover~~ — escalate + subscription tool scrubbed               | Shipped in #1333; FAQ claim-adjustment copy in round three |
-| Seed tenant `assistantAdminName` returns PennBot        | Prod company-info showed PennBot for both assistants (expect PennPilot for admin)   | Migration 0531 in round three                              |
+| Item                                               | Why deferred                                                                   | Suggested next step                                      |
+| -------------------------------------------------- | ------------------------------------------------------------------------------ | -------------------------------------------------------- |
+| Provider portal seed-org fallback on platform host | Intentional for single-tenant Penn; full multi-tenant routing is architectural | Design host→org routing for provider SPA before changing |
+| Platform billing payment wall enforcement          | Epic exists; re-lock on failed invoice is env-gated (`BILLING_PAYWALL_ENFORCED`) | Enable per runbook when Stripe platform billing is live |
+| LTV including insurance claim dollars              | UI already labeled historical shop-only                                        | New insurance LTV metric once claim dollars are trusted  |
+| Back-in-stock patient signup route                 | Removed with cash-pay shop; SPA helper still calls `/shop/back-in-stock`       | Restore POST route with SKU ids (not Stripe `prod_`)     |
+| Legacy fitter `fit_session` on pure `/api/recommend` | Optional; `results.tsx` already preserves `fitSessionId` on legacy fallbacks | Only if analytics need session rows on recommend-only path |
+
+## Shipped (merged)
+
+| Item                                                    | PR / location                                                                 |
+| ------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| Episode lifecycle factory writer                        | #1326 — Rx create, bootstrap, post-confirm next cycle                         |
+| Chatbot PII scrub (MBI, PO Box, ZIP, member-id, cards)  | #1335 — `chatbotPii.ts` + behavioral tests                                    |
+| Back-in-stock auto-dispatch on restock                  | #1336 — `autoDispatchBackInStockOnRestock`; `RESUPPLY_BACK_IN_STOCK_AUTO_DISPATCH=1` |
+| Due math: queued fulfillments count via `created_at`    | Already on main — `reminders.ts` uses `shipped_at ?? created_at`; `reminders.test.ts` |
+| Review-request emails / `storefront.reviews_collection`   | #1333 — migration 0530 OFF + `DELIBERATELY_OFF_FLAGS`                       |
+| Lapsed winback last-activity gate                       | Round three — `resolveLastCustomerShipmentActivityIso` + tests                |
+| Account “Track a shipment” → `/contact`                 | #1333                                                                         |
+| Help / account prefs cash-pay copy                      | #1333                                                                         |
+| Account chatbot insurance-only tools                    | #1333 + round three FAQ claim-adjustment copy                                 |
+| Seed tenant `assistantAdminName` → PennPilot            | Round three — migration 0531                                                  |
+| Provider RTM paging / setupDate / attestation horizon   | #1333                                                                         |
 
 ## Started in this follow-up (PR #1333) — merged 2026-08-27
 
@@ -34,9 +42,9 @@ them up without re-discovering scope.
 | Review-request emails / `storefront.reviews_collection`           | Fixed: migration 0530 OFF + moved to `DELIBERATELY_OFF_FLAGS`                |
 | Account “Track a shipment” → `/track-order`                       | Fixed: CTA → `/contact` (“Ask about a shipment”)                             |
 | Account chatbot escalate / subscription tool cash-pay coaching    | Fixed: insurance-only tool descriptors + category labels                     |
-| Help / account prefs cash-pay leftover copy                       | Fixed: hide abandoned/review toggles; help + SMS copy insurance-aligned      |
+| Help / account prefs cash-pay leftover copy                       | Fixed: hide abandoned/review toggles; help + account prefs insurance-aligned |
 
-## Started in round three (this branch)
+## Started in round three — merged
 
 | Item                                             | Status                                                  |
 | ------------------------------------------------ | ------------------------------------------------------- |
@@ -45,7 +53,14 @@ them up without re-discovering scope.
 | Account chat FAQ still says “refund in 5-7 days” | FAQ 85/89 aligned to claim-adjustment language          |
 | Lapsed winback last-activity gate                | `resolveLastCustomerShipmentActivityIso` + tests        |
 
-## Started in round five (this branch)
+## Started in round four — merged #1335
+
+| Item                             | Status                                                               |
+| -------------------------------- | -------------------------------------------------------------------- |
+| Chatbot PII scrub scope          | Added MBI, PO Box, state/labeled ZIP, member-id label, card patterns |
+| Episode lifecycle factory writer | Already shipped in #1326 — doc updated; no code change this round    |
+
+## Started in round five — merged #1336
 
 | Item                        | Status                                                                  |
 | --------------------------- | ----------------------------------------------------------------------- |
@@ -65,3 +80,5 @@ verify:deploy → 4 passed
 ```
 
 Platform host `pennfit.up.railway.app` correctly stays CareMetric-branded.
+
+Runbook for tenant payment wall: `docs/runbooks/tenant-payment-wall.md`.
