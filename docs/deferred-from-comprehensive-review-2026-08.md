@@ -19,10 +19,10 @@ them up without re-discovering scope.
 | Lapsed winback uses shop `paid_at` not fulfillments     | Cron env-gated; copy says “shipped” but math is last cash-pay                       | Gate on fulfillment/`shipped_at` or retire dispatcher      |
 | Account “Track a shipment” → `/track-order` only        | ~~Tracker rejects fulfillment UUIDs~~ — CTA now `/contact`                          | Shipped in #1333                                           |
 | Help / prefs still describe cart/refund/review flows    | ~~Copy + toggles~~ — help + account prefs scrubbed; abandoned/review toggles hidden | Shipped in #1333                                           |
-| Account chatbot tools still coach refunds/subscriptions | ~~Tool descriptors leftover~~ — escalate + subscription tool scrubbed               | Shipped in #1333; knowledge KB still has seed placeholders |
-| Seed tenant `assistantAdminName` returns PennBot        | Prod company-info shows PennBot for both assistants (expect PennPilot for admin)    | Fix `RESUPPLY_ASSISTANT_ADMIN_NAME` in System Config       |
+| Account chatbot tools still coach refunds/subscriptions | ~~Tool descriptors leftover~~ — escalate + subscription tool scrubbed               | Shipped in #1333; FAQ claim-adjustment copy in round three |
+| Seed tenant `assistantAdminName` returns PennBot        | Prod company-info showed PennBot for both assistants (expect PennPilot for admin)    | Migration 0531 in round three                             |
 
-## Started in this follow-up (PR #1333)
+## Started in this follow-up (PR #1333) — merged 2026-08-27
 
 | Item                                                              | Status                                                                       |
 | ----------------------------------------------------------------- | ---------------------------------------------------------------------------- |
@@ -30,10 +30,19 @@ them up without re-discovering scope.
 | Provider RTM caseload list truncated at `max_rows`                | Fixed: page `prescriptions` with `.range()` in `listProviderPatientIds`      |
 | Provider RTM detail / attestation oldest-1000-nights only         | Fixed: CMS horizon fetch (`ATTESTATION_HORIZON_DAYS`) with `.range()` paging |
 | Roster recent-nights chunk still hit `max_rows`                   | Fixed: page each id-chunk’s recent-window nights                             |
+| RTM setupDate lookup unbounded concurrency (review)               | Fixed: cap at 15 concurrent reads per id chunk (#1333 `0f6c83fca`)           |
 | Review-request emails / `storefront.reviews_collection`           | Fixed: migration 0530 OFF + moved to `DELIBERATELY_OFF_FLAGS`                |
 | Account “Track a shipment” → `/track-order`                       | Fixed: CTA → `/contact` (“Ask about a shipment”)                             |
 | Account chatbot escalate / subscription tool cash-pay coaching    | Fixed: insurance-only tool descriptors + category labels                     |
 | Help / account prefs cash-pay leftover copy                       | Fixed: hide abandoned/review toggles; help + SMS copy insurance-aligned      |
+
+## Started in round three (this branch)
+
+| Item                                           | Status                                                                 |
+| ---------------------------------------------- | ---------------------------------------------------------------------- |
+| Seed tenant `assistantAdminName` → PennBot     | Migration 0531: correct admin key when value is PennBot                |
+| Account chat KB tenant-brand guard             | `customerChatKnowledge.brand.test.ts`                                  |
+| Account chat FAQ still says “refund in 5-7 days” | FAQ 85/89 aligned to claim-adjustment language                       |
 
 ## Production deploy note (2026-08-27)
 
