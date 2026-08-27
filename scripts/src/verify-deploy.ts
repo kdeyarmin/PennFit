@@ -34,6 +34,10 @@
 //       → 200, JSON, body.name is a non-empty string.  Host-keyed
 //         identity the SPA prefers so tenant branding cannot be pinned
 //         by a stale /company-info edge cache.
+//   * Tenant custom domains (pennpaps.com today): both company-info
+//     endpoints must resolve the verified tenant's storefront name, not
+//     the platform fallback (CareMetric Breathe). This is the post-merge
+//     prod smoke for the Penn seed tenant.
 //   * GET /  (Accept: text/html)
 //       → 200, HTML.  Confirms the SPA shell is served (informational;
 //         a non-200 here is a warning, not a hard failure, since the
@@ -72,6 +76,16 @@ interface CheckResult {
 const results: CheckResult[] = [];
 function record(severity: Severity, label: string, detail: string): void {
   results.push({ severity, label, detail });
+}
+
+/** Known tenant custom domains → expected storefront `name` on company-info. */
+const TENANT_IDENTITY_BY_HOST: Readonly<Record<string, string>> = {
+  "pennpaps.com": "Penn Home Medical Supply",
+};
+
+function expectedTenantIdentity(hostname: string): string | null {
+  const host = hostname.trim().toLowerCase().replace(/^www\./, "");
+  return TENANT_IDENTITY_BY_HOST[host] ?? null;
 }
 
 function resolveBaseUrl(): string {
@@ -268,9 +282,27 @@ function report(): number {
   return fail > 0 ? 1 : 0;
 }
 
+function validateCompanyInfoName(
+  json: Record<string, unknown>,
+  expectedTenantName: string | null,
+): string | null {
+  const name = json["name"];
+  if (typeof name !== "string" || name.length === 0) {
+    return "body had no non-empty `name` string";
+  }
+  if (expectedTenantName && name !== expectedTenantName) {
+    return (
+      `\`name\` was ${JSON.stringify(name)} — expected ` +
+      `${JSON.stringify(expectedTenantName)} for this tenant host`
+    );
+  }
+  return null;
+}
+
 async function main(): Promise<number> {
   const base = resolveBaseUrl();
   console.log(`verify:deploy → ${paint(DIM, base)}`);
+  const expectedTenantName = expectedTenantIdentity(new URL(base).hostname);
 
   // /healthz is the cheapest proof the API tree is mounted: it touches
   // no dependency and returns {status:"ok"}. If THIS 404s for a JSON
@@ -283,17 +315,13 @@ async function main(): Promise<number> {
 
   // Storefront identity the SPA resolves on boot. Reachability is what
   // we assert; the tenant name can be the platform fallback on an
-  // unbound host.
+  // unbound host. Tenant custom domains must resolve their own brand.
   await checkApiJson(base, "/api/company-info", (json) =>
-    typeof json["name"] === "string" && json["name"].length > 0
-      ? null
-      : "body had no non-empty `name` string",
+    validateCompanyInfoName(json, expectedTenantName),
   );
 
   await checkApiJson(base, "/api/storefront-company-info", (json) =>
-    typeof json["name"] === "string" && json["name"].length > 0
-      ? null
-      : "body had no non-empty `name` string",
+    validateCompanyInfoName(json, expectedTenantName),
   );
 
   await checkSpaShell(base);
