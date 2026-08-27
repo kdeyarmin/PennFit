@@ -117,24 +117,26 @@ describe("staffHelpDocs", () => {
     const bill = JSON.stringify(staffHelpDocs("biller", CO));
     expect(bill).not.toMatch(/keep payer profiles[^"]*current/i);
 
-    // clinician holds no reports.read / returns.read / cases.read, so the
-    // population dashboards, recalls and asset recovery don't load. The
-    // handbook must say so rather than list them as the RT's work.
-    const rt = staffHelpDocs("rt", CO)[1]!;
-    const caveat = rt.sections.find((sec) =>
-      sec.heading?.startsWith("What your role does not cover"),
-    );
-    expect(caveat).toBeDefined();
+    // `clinician` now holds reports.read / returns.read / cases.read, so
+    // the population dashboards, recalls and asset recovery DO load and
+    // belong in the RT's duties rather than a caveat.
     const rtDuties = JSON.stringify({
       areas: staffRoleProfile("rt").areas,
       highlights: staffRoleProfile("rt").highlights,
       firstTasks: staffRoleProfile("rt").firstTasks,
     });
     for (const screen of ["Therapy Fleet", "Setup Adherence", "Recalls"]) {
-      expect(JSON.stringify(caveat)).toContain(screen);
-      // …and named ONLY there, never as a duty of the role.
-      expect(rtDuties).not.toContain(screen);
+      expect(rtDuties).toContain(screen);
     }
+    // What the RT still cannot do is WRITE: recall/asset-recovery
+    // transitions need returns.manage / cases.manage and patient details
+    // need patients.update, none of which are on the clinician set.
+    const rt = staffHelpDocs("rt", CO)[1]!;
+    const caveat = rt.sections.find((sec) =>
+      sec.heading?.startsWith("What stays with another role"),
+    );
+    expect(caveat).toBeDefined();
+    expect(JSON.stringify(caveat)).toMatch(/demographics|recovery case/);
   });
 
   it("keys each family's handbook separately so the byte cache can't cross roles", () => {

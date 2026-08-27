@@ -39,7 +39,17 @@ const CSR: MockAdminCtx = {
   role: "agent",
   granularRole: "csr",
 };
-// rt (clinician bucket) does NOT hold cases.* — used for the 403 path.
+// biller holds no cases.* at all — the 403 path for the READ. This was
+// `rt` until the clinician tier gained cases.read so an RT could read the
+// asset-recovery list; biller is now the role that genuinely lacks it.
+const BILLER: MockAdminCtx = {
+  userId: "u_biller",
+  email: "biller@penn.example.com",
+  role: "agent",
+  granularRole: "biller",
+};
+// rt (clinician bucket) now READS cases but still cannot manage them —
+// the read/write boundary of that grant, asserted from both sides below.
 const RT: MockAdminCtx = {
   userId: "u_rt",
   email: "rt@penn.example.com",
@@ -66,8 +76,8 @@ describe("GET /admin/cases", () => {
     expect((await request(makeApp()).get("/admin/cases")).status).toBe(401);
   });
 
-  it("403s for a role without cases.read (rt)", async () => {
-    mockAdmin.current = RT;
+  it("403s for a role without cases.read (biller)", async () => {
+    mockAdmin.current = BILLER;
     const res = await request(makeApp()).get("/admin/cases");
     expect(res.status).toBe(403);
     expect(res.body.requiredPermission).toBe("cases.read");

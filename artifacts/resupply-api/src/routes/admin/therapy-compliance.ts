@@ -14,7 +14,7 @@
 //   GET /admin/therapy-compliance/setups.csv  — same list as a report
 //
 // PHI / log posture: usage/adherence values ARE PHI. This module never
-// logs them. `summary` is pure counts (reports.read); the list + CSV
+// logs them. `summary` is pure counts (therapy.read); the list + CSV
 // return patient names (patients.read).
 
 import { Router, type IRouter } from "express";
@@ -56,7 +56,7 @@ interface SummaryRow {
 
 router.get(
   "/admin/therapy-compliance/summary",
-  requirePermission("reports.read"),
+  requirePermission("therapy.read"),
   async (req, res) => {
     const orgId = req.orgId;
     if (!orgId) {

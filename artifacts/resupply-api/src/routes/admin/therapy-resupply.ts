@@ -18,7 +18,7 @@
 // does a second batched `patients` read to attach display names.
 //
 // PHI / log posture: device serials and supply dates are PHI-adjacent;
-// this module never logs them. `summary` is pure counts (reports.read);
+// this module never logs them. `summary` is pure counts (therapy.read);
 // the list + CSV return patient names (patients.read).
 
 import { Router, type IRouter } from "express";
@@ -77,7 +77,7 @@ interface SummaryRow {
 
 router.get(
   "/admin/therapy-resupply/summary",
-  requirePermission("reports.read"),
+  requirePermission("therapy.read"),
   async (req, res) => {
     const parsed = summaryQuery.safeParse(req.query);
     if (!parsed.success) {

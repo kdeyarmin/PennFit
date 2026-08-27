@@ -355,6 +355,72 @@ describe("biller role", () => {
     }
   });
 
+  // The clinician (rt) tier was widened so an RT can run the population
+  // therapy monitoring the User Manual calls their job. The grant is
+  // deliberately READ-scoped — these assertions are the boundary, so a
+  // later edit cannot quietly turn it into write access.
+  it("gives the clinician tier the reads its therapy monitoring runs on", () => {
+    for (const perm of [
+      "therapy.read",
+      "returns.read",
+      "cases.read",
+    ] as const) {
+      expect(roleHasPermission("rt", perm)).toBe(true);
+    }
+  });
+
+  // The point of splitting therapy.read out of reports.read: an RT runs
+  // the therapy board without seeing the practice's finances. reports.read
+  // gates ~50 route files — revenue, refunds, payments, collections, payer
+  // fee schedules, GL mappings — so it must stay OFF the clinician tier.
+  it("does not hand the clinician tier the financial read surface", () => {
+    expect(roleHasPermission("rt", "reports.read")).toBe(false);
+    expect(roleHasPermission("rt", "cost.read")).toBe(false);
+    expect(roleHasPermission("rt", "billing.manage")).toBe(false);
+  });
+
+  // therapy.read was split OUT of reports.read, so every role that could
+  // open a therapy screen before must still be able to.
+  it("leaves every prior reports.read holder able to open therapy screens", () => {
+    for (const role of ["admin", "supervisor", "csr", "biller"] as const) {
+      expect(roleHasPermission(role, "reports.read")).toBe(true);
+      expect(roleHasPermission(role, "therapy.read")).toBe(true);
+    }
+  });
+
+  it("keeps the clinician tier read-only on returns, cases and patients", () => {
+    // Recall + asset-recovery WRITES, and any patient-detail edit, stay
+    // with the CSR/admin tiers; an RT documents clinically instead.
+    for (const perm of [
+      "returns.manage",
+      "returns.approve",
+      "cases.manage",
+      "patients.update",
+    ] as const) {
+      expect(roleHasPermission("rt", perm)).toBe(false);
+    }
+    // …while the roles that own that work still hold it.
+    expect(roleHasPermission("csr", "returns.manage")).toBe(true);
+    expect(roleHasPermission("csr", "cases.manage")).toBe(true);
+    expect(roleHasPermission("csr", "patients.update")).toBe(true);
+  });
+
+  it("does not widen any other role along with the clinician", () => {
+    // biller and csr sets are unchanged by the clinician grant: biller
+    // still has no returns.read / cases.read, csr still has all three.
+    expect(roleHasPermission("biller", "returns.read")).toBe(false);
+    expect(roleHasPermission("biller", "cases.read")).toBe(false);
+    expect(roleHasPermission("biller", "reports.read")).toBe(true);
+    for (const perm of [
+      "reports.read",
+      "therapy.read",
+      "returns.read",
+      "cases.read",
+    ] as const) {
+      expect(roleHasPermission("csr", perm)).toBe(true);
+    }
+  });
+
   it("billing.manage is shared with the admin tiers but off the CSR/clinician tiers", () => {
     expect(roleHasPermission("admin", "billing.manage")).toBe(true);
     expect(roleHasPermission("supervisor", "billing.manage")).toBe(true);

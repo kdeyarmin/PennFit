@@ -23,7 +23,7 @@
 // PHI / log posture: usage / AHI / leak values ARE PHI. This module
 // never logs them, and the worklist reads stay admin-gated. `overview`
 // carries no patient identifiers (pure counts) so it gates on
-// `reports.read`; the worklist + CSV return patient names and gate on
+// `therapy.read`; the worklist + CSV return patient names and gate on
 // `patients.read`; the action write gates on `patients.update`. The
 // action audit envelope records status + patient id only — never the
 // free-text note (which MAY contain PHI).
@@ -136,7 +136,7 @@ router.get(
   "/admin/therapy-fleet/overview",
   // Pure counts, no patient identifiers — viewable by anyone who can
   // see ops dashboards.
-  requirePermission("reports.read"),
+  requirePermission("therapy.read"),
   async (req, res) => {
     const parsed = overviewQuery.safeParse(req.query);
     if (!parsed.success) {
@@ -212,10 +212,10 @@ interface DailyMetricRow {
 
 // GET /admin/therapy-fleet/trend — daily fleet-metrics history captured
 // by the therapy-fleet.daily-snapshot worker. Pure aggregate counts, so
-// it gates on reports.read. Returns oldest → newest for charting.
+// it gates on therapy.read. Returns oldest → newest for charting.
 router.get(
   "/admin/therapy-fleet/trend",
-  requirePermission("reports.read"),
+  requirePermission("therapy.read"),
   async (req, res) => {
     const parsed = trendQuery.safeParse(req.query);
     if (!parsed.success) {

@@ -439,7 +439,7 @@ export const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             label: "Therapy Fleet",
             icon: HeartPulse,
             matchPrefix: "/admin/therapy-fleet",
-            requiredPermission: "reports.read",
+            requiredPermission: "therapy.read",
             hint: "Population compliance cohorts and clinical outreach worklist",
           },
           {
@@ -447,7 +447,7 @@ export const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             label: "Setup Adherence",
             icon: ClipboardCheck,
             matchPrefix: "/admin/therapy-compliance",
-            requiredPermission: "reports.read",
+            requiredPermission: "therapy.read",
             hint: "CMS 90-day adherence tracker for new Medicare setups",
           },
           {
@@ -455,7 +455,7 @@ export const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             label: "Resupply Opportunities",
             icon: PackageCheck,
             matchPrefix: "/admin/therapy-resupply",
-            requiredPermission: "reports.read",
+            requiredPermission: "therapy.read",
             hint: "Device-reported supplies due for replacement — drives resupply orders",
           },
           {
@@ -1109,7 +1109,7 @@ export const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             label: "Therapy Report",
             icon: ScrollText,
             matchPrefix: "/admin/therapy-usage-report",
-            requiredPermission: "reports.read",
+            requiredPermission: "therapy.read",
             hint: "Provider-ready, print-quality therapy adherence snapshot (by provider, patient, or manufacturer)",
           },
           {
