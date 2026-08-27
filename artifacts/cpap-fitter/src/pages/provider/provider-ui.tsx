@@ -17,6 +17,7 @@ import {
   getProviderOrgs,
   selectProviderOrg,
   ProviderApiError,
+  type ProviderOrgMembership,
 } from "@/lib/provider/provider-api";
 import { isPlatformHomeHost } from "@/lib/platform-host";
 import { PLATFORM_NAME } from "@/lib/branding";
@@ -28,6 +29,33 @@ export function shouldShowProviderOrgSwitcher(
   orgCount: number,
 ): boolean {
   return isPlatformHost && orgCount > 1;
+}
+
+/**
+ * Other linked DMEs with a verified portal URL, excluding the practice
+ * that owns the current hostname. Used for tenant-host honesty chrome
+ * (deep-link only — brand host still wins for PHI on this host).
+ */
+export function otherTenantPortalLinks(
+  orgs: readonly ProviderOrgMembership[],
+  currentHostname: string,
+): ProviderOrgMembership[] {
+  const bare = currentHostname
+    .trim()
+    .toLowerCase()
+    .replace(/\.$/, "")
+    .replace(/^www\./, "");
+  return orgs.filter((o) => {
+    if (!o.hasVerifiedPortal || !o.portalUrl) return false;
+    try {
+      const host = new URL(o.portalUrl).hostname
+        .toLowerCase()
+        .replace(/^www\./, "");
+      return host !== bare;
+    } catch {
+      return false;
+    }
+  });
 }
 
 export function Button({
@@ -180,6 +208,7 @@ export function ProviderShell({
           </Link>
           <div className="flex items-center gap-3">
             <ProviderOrgSwitcher />
+            <ProviderTenantOrgLinks />
             {providerName ? (
               <span className="hidden text-sm text-slate-600 sm:inline">
                 {providerName}
@@ -278,6 +307,52 @@ function ProviderOrgSwitcher() {
           {error}
         </span>
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * Tenant brand host only: deep-links to *other* linked practices' verified
+ * portals. Does not call /orgs/select — brand host still owns PHI here;
+ * leaving means a new host (and usually a fresh sign-in).
+ */
+function ProviderTenantOrgLinks() {
+  const onPlatform = isPlatformHomeHost();
+  const orgs = useQuery({
+    queryKey: ["provider", "orgs"],
+    queryFn: getProviderOrgs,
+    enabled: !onPlatform,
+    retry: false,
+    staleTime: 30_000,
+  });
+
+  if (onPlatform) return null;
+  const hostname =
+    typeof window !== "undefined" ? window.location.hostname : "";
+  const others = otherTenantPortalLinks(orgs.data?.orgs ?? [], hostname);
+  if (others.length === 0) return null;
+
+  return (
+    <div
+      className="hidden max-w-[11rem] flex-col items-end sm:flex"
+      data-testid="provider-tenant-org-links"
+    >
+      <span className="text-[10px] font-medium uppercase tracking-wide text-slate-400">
+        Other practices
+      </span>
+      <ul className="mt-0.5 space-y-0.5 text-right">
+        {others.map((org) => (
+          <li key={org.dmeLinkId}>
+            <a
+              href={org.portalUrl!}
+              className="block truncate text-xs font-medium text-blue-700 hover:underline"
+              title={`Open ${org.name} (you'll sign in on that domain)`}
+            >
+              {org.name}
+            </a>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
