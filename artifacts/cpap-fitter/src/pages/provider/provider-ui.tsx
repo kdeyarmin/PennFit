@@ -7,12 +7,28 @@
 // Everything renders inside a `.provider-portal` namespace wrapper.
 
 import type { ButtonHTMLAttributes, ReactNode } from "react";
+import { useState } from "react";
 import { Link, useLocation } from "wouter";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { LogOut, ShieldCheck } from "lucide-react";
 
 import { providerAuthHooks } from "@/lib/provider/provider-auth";
+import {
+  getProviderOrgs,
+  selectProviderOrg,
+  ProviderApiError,
+} from "@/lib/provider/provider-api";
+import { isPlatformHomeHost } from "@/lib/platform-host";
 import { PLATFORM_NAME } from "@/lib/branding";
 import { formatAppDateTime } from "@/lib/utils";
+
+/** Pure gate: chrome switcher only on platform home with 2+ memberships. */
+export function shouldShowProviderOrgSwitcher(
+  isPlatformHost: boolean,
+  orgCount: number,
+): boolean {
+  return isPlatformHost && orgCount > 1;
+}
 
 export function Button({
   variant = "primary",
@@ -163,6 +179,7 @@ export function ProviderShell({
             </span>
           </Link>
           <div className="flex items-center gap-3">
+            <ProviderOrgSwitcher />
             {providerName ? (
               <span className="hidden text-sm text-slate-600 sm:inline">
                 {providerName}
@@ -186,6 +203,81 @@ export function ProviderShell({
       </header>
       <ProviderNav />
       <main className="mx-auto max-w-4xl px-4 py-8">{children}</main>
+    </div>
+  );
+}
+
+/**
+ * Platform-host only: re-select which linked DME's queue/RTM the session
+ * pin resolves. Hidden on tenant brand hosts (brand always wins for PHI)
+ * and when the provider has fewer than two memberships.
+ */
+function ProviderOrgSwitcher() {
+  const queryClient = useQueryClient();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const onPlatform = isPlatformHomeHost();
+
+  const orgs = useQuery({
+    queryKey: ["provider", "orgs"],
+    queryFn: getProviderOrgs,
+    enabled: onPlatform,
+    retry: false,
+    staleTime: 30_000,
+  });
+
+  const list = orgs.data?.orgs ?? [];
+  if (!shouldShowProviderOrgSwitcher(onPlatform, list.length)) {
+    return null;
+  }
+
+  const activeOrgId =
+    orgs.data?.activeOrgId ??
+    list.find((o) => o.isActive)?.orgId ??
+    list[0]!.orgId;
+
+  async function onChange(orgId: string) {
+    if (orgId === activeOrgId || busy) return;
+    setError(null);
+    setBusy(true);
+    try {
+      await selectProviderOrg(orgId);
+      await queryClient.invalidateQueries({ queryKey: ["provider"] });
+    } catch (err) {
+      setError(
+        err instanceof ProviderApiError
+          ? err.message
+          : "Could not switch practice.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="flex max-w-[12rem] flex-col items-end gap-0.5 sm:max-w-[14rem]">
+      <label className="sr-only" htmlFor="provider-org-switcher">
+        Active DME practice
+      </label>
+      <select
+        id="provider-org-switcher"
+        data-testid="provider-org-switcher"
+        className="w-full truncate rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs font-medium text-slate-800 disabled:opacity-60"
+        disabled={busy || orgs.isFetching}
+        value={activeOrgId}
+        onChange={(e) => void onChange(e.target.value)}
+      >
+        {list.map((org) => (
+          <option key={org.dmeLinkId} value={org.orgId}>
+            {org.name}
+          </option>
+        ))}
+      </select>
+      {error ? (
+        <span className="text-[10px] text-red-600" role="alert">
+          {error}
+        </span>
+      ) : null}
     </div>
   );
 }

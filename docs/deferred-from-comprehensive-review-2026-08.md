@@ -6,11 +6,11 @@ from the comprehensive review follow-ups has shipped. Residual work below is
 
 ## Residual (not deferred-review blockers)
 
-| Item                                          | Status                                                                                                                  | Where tracked                                 |
-| --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
-| Flip `BILLING_PAYWALL_ENFORCED` in production | Code + preflight guard shipped; env still OFF by design until ops validates Stripe                                      | `docs/runbooks/tenant-payment-wall.md`        |
-| Channel LTV:CAC including claim dollars       | Shipped — #1343 `customer_acquisition.patient_id` (migration 0532) folds linked ERA into LTV:CAC                        | `ltv-cac.ts` / migration 0532                 |
-| Full multi-org provider org-picker            | Slice 2 shipped: session `provider_active_org_id` + `POST /orgs/select`; in-SPA switcher on tenant hosts still optional | `docs/provider-portal-tenant-host-routing.md` |
+| Item                                          | Status                                                                                                            | Where tracked                                 |
+| --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
+| Flip `BILLING_PAYWALL_ENFORCED` in production | Code + preflight guard shipped; env still OFF by design until ops validates Stripe                                | `docs/runbooks/tenant-payment-wall.md`        |
+| Channel LTV:CAC including claim dollars       | Shipped — #1343 `customer_acquisition.patient_id` (migration 0532) folds linked ERA into LTV:CAC                  | `ltv-cac.ts` / migration 0532                 |
+| Full multi-org provider org-picker            | Slices 1–3 shipped: deep links, session pin, platform-host chrome switcher; tenant-host deep-link chrome optional | `docs/provider-portal-tenant-host-routing.md` |
 
 ## Shipped (merged)
 
