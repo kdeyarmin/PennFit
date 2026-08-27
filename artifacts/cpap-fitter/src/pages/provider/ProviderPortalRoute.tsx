@@ -3,6 +3,8 @@
 // /api/provider/me:
 //
 //   * not signed in (401)        → /provider/sign-in
+//   * platform / unbound host (403 provider_tenant_host_required)
+//                                → "use your DME's portal URL" card
 //   * signed in, not a provider  → "no access" card
 //   * signed in, MFA not enrolled → /provider/mfa-setup (mandatory)
 //   * signed in + enrolled       → queue / signing screens
@@ -20,6 +22,7 @@ import {
   type ProviderMe,
 } from "@/lib/provider/provider-api";
 import { providerAuthHooks } from "@/lib/provider/provider-auth";
+import { isPlatformHomeHost } from "@/lib/platform-host";
 import { ProviderSignIn } from "./provider-sign-in";
 import { ProviderResetPassword } from "./provider-reset-password";
 import { ProviderMfaSetup } from "./provider-mfa-setup";
@@ -57,6 +60,49 @@ function NoAccess() {
   );
 }
 
+/** Platform / unbound host: queue and RTM refuse seed-org soft-fallback. */
+function WrongTenantHost() {
+  const signOut = providerAuthHooks.useSignOut();
+  return (
+    <ProviderAuthLayout>
+      <Card
+        className="p-6 text-center"
+        data-testid="provider-wrong-tenant-host"
+      >
+        <h1 className="text-xl font-bold text-slate-900">
+          Open your DME&apos;s provider portal
+        </h1>
+        <p className="mt-2 text-sm text-slate-500">
+          This address is the CareMetric Breathe platform home. Signature queues
+          and patient therapy views are available only on your DME&apos;s own
+          verified domain (the portal URL in your invitation email) — not here.
+        </p>
+        <Button
+          variant="secondary"
+          className="mt-5"
+          onClick={() =>
+            signOut.mutate(undefined, {
+              onSettled: () => window.location.assign("/provider/sign-in"),
+            })
+          }
+        >
+          Sign out
+        </Button>
+      </Card>
+    </ProviderAuthLayout>
+  );
+}
+
+function isWrongTenantHostError(error: unknown): boolean {
+  if (error instanceof ProviderApiError) {
+    if (error.code === "provider_tenant_host_required") return true;
+    // Defense in depth: platform hosts should never show a generic "no access"
+    // card when the API refused tenant context.
+    if (error.status === 403 && isPlatformHomeHost()) return true;
+  }
+  return false;
+}
+
 /** Run the /me gate, then render the children with the resolved
  *  identity. `allowUnenrolled` lets the MFA-setup screen render even
  *  before enrollment (otherwise it would redirect to itself). */
@@ -83,6 +129,7 @@ function Gated({
   if (me.isError) {
     const status = me.error instanceof ProviderApiError ? me.error.status : 500;
     if (status === 401) return <Redirect to="/provider/sign-in" />;
+    if (isWrongTenantHostError(me.error)) return <WrongTenantHost />;
     // 403 / role mismatch → genuinely no access.
     if (status === 403) return <NoAccess />;
     // 5xx or network failure → transient error, not an access decision.

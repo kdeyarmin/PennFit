@@ -352,6 +352,12 @@ function demoLtvCac() {
       cacPaybackMonths: null,
     },
     generatedAt: NOW_ISO(),
+    insuranceRemittance: {
+      eraPayerPaidCents: 8_920_000,
+      paidClaimCount: 412,
+      includedInLtvRatio: false as const,
+      possiblyIncomplete: false,
+    },
   };
 }
 

@@ -38,6 +38,13 @@ export interface LtvCacResponse {
     ltvToCacRatio: number | null;
   };
   generatedAt: string;
+  /** ERA remittance companion — never folded into LTV:CAC. */
+  insuranceRemittance?: {
+    eraPayerPaidCents: number;
+    paidClaimCount: number;
+    includedInLtvRatio: false;
+    possiblyIncomplete: boolean;
+  };
 }
 
 export async function fetchLtvCac(): Promise<LtvCacResponse> {
