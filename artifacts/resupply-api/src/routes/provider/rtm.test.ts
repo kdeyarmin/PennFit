@@ -5,8 +5,9 @@
 //     providerId; a patient not linked to the provider is a 404.
 //   * MFA gate — the routes sit behind requireProviderMfaEnrolled.
 //   * orgId threading — the routes read req.orgId (threaded by
-//     attachProviderOrgId, host-resolved), and fail CLOSED (500) when it
-//     is missing rather than widening to all tenants.
+//     attachProviderOrgId). The real attacher fails CLOSED at 403 on a
+//     platform host; these tests stub it and assert the route still
+//     returns 500 `tenant_context_missing` if orgId is somehow absent.
 //
 // We mock the provider gate + the org-id attacher + the org-scoped DB so
 // the route's own scoping/threading logic is exercised without a live DB.

@@ -644,6 +644,49 @@ function runChecks(): void {
     }
   }
 
+  // Tenant payment wall: when BILLING_PAYWALL_ENFORCED is truthy, a new
+  // self-serve tenant is locked until Stripe clears billing_required. That
+  // path is useless (and traps the tenant) without a platform Stripe key
+  // OR the legacy shared STRIPE_SECRET_KEY fallback — refuse the combo.
+  {
+    const paywallRaw = getTrimmed("BILLING_PAYWALL_ENFORCED")?.toLowerCase();
+    const paywallOn =
+      paywallRaw === "1" ||
+      paywallRaw === "true" ||
+      paywallRaw === "yes" ||
+      paywallRaw === "on";
+    if (paywallOn) {
+      const hasPlatformKey = getTrimmed("STRIPE_PLATFORM_SECRET_KEY") !== undefined;
+      const hasSharedKey = getTrimmed("STRIPE_SECRET_KEY") !== undefined;
+      if (!hasPlatformKey && !hasSharedKey) {
+        record(
+          "BILLING_PAYWALL_ENFORCED",
+          "fail",
+          "set truthy but neither STRIPE_PLATFORM_SECRET_KEY nor STRIPE_SECRET_KEY is set — " +
+            "locked tenants have no invoice.paid / checkout path to unlock (see docs/runbooks/tenant-payment-wall.md)",
+        );
+      } else if (
+        hasPlatformKey &&
+        getTrimmed("STRIPE_PLATFORM_WEBHOOK_SIGNING_SECRET") === undefined
+      ) {
+        // Dedicated platform key without its webhook was already FAILed above;
+        // still flag the paywall pairing so the operator sees the causal link.
+        record(
+          "BILLING_PAYWALL_ENFORCED",
+          "fail",
+          "set truthy with STRIPE_PLATFORM_SECRET_KEY but STRIPE_PLATFORM_WEBHOOK_SIGNING_SECRET is unset — " +
+            "invoice.paid cannot clear billing_required",
+        );
+      } else {
+        record(
+          "BILLING_PAYWALL_ENFORCED",
+          "pass",
+          "enforced; platform Stripe billing credentials present",
+        );
+      }
+    }
+  }
+
   // SendGrid — must look like a real SG key, not the example placeholder.
   if (!refusePlaceholder("SENDGRID_API_KEY", "SG.replace_me")) {
     const sg = getTrimmed("SENDGRID_API_KEY");

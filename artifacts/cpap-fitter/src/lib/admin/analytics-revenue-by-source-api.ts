@@ -16,6 +16,8 @@ export interface RevenueSourceBucket {
   units: number | null;
   paidOrders: number | null;
   cashRevenueCents: number | null;
+  /** ERA remittance dollars for insurance; null on other sources. */
+  payerPaidCents: number | null;
 }
 
 export interface RevenueBySourceResponse {
@@ -23,6 +25,8 @@ export interface RevenueBySourceResponse {
   bySource: RevenueSourceBucket[];
   totalOrders: number;
   totalCashRevenueCents: number;
+  /** Sum of insurance_claims.total_paid_cents in window — not LTV. */
+  totalPayerPaidCents: number;
 }
 
 export function revenueBySourceCsvUrl(days = 30): string {

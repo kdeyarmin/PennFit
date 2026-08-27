@@ -2,19 +2,20 @@
 // GET /admin/analytics/revenue-by-source.csv?days=30    — CSV
 //
 // Closed-loop measurement (roadmap Lever 3): a single view of where order
-// VOLUME and cash REVENUE come from, across the three independent order
-// channels CareMetric Breathe captures through:
-//   * storefront (cash-pay Stripe)      → resupply.shop_orders (has $)
-//   * resupply fulfillment (insurance)  → resupply.fulfillments (units)
-//   * clinical intake form              → public.orders (count only)
+// VOLUME and dollars come from, across the independent channels:
+//   * storefront (historical shop) → shop_orders (cash $)
+//   * resupply fulfillment         → fulfillments (units) +
+//                                    insurance_claims.total_paid_cents
+//                                    (ERA payer-paid $, not LTV)
+//   * clinical intake form         → public.orders (count only)
 //
 // Read-only window-bounded aggregation in the established analytics shape
 // (route reads, lib/analytics/revenue-by-source.ts reduces). No new
 // schema. `reports.read` gated like the sibling analytics routes.
 //
 // PHI: public.orders carries patient PHI columns, so it is counted
-// head-only (no row data pulled). shop_orders / fulfillments rows here
-// hold no PHI (status + amount + quantity only).
+// head-only (no row data pulled). shop_orders / fulfillments / claim
+// amount columns here hold no patient names.
 
 import { Router, type IRouter, type Response } from "express";
 import { z } from "zod";
@@ -23,6 +24,7 @@ import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import {
   aggregateRevenueBySource,
+  type ClaimPaidRow,
   type FulfillmentRow,
   type ShopOrderRow,
 } from "../../lib/analytics/revenue-by-source";
@@ -96,7 +98,7 @@ async function loadRevenueBySource(cutoff: string, orgId: string) {
   // intake orders (head-only — the rows hold PHI we never pull).
   const includeClinicalIntake = true;
 
-  const [shop, ful] = await Promise.all([
+  const [shop, ful, claims] = await Promise.all([
     pageWindow<ShopOrderRow>((from, to) =>
       supabase
         .from("shop_orders")
@@ -113,6 +115,17 @@ async function loadRevenueBySource(cutoff: string, orgId: string) {
         .order("id", { ascending: true })
         .range(from, to),
     ),
+    // ERA remittance dollars — insurance_claims with a paid_at in window.
+    // Amounts only (no patient_id / payer free-text in the select list).
+    pageWindow<ClaimPaidRow & { id: string }>((from, to) =>
+      supabase
+        .from("insurance_claims")
+        .select("id, total_paid_cents", { count: "exact" })
+        .not("paid_at", "is", null)
+        .gte("paid_at", cutoff)
+        .order("id", { ascending: true })
+        .range(from, to),
+    ),
   ]);
 
   // Fail fast rather than silently undercount: if either window matched
@@ -120,7 +133,11 @@ async function loadRevenueBySource(cutoff: string, orgId: string) {
   // incomplete. (Below the cap, pageWindow read EVERY row, so the totals
   // are exact even on busy tenants — the prior single capped read
   // silently truncated at ~1000.)
-  if (shop.total > READ_CAP || ful.total > READ_CAP) {
+  if (
+    shop.total > READ_CAP ||
+    ful.total > READ_CAP ||
+    claims.total > READ_CAP
+  ) {
     throw new RevenueWindowTooLargeError(READ_CAP);
   }
   const shopRes = { data: shop.rows };
@@ -144,6 +161,9 @@ async function loadRevenueBySource(cutoff: string, orgId: string) {
     shopOrders: (shopRes.data ?? []) as ShopOrderRow[],
     fulfillments: (fulRes.data ?? []) as FulfillmentRow[],
     clinicalFormOrderCount,
+    claimPayments: claims.rows.map((r) => ({
+      total_paid_cents: r.total_paid_cents,
+    })),
   });
 }
 
@@ -213,20 +233,24 @@ router.get(
       .slice(0, 10)}.csv`;
     res.setHeader("Content-Type", "text/csv; charset=utf-8");
     res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
-    res.write("source,label,orders,units,paid_orders,cash_revenue_usd\n");
+    res.write(
+      "source,label,orders,units,paid_orders,cash_revenue_usd,payer_paid_usd\n",
+    );
     for (const b of result.bySource) {
       const usd =
         b.cashRevenueCents == null ? "" : (b.cashRevenueCents / 100).toFixed(2);
+      const payerUsd =
+        b.payerPaidCents == null ? "" : (b.payerPaidCents / 100).toFixed(2);
       res.write(
         `${b.source},${safeCsvCell(b.label)},${b.orders},${
           b.units ?? ""
-        },${b.paidOrders ?? ""},${usd}\n`,
+        },${b.paidOrders ?? ""},${usd},${payerUsd}\n`,
       );
     }
     res.write(
       `total,All sources,${result.totalOrders},,,${(
         result.totalCashRevenueCents / 100
-      ).toFixed(2)}\n`,
+      ).toFixed(2)},${(result.totalPayerPaidCents / 100).toFixed(2)}\n`,
     );
     res.end();
   },
