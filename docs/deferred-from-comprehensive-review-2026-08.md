@@ -6,11 +6,19 @@ from the comprehensive review follow-ups has shipped. Residual work below is
 
 ## Residual (not deferred-review blockers)
 
+<<<<<<< HEAD
 | Item                                          | Status                                                                                           | Where tracked                                               |
 | --------------------------------------------- | ------------------------------------------------------------------------------------------------ | ----------------------------------------------------------- |
 | Flip `BILLING_PAYWALL_ENFORCED` in production | Code + preflight guard shipped; env still OFF by design until ops validates Stripe               | `docs/runbooks/tenant-payment-wall.md`                      |
 | Channel LTV:CAC including claim dollars       | Shipped — `customer_acquisition.patient_id` (migration 0532) + RPC folds linked ERA into LTV:CAC | This PR / `ltv-cac.ts`                                      |
 | Full multi-org provider org-picker            | Fail-closed API + SPA WrongTenantHost + invite domain gate shipped                               | `docs/provider-portal-tenant-host-routing.md` (Future epic) |
+=======
+| Item                                          | Status                                                                                                  | Where tracked                                               |
+| --------------------------------------------- | ------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| Flip `BILLING_PAYWALL_ENFORCED` in production | Code + preflight guard shipped; env still OFF by design until ops validates Stripe                      | `docs/runbooks/tenant-payment-wall.md`                      |
+| Channel LTV:CAC including claim dollars       | ERA remittance companion on LTV page + revenue-by-source; ratio stays shop-only until patient join      | New epic: `customer_acquisition.patient_id` (or equivalent) |
+| Full multi-org provider org-picker            | Slice 1 shipped: `GET /api/provider/orgs` + WrongTenantHost deep links; session active-org still future | `docs/provider-portal-tenant-host-routing.md`               |
+>>>>>>> f51e732a7 (feat: provider org membership deep links on platform host)
 
 ## Shipped (merged)
 

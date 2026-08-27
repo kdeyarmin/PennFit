@@ -1,8 +1,9 @@
 # Provider portal multi-tenant host routing
 
 Status: **deferred-backlog complete** for host fail-closed + SPA honesty.
-Full multi-org membership / org-picker remains a **separate epic** (not a
-deferred-review leftover).
+**Slice 1 of the multi-org epic shipped:** platform-host membership deep
+links (`GET /api/provider/orgs` + WrongTenantHost picker). Session-pinned
+active-org for platform-hosted PHI remains a **future slice**.
 
 ## Problem
 
@@ -20,22 +21,24 @@ under multi-tenant deployments.
 | `GET /api/provider/me` pending count | `resolveBrandOrgIdByHost`        | **403** `provider_tenant_host_required`                     |
 | `GET /api/provider/queue` list       | same                             | **403**                                                     |
 | RTM (`attachProviderOrgId`)          | same                             | **403**                                                     |
-| SPA `/provider/*` gate               | reads error code / platform host | **WrongTenantHost** card (not "No portal access")           |
+| SPA `/provider/*` gate               | reads error code / platform host | **WrongTenantHost** card with membership deep links         |
+| `GET /api/provider/orgs`             | session `provider_id` only       | Works on platform host; names + portal URLs, **no PHI**     |
 | Admin invite                         | `resolveProviderPortalBaseUrl`   | **422** `tenant_domain_required` + Company Information link |
 | Single-doc view / sign / batch       | row-owned by `provider_id`       | unchanged                                                   |
 
 Providers must use the tenant's **verified custom domain** (or active tenant
 subdomain), e.g. `pennpaps.com` for Penn Home Medical Supply — not the
-platform host.
+platform host. On the platform host, WrongTenantHost lists linked DMEs and
+deep-links to each verified `/provider` URL.
 
-## Future epic (out of deferred backlog)
+## Future epic (remaining)
 
-1. **Provider ↔ org membership session.** `provider_dme_links` already
-   authorizes referrals; queue/RTM still need an explicit active-org session
-   (not host-only) plus CSRF-safe org switching.
-2. **Org picker / deep links** on a platform-hosted provider SPA.
-3. Keep fail-closed on platform host until (1)–(2) ship — do not reintroduce
-   seed soft-fallback for PHI list routes.
+1. **Provider ↔ org membership session.** Explicit active-org on the
+   session (not host-only) plus CSRF-safe org switching, so queue/RTM can
+   run on the platform host under a membership-validated org.
+2. **In-SPA org switcher** on tenant hosts for multi-linked providers.
+3. Keep fail-closed on platform host for PHI lists until (1) ships — do
+   not reintroduce seed soft-fallback for PHI list routes.
 
 ## Non-goals
 

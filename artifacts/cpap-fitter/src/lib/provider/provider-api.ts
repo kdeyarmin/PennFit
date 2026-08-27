@@ -73,6 +73,20 @@ export interface ProviderMe {
 
 export const getProviderMe = () => jsonFetch<ProviderMe>("/me");
 
+// ── Memberships (platform-host deep links) ────────────────────────
+
+export interface ProviderOrgMembership {
+  orgId: string;
+  dmeLinkId: string;
+  name: string;
+  portalBaseUrl: string | null;
+  portalUrl: string | null;
+  hasVerifiedPortal: boolean;
+}
+
+export const getProviderOrgs = () =>
+  jsonFetch<{ orgs: ProviderOrgMembership[] }>("/orgs");
+
 // ── Queue ─────────────────────────────────────────────────────────
 
 export interface QueueItem {

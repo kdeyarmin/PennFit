@@ -18,8 +18,10 @@ import { useQuery } from "@tanstack/react-query";
 
 import {
   getProviderMe,
+  getProviderOrgs,
   ProviderApiError,
   type ProviderMe,
+  type ProviderOrgMembership,
 } from "@/lib/provider/provider-api";
 import { providerAuthHooks } from "@/lib/provider/provider-auth";
 import { isPlatformHomeHost } from "@/lib/platform-host";
@@ -63,6 +65,16 @@ function NoAccess() {
 /** Platform / unbound host: queue and RTM refuse seed-org soft-fallback. */
 function WrongTenantHost() {
   const signOut = providerAuthHooks.useSignOut();
+  const orgs = useQuery({
+    queryKey: ["provider", "orgs"],
+    queryFn: getProviderOrgs,
+    retry: false,
+  });
+
+  const linked: ProviderOrgMembership[] = orgs.data?.orgs ?? [];
+  const withPortal = linked.filter((o) => o.hasVerifiedPortal && o.portalUrl);
+  const withoutPortal = linked.filter((o) => !o.hasVerifiedPortal);
+
   return (
     <ProviderAuthLayout>
       <Card
@@ -75,8 +87,54 @@ function WrongTenantHost() {
         <p className="mt-2 text-sm text-slate-500">
           This address is the CareMetric Breathe platform home. Signature queues
           and patient therapy views are available only on your DME&apos;s own
-          verified domain (the portal URL in your invitation email) — not here.
+          verified domain — not here.
         </p>
+
+        {orgs.isPending ? (
+          <div className="mt-5">
+            <Spinner label="Looking up your practices…" />
+          </div>
+        ) : orgs.isError ? (
+          <p className="mt-4 text-sm text-slate-500">
+            Couldn&apos;t load your linked practices. Use the portal URL from
+            your invitation email, or try again after signing out.
+          </p>
+        ) : withPortal.length > 0 ? (
+          <ul
+            className="mt-5 space-y-2 text-left"
+            data-testid="provider-org-deeplinks"
+          >
+            {withPortal.map((org) => (
+              <li key={org.dmeLinkId}>
+                <a
+                  href={org.portalUrl!}
+                  className="block rounded border border-slate-200 px-3 py-2 text-sm font-medium text-slate-900 hover:bg-slate-50"
+                >
+                  Continue to {org.name}
+                </a>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="mt-4 text-sm text-slate-500">
+            {linked.length === 0
+              ? "No linked DME practices yet. Ask your DME to send a provider portal invitation."
+              : "Your linked practices do not have a verified portal domain yet. Ask the practice to finish domain setup, or use the URL from your invitation email."}
+          </p>
+        )}
+
+        {withoutPortal.length > 0 && withPortal.length > 0 ? (
+          <p className="mt-3 text-xs text-slate-400">
+            {withoutPortal.length} linked practice
+            {withoutPortal.length === 1 ? "" : "s"} without a verified portal
+            domain
+            {withoutPortal.length <= 3
+              ? `: ${withoutPortal.map((o) => o.name).join(", ")}`
+              : ""}
+            .
+          </p>
+        ) : null}
+
         <Button
           variant="secondary"
           className="mt-5"
