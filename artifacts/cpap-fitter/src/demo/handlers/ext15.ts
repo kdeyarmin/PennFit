@@ -384,6 +384,21 @@ export const ext15Handlers: DemoHandler[] = [
 
   // ── provider portal: identity / queue / MFA / RTM (reads) ─────────
   route("GET", "/api/provider/me", () => json(demoProviderMe())),
+  // Platform-host membership deep links (no PHI).
+  route("GET", "/api/provider/orgs", () =>
+    json({
+      orgs: [
+        {
+          orgId: "demo-org-1",
+          dmeLinkId: "demo-dme-link-1",
+          name: DEMO_PROVIDER.practiceName,
+          portalBaseUrl: "https://demo.cmbreathe.example",
+          portalUrl: "https://demo.cmbreathe.example/provider",
+          hasVerifiedPortal: true,
+        },
+      ],
+    }),
+  ),
   route("GET", "/api/provider/queue", (req) =>
     json(demoProviderQueue(req.query.get("status") ?? "pending")),
   ),
