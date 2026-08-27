@@ -355,7 +355,9 @@ function demoLtvCac() {
     insuranceRemittance: {
       eraPayerPaidCents: 8_920_000,
       paidClaimCount: 412,
-      includedInLtvRatio: false as const,
+      linkedToCustomersCents: 2_140_000,
+      linkedCustomerCount: 96,
+      includedInLtvRatio: true,
       possiblyIncomplete: false,
     },
   };

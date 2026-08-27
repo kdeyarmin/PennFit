@@ -6,17 +6,19 @@
 //          customers), and the LTV:CAC ratio.
 //   PUT /admin/customers/:customerId/acquisition
 //        → record/replace a customer's channel + (optional) acquisition
-//          cost (migration 0196 customer_acquisition; UPSERT on the PK).
+//          cost + optional patientId (migration 0196 + 0532; UPSERT).
 //
-// LTV per customer = sum of paid shop_orders. CAC is averaged over the
+// LTV per customer = paid shop_orders + linked insurance remittance
+// (`customer_acquisition.patient_id` → `insurance_claims.total_paid_cents`
+// where paid_at IS NOT NULL, migration 0532). CAC is averaged over
 // customers whose acquisition cost is KNOWN (an unknown-cost customer is
 // never counted as $0, which would inflate the ratio) — the same honesty
 // posture as the F1 cost layer. The cohort math is the pure, tested
 // buildLtvCacReport in @workspace/resupply-domain.
 //
 // cost.read to view (acquisition-cost is finance data, off the CSR
-// bucket); cost.write to record attribution. Aggregates only on the GET
-// — channel + dollar rollups, no per-customer PHI.
+// bucket); cost.write to record attribution (optional patientId). Aggregates
+// only on the GET — channel + dollar rollups, no per-customer PHI.
 
 import { Router, type IRouter } from "express";
 import { z } from "zod";
@@ -62,19 +64,9 @@ router.get(
     }
     const supabase = getOrgScopedClient(orgId);
 
-    // Per-customer LTV/CAC economics — the (lifetime paid revenue, channel,
-    // acquisition cost) tuple per customer — is computed server-side in
-    // resupply.ltv_cac_customer_economics (migration 0436). Moving the
-    // rollup into Postgres replaces the former pair of `.limit(20000)`
-    // reads (paid orders + attribution) that silently truncated above the
-    // cap. The RPC mirrors the JS exactly: revenue is paid orders only
-    // (`paid_at IS NOT NULL` AND `status <> 'refunded'` — refunded orders
-    // keep paid_at set and must be excluded, the same rule the Customer-360
-    // rollup documents); the result is the UNION of every customer with
-    // revenue OR an attribution row, with revenue defaulting to 0 and a
-    // NULL channel → "unattributed". The channel rollup + LTV:CAC ratio
-    // math stays in the tested, pure buildLtvCacReport below, so the
-    // response is byte-for-byte unchanged.
+    // Per-customer LTV/CAC — migration 0436 shop rollup, extended by 0532
+    // to add linked insurance remittance when patient_id is set. Channel
+    // rollup + LTV:CAC stays in pure buildLtvCacReport.
     const { data: economics, error: economicsErr } = await supabase
       .raw()
       .schema("resupply")
@@ -86,29 +78,41 @@ router.get(
       return;
     }
 
-    const inputs: CustomerEconomicsInput[] = (
-      (economics ?? []) as Array<{
-        customer_id: string;
-        lifetime_revenue_cents: number | string;
-        channel: string | null;
-        acquisition_cost_cents: number | null;
-      }>
-    ).map((row) => ({
+    type EconRow = {
+      customer_id: string;
+      lifetime_revenue_cents: number | string;
+      shop_revenue_cents?: number | string | null;
+      insurance_revenue_cents?: number | string | null;
+      patient_id?: string | null;
+      channel: string | null;
+      acquisition_cost_cents: number | string | null;
+    };
+    const econRows = (economics ?? []) as EconRow[];
+
+    const inputs: CustomerEconomicsInput[] = econRows.map((row) => ({
       customerId: row.customer_id,
       channel: row.channel == null ? null : (row.channel as AcquisitionChannel),
       lifetimeRevenueCents: Number(row.lifetime_revenue_cents),
       acquisitionCostCents:
-        typeof row.acquisition_cost_cents === "number"
-          ? row.acquisition_cost_cents
-          : null,
+        row.acquisition_cost_cents == null
+          ? null
+          : Number(row.acquisition_cost_cents),
     }));
+
+    let linkedInsuranceRevenueCents = 0;
+    let linkedPatientCustomerCount = 0;
+    for (const row of econRows) {
+      const ins = Number(row.insurance_revenue_cents ?? 0);
+      if (Number.isFinite(ins) && ins > 0) {
+        linkedInsuranceRevenueCents += Math.trunc(ins);
+      }
+      if (row.patient_id) linkedPatientCustomerCount += 1;
+    }
 
     const report = buildLtvCacReport(inputs);
 
-    // ERA remittance companion — labeled NOT in the LTV:CAC ratio. Channel
-    // attribution for claim dollars still needs a patient↔customer join
-    // (customer_acquisition has no patient_id). Operators see remittance
-    // totals here and the full split on revenue-by-source.
+    // Org-wide ERA remittance companion for coverage context. Linked claim
+    // dollars are already inside lifetimeRevenueCents / LTV:CAC via the RPC.
     let eraPayerPaidCents = 0;
     let eraPaidClaimCount = 0;
     {
@@ -138,7 +142,6 @@ router.get(
         }
         if (!data || data.length < PAGE) break;
         if (count != null && count > CAP) {
-          // Cap hit — still report what we summed; flag incomplete below.
           break;
         }
       }
@@ -150,7 +153,9 @@ router.get(
       insuranceRemittance: {
         eraPayerPaidCents,
         paidClaimCount: eraPaidClaimCount,
-        includedInLtvRatio: false as const,
+        linkedToCustomersCents: linkedInsuranceRevenueCents,
+        linkedCustomerCount: linkedPatientCustomerCount,
+        includedInLtvRatio: linkedInsuranceRevenueCents > 0,
         possiblyIncomplete: eraPaidClaimCount > 50_000,
       },
     });
@@ -162,6 +167,9 @@ const putSchema = z
     channel: z.enum(CHANNELS),
     acquisitionCostCents: z.number().int().min(0).nullable().optional(),
     sourceDetail: z.string().trim().max(200).nullable().optional(),
+    // Optional link to patients so ERA remittance folds into channel LTV.
+    // Omit to leave existing patient_id unchanged; null clears the link.
+    patientId: z.string().uuid().nullable().optional(),
   })
   .strict();
 
@@ -194,23 +202,58 @@ router.put(
       return;
     }
     const supabase = getOrgScopedClient(orgId);
+
+    if (d.patientId) {
+      const { data: patient, error: patientErr } = await supabase
+        .from("patients")
+        .select("id")
+        .eq("id", d.patientId)
+        .maybeSingle();
+      if (patientErr) {
+        res.status(500).json({
+          error: "patient_lookup_failed",
+          message: patientErr.message,
+        });
+        return;
+      }
+      if (!patient) {
+        res.status(404).json({ error: "patient_not_found" });
+        return;
+      }
+    }
+
     const nowIso = new Date().toISOString();
+    const upsertPayload: {
+      customer_id: string;
+      channel: (typeof CHANNELS)[number];
+      acquisition_cost_cents: number | null;
+      source_detail: string | null;
+      recorded_by_email: string | null;
+      updated_at: string;
+      patient_id?: string | null;
+    } = {
+      customer_id: customerId,
+      channel: d.channel,
+      acquisition_cost_cents: d.acquisitionCostCents ?? null,
+      source_detail: d.sourceDetail ?? null,
+      recorded_by_email: req.adminEmail ?? null,
+      updated_at: nowIso,
+    };
+    if (d.patientId !== undefined) {
+      upsertPayload.patient_id = d.patientId;
+    }
+
     const { data: row, error } = await supabase
       .from("customer_acquisition")
-      .upsert(
-        {
-          customer_id: customerId,
-          channel: d.channel,
-          acquisition_cost_cents: d.acquisitionCostCents ?? null,
-          source_detail: d.sourceDetail ?? null,
-          recorded_by_email: req.adminEmail ?? null,
-          updated_at: nowIso,
-        },
-        { onConflict: "customer_id" },
-      )
-      .select("customer_id, channel")
+      .upsert(upsertPayload, { onConflict: "customer_id" })
+      .select("customer_id, channel, patient_id")
       .single();
     if (error) {
+      const code = (error as { code?: string }).code;
+      if (code === "23505") {
+        res.status(409).json({ error: "patient_already_linked" });
+        return;
+      }
       res.status(500).json({ error: "upsert_failed", message: error.message });
       return;
     }
@@ -224,6 +267,9 @@ router.put(
       metadata: {
         channel: d.channel,
         cost_known: d.acquisitionCostCents != null,
+        patient_linked: Boolean(
+          (row as { patient_id?: string | null } | null)?.patient_id,
+        ),
       },
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
@@ -234,9 +280,15 @@ router.put(
       );
     });
 
+    const r = row as {
+      customer_id: string;
+      channel: string;
+      patient_id: string | null;
+    };
     res.json({
-      customerId: (row as Record<string, unknown>).customer_id,
-      channel: (row as Record<string, unknown>).channel,
+      customerId: r.customer_id,
+      channel: r.channel,
+      patientId: r.patient_id ?? null,
     });
   },
 );
