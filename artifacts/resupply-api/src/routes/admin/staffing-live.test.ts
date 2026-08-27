@@ -97,6 +97,7 @@ describe("GET /admin/staffing/live", () => {
     expect(res.body.totalOpenConversations).toBe(4);
     expect(res.body.activeAgents).toBe(2);
     expect(res.body.onShiftAgents).toBe(1);
+    expect(res.body.windowTruncated).toBe(false);
   });
 
   it("returns an empty snapshot when there is no active roster", async () => {
@@ -108,5 +109,6 @@ describe("GET /admin/staffing/live", () => {
     expect(res.status).toBe(200);
     expect(res.body.agents).toEqual([]);
     expect(res.body.totalOpenConversations).toBe(0);
+    expect(res.body.windowTruncated).toBe(false);
   });
 });
