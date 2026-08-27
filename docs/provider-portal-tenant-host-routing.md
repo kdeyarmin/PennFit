@@ -1,9 +1,10 @@
 # Provider portal multi-tenant host routing
 
-Status: **Slices 1–3 shipped** — membership deep links, session-pinned
-`provider_active_org_id` for platform-host PHI, and platform-host chrome
-to re-select the active DME. Brand host still wins; seed soft-fallback
-never returns for PHI lists.
+Status: **Slices 1–3 + tenant honesty chrome shipped** — membership deep
+links, session-pinned `provider_active_org_id` for platform-host PHI,
+platform-host chrome to re-select the active DME, and tenant-host
+deep-links to _other_ verified portals. Brand host still wins; seed
+soft-fallback never returns for PHI lists.
 
 ## Problem
 
@@ -22,7 +23,8 @@ under multi-tenant deployments.
 | `GET /api/provider/queue` list       | same                                       | **403**                                                      |
 | RTM (`attachProviderOrgId`)          | same                                       | **403**                                                      |
 | SPA `/provider/*` gate               | reads error code / platform host           | **WrongTenantHost** — select (session pin) and/or deep links |
-| SPA `ProviderShell` chrome           | `isPlatformHomeHost` + `orgs.length > 1`   | Platform-host `<select>` re-pins via `POST /orgs/select`     |
+| SPA `ProviderShell` (platform)       | `isPlatformHomeHost` + `orgs.length > 1`   | `<select>` re-pins via `POST /orgs/select`                   |
+| SPA `ProviderShell` (tenant)         | other verified `portalUrl`s ≠ current host | Deep-link chrome only (re-sign-in on other domain)           |
 | `GET /api/provider/orgs`             | session `provider_id` only                 | Works on platform host; names + portal URLs + `activeOrgId`  |
 | `POST /api/provider/orgs/select`     | CSRF + active `provider_dme_links`         | Pins `sessions.provider_active_org_id` (migration 0533)      |
 | Admin invite                         | `resolveProviderPortalBaseUrl`             | **422** `tenant_domain_required` + Company Information link  |
@@ -41,14 +43,12 @@ admin gates must not read it.
 On a **tenant brand host**, changing the session pin does **not** change
 PHI (brand wins). Cross-tenant switching there requires navigating to the
 other practice's verified `portalUrl` (host-only session cookie → expect
-re-sign-in). The in-SPA switcher therefore ships on the **platform host**
-only.
+re-sign-in). Platform host uses the in-SPA `<select>`; tenant hosts show
+deep-link chrome only.
 
 ## Remaining
 
 1. Ops: enable `BILLING_PAYWALL_ENFORCED` in prod when ready (runbook).
-2. Optional: tenant-host deep-link chrome for other linked practices
-   (honesty UX only; not a same-session PHI switch).
 
 ## Non-goals
 
