@@ -2,19 +2,22 @@
 // reps. Only `admin` (super-admin) role can see and use this page;
 // other roles receive 403 from the underlying API.
 //
-// 3-role model (Phase B collapse):
-//   * admin               — super admin; full surface; only role
-//                            that can use this page.
-//   * supervisor          — admin tier (broad management). Legacy
-//                            DB names supervisor + compliance_officer
-//                            both render as "Admin" here.
-//   * customer service    — CSR tier. Legacy DB names csr + fitter
-//                            + fulfillment + agent all render as
+// Roles offered here (labels + scope hints live in
+// lib/admin/team-roles.ts):
+//   * admin (Owner)       — full surface; only role that can use this
+//                            page.
+//   * supervisor (Admin)  — admin tier (broad management). Legacy DB
+//                            name compliance_officer renders the same.
+//   * csr                 — CSR tier. Legacy DB names fitter,
+//                            fulfillment, and agent all render as
 //                            "Customer service rep".
+//   * biller              — revenue cycle; the Billing area.
+//   * rt                  — respiratory therapist; therapy monitoring,
+//                            fit review, clinical documentation.
 //
-// The DB still carries the 7-role enum for backward compat; the
+// The DB still carries the 9-role enum for backward compat; the
 // per-row permission lookup in lib/resupply-auth/src/rbac.ts
-// normalizes those 7 names into the 3 effective buckets.
+// normalizes those names into the 5 effective buckets.
 //
 // Layout:
 //   - Invite form at the top (email + role + optional display name + notes)
@@ -41,38 +44,10 @@ import {
   type TeamRole,
   type TeamStatus,
 } from "@/lib/admin/admin-team-api";
+import { ROLE_HINT, ROLE_LABEL, ROLE_OPTIONS } from "@/lib/admin/team-roles";
 import { LOCATIONS_QUERY_KEY, listLocations } from "@/lib/admin/locations-api";
 import { useGetAdminMe } from "@workspace/api-client-react/admin";
 import { formatAppDate, formatAppDateTime } from "@/lib/utils";
-
-// Display labels for every DB-persisted role. Legacy values map onto
-// one of the 3 effective buckets so the UI shows a consistent
-// "Owner / Admin / Customer service rep" vocabulary even for rows
-// persisted under one of the older role names.
-//
-// "Super Admin" is deliberately NOT used here: it now names the GLOBAL
-// platform tier (platform_admins — see the /platform super-admin
-// console), which sits above every tenant. A tenant's TOP role is the
-// "Owner" (full access within that one tenant, including its System
-// Configuration); the mid tier is "Admin".
-const ROLE_LABEL: Record<TeamRole, string> = {
-  admin: "Owner",
-  supervisor: "Admin",
-  compliance_officer: "Admin",
-  csr: "Customer service rep",
-  fitter: "Customer service rep",
-  fulfillment: "Customer service rep",
-  agent: "Customer service rep",
-  biller: "Biller",
-};
-
-/** Roles offered in the invite + edit selectors. Owner / Admin /
- *  Customer service rep are the three general buckets; Biller is the
- *  billing-scoped role (Billing area only). Existing rows persisted
- *  under a legacy name (supervisor, compliance_officer, fitter,
- *  fulfillment, agent) continue to resolve correctly through
- *  ROLE_LABEL above; new invites pick exactly one of these. */
-const ROLE_OPTIONS: TeamRole[] = ["admin", "supervisor", "csr", "biller"];
 
 const STATUS_TONE: Record<TeamStatus, string> = {
   active: "bg-emerald-100 text-emerald-900 border-emerald-300",
@@ -85,7 +60,7 @@ export function AdminTeamPage() {
     <div className="space-y-6" data-testid="admin-team-page">
       <PageHeader
         title="Team"
-        description="Invite owners, admins, customer-service reps, and billers — the role you pick decides what they can see. Invitees receive a welcome email that explains the console, what their role covers, and how to get signed in — with the getting-started guide and the handbook for their job attached — plus the sign-up link they must accept before they can log in. Revoking removes access immediately; pending and revoked invites can also be deleted entirely, as if they were never sent."
+        description="Invite owners, admins, customer-service reps, billers, and respiratory therapists — the role you pick decides what they can see. Invitees receive a welcome email that explains the console, what their role covers, and how to get signed in — with the getting-started guide and the handbook for their job attached — plus the sign-up link they must accept before they can log in. Revoking removes access immediately; pending and revoked invites can also be deleted entirely, as if they were never sent."
       />
       <InviteCard />
       <TeamList />
@@ -627,8 +602,7 @@ function InviteCard() {
           >
             {ROLE_OPTIONS.map((r) => (
               <option key={r} value={r}>
-                {ROLE_LABEL[r]}
-                {r === "admin" ? " (full privileges)" : ""}
+                {ROLE_LABEL[r]} — {ROLE_HINT[r]}
               </option>
             ))}
           </select>

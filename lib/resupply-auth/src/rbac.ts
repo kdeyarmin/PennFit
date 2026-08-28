@@ -278,8 +278,11 @@ const EFFECTIVE_ROLE_PERMISSIONS: Record<
   super_admin: new Set(ALL_PERMISSIONS),
 
   // Union of legacy `supervisor` + `compliance_officer`. Excludes
-  // only `admin_team.manage` — team management stays super-admin-
-  // only, matching the pre-collapse posture.
+  // `admin_team.manage` AND `system.config.manage` — team management
+  // and the System Configuration store both stay super-admin-only,
+  // matching the pre-collapse posture. (Those two are the whole gap
+  // between this bucket and super_admin; the Team page's Admin hint
+  // in cpap-fitter/src/lib/admin/team-roles.ts names both.)
   admin: new Set<Permission>([
     "patients.read",
     "patients.update",
