@@ -7304,6 +7304,13 @@ export interface Database {
           role: string;
           status: string;
           email_verified_at: string | null;
+          /** Nudge stamps for the "invited but never signed in" sweep
+           * (migration 0534). Never cleared — a stamp older than the live
+           * invite token's created_at is stale, which is how a re-invite
+           * earns a fresh nudge pair. See
+           * artifacts/resupply-api/src/worker/jobs/invite-acceptance-reminder.ts. */
+          invite_reminder_sent_at: string | null;
+          invite_final_reminder_sent_at: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -7314,6 +7321,8 @@ export interface Database {
           role?: string;
           status?: string;
           email_verified_at?: string | null;
+          invite_reminder_sent_at?: string | null;
+          invite_final_reminder_sent_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };

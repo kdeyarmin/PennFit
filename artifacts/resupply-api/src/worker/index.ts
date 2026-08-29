@@ -104,6 +104,7 @@ import { registerWebhookDispatcherJob } from "./jobs/webhook-dispatcher.js";
 import { registerAutoWorkflowJob } from "./jobs/auto-workflow.js";
 import { registerLowStockAlertsJob } from "./jobs/low-stock-alerts.js";
 import { registerInvitePasswordExpiryNotifyJob } from "./jobs/invite-password-expiry-notify.js";
+import { registerInviteAcceptanceReminderJob } from "./jobs/invite-acceptance-reminder.js";
 import { registerPrescriptionRequestAutoDraftJob } from "./jobs/prescription-request-auto-draft.js";
 import { registerConversationOrphanAssigneeSweepJob } from "./jobs/conversation-orphan-assignee-sweep.js";
 import { registerPaymentFailedAlertJob } from "./jobs/payment-failed-alert.js";
@@ -1152,6 +1153,16 @@ async function doStartWorker(): Promise<void> {
     "registerInvitePasswordExpiryNotifyJob",
     registrationFailures,
     () => registerInvitePasswordExpiryNotifyJob(boss),
+  );
+
+  // Hourly — the other half of the invite follow-up: people mailed a
+  // set-password link who never signed in. Nudges once mid-window and again
+  // ~24h before the link dies. Idempotency via the stamp columns on
+  // resupply_auth.users added in migration 0534.
+  await safeRegister(
+    "registerInviteAcceptanceReminderJob",
+    registrationFailures,
+    () => registerInviteAcceptanceReminderJob(boss),
   );
 
   // Every 6 hours — warehouse low-stock digest. Reads the Postgres product
