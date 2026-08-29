@@ -35,8 +35,15 @@ import type { ResupplySupabaseClient } from "@workspace/resupply-db";
 
 /** Invite tokens are valid for 7 days. Long enough that an
  *  operator can run an invite ahead of telling the user to
- *  expect the email. */
-const INVITE_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+ *  expect the email.
+ *
+ *  Exported because it is also the only thing that distinguishes an
+ *  INVITE token from an ordinary forgot-password token: both are written
+ *  with `purpose='password_reset'`, but a recovery token is minted with
+ *  the much shorter `AUTH_EMAIL_TOKEN_TTL_HOURS` (24h by default). The
+ *  invite-acceptance-reminder sweep relies on that difference in lifespan
+ *  so it never chases someone who simply reset their password. */
+export const INVITE_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 /**
  * How long an admin-typed password (set via the "Set their password

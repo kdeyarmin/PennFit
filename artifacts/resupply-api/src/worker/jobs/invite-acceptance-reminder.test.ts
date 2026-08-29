@@ -7,12 +7,18 @@
 //   * the happy path for both invite kinds, including which stamp column
 //     each nudge window claims;
 //   * the acceptance gate (a user who redeemed their invite is filtered out
-//     by the query, and a genuine password-reset token never nudges);
+//     by the query), and the lifespan gate that keeps an ordinary 24h
+//     forgot-password token from being mistaken for an invite;
 //   * the dedupe guards — stamp already current for this token, and the lost
 //     compare-and-swap race;
-//   * the re-invite case (stamp predating a fresh token nudges again);
-//   * the skips: revoked staff seat, unmapped identity (provider portal),
-//     and a tenant with no verified domain;
+//   * the re-invite case (stamp predating a fresh token nudges again), and
+//     acting on the NEWEST live token when a resend left the old one alive;
+//   * the skips: revoked staff seat, unmapped identity (provider portal), a
+//     tenant with no verified domain, an identity linked to two tenants, a
+//     suspended tenant, and a tenant with no usable SendGrid sender (which
+//     must not consume the nudge);
+//   * paging past a fully-claimed page, so a large onboarding batch can't
+//     starve behind it;
 //   * mutual exclusivity of the two windows (never two emails in one run).
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -73,6 +79,8 @@ const CFG = { publicBaseUrl: "https://pennfit.example" };
 
 const HOUR = 3_600_000;
 const DAY = 86_400_000;
+/** Mirrors lib/resupply-auth's INVITE_TOKEN_TTL_MS. */
+const INVITE_TTL = 7 * DAY;
 
 /** ISO timestamp `ms` in the future. */
 function inMs(ms: number): string {
@@ -83,23 +91,55 @@ function agoMs(ms: number): string {
   return new Date(Date.now() - ms).toISOString();
 }
 
+/** A 7-day-lifespan token, i.e. one an invite flow minted. */
+function inviteToken(
+  userId: string,
+  opts: { remaining: number; age?: number },
+) {
+  const createdAt = agoMs(opts.age ?? INVITE_TTL - opts.remaining);
+  return {
+    user_id: userId,
+    // Lifespan is exactly the invite TTL, which is what marks it as an invite
+    // rather than a forgot-password token.
+    expires_at: new Date(
+      new Date(createdAt).getTime() + INVITE_TTL,
+    ).toISOString(),
+    created_at: createdAt,
+  };
+}
+
 /**
- * Stage the four reads the sweep makes before it starts claiming rows.
- * Anything omitted defaults to "nothing found".
+ * Stage the reads one page of the sweep makes, in order:
+ *   email_tokens (windowed page) → users (acceptance gate) →
+ *   email_tokens (all live, for newest-token selection) →
+ *   admin_users → patients → organizations (tenant status)
+ * Anything omitted defaults to "nothing found"; `allTokens` defaults to the
+ * windowed page, which is the ordinary case (no superseded token lying about).
  */
 function stageScan(opts: {
   tokens?: unknown[];
   users?: unknown[];
+  allTokens?: unknown[];
   staff?: unknown[];
   patients?: unknown[];
+  orgStatus?: string | null;
 }) {
   stageSupabaseResponse("email_tokens", "select", { data: opts.tokens ?? [] });
   if (opts.tokens && opts.tokens.length > 0) {
     stageSupabaseResponse("users", "select", { data: opts.users ?? [] });
   }
   if (opts.users && opts.users.length > 0) {
+    stageSupabaseResponse("email_tokens", "select", {
+      data: opts.allTokens ?? opts.tokens ?? [],
+    });
     stageSupabaseResponse("admin_users", "select", { data: opts.staff ?? [] });
     stageSupabaseResponse("patients", "select", { data: opts.patients ?? [] });
+    stageSupabaseResponse("organizations", "select", {
+      data:
+        opts.orgStatus === null
+          ? null
+          : { id: "org-x", status: opts.orgStatus ?? "active" },
+    });
   }
 }
 
@@ -193,13 +233,7 @@ describe("runInviteAcceptanceReminderSweep", () => {
 
   it("nudges a staff invitee mid-window and stamps invite_reminder_sent_at", async () => {
     stageScan({
-      tokens: [
-        {
-          user_id: "u-1",
-          expires_at: inMs(3 * DAY),
-          created_at: agoMs(4 * DAY),
-        },
-      ],
+      tokens: [inviteToken("u-1", { remaining: 3 * DAY })],
       users: [
         {
           id: "u-1",
@@ -239,13 +273,7 @@ describe("runInviteAcceptanceReminderSweep", () => {
 
   it("uses the final stamp column and final copy inside the last day", async () => {
     stageScan({
-      tokens: [
-        {
-          user_id: "u-1",
-          expires_at: inMs(6 * HOUR),
-          created_at: agoMs(7 * DAY),
-        },
-      ],
+      tokens: [inviteToken("u-1", { remaining: 6 * HOUR })],
       users: [
         {
           id: "u-1",
@@ -278,13 +306,7 @@ describe("runInviteAcceptanceReminderSweep", () => {
 
   it("nudges a portal patient with the storefront recovery link", async () => {
     stageScan({
-      tokens: [
-        {
-          user_id: "p-1",
-          expires_at: inMs(2 * DAY),
-          created_at: agoMs(5 * DAY),
-        },
-      ],
+      tokens: [inviteToken("p-1", { remaining: 2 * DAY })],
       users: [
         {
           id: "p-1",
@@ -315,13 +337,7 @@ describe("runInviteAcceptanceReminderSweep", () => {
     // email_verified_at IS NULL), so an accepted invitee — or the owner of a
     // genuine forgot-password token — simply isn't returned.
     stageScan({
-      tokens: [
-        {
-          user_id: "u-1",
-          expires_at: inMs(2 * DAY),
-          created_at: agoMs(5 * DAY),
-        },
-      ],
+      tokens: [inviteToken("u-1", { remaining: 2 * DAY })],
       users: [],
     });
 
@@ -335,13 +351,7 @@ describe("runInviteAcceptanceReminderSweep", () => {
 
   it("does not re-nudge when the stamp is already current for this invite", async () => {
     stageScan({
-      tokens: [
-        {
-          user_id: "u-1",
-          expires_at: inMs(2 * DAY),
-          created_at: agoMs(5 * DAY),
-        },
-      ],
+      tokens: [inviteToken("u-1", { remaining: 2 * DAY })],
       users: [
         {
           id: "u-1",
@@ -366,11 +376,7 @@ describe("runInviteAcceptanceReminderSweep", () => {
     stageScan({
       tokens: [
         // Fresh token, minted after the previous nudge.
-        {
-          user_id: "u-1",
-          expires_at: inMs(3 * DAY),
-          created_at: agoMs(4 * DAY),
-        },
+        inviteToken("u-1", { remaining: 3 * DAY }),
       ],
       users: [
         {
@@ -395,13 +401,7 @@ describe("runInviteAcceptanceReminderSweep", () => {
 
   it("sends nothing when another worker wins the compare-and-swap", async () => {
     stageScan({
-      tokens: [
-        {
-          user_id: "u-1",
-          expires_at: inMs(2 * DAY),
-          created_at: agoMs(5 * DAY),
-        },
-      ],
+      tokens: [inviteToken("u-1", { remaining: 2 * DAY })],
       users: [
         {
           id: "u-1",
@@ -425,13 +425,7 @@ describe("runInviteAcceptanceReminderSweep", () => {
 
   it("skips a revoked staff seat", async () => {
     stageScan({
-      tokens: [
-        {
-          user_id: "u-1",
-          expires_at: inMs(2 * DAY),
-          created_at: agoMs(5 * DAY),
-        },
-      ],
+      tokens: [inviteToken("u-1", { remaining: 2 * DAY })],
       users: [
         {
           id: "u-1",
@@ -452,13 +446,7 @@ describe("runInviteAcceptanceReminderSweep", () => {
 
   it("skips an identity with no roster row (provider portal is out of scope)", async () => {
     stageScan({
-      tokens: [
-        {
-          user_id: "pr-1",
-          expires_at: inMs(2 * DAY),
-          created_at: agoMs(5 * DAY),
-        },
-      ],
+      tokens: [inviteToken("pr-1", { remaining: 2 * DAY })],
       users: [
         {
           id: "pr-1",
@@ -479,19 +467,173 @@ describe("runInviteAcceptanceReminderSweep", () => {
     expect(getSupabaseCallCount("users", "update")).toBe(0);
   });
 
+  it("ignores an ordinary forgot-password token for an unverified invitee", async () => {
+    // The reminder's own CTA sends people to forgot-password, which mints
+    // another purpose='password_reset' token — but with the 24h
+    // AUTH_EMAIL_TOKEN_TTL_HOURS, not the 7-day invite TTL. The invitee stays
+    // status='invited' until they finish the reset, so without a lifespan
+    // check that fresh token reads as "an invite with a day left" and fires
+    // "Last chance" within the hour of them acting.
+    stageScan({
+      tokens: [
+        {
+          user_id: "u-1",
+          expires_at: inMs(23 * HOUR),
+          created_at: agoMs(HOUR),
+        },
+      ],
+    });
+
+    const stats = await runInviteAcceptanceReminderSweep(CFG);
+
+    expect(stats.scannedTokens).toBe(1);
+    expect(stats.pendingInvites).toBe(0);
+    expect(sendEmailMock).not.toHaveBeenCalled();
+    expect(getSupabaseCallCount("users", "update")).toBe(0);
+  });
+
+  it("acts on the newest live invite token, not the superseded one", async () => {
+    // patient-portal-invite.ts resend inserts a new token WITHOUT expiring the
+    // old one, so the superseded token enters the window days before the live
+    // one. Acting on it would send expiry copy about a replaced link and stamp
+    // the user, suppressing the newer token's real reminders.
+    const superseded = inviteToken("p-1", { remaining: 2 * DAY });
+    const fresh = inviteToken("p-1", { remaining: 6 * DAY });
+    stageScan({
+      tokens: [superseded],
+      users: [
+        {
+          id: "p-1",
+          email_lower: "sam@example.test",
+          display_name: null,
+          invite_reminder_sent_at: null,
+          invite_final_reminder_sent_at: null,
+        },
+      ],
+      allTokens: [superseded, fresh],
+      patients: [{ portal_auth_user_id: "p-1", org_id: "org-b" }],
+    });
+
+    const stats = await runInviteAcceptanceReminderSweep(CFG);
+
+    // The newest token still has 6 days left — outside the nudge window — so
+    // nothing is sent and, crucially, nothing is stamped.
+    expect(stats.remindersSent).toBe(0);
+    expect(sendEmailMock).not.toHaveBeenCalled();
+    expect(getSupabaseCallCount("users", "update")).toBe(0);
+  });
+
+  it("skips an identity linked to more than one tenant", async () => {
+    // One person shopping two DMEs is a single resupply_auth.users row with
+    // two patient rows (portal_auth_user_id is non-unique, and invites reuse
+    // identities by email). The token carries no org_id, so there is nothing
+    // that says whose invite is outstanding — guessing would send another
+    // tenant's brand, sender and portal host.
+    stageScan({
+      tokens: [inviteToken("p-1", { remaining: 2 * DAY })],
+      users: [
+        {
+          id: "p-1",
+          email_lower: "sam@example.test",
+          display_name: null,
+          invite_reminder_sent_at: null,
+          invite_final_reminder_sent_at: null,
+        },
+      ],
+      patients: [
+        { portal_auth_user_id: "p-1", org_id: "org-b" },
+        { portal_auth_user_id: "p-1", org_id: "org-c" },
+      ],
+    });
+
+    const stats = await runInviteAcceptanceReminderSweep(CFG);
+
+    expect(stats.skippedUnmappedUser).toBe(1);
+    expect(sendEmailMock).not.toHaveBeenCalled();
+    expect(getSupabaseCallCount("users", "update")).toBe(0);
+  });
+
+  it("does not email on behalf of a suspended tenant", async () => {
+    stageScan({
+      tokens: [inviteToken("u-1", { remaining: 2 * DAY })],
+      users: [
+        {
+          id: "u-1",
+          email_lower: "pat@example.test",
+          display_name: null,
+          invite_reminder_sent_at: null,
+          invite_final_reminder_sent_at: null,
+        },
+      ],
+      staff: [{ auth_user_id: "u-1", org_id: "org-b", status: "pending" }],
+      orgStatus: "suspended",
+    });
+
+    const stats = await runInviteAcceptanceReminderSweep(CFG);
+
+    expect(stats.skippedNoTenant).toBe(1);
+    expect(sendEmailMock).not.toHaveBeenCalled();
+    expect(getSupabaseCallCount("users", "update")).toBe(0);
+  });
+
+  it("keeps paging when a whole page is already stamped", async () => {
+    // Stamping `users` does not remove the token from the windowed query, so a
+    // fixed first page would return the same claimed rows every hour and let a
+    // large same-day onboarding batch age out behind them. The cap counts
+    // sends, so the sweep must page past a fully-claimed page.
+    const claimed = inviteToken("u-claimed", { remaining: 2 * DAY });
+    const fresh = inviteToken("u-fresh", { remaining: 2 * DAY });
+
+    // Page 0: one user, already stamped for this token → no send.
+    stageScan({
+      tokens: [claimed],
+      users: [
+        {
+          id: "u-claimed",
+          email_lower: "claimed@example.test",
+          display_name: null,
+          invite_reminder_sent_at: inMs(0),
+          invite_final_reminder_sent_at: null,
+        },
+      ],
+      staff: [
+        { auth_user_id: "u-claimed", org_id: "org-b", status: "pending" },
+      ],
+    });
+    // Page 1: a user who has never been nudged.
+    stageScan({
+      tokens: [fresh],
+      users: [
+        {
+          id: "u-fresh",
+          email_lower: "fresh@example.test",
+          display_name: null,
+          invite_reminder_sent_at: null,
+          invite_final_reminder_sent_at: null,
+        },
+      ],
+      staff: [{ auth_user_id: "u-fresh", org_id: "org-b", status: "pending" }],
+    });
+    stageSupabaseResponse("users", "update", { data: [{ id: "u-fresh" }] });
+
+    const stats = await runInviteAcceptanceReminderSweep(CFG);
+
+    expect(stats.scannedTokens).toBe(2);
+    expect(stats.skippedAlreadyClaimed).toBe(1);
+    expect(stats.remindersSent).toBe(1);
+    const [[arg]] = sendEmailMock.mock.calls as unknown as Array<
+      [{ to: string }]
+    >;
+    expect(arg.to).toBe("fresh@example.test");
+  });
+
   it("does not burn the stamp when the tenant has no usable sender", async () => {
     // Regression: the sender used to be constructed AFTER the claim, so a
     // deploy with no SENDGRID_API_KEY stamped every pending invite as
     // "reminded" while sending nothing — and since nothing clears the stamps,
     // those invites were never nudged even once the key was configured.
     stageScan({
-      tokens: [
-        {
-          user_id: "u-1",
-          expires_at: inMs(2 * DAY),
-          created_at: agoMs(5 * DAY),
-        },
-      ],
+      tokens: [inviteToken("u-1", { remaining: 2 * DAY })],
       users: [
         {
           id: "u-1",
@@ -518,13 +660,7 @@ describe("runInviteAcceptanceReminderSweep", () => {
 
   it("skips a tenant with no verified domain rather than sending a wrong-host link", async () => {
     stageScan({
-      tokens: [
-        {
-          user_id: "u-1",
-          expires_at: inMs(2 * DAY),
-          created_at: agoMs(5 * DAY),
-        },
-      ],
+      tokens: [inviteToken("u-1", { remaining: 2 * DAY })],
       users: [
         {
           id: "u-1",

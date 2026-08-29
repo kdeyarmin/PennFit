@@ -60,6 +60,7 @@ import type PgBoss from "pg-boss";
 
 import { EmailConfigError } from "@workspace/resupply-email";
 import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
+import { INVITE_TOKEN_TTL_MS } from "@workspace/resupply-auth";
 
 import { logger } from "../../lib/logger.js";
 import { createTenantSendgridClient } from "../../lib/email/tenant-sender.js";
@@ -90,11 +91,19 @@ const REMINDER_REMAINING_MS = 4 * 86_400_000;
 /** Final nudge once the link has a day or less left. */
 const FINAL_REMAINING_MS = 86_400_000;
 /**
- * Per-run cap, applied to the token scan. A backlog (the first deploy of
- * this sweep against production, say) is drained an hour at a time rather
- * than bursting SendGrid in one tick.
+ * Per-run cap on EMAILS SENT — not on rows scanned. A backlog (the first
+ * deploy of this sweep against production, say) is drained an hour at a time
+ * rather than bursting SendGrid in one tick.
  */
-const BATCH_SIZE = 200;
+const SEND_CAP = 200;
+/** Rows per token-scan page. */
+const SCAN_PAGE_SIZE = 200;
+/**
+ * Ceiling on pages walked per tick, so one run can't scan unboundedly when
+ * almost every candidate is already stamped. SCAN_PAGE_SIZE * MAX_SCAN_PAGES
+ * is the most tokens a single tick will look at.
+ */
+const MAX_SCAN_PAGES = 25;
 
 /**
  * Provider-portal invites (`resupply.provider_portal_accounts`) are out of
@@ -149,16 +158,34 @@ export interface InviteReminderConfig {
   publicBaseUrl: string;
 }
 
+/**
+ * Same precedence as `getAuthDeps().publicBaseUrl` (SHOP_PUBLIC_BASE_URL →
+ * REMINDER_PUBLIC_BASE_URL), with the voice/Railway hosts kept as a tail
+ * fallback.
+ *
+ * This deliberately does NOT copy the sibling notify job's reader, which
+ * starts at RESUPPLY_VOICE_PUBLIC_BASE_URL. A deployment that sets only
+ * SHOP_PUBLIC_BASE_URL sends invites fine (the invite flows read
+ * getAuthDeps), but that reader would return "" here — and for a tenant
+ * with no verified custom domain `resolveTenantLinkBaseUrl` then hands
+ * back the empty fallback, silently skipping every reminder for invites
+ * that were themselves delivered successfully. A follow-up must resolve
+ * the same host the invitation did.
+ */
 export function readInviteReminderConfig(
   env: NodeJS.ProcessEnv = process.env,
 ): InviteReminderConfig {
+  const railway = env.RAILWAY_PUBLIC_DOMAIN
+    ? `https://${env.RAILWAY_PUBLIC_DOMAIN}`
+    : "";
   return {
-    publicBaseUrl:
-      (env.RESUPPLY_VOICE_PUBLIC_BASE_URL ??
-        (env.RAILWAY_PUBLIC_DOMAIN
-          ? `https://${env.RAILWAY_PUBLIC_DOMAIN}`
-          : "")) ||
-      "",
+    publicBaseUrl: (
+      env.SHOP_PUBLIC_BASE_URL?.trim() ||
+      env.REMINDER_PUBLIC_BASE_URL?.trim() ||
+      env.RESUPPLY_VOICE_PUBLIC_BASE_URL?.trim() ||
+      railway ||
+      ""
+    ).replace(/\/$/, ""),
   };
 }
 
@@ -307,253 +334,372 @@ export async function runInviteAcceptanceReminderSweep(
   // saying nothing. The already-expired case is the operator's to re-send.
   const reminderCutoff = new Date(now + REMINDER_REMAINING_MS).toISOString();
 
-  const { data: tokenRows, error: tokenErr } = await supabase
-    .raw()
-    .schema("resupply_auth")
-    .from("email_tokens")
-    .select("user_id, expires_at, created_at")
-    .eq("purpose", "password_reset")
-    .is("consumed_at", null)
-    .gt("expires_at", nowIso)
-    .lte("expires_at", reminderCutoff)
-    // Soonest-to-expire first. BATCH_SIZE truncates the scan, and an
-    // unordered truncation would let a backlog starve exactly the invites
-    // that can least afford to wait a tick — the ones in the final 24 hours.
-    .order("expires_at", { ascending: true })
-    .limit(BATCH_SIZE);
-  if (tokenErr) throw tokenErr;
+  // Cache of organizations.status, so a page full of one tenant's invitees
+  // costs one lookup rather than one per recipient.
+  const orgActive = new Map<string, boolean>();
+  const isOrgActive = async (orgId: string): Promise<boolean> => {
+    const hit = orgActive.get(orgId);
+    if (hit !== undefined) return hit;
+    const { data, error } = await supabase
+      .raw()
+      .schema("resupply")
+      .from("organizations")
+      .select("id, status")
+      .eq("id", orgId)
+      .limit(1)
+      .maybeSingle();
+    // Fail CLOSED: if we can't confirm the tenant is active we don't send
+    // mail in its name. A read error retries on the next tick; a suspended
+    // tenant must not keep emailing.
+    const active =
+      !error && (data as { status?: string } | null)?.status === "active";
+    orgActive.set(orgId, active);
+    return active;
+  };
 
-  const tokens = (tokenRows ?? []).filter(
-    (r): r is TokenRow =>
-      typeof r.user_id === "string" &&
-      typeof r.expires_at === "string" &&
-      typeof r.created_at === "string",
-  );
-  stats.scannedTokens = tokens.length;
-  if (tokens.length === 0) return stats;
+  // Page over the windowed tokens rather than taking one fixed slice.
+  //
+  // The send cap has to count SENDS, not rows scanned. Claiming a nudge
+  // stamps `resupply_auth.users`, which does nothing to remove the token from
+  // this query — so a single fixed page would return the same already-stamped
+  // rows every hour. With a same-day onboarding batch larger than one page
+  // (every invite sharing an expiry, so the tie-break order is stable), the
+  // first page would hold the window open until it expired and everyone
+  // behind it would age out without ever being nudged.
+  let sent = 0;
+  for (let page = 0; page < MAX_SCAN_PAGES && sent < SEND_CAP; page += 1) {
+    const from = page * SCAN_PAGE_SIZE;
+    const { data: tokenRows, error: tokenErr } = await supabase
+      .raw()
+      .schema("resupply_auth")
+      .from("email_tokens")
+      .select("user_id, expires_at, created_at")
+      .eq("purpose", "password_reset")
+      .is("consumed_at", null)
+      .gt("expires_at", nowIso)
+      .lte("expires_at", reminderCutoff)
+      // Soonest-to-expire first, so the invites that can least afford to wait
+      // a tick — the ones in their final 24 hours — are always served first.
+      .order("expires_at", { ascending: true })
+      .range(from, from + SCAN_PAGE_SIZE - 1);
+    if (tokenErr) throw tokenErr;
 
-  // A resend leaves the superseded token rows behind with their expires_at
-  // pushed to now (team-invite.ts expires rather than deletes, for audit), so
-  // in principle a user can appear more than once. Keep the newest live one.
-  const liveTokenByUser = new Map<string, TokenRow>();
-  for (const t of tokens) {
-    const prior = liveTokenByUser.get(t.user_id);
-    if (
-      !prior ||
-      new Date(t.created_at).getTime() > new Date(prior.created_at).getTime()
-    ) {
-      liveTokenByUser.set(t.user_id, t);
-    }
-  }
-  const userIds = Array.from(liveTokenByUser.keys());
-
-  // The acceptance gate. Anyone who consumed their invite is already
-  // status='active' with email_verified_at stamped and drops out here.
-  const { data: userRows, error: userErr } = await supabase
-    .raw()
-    .schema("resupply_auth")
-    .from("users")
-    .select(
-      "id, email_lower, display_name, invite_reminder_sent_at, invite_final_reminder_sent_at",
-    )
-    .in("id", userIds)
-    .eq("status", "invited")
-    .is("email_verified_at", null);
-  if (userErr) throw userErr;
-
-  const pendingById = new Map<string, PendingUser>();
-  for (const u of userRows ?? []) {
-    if (typeof u.email_lower !== "string" || u.email_lower.length === 0) {
-      continue;
-    }
-    pendingById.set(u.id, {
-      id: u.id,
-      email_lower: u.email_lower,
-      display_name: u.display_name ?? null,
-      invite_reminder_sent_at: u.invite_reminder_sent_at ?? null,
-      invite_final_reminder_sent_at: u.invite_final_reminder_sent_at ?? null,
-    });
-  }
-  stats.pendingInvites = pendingById.size;
-  if (pendingById.size === 0) return stats;
-
-  const pendingIds = Array.from(pendingById.keys());
-
-  // Tenant + kind. Both roster tables are read cross-tenant (this sweep is
-  // global), and are consulted ONLY for org_id and for which portal the
-  // person belongs on — never for whether they accepted.
-  const kindByUser = new Map<string, { orgId: string; kind: InviteKind }>();
-
-  const { data: staffRows, error: staffErr } = await supabase
-    .raw()
-    .schema("resupply")
-    .from("admin_users")
-    .select("auth_user_id, org_id, status")
-    .in("auth_user_id", pendingIds);
-  if (staffErr) throw staffErr;
-  for (const row of (staffRows ?? []) as Array<{
-    auth_user_id: string | null;
-    org_id: string | null;
-    status: string | null;
-  }>) {
-    // A revoked seat is the operator's explicit decision to un-invite. Don't
-    // chase someone to finish joining a team they've been removed from.
-    if (row.status === "revoked") continue;
-    if (row.auth_user_id && row.org_id) {
-      kindByUser.set(row.auth_user_id, { orgId: row.org_id, kind: "staff" });
-    }
-  }
-
-  const { data: patientRows, error: patientErr } = await supabase
-    .raw()
-    .schema("resupply")
-    .from("patients")
-    .select("portal_auth_user_id, org_id")
-    .in("portal_auth_user_id", pendingIds);
-  if (patientErr) throw patientErr;
-  for (const row of (patientRows ?? []) as Array<{
-    portal_auth_user_id: string | null;
-    org_id: string | null;
-  }>) {
-    if (!row.portal_auth_user_id || !row.org_id) continue;
-    // A staff seat wins if the same identity somehow holds both: staff copy
-    // points at /admin, which is where that person actually signs in.
-    if (kindByUser.has(row.portal_auth_user_id)) continue;
-    kindByUser.set(row.portal_auth_user_id, {
-      orgId: row.org_id,
-      kind: "patient",
-    });
-  }
-
-  for (const userId of pendingIds) {
-    const user = pendingById.get(userId);
-    const token = liveTokenByUser.get(userId);
-    if (!user || !token) continue;
-
-    // Unmapped: a provider-portal invite (excluded above), or an identity
-    // whose roster row was hard-deleted. Either way there is no tenant to
-    // send as, so there is nothing safe to send.
-    const mapping = kindByUser.get(userId);
-    if (!mapping) {
-      stats.skippedUnmappedUser += 1;
-      continue;
-    }
-
-    const msRemaining = new Date(token.expires_at).getTime() - now;
-    if (msRemaining <= 0) continue;
-    // The two windows are mutually exclusive, so a single sweep never sends
-    // both nudges to one person.
-    const final = msRemaining <= FINAL_REMAINING_MS;
-    const stampCol = final
-      ? "invite_final_reminder_sent_at"
-      : "invite_reminder_sent_at";
-    const priorStamp = final
-      ? user.invite_final_reminder_sent_at
-      : user.invite_reminder_sent_at;
-    if (!nudgeStillOwed(priorStamp, token.created_at)) {
-      stats.skippedAlreadyClaimed += 1;
-      continue;
-    }
-
-    // Brand + host must both come from the invitee's own tenant: the CTA is a
-    // forgot-password link, and a platform-host link would resolve to the
-    // wrong org. A tenant with no verified domain is skipped rather than sent
-    // a link that lands somewhere else.
-    const brand = await resolveBrandingByOrgId(mapping.orgId);
-    const base = await resolveTenantLinkBaseUrl(
-      mapping.orgId,
-      cfg.publicBaseUrl,
+    const pageTokens = (tokenRows ?? []).filter(
+      (r): r is TokenRow =>
+        typeof r.user_id === "string" &&
+        typeof r.expires_at === "string" &&
+        typeof r.created_at === "string",
     );
-    if (!base) {
-      stats.skippedNoTenant += 1;
-      logger.info(
-        { orgId: mapping.orgId },
-        "invite-acceptance-reminder: skipped (no tenant domain)",
-      );
-      continue;
-    }
+    if (pageTokens.length === 0) break;
+    stats.scannedTokens += pageTokens.length;
 
-    // Resolve the tenant's sender BEFORE claiming the stamp, not after.
-    // `createSendgridClient` throws EmailConfigError at CONSTRUCTION rather
-    // than at first send (see lib/resupply-email/src/client.ts), and a
-    // missing key is a condition that gets FIXED later — so claiming first
-    // would burn the nudge on every pending invite the first time this runs
-    // without SendGrid configured (a preview environment, or a production
-    // deploy before the key lands) and, since nothing clears the stamps,
-    // those invites would never be nudged even once it is configured.
-    // Same ordering rationale as lib/resupply-reminders/src/send-email.ts,
-    // which constructs SendGrid before its `conversations` insert.
-    let sendgrid: Awaited<ReturnType<typeof createTenantSendgridClient>>;
-    try {
-      sendgrid = await createTenantSendgridClient(mapping.orgId);
-    } catch (err) {
-      // Not an error to retry — a tenant that can't send mail yet.
-      if (err instanceof EmailConfigError) {
-        stats.skippedNoTenant += 1;
-        continue;
-      }
-      throw err;
-    }
+    // Only INVITE tokens. `purpose='password_reset'` is shared with the
+    // ordinary forgot-password flow, which mints tokens with the far shorter
+    // AUTH_EMAIL_TOKEN_TTL_HOURS (24h) — and an invitee stays
+    // status='invited' until they finish the reset, so those tokens pass the
+    // acceptance gate too. Without this filter the reminder's OWN CTA is the
+    // trigger: click "send me a new set-up link", get a 24h token, and the
+    // next hourly tick reads it as an invite with a day left and fires "Last
+    // chance" within the hour. Lifespan is what separates them.
+    const inviteTokens = pageTokens.filter(
+      (t) =>
+        new Date(t.expires_at).getTime() - new Date(t.created_at).getTime() >=
+        INVITE_TOKEN_TTL_MS,
+    );
+    if (inviteTokens.length === 0) continue;
 
-    // Atomic claim. Stamping BEFORE the send, conditional on the column still
-    // holding the value we read, is what stops two workers racing the same
-    // row into a double-send. `updated_at` is deliberately not bumped — it
-    // marks identity changes, and "we emailed them" is not one.
-    // Spelled out rather than built with a computed key: the generated row
-    // types reject an index-signature payload, and a literal also keeps the
-    // "only ever one stamp column per write" property visible.
-    const stampPatch = final
-      ? { invite_final_reminder_sent_at: nowIso }
-      : { invite_reminder_sent_at: nowIso };
-    const claim = supabase
+    const userIds = Array.from(new Set(inviteTokens.map((t) => t.user_id)));
+
+    // The acceptance gate. Anyone who consumed their invite is already
+    // status='active' with email_verified_at stamped and drops out here.
+    const { data: userRows, error: userErr } = await supabase
       .raw()
       .schema("resupply_auth")
       .from("users")
-      .update(stampPatch)
-      .eq("id", userId)
-      .eq("status", "invited");
-    const claimQuery = priorStamp
-      ? claim.eq(stampCol, priorStamp)
-      : claim.is(stampCol, null);
-    const { data: claimed, error: claimErr } = await claimQuery.select("id");
-    if (claimErr) {
-      logger.warn(
-        { err: claimErr, userId },
-        "invite-acceptance-reminder: claim failed",
-      );
-      stats.errors += 1;
-      continue;
-    }
-    if (!claimed || claimed.length === 0) {
-      stats.skippedAlreadyClaimed += 1;
-      continue;
-    }
+      .select(
+        "id, email_lower, display_name, invite_reminder_sent_at, invite_final_reminder_sent_at",
+      )
+      .in("id", userIds)
+      .eq("status", "invited")
+      .is("email_verified_at", null);
+    if (userErr) throw userErr;
 
-    const { subject, html, text } = composeInviteReminderEmail({
-      practiceName: brand.storefrontName,
-      publicBaseUrl: base,
-      displayName: user.display_name,
-      kind: mapping.kind,
-      msRemaining,
-      final,
-    });
-
-    try {
-      await sendgrid.sendEmail({
-        to: user.email_lower,
-        subject,
-        html,
-        text,
+    const pendingById = new Map<string, PendingUser>();
+    for (const u of userRows ?? []) {
+      if (typeof u.email_lower !== "string" || u.email_lower.length === 0) {
+        continue;
+      }
+      pendingById.set(u.id, {
+        id: u.id,
+        email_lower: u.email_lower,
+        display_name: u.display_name ?? null,
+        invite_reminder_sent_at: u.invite_reminder_sent_at ?? null,
+        invite_final_reminder_sent_at: u.invite_final_reminder_sent_at ?? null,
       });
-      if (final) stats.finalRemindersSent += 1;
-      else stats.remindersSent += 1;
-    } catch (err) {
-      logger.warn({ err, userId }, "invite-acceptance-reminder: send failed");
-      stats.errors += 1;
-      // The stamp stays. One attempt per nudge window: re-sending on the next
-      // tick after a transient SendGrid failure risks hammering an invitee
-      // hourly for the rest of the window, which is worse than a missed nudge
-      // (the other window still gets its own attempt).
+    }
+    stats.pendingInvites += pendingById.size;
+    if (pendingById.size === 0) continue;
+
+    const pendingIds = Array.from(pendingById.keys());
+
+    // Re-read each candidate's live invite tokens with NO upper bound on
+    // expiry, and keep the newest.
+    //
+    // The windowed query above cannot do this on its own: a patient-portal
+    // RESEND inserts a new token WITHOUT expiring the old one
+    // (patient-portal-invite.ts, unlike team-invite.ts which does expire the
+    // prior ones). So the superseded token enters the 4-day window days
+    // before the live one does. Acting on it would send "expires tomorrow"
+    // about a link the patient has already been sent a replacement for, and
+    // then stamp the user — which, because the stamp would post-date the
+    // newer token, would suppress that token's real reminders entirely.
+    const { data: allTokenRows, error: allTokenErr } = await supabase
+      .raw()
+      .schema("resupply_auth")
+      .from("email_tokens")
+      .select("user_id, expires_at, created_at")
+      .eq("purpose", "password_reset")
+      .is("consumed_at", null)
+      .gt("expires_at", nowIso)
+      .in("user_id", pendingIds);
+    if (allTokenErr) throw allTokenErr;
+
+    const newestByUser = new Map<string, TokenRow>();
+    for (const r of allTokenRows ?? []) {
+      if (
+        typeof r.user_id !== "string" ||
+        typeof r.expires_at !== "string" ||
+        typeof r.created_at !== "string"
+      ) {
+        continue;
+      }
+      const t = r as TokenRow;
+      // Same invite-vs-recovery filter as above: a recovery token must not
+      // shadow the invite it was requested from.
+      if (
+        new Date(t.expires_at).getTime() - new Date(t.created_at).getTime() <
+        INVITE_TOKEN_TTL_MS
+      ) {
+        continue;
+      }
+      const prior = newestByUser.get(t.user_id);
+      if (
+        !prior ||
+        new Date(t.created_at).getTime() > new Date(prior.created_at).getTime()
+      ) {
+        newestByUser.set(t.user_id, t);
+      }
+    }
+
+    // Tenant + kind. Both roster tables are read cross-tenant (this sweep is
+    // global), and are consulted ONLY for org_id and for which portal the
+    // person belongs on — never for whether they accepted.
+    //
+    // An identity that resolves to MORE THAN ONE tenant is dropped, not
+    // guessed at. `patients.portal_auth_user_id` carries only a non-unique
+    // index and the patient-invite flow reuses `resupply_auth.users` rows by
+    // `email_lower`, so one person shopping two DMEs is a single identity
+    // with two patient rows. The token itself carries no org_id, so there is
+    // nothing that says which tenant's invite is outstanding — and picking
+    // one arbitrarily would send another DME's brand, sender, and portal
+    // host. Silence is the only safe answer.
+    const orgsByUser = new Map<string, Set<string>>();
+    const kindByUser = new Map<string, InviteKind>();
+    const noteOrg = (userId: string, orgId: string, kind: InviteKind) => {
+      const set = orgsByUser.get(userId) ?? new Set<string>();
+      set.add(orgId);
+      orgsByUser.set(userId, set);
+      // A staff seat wins the KIND if the same identity holds both: staff
+      // sign in at /admin, which is where their CTA has to point.
+      if (kind === "staff" || !kindByUser.has(userId)) {
+        kindByUser.set(userId, kind);
+      }
+    };
+
+    const { data: staffRows, error: staffErr } = await supabase
+      .raw()
+      .schema("resupply")
+      .from("admin_users")
+      .select("auth_user_id, org_id, status")
+      .in("auth_user_id", pendingIds);
+    if (staffErr) throw staffErr;
+    for (const row of (staffRows ?? []) as Array<{
+      auth_user_id: string | null;
+      org_id: string | null;
+      status: string | null;
+    }>) {
+      // A revoked seat is the operator's explicit decision to un-invite.
+      // Don't chase someone to finish joining a team they've been removed
+      // from — and don't let the revoked row make the mapping ambiguous.
+      if (row.status === "revoked") continue;
+      if (row.auth_user_id && row.org_id) {
+        noteOrg(row.auth_user_id, row.org_id, "staff");
+      }
+    }
+
+    const { data: patientRows, error: patientErr } = await supabase
+      .raw()
+      .schema("resupply")
+      .from("patients")
+      .select("portal_auth_user_id, org_id")
+      .in("portal_auth_user_id", pendingIds);
+    if (patientErr) throw patientErr;
+    for (const row of (patientRows ?? []) as Array<{
+      portal_auth_user_id: string | null;
+      org_id: string | null;
+    }>) {
+      if (!row.portal_auth_user_id || !row.org_id) continue;
+      noteOrg(row.portal_auth_user_id, row.org_id, "patient");
+    }
+
+    for (const userId of pendingIds) {
+      if (sent >= SEND_CAP) break;
+      const user = pendingById.get(userId);
+      const token = newestByUser.get(userId);
+      if (!user || !token) continue;
+
+      // Unmapped: a provider-portal invite (excluded above), or an identity
+      // whose roster row was hard-deleted. Ambiguous: linked to more than one
+      // tenant, per the note above. Either way there is no ONE tenant to send
+      // as, so there is nothing safe to send.
+      const orgs = orgsByUser.get(userId);
+      const kind = kindByUser.get(userId);
+      if (!orgs || orgs.size !== 1 || !kind) {
+        stats.skippedUnmappedUser += 1;
+        continue;
+      }
+      const mapping = { orgId: [...orgs][0]!, kind };
+
+      // A suspended tenant must not keep sending mail in its own name — the
+      // same contract `listActiveOrgIds` gives every forEachActiveOrg sweep
+      // for free, which this global sweep has to apply for itself.
+      if (!(await isOrgActive(mapping.orgId))) {
+        stats.skippedNoTenant += 1;
+        continue;
+      }
+
+      const msRemaining = new Date(token.expires_at).getTime() - now;
+      // The newest token may sit outside the nudge window even though an
+      // older one pulled this user into the page. Leave it — it earns its own
+      // reminders when it gets there.
+      if (msRemaining <= 0 || msRemaining > REMINDER_REMAINING_MS) continue;
+      // The two windows are mutually exclusive, so a single sweep never sends
+      // both nudges to one person.
+      const final = msRemaining <= FINAL_REMAINING_MS;
+      const stampCol = final
+        ? "invite_final_reminder_sent_at"
+        : "invite_reminder_sent_at";
+      const priorStamp = final
+        ? user.invite_final_reminder_sent_at
+        : user.invite_reminder_sent_at;
+      if (!nudgeStillOwed(priorStamp, token.created_at)) {
+        stats.skippedAlreadyClaimed += 1;
+        continue;
+      }
+
+      // Brand + host must both come from the invitee's own tenant: the CTA is a
+      // forgot-password link, and a platform-host link would resolve to the
+      // wrong org. A tenant with no verified domain is skipped rather than sent
+      // a link that lands somewhere else.
+      const brand = await resolveBrandingByOrgId(mapping.orgId);
+      const base = await resolveTenantLinkBaseUrl(
+        mapping.orgId,
+        cfg.publicBaseUrl,
+      );
+      if (!base) {
+        stats.skippedNoTenant += 1;
+        logger.info(
+          { orgId: mapping.orgId },
+          "invite-acceptance-reminder: skipped (no tenant domain)",
+        );
+        continue;
+      }
+
+      // Resolve the tenant's sender BEFORE claiming the stamp, not after.
+      // `createSendgridClient` throws EmailConfigError at CONSTRUCTION rather
+      // than at first send (see lib/resupply-email/src/client.ts), and a
+      // missing key is a condition that gets FIXED later — so claiming first
+      // would burn the nudge on every pending invite the first time this runs
+      // without SendGrid configured (a preview environment, or a production
+      // deploy before the key lands) and, since nothing clears the stamps,
+      // those invites would never be nudged even once it is configured.
+      // Same ordering rationale as lib/resupply-reminders/src/send-email.ts,
+      // which constructs SendGrid before its `conversations` insert.
+      let sendgrid: Awaited<ReturnType<typeof createTenantSendgridClient>>;
+      try {
+        sendgrid = await createTenantSendgridClient(mapping.orgId);
+      } catch (err) {
+        // Not an error to retry — a tenant that can't send mail yet.
+        if (err instanceof EmailConfigError) {
+          stats.skippedNoTenant += 1;
+          continue;
+        }
+        throw err;
+      }
+
+      // Atomic claim. Stamping BEFORE the send, conditional on the column still
+      // holding the value we read, is what stops two workers racing the same
+      // row into a double-send. `updated_at` is deliberately not bumped — it
+      // marks identity changes, and "we emailed them" is not one.
+      // Spelled out rather than built with a computed key: the generated row
+      // types reject an index-signature payload, and a literal also keeps the
+      // "only ever one stamp column per write" property visible.
+      const stampPatch = final
+        ? { invite_final_reminder_sent_at: nowIso }
+        : { invite_reminder_sent_at: nowIso };
+      const claim = supabase
+        .raw()
+        .schema("resupply_auth")
+        .from("users")
+        .update(stampPatch)
+        .eq("id", userId)
+        .eq("status", "invited");
+      const claimQuery = priorStamp
+        ? claim.eq(stampCol, priorStamp)
+        : claim.is(stampCol, null);
+      const { data: claimed, error: claimErr } = await claimQuery.select("id");
+      if (claimErr) {
+        logger.warn(
+          { err: claimErr, userId },
+          "invite-acceptance-reminder: claim failed",
+        );
+        stats.errors += 1;
+        continue;
+      }
+      if (!claimed || claimed.length === 0) {
+        stats.skippedAlreadyClaimed += 1;
+        continue;
+      }
+
+      const { subject, html, text } = composeInviteReminderEmail({
+        practiceName: brand.storefrontName,
+        publicBaseUrl: base,
+        displayName: user.display_name,
+        kind: mapping.kind,
+        msRemaining,
+        final,
+      });
+
+      // Counts against the cap whatever the vendor does next: the stamp is
+      // already spent, so this recipient is done for this window either way.
+      sent += 1;
+      try {
+        await sendgrid.sendEmail({
+          to: user.email_lower,
+          subject,
+          html,
+          text,
+        });
+        if (final) stats.finalRemindersSent += 1;
+        else stats.remindersSent += 1;
+      } catch (err) {
+        logger.warn({ err, userId }, "invite-acceptance-reminder: send failed");
+        stats.errors += 1;
+        // The stamp stays. One attempt per nudge window: re-sending on the
+        // next tick after a transient SendGrid failure risks hammering an
+        // invitee hourly for the rest of the window, which is worse than a
+        // missed nudge (the other window still gets its own attempt).
+      }
     }
   }
 
