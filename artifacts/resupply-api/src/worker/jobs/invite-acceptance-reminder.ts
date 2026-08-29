@@ -267,12 +267,19 @@ interface PendingUser {
 }
 
 /**
- * True when `stamp` belongs to an EARLIER invite than the live token, i.e.
- * the person was re-invited (or the operator hit "resend") after we last
- * nudged them. Nothing clears the stamps, so this comparison — not a NULL
- * check alone — is what lets a fresh invite earn a fresh nudge.
+ * True when `stamp` does not account for the CURRENT invite — i.e. this
+ * nudge is still owed. Two ways that happens:
+ *
+ *   * `stamp` is NULL — we have never sent this nudge to this person; or
+ *   * `stamp` PREDATES the live token — they were re-invited (or the
+ *     operator hit "resend") after we last nudged them, so the newer invite
+ *     has not been nudged yet.
+ *
+ * The second case is the reason this is a comparison rather than a NULL
+ * check: nothing ever clears the stamps, so without it a re-invite would
+ * silently inherit the previous invite's "already nudged" state.
  */
-function stampIsStale(stamp: string | null, tokenCreatedAt: string): boolean {
+function nudgeStillOwed(stamp: string | null, tokenCreatedAt: string): boolean {
   if (!stamp) return true;
   return new Date(stamp).getTime() < new Date(tokenCreatedAt).getTime();
 }
@@ -443,7 +450,7 @@ export async function runInviteAcceptanceReminderSweep(
     const priorStamp = final
       ? user.invite_final_reminder_sent_at
       : user.invite_reminder_sent_at;
-    if (!stampIsStale(priorStamp, token.created_at)) {
+    if (!nudgeStillOwed(priorStamp, token.created_at)) {
       stats.skippedAlreadyClaimed += 1;
       continue;
     }
@@ -464,6 +471,28 @@ export async function runInviteAcceptanceReminderSweep(
         "invite-acceptance-reminder: skipped (no tenant domain)",
       );
       continue;
+    }
+
+    // Resolve the tenant's sender BEFORE claiming the stamp, not after.
+    // `createSendgridClient` throws EmailConfigError at CONSTRUCTION rather
+    // than at first send (see lib/resupply-email/src/client.ts), and a
+    // missing key is a condition that gets FIXED later — so claiming first
+    // would burn the nudge on every pending invite the first time this runs
+    // without SendGrid configured (a preview environment, or a production
+    // deploy before the key lands) and, since nothing clears the stamps,
+    // those invites would never be nudged even once it is configured.
+    // Same ordering rationale as lib/resupply-reminders/src/send-email.ts,
+    // which constructs SendGrid before its `conversations` insert.
+    let sendgrid: Awaited<ReturnType<typeof createTenantSendgridClient>>;
+    try {
+      sendgrid = await createTenantSendgridClient(mapping.orgId);
+    } catch (err) {
+      // Not an error to retry — a tenant that can't send mail yet.
+      if (err instanceof EmailConfigError) {
+        stats.skippedNoTenant += 1;
+        continue;
+      }
+      throw err;
     }
 
     // Atomic claim. Stamping BEFORE the send, conditional on the column still
@@ -510,7 +539,6 @@ export async function runInviteAcceptanceReminderSweep(
     });
 
     try {
-      const sendgrid = await createTenantSendgridClient(mapping.orgId);
       await sendgrid.sendEmail({
         to: user.email_lower,
         subject,
@@ -520,12 +548,6 @@ export async function runInviteAcceptanceReminderSweep(
       if (final) stats.finalRemindersSent += 1;
       else stats.remindersSent += 1;
     } catch (err) {
-      // A tenant with no usable sender config isn't an error to retry — it's
-      // a tenant that can't send mail yet.
-      if (err instanceof EmailConfigError) {
-        stats.skippedNoTenant += 1;
-        continue;
-      }
       logger.warn({ err, userId }, "invite-acceptance-reminder: send failed");
       stats.errors += 1;
       // The stamp stays. One attempt per nudge window: re-sending on the next

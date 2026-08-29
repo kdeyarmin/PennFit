@@ -17,6 +17,8 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+import { EmailConfigError } from "@workspace/resupply-email";
+
 import {
   installSupabaseMock,
   stageSupabaseResponse,
@@ -29,10 +31,18 @@ const supabaseMock = installSupabaseMock();
 const sendEmailMock = vi.fn(
   async (..._args: unknown[]) => undefined as unknown,
 );
+// Mirrors the real client: EmailConfigError is thrown at CONSTRUCTION, not at
+// first send (lib/resupply-email/src/client.ts). "org-nosender" stands in for
+// a tenant/deploy with no usable SendGrid config.
+const createTenantSendgridClientMock = vi.fn(async (orgId?: string) => {
+  if (orgId === "org-nosender") {
+    throw new EmailConfigError("SENDGRID_API_KEY is not set");
+  }
+  return { sendEmail: sendEmailMock };
+});
 vi.mock("../../lib/email/tenant-sender.js", () => ({
-  createTenantSendgridClient: vi.fn(async () => ({
-    sendEmail: sendEmailMock,
-  })),
+  createTenantSendgridClient: (orgId?: string) =>
+    createTenantSendgridClientMock(orgId),
 }));
 
 // "org-b" is a second tenant with its own verified domain; "org-nodomain"
@@ -95,6 +105,7 @@ function stageScan(opts: {
 
 beforeEach(() => {
   sendEmailMock.mockClear();
+  createTenantSendgridClientMock.mockClear();
   supabaseMock.reset();
 });
 
@@ -465,6 +476,43 @@ describe("runInviteAcceptanceReminderSweep", () => {
 
     expect(stats.skippedUnmappedUser).toBe(1);
     expect(sendEmailMock).not.toHaveBeenCalled();
+    expect(getSupabaseCallCount("users", "update")).toBe(0);
+  });
+
+  it("does not burn the stamp when the tenant has no usable sender", async () => {
+    // Regression: the sender used to be constructed AFTER the claim, so a
+    // deploy with no SENDGRID_API_KEY stamped every pending invite as
+    // "reminded" while sending nothing — and since nothing clears the stamps,
+    // those invites were never nudged even once the key was configured.
+    stageScan({
+      tokens: [
+        {
+          user_id: "u-1",
+          expires_at: inMs(2 * DAY),
+          created_at: agoMs(5 * DAY),
+        },
+      ],
+      users: [
+        {
+          id: "u-1",
+          email_lower: "pat@example.test",
+          display_name: null,
+          invite_reminder_sent_at: null,
+          invite_final_reminder_sent_at: null,
+        },
+      ],
+      staff: [
+        { auth_user_id: "u-1", org_id: "org-nosender", status: "pending" },
+      ],
+    });
+
+    const stats = await runInviteAcceptanceReminderSweep(CFG);
+
+    expect(stats.skippedNoTenant).toBe(1);
+    expect(stats.remindersSent).toBe(0);
+    expect(stats.errors).toBe(0);
+    expect(sendEmailMock).not.toHaveBeenCalled();
+    // The claim must never have been written — the nudge is still owed.
     expect(getSupabaseCallCount("users", "update")).toBe(0);
   });
 
