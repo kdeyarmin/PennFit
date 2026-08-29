@@ -35,8 +35,15 @@ import type { ResupplySupabaseClient } from "@workspace/resupply-db";
 
 /** Invite tokens are valid for 7 days. Long enough that an
  *  operator can run an invite ahead of telling the user to
- *  expect the email. */
-const INVITE_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+ *  expect the email.
+ *
+ *  Exported because it is also the only thing that distinguishes an
+ *  INVITE token from an ordinary forgot-password token: both are written
+ *  with `purpose='password_reset'`, but a recovery token is minted with
+ *  the much shorter `AUTH_EMAIL_TOKEN_TTL_HOURS` (24h by default). The
+ *  invite-acceptance-reminder sweep relies on that difference in lifespan
+ *  so it never chases someone who simply reset their password. */
+export const INVITE_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 /**
  * How long an admin-typed password (set via the "Set their password
@@ -127,6 +134,18 @@ export interface InviteArgs {
    * the neutral "You've been invited…".
    */
   invitedByName?: string | null;
+  /**
+   * Tenant this invitation is issued on behalf of, stamped onto the
+   * `email_tokens` row as `invite_org_id` (with `invite_kind='staff'`) so a
+   * follow-up job knows whose invite is outstanding without reverse-looking
+   * it up through the roster — see migration 0535.
+   *
+   * Omitted → the token carries no provenance and no follow-up will chase
+   * it. Product callers should always pass it; it is optional only so this
+   * package does not require tenant context it may not have (the bootstrap
+   * script, for instance).
+   */
+  inviteOrgId?: string | null;
   /**
    * Optional files attached to the invite email — used to ship the
    * new team member their role-specific getting-started help
@@ -327,6 +346,14 @@ export async function inviteTeamMember(
       user_id: authUserId,
       purpose: "password_reset",
       expires_at: expiresAt.toISOString(),
+      // Provenance (migration 0535). Without it the follow-up sweep has to
+      // infer both "is this an invite?" and "whose?" from token lifespan and
+      // a roster reverse-lookup — neither of which is reliable. Optional at
+      // the type level only so this package stays usable by a caller that
+      // has no tenant context; every product caller passes it.
+      ...(args.inviteOrgId
+        ? { invite_org_id: args.inviteOrgId, invite_kind: "staff" as const }
+        : {}),
     });
   if (tokErr) throw tokErr;
 

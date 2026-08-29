@@ -7304,6 +7304,13 @@ export interface Database {
           role: string;
           status: string;
           email_verified_at: string | null;
+          /** Nudge stamps for the "invited but never signed in" sweep
+           * (migration 0534). Never cleared — a stamp older than the live
+           * invite token's created_at is stale, which is how a re-invite
+           * earns a fresh nudge pair. See
+           * artifacts/resupply-api/src/worker/jobs/invite-acceptance-reminder.ts. */
+          invite_reminder_sent_at: string | null;
+          invite_final_reminder_sent_at: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -7314,6 +7321,8 @@ export interface Database {
           role?: string;
           status?: string;
           email_verified_at?: string | null;
+          invite_reminder_sent_at?: string | null;
+          invite_final_reminder_sent_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -7406,6 +7415,12 @@ export interface Database {
           purpose: string;
           expires_at: string;
           consumed_at: string | null;
+          /** Invite provenance (migration 0535). NULL means "not an
+           * invitation" — an ordinary forgot-password or verify token — and
+           * the invite-acceptance-reminder sweep ignores those. The two move
+           * together; a DB CHECK rejects one set without the other. */
+          invite_org_id: string | null;
+          invite_kind: "staff" | "patient" | "provider" | null;
           created_at: string;
         };
         Insert: {
@@ -7414,6 +7429,8 @@ export interface Database {
           purpose: string;
           expires_at: string;
           consumed_at?: string | null;
+          invite_org_id?: string | null;
+          invite_kind?: "staff" | "patient" | "provider" | null;
           created_at?: string;
         };
         Update: Partial<

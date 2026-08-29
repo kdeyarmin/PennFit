@@ -436,6 +436,9 @@ router.post(
       productName: company.name,
       signatureName: company.legalName,
       uiPathPrefix: "/admin",
+      // Stamp the tenant onto the token so the acceptance-reminder sweep
+      // knows whose invite this is (migration 0535).
+      inviteOrgId: orgId,
       initialPassword: useInitialPassword
         ? (initialPassword as string)
         : undefined,
@@ -576,6 +579,7 @@ router.post(
       productName: company.name,
       signatureName: company.legalName,
       uiPathPrefix: "/admin",
+      inviteOrgId: orgId,
       attachments: await staffInviteAttachments(
         row.role as AdminRole,
         company.name,
