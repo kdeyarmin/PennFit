@@ -35,32 +35,48 @@
 //   * `resupply.admin_users.status` is never flipped 'pending' → 'active',
 //     so an accepted member still reads 'pending' there. `platform/tenants.ts`
 //     documents the same trap.
-// So the roster tables are used ONLY to answer "which tenant is this, and
-// which portal were they invited to" — never "did they accept".
+// This sweep reads none of them.
+//
+// Which invite, and whose
+// -----------------------
+// Both answers come off the TOKEN, stamped at mint time by the flow that
+// issued it (migration 0535): `invite_kind` says which portal, and
+// `invite_org_id` says which tenant.
+//
+// Neither can be inferred safely, which is why the columns exist:
+//   * "Is this an invite?" — four invite flows and the ordinary
+//     forgot-password flow all write `purpose='password_reset'`, and an
+//     invitee stays `status='invited'` until a reset completes, so the
+//     acceptance gate does not separate them. Chasing a recovery token is
+//     not hypothetical: this job's own CTA sends people to forgot-password.
+//   * "Whose invite?" — `resupply_auth` has no org_id, and the roster
+//     tables cannot stand in for one. A portal identity is reused by
+//     `email_lower`, so someone who is a patient at two DMEs is ONE auth row
+//     with TWO `resupply.patients` rows (a non-unique index), and
+//     `provider_portal_accounts` has no org_id at all.
+//
+// A token with no provenance — a genuine password reset, a verify link, or
+// anything minted before 0535 — is simply never chased. That is the safe
+// direction, and the pre-0535 set drains within the 7-day token lifetime.
 //
 // Why the scan starts from the token side
 // ---------------------------------------
 // `resupply_auth` carries no `org_id`, so this is a global sweep (same
 // posture as `invite-password-expiry-notify` and the dedup-key prune) rather
-// than a `forEachActiveOrg` fan-out. Starting from live `password_reset`
-// tokens keeps the candidate set naturally tiny — outstanding invites only —
-// instead of walking every tenant's roster and patient list every hour.
+// than a `forEachActiveOrg` fan-out. Starting from live invite tokens keeps
+// the candidate set naturally tiny — outstanding invites only — instead of
+// walking every tenant's roster and patient list every hour.
 //
-// A `password_reset` token is ALSO minted by the ordinary "I forgot my
-// password" flow. Those belong to accounts that are already `status='active'`
-// with `email_verified_at` set, so the acceptance gate above excludes them:
-// nobody who merely reset their password gets told they never accepted an
-// invite.
-//
-// Scope: staff/team invites (including platform-issued tenant-admin invites)
-// and patient-portal invites. Provider-portal invites are deliberately NOT
-// nudged — see PROVIDER_PORTAL_EXCLUDED below.
+// Scope: staff/team invites (including platform-issued tenant-admin invites),
+// patient-portal invites, and provider-portal invites. The provider copy
+// routes recovery through the tenant's coordinator rather than a
+// self-service link, because that portal deliberately has no reset flow —
+// see `recoveryPathFor`.
 
 import type PgBoss from "pg-boss";
 
 import { EmailConfigError } from "@workspace/resupply-email";
 import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
-import { INVITE_TOKEN_TTL_MS } from "@workspace/resupply-auth";
 
 import { logger } from "../../lib/logger.js";
 import { createTenantSendgridClient } from "../../lib/email/tenant-sender.js";
@@ -106,36 +122,21 @@ const SCAN_PAGE_SIZE = 200;
 const MAX_SCAN_PAGES = 25;
 
 /**
- * Provider-portal invites (`resupply.provider_portal_accounts`) are out of
- * scope, for two independent reasons:
- *
- *  1. That table has no `org_id` — a clinician is a global NPI login linked
- *     to any number of tenants through `provider_dme_links`, so there is no
- *     single tenant whose name and sending domain the nudge could go out
- *     under.
- *  2. The provider portal deliberately has no self-service recovery flow at
- *     all (`provider-sign-in.tsx` links to none; recovery is routed through a
- *     coordinator). The one action this email can offer — "request a fresh
- *     link yourself" — does not exist for them, so the nudge would either be
- *     a dead end or would have to contradict that decision.
- *
- * Their invites still expire quietly. Closing that gap means giving the
- * coordinator a stalled-invite view, not emailing the clinician.
+ * Which invite flow minted this token. Stamped on `email_tokens.invite_kind`
+ * at mint time (migration 0535) and mirrored by a DB CHECK; selects the
+ * account wording and the recovery CTA.
  */
-const PROVIDER_PORTAL_EXCLUDED = true;
-
-/** Which invite flow minted this token — selects the recovery CTA. */
-type InviteKind = "staff" | "patient";
+type InviteKind = "staff" | "patient" | "provider";
 
 interface ReminderStats {
-  /** Live, unconsumed password_reset tokens inspected. */
+  /** Live, unconsumed INVITE tokens inspected (non-invite tokens are
+   *  excluded by the query and never counted). */
   scannedTokens: number;
   /** Of those, the ones whose owner still hasn't accepted. */
   pendingInvites: number;
   remindersSent: number;
   finalRemindersSent: number;
   skippedNoTenant: number;
-  skippedUnmappedUser: number;
   skippedAlreadyClaimed: number;
   errors: number;
 }
@@ -147,7 +148,6 @@ function emptyStats(): ReminderStats {
     remindersSent: 0,
     finalRemindersSent: 0,
     skippedNoTenant: 0,
-    skippedUnmappedUser: 0,
     skippedAlreadyClaimed: 0,
     errors: 0,
   };
@@ -199,11 +199,21 @@ function escapeHtml(s: string): string {
 }
 
 /**
- * The sign-in surface an invitee of this kind belongs on. Staff live under
- * the admin SPA; portal patients on the storefront root.
+ * The self-service recovery page for this kind of invitee, or null when the
+ * portal deliberately has none.
+ *
+ * Staff live under the admin SPA, portal patients on the storefront root —
+ * both have a working `/forgot-password`. The PROVIDER portal does not, by
+ * design: `provider-sign-in.tsx` links to no reset flow and recovery is
+ * routed through the DME's coordinator. `/api/provider/auth/forgot-password`
+ * exists but is reachable only by an unauthenticated direct POST, so
+ * pointing a clinician at it would send them to a page that does not exist.
+ * Their nudge names the coordinator route instead.
  */
-function pathPrefixFor(kind: InviteKind): string {
-  return kind === "staff" ? "/admin" : "";
+function recoveryPathFor(kind: InviteKind): string | null {
+  if (kind === "staff") return "/admin/forgot-password";
+  if (kind === "patient") return "/forgot-password";
+  return null;
 }
 
 function formatRemaining(msRemaining: number): string {
@@ -234,8 +244,8 @@ export function composeInviteReminderEmail(opts: {
 }): { subject: string; html: string; text: string } {
   const greeting = opts.displayName ? `Hi ${opts.displayName},` : "Hi,";
   const base = opts.publicBaseUrl.replace(/\/$/, "");
-  const prefix = pathPrefixFor(opts.kind);
-  const recoverUrl = `${base}${prefix}/forgot-password`;
+  const recoveryPath = recoveryPathFor(opts.kind);
+  const recoverUrl = recoveryPath ? `${base}${recoveryPath}` : null;
   const remaining = formatRemaining(opts.msRemaining);
   // The account is named in the BODY, not just the subject: someone who is
   // mid-onboarding with more than one provider (or who was invited to both a
@@ -244,7 +254,9 @@ export function composeInviteReminderEmail(opts: {
   const account =
     opts.kind === "staff"
       ? `${opts.practiceName} team account`
-      : `${opts.practiceName} patient portal account`;
+      : opts.kind === "patient"
+        ? `${opts.practiceName} patient portal account`
+        : `${opts.practiceName} provider portal account`;
 
   const subject = opts.final
     ? `Last chance to set up your ${account}`
@@ -253,8 +265,11 @@ export function composeInviteReminderEmail(opts: {
   const lead = opts.final
     ? `Your invitation to set up your ${account} expires in about ${remaining}. After that you'll need to ask us for a new one.`
     : `You haven't finished setting up your ${account} yet. The invitation we emailed you is still good for about another ${remaining}.`;
-  const action =
-    "Open that invitation email and click the set-up link. If you can't find it, you can send yourself a fresh link here:";
+  // Clinicians get pointed at their coordinator rather than a self-service
+  // page, because the provider portal has none — see recoveryPathFor.
+  const action = recoverUrl
+    ? "Open that invitation email and click the set-up link. If you can't find it, you can send yourself a fresh link here:"
+    : `Open that invitation email and click the set-up link. If you can't find it, contact your ${opts.practiceName} coordinator and they'll send a new invitation.`;
 
   const text = [
     greeting,
@@ -262,7 +277,7 @@ export function composeInviteReminderEmail(opts: {
     lead,
     "",
     action,
-    recoverUrl,
+    ...(recoverUrl ? [recoverUrl] : []),
     "",
     "Already signed in and set your password? Then you're all set — you can ignore this.",
   ].join("\n");
@@ -271,7 +286,11 @@ export function composeInviteReminderEmail(opts: {
     <p>${escapeHtml(greeting)}</p>
     <p>${escapeHtml(lead)}</p>
     <p>${escapeHtml(action)}</p>
-    <p><a href="${escapeHtml(recoverUrl)}" style="display:inline-block;padding:10px 18px;background:#1e3a8a;color:#fff;text-decoration:none;border-radius:6px;">Send me a new set-up link</a></p>
+    ${
+      recoverUrl
+        ? `<p><a href="${escapeHtml(recoverUrl)}" style="display:inline-block;padding:10px 18px;background:#1e3a8a;color:#fff;text-decoration:none;border-radius:6px;">Send me a new set-up link</a></p>`
+        : ""
+    }
     <p style="color:#666;font-size:13px;">Already signed in and set your password? Then you're all set — you can
        ignore this.</p>
   </div>`;
@@ -279,10 +298,41 @@ export function composeInviteReminderEmail(opts: {
   return { subject, html, text };
 }
 
-interface TokenRow {
+interface InviteTokenRow {
   user_id: string;
   expires_at: string;
   created_at: string;
+  /** Non-null on any row that passes {@link isInviteToken}. */
+  invite_org_id: string;
+  invite_kind: InviteKind;
+}
+
+const INVITE_KINDS: ReadonlySet<string> = new Set([
+  "staff",
+  "patient",
+  "provider",
+]);
+
+/**
+ * Narrow a raw token row to one carrying complete invite provenance.
+ *
+ * A DB CHECK (migration 0535) already keeps `invite_kind` and `invite_org_id`
+ * set or unset together, so a half-stamped row shouldn't exist — but this
+ * sweep sends mail in a tenant's name, and "the constraint says it can't
+ * happen" is not a reason to hand an undefined org to the branding resolver.
+ */
+function isInviteToken(r: unknown): r is InviteTokenRow {
+  const t = r as Partial<InviteTokenRow> | null;
+  return (
+    !!t &&
+    typeof t.user_id === "string" &&
+    typeof t.expires_at === "string" &&
+    typeof t.created_at === "string" &&
+    typeof t.invite_org_id === "string" &&
+    t.invite_org_id.length > 0 &&
+    typeof t.invite_kind === "string" &&
+    INVITE_KINDS.has(t.invite_kind)
+  );
 }
 
 interface PendingUser {
@@ -373,8 +423,15 @@ export async function runInviteAcceptanceReminderSweep(
       .raw()
       .schema("resupply_auth")
       .from("email_tokens")
-      .select("user_id, expires_at, created_at")
-      .eq("purpose", "password_reset")
+      .select("user_id, expires_at, created_at, invite_org_id, invite_kind")
+      // Provenance IS the filter. `purpose='password_reset'` is shared with
+      // the ordinary forgot-password flow, and an invitee stays
+      // status='invited' until they finish a reset — so the acceptance gate
+      // downstream cannot separate the two. Only a token that declared itself
+      // an invitation at mint time is chased; anything else (a recovery
+      // token, a verify token, anything issued before migration 0535) reads
+      // as NULL and is ignored. Matches the partial index from 0535.
+      .not("invite_kind", "is", null)
       .is("consumed_at", null)
       .gt("expires_at", nowIso)
       .lte("expires_at", reminderCutoff)
@@ -384,28 +441,9 @@ export async function runInviteAcceptanceReminderSweep(
       .range(from, from + SCAN_PAGE_SIZE - 1);
     if (tokenErr) throw tokenErr;
 
-    const pageTokens = (tokenRows ?? []).filter(
-      (r): r is TokenRow =>
-        typeof r.user_id === "string" &&
-        typeof r.expires_at === "string" &&
-        typeof r.created_at === "string",
-    );
-    if (pageTokens.length === 0) break;
-    stats.scannedTokens += pageTokens.length;
-
-    // Only INVITE tokens. `purpose='password_reset'` is shared with the
-    // ordinary forgot-password flow, which mints tokens with the far shorter
-    // AUTH_EMAIL_TOKEN_TTL_HOURS (24h) — and an invitee stays
-    // status='invited' until they finish the reset, so those tokens pass the
-    // acceptance gate too. Without this filter the reminder's OWN CTA is the
-    // trigger: click "send me a new set-up link", get a 24h token, and the
-    // next hourly tick reads it as an invite with a day left and fires "Last
-    // chance" within the hour. Lifespan is what separates them.
-    const inviteTokens = pageTokens.filter(
-      (t) =>
-        new Date(t.expires_at).getTime() - new Date(t.created_at).getTime() >=
-        INVITE_TOKEN_TTL_MS,
-    );
+    const inviteTokens = (tokenRows ?? []).filter(isInviteToken);
+    if ((tokenRows ?? []).length === 0) break;
+    stats.scannedTokens += inviteTokens.length;
     if (inviteTokens.length === 0) continue;
 
     const userIds = Array.from(new Set(inviteTokens.map((t) => t.user_id)));
@@ -457,31 +495,15 @@ export async function runInviteAcceptanceReminderSweep(
       .raw()
       .schema("resupply_auth")
       .from("email_tokens")
-      .select("user_id, expires_at, created_at")
-      .eq("purpose", "password_reset")
+      .select("user_id, expires_at, created_at, invite_org_id, invite_kind")
+      .not("invite_kind", "is", null)
       .is("consumed_at", null)
       .gt("expires_at", nowIso)
       .in("user_id", pendingIds);
     if (allTokenErr) throw allTokenErr;
 
-    const newestByUser = new Map<string, TokenRow>();
-    for (const r of allTokenRows ?? []) {
-      if (
-        typeof r.user_id !== "string" ||
-        typeof r.expires_at !== "string" ||
-        typeof r.created_at !== "string"
-      ) {
-        continue;
-      }
-      const t = r as TokenRow;
-      // Same invite-vs-recovery filter as above: a recovery token must not
-      // shadow the invite it was requested from.
-      if (
-        new Date(t.expires_at).getTime() - new Date(t.created_at).getTime() <
-        INVITE_TOKEN_TTL_MS
-      ) {
-        continue;
-      }
+    const newestByUser = new Map<string, InviteTokenRow>();
+    for (const t of (allTokenRows ?? []).filter(isInviteToken)) {
       const prior = newestByUser.get(t.user_id);
       if (
         !prior ||
@@ -491,84 +513,22 @@ export async function runInviteAcceptanceReminderSweep(
       }
     }
 
-    // Tenant + kind. Both roster tables are read cross-tenant (this sweep is
-    // global), and are consulted ONLY for org_id and for which portal the
-    // person belongs on — never for whether they accepted.
-    //
-    // An identity that resolves to MORE THAN ONE tenant is dropped, not
-    // guessed at. `patients.portal_auth_user_id` carries only a non-unique
-    // index and the patient-invite flow reuses `resupply_auth.users` rows by
-    // `email_lower`, so one person shopping two DMEs is a single identity
-    // with two patient rows. The token itself carries no org_id, so there is
-    // nothing that says which tenant's invite is outstanding — and picking
-    // one arbitrarily would send another DME's brand, sender, and portal
-    // host. Silence is the only safe answer.
-    const orgsByUser = new Map<string, Set<string>>();
-    const kindByUser = new Map<string, InviteKind>();
-    const noteOrg = (userId: string, orgId: string, kind: InviteKind) => {
-      const set = orgsByUser.get(userId) ?? new Set<string>();
-      set.add(orgId);
-      orgsByUser.set(userId, set);
-      // A staff seat wins the KIND if the same identity holds both: staff
-      // sign in at /admin, which is where their CTA has to point.
-      if (kind === "staff" || !kindByUser.has(userId)) {
-        kindByUser.set(userId, kind);
-      }
-    };
-
-    const { data: staffRows, error: staffErr } = await supabase
-      .raw()
-      .schema("resupply")
-      .from("admin_users")
-      .select("auth_user_id, org_id, status")
-      .in("auth_user_id", pendingIds);
-    if (staffErr) throw staffErr;
-    for (const row of (staffRows ?? []) as Array<{
-      auth_user_id: string | null;
-      org_id: string | null;
-      status: string | null;
-    }>) {
-      // A revoked seat is the operator's explicit decision to un-invite.
-      // Don't chase someone to finish joining a team they've been removed
-      // from — and don't let the revoked row make the mapping ambiguous.
-      if (row.status === "revoked") continue;
-      if (row.auth_user_id && row.org_id) {
-        noteOrg(row.auth_user_id, row.org_id, "staff");
-      }
-    }
-
-    const { data: patientRows, error: patientErr } = await supabase
-      .raw()
-      .schema("resupply")
-      .from("patients")
-      .select("portal_auth_user_id, org_id")
-      .in("portal_auth_user_id", pendingIds);
-    if (patientErr) throw patientErr;
-    for (const row of (patientRows ?? []) as Array<{
-      portal_auth_user_id: string | null;
-      org_id: string | null;
-    }>) {
-      if (!row.portal_auth_user_id || !row.org_id) continue;
-      noteOrg(row.portal_auth_user_id, row.org_id, "patient");
-    }
-
     for (const userId of pendingIds) {
       if (sent >= SEND_CAP) break;
       const user = pendingById.get(userId);
       const token = newestByUser.get(userId);
       if (!user || !token) continue;
 
-      // Unmapped: a provider-portal invite (excluded above), or an identity
-      // whose roster row was hard-deleted. Ambiguous: linked to more than one
-      // tenant, per the note above. Either way there is no ONE tenant to send
-      // as, so there is nothing safe to send.
-      const orgs = orgsByUser.get(userId);
-      const kind = kindByUser.get(userId);
-      if (!orgs || orgs.size !== 1 || !kind) {
-        stats.skippedUnmappedUser += 1;
-        continue;
-      }
-      const mapping = { orgId: [...orgs][0]!, kind };
+      // Tenant and portal come straight off the token, stamped at mint time
+      // by whichever invite flow issued it (migration 0535). This used to be
+      // reverse-looked-up through `resupply.admin_users` and
+      // `resupply.patients`, which could not answer it: a portal identity is
+      // reused by `email_lower`, so one person who is a patient at two DMEs
+      // is ONE auth row with TWO roster rows, and nothing said whose invite
+      // was outstanding. Those identities had to be dropped, and
+      // provider-portal invites — whose accounts carry no org_id at all —
+      // could not be handled. The token knows.
+      const mapping = { orgId: token.invite_org_id, kind: token.invite_kind };
 
       // A suspended tenant must not keep sending mail in its own name — the
       // same contract `listActiveOrgIds` gives every forEachActiveOrg sweep
@@ -741,8 +701,5 @@ export async function registerInviteAcceptanceReminderJob(
     }
   });
   await boss.schedule(REMINDER_JOB, REMINDER_CRON);
-  logger.info(
-    { cron: REMINDER_CRON, providerPortalExcluded: PROVIDER_PORTAL_EXCLUDED },
-    "invite.acceptance-reminder scheduled",
-  );
+  logger.info({ cron: REMINDER_CRON }, "invite.acceptance-reminder scheduled");
 }

@@ -369,6 +369,12 @@ router.post(
         user_id: authUserId,
         purpose: "password_reset",
         expires_at: expiresAtIso,
+        // Provenance for the acceptance-reminder sweep (migration 0535).
+        // A portal identity is reused by email_lower, so the same auth row
+        // can back patient records at several tenants — the token is the
+        // only thing that can say which tenant's invite this is.
+        invite_org_id: orgId,
+        invite_kind: "patient",
       });
     if (tokenErr) throw tokenErr;
 
@@ -524,6 +530,8 @@ router.post(
         user_id: auth.id,
         purpose: "password_reset",
         expires_at: expiresAtIso,
+        invite_org_id: orgId,
+        invite_kind: "patient",
       });
     if (tokenErr) throw tokenErr;
 

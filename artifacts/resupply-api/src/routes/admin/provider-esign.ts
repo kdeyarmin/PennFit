@@ -314,6 +314,13 @@ async function inviteProviderUser(
       user_id: authUserId,
       purpose: "password_reset",
       expires_at: expiresAt.toISOString(),
+      // Provenance for the acceptance-reminder sweep (migration 0535).
+      // `provider_portal_accounts` has no org_id — a clinician is a global
+      // NPI login linked to any number of tenants through
+      // provider_dme_links — so the INVITING tenant is recoverable only
+      // from the token itself.
+      invite_org_id: orgId,
+      invite_kind: "provider",
     });
   if (tokErr) throw tokErr;
 

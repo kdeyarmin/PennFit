@@ -1135,6 +1135,10 @@ router.post(
         signatureName: company.legalName,
         uiPathPrefix: "/admin",
         publicBaseUrl: tenantBaseUrl ?? undefined,
+        // The TARGET tenant, not the platform operator issuing the invite —
+        // that is whose brand the follow-up reminder has to speak in
+        // (migration 0535).
+        inviteOrgId: orgId,
         initialPassword,
       });
     } catch (err) {

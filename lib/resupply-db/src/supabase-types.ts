@@ -7415,6 +7415,12 @@ export interface Database {
           purpose: string;
           expires_at: string;
           consumed_at: string | null;
+          /** Invite provenance (migration 0535). NULL means "not an
+           * invitation" — an ordinary forgot-password or verify token — and
+           * the invite-acceptance-reminder sweep ignores those. The two move
+           * together; a DB CHECK rejects one set without the other. */
+          invite_org_id: string | null;
+          invite_kind: "staff" | "patient" | "provider" | null;
           created_at: string;
         };
         Insert: {
@@ -7423,6 +7429,8 @@ export interface Database {
           purpose: string;
           expires_at: string;
           consumed_at?: string | null;
+          invite_org_id?: string | null;
+          invite_kind?: "staff" | "patient" | "provider" | null;
           created_at?: string;
         };
         Update: Partial<
