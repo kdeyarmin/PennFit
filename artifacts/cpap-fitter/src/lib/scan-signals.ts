@@ -69,6 +69,29 @@ function unit(n: number): number {
 }
 
 /**
+ * Clamp a head angle into the [-90, 90] the route accepts, for the same
+ * reason `unit` clamps the scores: a payload the schema rejects costs
+ * the patient the whole assessment, not just the field.
+ *
+ * `estimatePoseFromLandmarks` derives pitch as `(ratio - 0.28) * 140`
+ * from a landmark ratio with no upper bound, so a strongly chin-up
+ * capture — where the chin swings toward eye level and shrinks the
+ * denominator — can report well past 90. Sending that verbatim would
+ * 400 the assessment and dead-end a patient whose scan should simply
+ * have come back low-confidence with a retake prompt.
+ *
+ * A clamp rather than a drop: past 90 the estimator has saturated, not
+ * measured, and the boundary value says exactly that while keeping the
+ * frame's other diagnostics. No real head reaches ±90 in a capture that
+ * passes its quality gates, so a genuine reading is never confused with
+ * a clamped one.
+ */
+function degrees(n: number): number {
+  if (!Number.isFinite(n)) return 0;
+  return Math.round(Math.min(90, Math.max(-90, n)) * 10) / 10;
+}
+
+/**
  * Assess one captured frame and fold it into the wire shape.
  *
  * Never throws: a fitting must not fail because a quality probe did.
@@ -132,8 +155,8 @@ export function framesFromMeasurements(
   return frames.slice(0, 10).map((f) => ({
     pose: f.pose,
     ...(f.source ? { source: f.source } : {}),
-    yawDeg: round(f.yawDeg),
-    pitchDeg: round(f.pitchDeg),
+    yawDeg: degrees(f.yawDeg),
+    pitchDeg: degrees(f.pitchDeg),
     acceptable: f.quality.acceptable,
     // Matches the all-turned fallback: when nothing is near-frontal,
     // every frame contributes.

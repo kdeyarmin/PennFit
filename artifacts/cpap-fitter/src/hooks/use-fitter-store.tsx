@@ -278,6 +278,97 @@ function readStoredMeasurements(): FacialMeasurements | null {
 }
 
 /**
+ * Restore the per-frame diagnostics, or `undefined` if they are absent
+ * or off-shape.
+ *
+ * Validated to the server's `frames` contract for the same reason the
+ * aggregate is — an out-of-range angle or an unknown key would 400 the
+ * whole assessment — but it degrades DIFFERENTLY: bad frames drop and
+ * the aggregate survives, rather than taking the scan signals down with
+ * them. `frames` is diagnostic-only (nothing in the engine reads it, and
+ * it is optional on the wire), so losing it must never cost a patient
+ * the measurement-confidence signal that decides their band.
+ *
+ * Restoring these at all matters because a refresh between /measure and
+ * submitting the assessment is ordinary patient behaviour, and dropping
+ * them here would persist `measurement_frames` as null for exactly those
+ * sessions — a silent, biased hole in the record this collection exists
+ * to fill.
+ */
+function restoreScanFrames(
+  value: unknown,
+): NonNullable<ScanSignalsPayload["frames"]> | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value) || value.length === 0 || value.length > 10) {
+    return undefined;
+  }
+  const POSES = ["front", "turn_left", "turn_right"];
+  const SOURCES = ["burst", "guided"];
+  const FRAME_QUALITY_KEYS = [
+    "lighting",
+    "distance",
+    "pose",
+    "occlusion",
+    "motion",
+    "framing",
+  ];
+  const FRAME_VALUE_KEYS = [
+    "noseWidth",
+    "noseHeight",
+    "noseToChin",
+    "mouthWidth",
+    "faceWidthAtCheekbones",
+  ];
+  const bounded = (v: unknown, min: number, max: number): v is number =>
+    typeof v === "number" && Number.isFinite(v) && v >= min && v <= max;
+  const objectOf = (
+    v: unknown,
+    keys: string[],
+    min: number,
+    max: number,
+  ): v is Record<string, number> =>
+    typeof v === "object" &&
+    v !== null &&
+    !Array.isArray(v) &&
+    Object.entries(v).every(
+      ([k, n]) => keys.includes(k) && bounded(n, min, max),
+    );
+
+  const frames: NonNullable<ScanSignalsPayload["frames"]> = [];
+  for (const entry of value) {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      return undefined;
+    }
+    const f = entry as Record<string, unknown>;
+    if (typeof f.pose !== "string" || !POSES.includes(f.pose)) return undefined;
+    if (f.source !== undefined) {
+      if (typeof f.source !== "string" || !SOURCES.includes(f.source)) {
+        return undefined;
+      }
+    }
+    if (!bounded(f.yawDeg, -90, 90)) return undefined;
+    if (!bounded(f.pitchDeg, -90, 90)) return undefined;
+    if (typeof f.acceptable !== "boolean") return undefined;
+    if (typeof f.contributed !== "boolean") return undefined;
+    if (!objectOf(f.values, FRAME_VALUE_KEYS, 0, 300)) return undefined;
+    if (!objectOf(f.quality, FRAME_QUALITY_KEYS, 0, 1)) return undefined;
+    // Rebuilt key by key, like the aggregate above: an extra key would
+    // fail the server's `.strict()` even with every known field valid.
+    frames.push({
+      pose: f.pose as "front" | "turn_left" | "turn_right",
+      ...(f.source ? { source: f.source as "burst" | "guided" } : {}),
+      yawDeg: f.yawDeg,
+      pitchDeg: f.pitchDeg,
+      acceptable: f.acceptable,
+      contributed: f.contributed,
+      values: f.values,
+      quality: f.quality,
+    });
+  }
+  return frames;
+}
+
+/**
  * Restore the persisted scan signals.
  *
  * Validated to the SERVER's contract, not loosely: the API's `scan`
@@ -334,6 +425,7 @@ function readStoredScanSignals(): ScanSignalsPayload | null {
       );
     if (!objectOfUnits(r.quality, QUALITY_KEYS)) return null;
     if (!objectOfUnits(r.agreement, AGREEMENT_KEYS)) return null;
+    const frames = restoreScanFrames(r.frames);
     // Rebuild rather than pass through: an extra top-level key would
     // fail the server's `.strict()` even with every known field valid.
     return {
@@ -342,6 +434,7 @@ function readStoredScanSignals(): ScanSignalsPayload | null {
       agreement: r.agreement,
       measurementConfidence: r.measurementConfidence,
       band: r.band,
+      ...(frames ? { frames } : {}),
     } as ScanSignalsPayload;
   } catch {
     return null;

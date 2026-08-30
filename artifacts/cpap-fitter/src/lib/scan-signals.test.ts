@@ -11,9 +11,9 @@
 
 import { describe, expect, it, vi } from "vitest";
 
-import { buildScanSignals } from "./scan-signals";
+import { buildScanSignals, framesFromMeasurements } from "./scan-signals";
 import { UNKNOWN_FRAME_SAMPLE } from "./frame-sampling";
-import type { Point2D } from "./scan-quality";
+import type { FrameMeasurement, Point2D } from "./scan-quality";
 
 vi.mock("./frame-sampling", async () => {
   const actual =
@@ -136,6 +136,66 @@ describe("per-frame numbers reach the wire", () => {
         expect(typeof v).toBe("number");
       }
     }
+  });
+
+  // The route bounds head angles to [-90, 90], but the pitch estimator
+  // is `(ratio - 0.28) * 140` over an unbounded landmark ratio: a
+  // strongly chin-up capture swings the chin toward eye level, shrinks
+  // the denominator, and reports well past 90. Sending that verbatim
+  // 400s the whole assessment, dead-ending a patient whose scan should
+  // simply have come back low-confidence with a retake prompt.
+  it("clamps head angles the route would reject", () => {
+    const saturated: FrameMeasurement = {
+      pose: "front",
+      quality: {
+        scores: {
+          lighting: 0.8,
+          distance: 0.8,
+          pose: 0.1,
+          occlusion: 1,
+          motion: 0.9,
+          framing: 0.9,
+        },
+        failing: ["pose"],
+        acceptable: false,
+        overall: 0.4,
+      },
+      values: { noseToChin: 80 },
+      yawDeg: 140,
+      pitchDeg: -380.8,
+    };
+
+    const [frame] = framesFromMeasurements([saturated])!;
+    expect(frame!.pitchDeg).toBe(-90);
+    expect(frame!.yawDeg).toBe(90);
+  });
+
+  it("keeps an in-range angle exactly as measured", () => {
+    const ordinary: FrameMeasurement = {
+      pose: "front",
+      quality: {
+        scores: {
+          lighting: 0.9,
+          distance: 0.9,
+          pose: 0.9,
+          occlusion: 1,
+          motion: 0.95,
+          framing: 0.9,
+        },
+        failing: [],
+        acceptable: true,
+        overall: 0.92,
+      },
+      values: { noseToChin: 80 },
+      yawDeg: 3.14,
+      pitchDeg: -8.76,
+    };
+
+    const [frame] = framesFromMeasurements([ordinary])!;
+    // Rounded to a tenth of a degree, not clamped — a clamped reading
+    // must stay distinguishable from a real one.
+    expect(frame!.pitchDeg).toBe(-8.8);
+    expect(frame!.yawDeg).toBe(3.1);
   });
 });
 
