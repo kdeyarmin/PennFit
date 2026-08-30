@@ -878,8 +878,11 @@ describe("consent", () => {
 
     expect(sendFollowup).not.toHaveBeenCalled();
     expect(getSupabaseCallCount("fitter_invites", "update")).toBe(0);
-    // Deferred, not refused — a later tick tries again.
-    expect(stats.skippedQuietHours).toBe(1);
+    // Deferred, not refused — a later tick tries again. Counted apart
+    // from a quiet-hours deferral: one is a clock that resolves itself,
+    // the other is a database that did not answer.
+    expect(stats.skippedConsentUnknown).toBe(1);
+    expect(stats.skippedQuietHours).toBe(0);
     // …and the alert still stands, so staff can act meanwhile.
     expect(stats.alertsRaised).toBe(1);
   });
@@ -927,6 +930,8 @@ describe("consent", () => {
     // 06:00 Pacific — outside 9am-8pm, so deferred rather than sent.
     expect(sendFollowup).not.toHaveBeenCalled();
     expect(stats.skippedQuietHours).toBe(1);
+    // …and this one really is the clock, not an unreadable record.
+    expect(stats.skippedConsentUnknown).toBe(0);
   });
 
   it("honours a stored refusal on both channels", async () => {

@@ -211,6 +211,18 @@ export interface FitterFollowupStats {
   skippedNoLinkBase: number;
   /** Deferred by DND / the TCPA send window — a later tick retries. */
   skippedQuietHours: number;
+  /**
+   * Deferred because the consent lookup FAILED — also retried on a later
+   * tick, but for an entirely different reason.
+   *
+   * Counted apart from `skippedQuietHours` because the two send an
+   * operator to different places: a quiet-hours deferral is a clock and
+   * resolves itself, while this one is a database that did not answer
+   * and may not resolve itself at all. Folding them together would have
+   * somebody checking the time of day while their PostgREST connection
+   * was the problem.
+   */
+  skippedConsentUnknown: number;
   /** Lost a claim race with a concurrent tick. */
   skippedAlreadyClaimed: number;
   /** Vendor or config refused; the stamp is spent either way. */
@@ -230,6 +242,7 @@ function emptyStats(): FitterFollowupStats {
     skippedNoChannel: 0,
     skippedNoLinkBase: 0,
     skippedQuietHours: 0,
+    skippedConsentUnknown: 0,
     skippedAlreadyClaimed: 0,
     sendFailures: 0,
     errors: 0,
@@ -446,6 +459,12 @@ interface ChannelPermission {
   allowSms: boolean;
   /** True when a channel was blocked only by a CLOCK — retry later. */
   deferred: boolean;
+  /**
+   * True when nothing is permitted because the consent lookup itself
+   * failed. Also a retry, but the caller tallies it separately — see
+   * `skippedConsentUnknown`.
+   */
+  consentUnknown: boolean;
 }
 
 /**
@@ -488,7 +507,14 @@ async function resolveChannels(
   // it deferred so the caller leaves the stamp unspent and the next tick
   // tries again — a transient blip must not cost the follow-up, and it
   // must not send one either.
-  if (unknown) return { allowEmail: false, allowSms: false, deferred: true };
+  if (unknown) {
+    return {
+      allowEmail: false,
+      allowSms: false,
+      deferred: true,
+      consentUnknown: true,
+    };
+  }
 
   const dnd = isInDndWindow(prefs, now);
   const allowEmail =
@@ -522,7 +548,7 @@ async function resolveChannels(
   }
   if (!allowEmail && dnd && invite.recipient_email) deferred = true;
 
-  return { allowEmail, allowSms, deferred };
+  return { allowEmail, allowSms, deferred, consentUnknown: false };
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -845,7 +871,8 @@ async function handleOpenInvite(
 
   const channels = await resolveChannels(ctx.supabase, invite, now);
   if (!channels.allowEmail && !channels.allowSms) {
-    if (channels.deferred) stats.skippedQuietHours += 1;
+    if (channels.consentUnknown) stats.skippedConsentUnknown += 1;
+    else if (channels.deferred) stats.skippedQuietHours += 1;
     else stats.skippedNoChannel += 1;
     return;
   }
@@ -1186,7 +1213,8 @@ async function handleCompletedInvite(
 
   const channels = await resolveChannels(ctx.supabase, invite, now);
   if (!channels.allowEmail && !channels.allowSms) {
-    if (channels.deferred) stats.skippedQuietHours += 1;
+    if (channels.consentUnknown) stats.skippedConsentUnknown += 1;
+    else if (channels.deferred) stats.skippedQuietHours += 1;
     else stats.skippedNoChannel += 1;
     return;
   }
