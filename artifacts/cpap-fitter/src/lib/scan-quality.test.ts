@@ -83,11 +83,15 @@ describe("frame quality gates", () => {
     expect(result.failing).toContain("lighting");
   });
 
+  // 110 px (~10 cm on this frame), not the 70 px an earlier revision
+  // used: the near bound carries the assumed-FOV tolerance
+  // (CAPTURE_DISTANCE_MM_BOUNDS), so a 16 cm hold is inside what a
+  // wide-lens camera could legitimately report and is no longer refused.
   it("rejects a face held too far away and too close", () => {
     expect(assessFrameQuality(input({ irisWidthPx: 10 })).failing).toContain(
       "distance",
     );
-    expect(assessFrameQuality(input({ irisWidthPx: 70 })).failing).toContain(
+    expect(assessFrameQuality(input({ irisWidthPx: 110 })).failing).toContain(
       "distance",
     );
   });
@@ -97,7 +101,7 @@ describe("frame quality gates", () => {
     expect(tooFar.distanceHint).toBe("closer");
     expect(coachMessage(tooFar, "front")).toMatch(/closer/i);
 
-    const tooClose = assessFrameQuality(input({ irisWidthPx: 70 }));
+    const tooClose = assessFrameQuality(input({ irisWidthPx: 110 }));
     expect(tooClose.distanceHint).toBe("farther");
     expect(coachMessage(tooClose, "front")).toMatch(/further|back/i);
 
@@ -186,19 +190,55 @@ describe("frame quality gates", () => {
       }
     });
 
-    it("scores a 15 cm hold as TOO CLOSE on a high-resolution stream", () => {
+    it("scores a 10 cm hold as TOO CLOSE on a high-resolution stream", () => {
       // The old px/mm window read this as "too far" — the exact opposite
       // instruction — because 1920 pixels put the iris well past its
       // upper bound.
+      //
+      // 10 cm, not 15: the range estimate assumes a 68° field of view it
+      // cannot measure, so it resolves gross error and nothing finer
+      // (see CAPTURE_DISTANCE_MM_BOUNDS). Asserting a 15 cm hold would
+      // pin precision the estimate does not have on a real camera.
       const result = assessFrameQuality(
         input({
           frameWidth: 1920,
           frameHeight: 1080,
-          irisWidthPx: irisPxAt(1920, 150),
+          irisWidthPx: irisPxAt(1920, 100),
         }),
       );
       expect(result.failing).toContain("distance");
       expect(result.distanceHint).toBe("farther");
+    });
+
+    it("does not refuse arm's length on a camera wider than the assumed FOV", () => {
+      // The estimate scales by tan(θ_true/2)/tan(34°), so an 80° front
+      // camera reads a genuine 550 mm as ~684 mm. Bounds drawn tightly
+      // around the range we want would reject this patient for owning
+      // the wrong phone — which is why they are widened by that factor.
+      const focalPx80 = 1280 / (2 * Math.tan((80 / 2) * (Math.PI / 180)));
+      const irisPx = (focalPx80 * IRIS_DIAMETER_MM) / 550;
+      const result = assessFrameQuality(
+        input({ frameWidth: 1280, frameHeight: 720, irisWidthPx: irisPx }),
+      );
+      expect(result.failing).not.toContain("distance");
+    });
+
+    it("says CLOSER when the iris is under-resolved, even inside the near bound", () => {
+      // A 320x240 stream at ~249 mm leaves the iris ~11 px — under the
+      // extractor's calibration cliff — while the range term reads "too
+      // close". Keying the hint on range alone told this patient to move
+      // BACK, which shrinks the iris further and walks them straight
+      // into `iris_too_small`.
+      const result = assessFrameQuality(
+        input({
+          frameWidth: 320,
+          frameHeight: 240,
+          irisWidthPx: irisPxAt(320, 249),
+        }),
+      );
+      expect(result.failing).toContain("distance");
+      expect(result.distanceHint).toBe("closer");
+      expect(coachMessage(result, "front")).toMatch(/closer/i);
     });
 
     it("marks down an iris too few pixels across to calibrate from", () => {
@@ -227,9 +267,27 @@ describe("frame quality gates", () => {
       expect(estimateCameraDistanceMm(30, 0, 0)).toBeNull();
     });
 
-    it("keeps the window centred on a real arm's length", () => {
-      expect(CAPTURE_DISTANCE_MM_BOUNDS.min).toBeGreaterThanOrEqual(200);
-      expect(CAPTURE_DISTANCE_MM_BOUNDS.max).toBeLessThanOrEqual(750);
+    it("carries enough FOV tolerance that no real camera rejects arm's length", () => {
+      // The bounds are the range we want (250-630 mm) widened by the
+      // worst-case field-of-view error, because the estimate assumes a
+      // 68 degree FOV it cannot measure and real front cameras run
+      // 55-85. Pin the derivation, not the numbers: whatever the bounds
+      // become, they must still admit both edges of the intended range
+      // as the most extreme lens would report them.
+      const reportedFactor = (trueFovDeg: number) =>
+        Math.tan((trueFovDeg / 2) * (Math.PI / 180)) /
+        Math.tan((ASSUMED_HFOV_DEG / 2) * (Math.PI / 180));
+      // A patient at 250 mm on the narrowest lens reads shorter...
+      expect(CAPTURE_DISTANCE_MM_BOUNDS.min).toBeLessThanOrEqual(
+        250 * reportedFactor(55),
+      );
+      // ...and one at 630 mm on the widest reads longer.
+      expect(CAPTURE_DISTANCE_MM_BOUNDS.max).toBeGreaterThanOrEqual(
+        630 * reportedFactor(85),
+      );
+      // Tolerance, not abdication — the term must still catch gross error.
+      expect(CAPTURE_DISTANCE_MM_BOUNDS.min).toBeGreaterThanOrEqual(150);
+      expect(CAPTURE_DISTANCE_MM_BOUNDS.max).toBeLessThanOrEqual(1000);
     });
   });
 
@@ -247,7 +305,7 @@ describe("frame quality gates", () => {
         faceLumaLeft: 51,
         faceLumaRight: 89,
         sharpness: 34.5,
-        irisWidthPx: 17.11, // ~649 mm on this 1280x720 frame
+        irisWidthPx: 12.285, // barely-resolved iris on this 1280x720 frame
         yawDeg: 5,
         pitchDeg: 10,
         rollDeg: 8,

@@ -133,12 +133,30 @@ const NOSE_BRIDGE = 168;
  * estimate `face-measurements.ts` already runs for its depth-plane
  * correction, so the two now agree by construction rather than by luck.
  *
- * The bounds reproduce the old behaviour EXACTLY at the 1280-long-axis
- * stream the pixel window was tuned for — 1.5 px/mm ≈ 632 mm and
- * 3.8 px/mm ≈ 250 mm — and generalise correctly to every other stream
- * size.
+ * WHY THE BOUNDS ARE WIDER THAN THE RANGE WE ACTUALLY WANT. The estimate
+ * is only as good as the field of view it assumes, and that is a
+ * population constant, not a measurement: `face-measurements.ts` puts
+ * real front cameras at 60–80° against its assumed 68°. The estimate
+ * therefore scales by tan(θ_true/2)/tan(34°) — ×0.77 at 55°, ×1.36 at
+ * 85° — so a patient at a perfectly good 550 mm on a wide 80° camera
+ * reads 684 mm. Bounds drawn tightly around the range we want would
+ * reject them for owning the wrong phone.
+ *
+ * So the window is deliberately drawn at the range we want, 250–630 mm,
+ * WIDENED by that worst-case factor on each edge (250 × 0.77, 630 ×
+ * 1.36). Inside 55–85° no patient genuinely at arm's length is ever
+ * refused by this term. What it still catches is gross error — a phone
+ * held at 10 cm, or a metre away — which is all an FOV-blind estimate
+ * can honestly claim to resolve.
+ *
+ * The precision comes from the OTHER term instead. Iris pixel width
+ * (below) needs no FOV assumption at all: it is measured, not inferred,
+ * and "too far to measure" and "iris too small to calibrate from" are
+ * the same physical fact. So the far end is policed by pixels and the
+ * near end — the one pixels cannot speak to, since a close iris only
+ * grows — by this necessarily approximate range.
  */
-export const CAPTURE_DISTANCE_MM_BOUNDS = { min: 250, max: 630 } as const;
+export const CAPTURE_DISTANCE_MM_BOUNDS = { min: 190, max: 860 } as const;
 
 /**
  * Iris width, in pixels, at which the millimetre scale is resolved well
@@ -441,13 +459,22 @@ export function assessFrameQuality(input: QualityInput): QualityResult {
   );
   scores.distance = Math.min(rangeScore, resolutionScore);
 
-  // Which way to move. Only the RANGE term has a direction — an
-  // under-resolved iris on a low-resolution camera is also fixed by
-  // coming closer, so it folds into "closer" rather than going
-  // unexplained.
+  // Which way to move, keyed to WHICH TERM failed — not to the range
+  // alone.
+  //
+  // An under-resolved iris is only ever fixed by coming closer, and on a
+  // low-resolution stream it can fail while the estimated range is
+  // already at or inside the near bound: at 320×240 and ~249 mm the iris
+  // is ~11 px, under the calibration cliff, yet the range reads "too
+  // close". Deciding on range alone told that patient to move BACK,
+  // which shrinks the iris further and walks them into
+  // `iris_too_small` — the one instruction guaranteed to make it worse.
+  // So resolution is checked first and wins.
   let distanceHint: "closer" | "farther" | null = null;
   if (scores.distance < 0.6) {
-    if (
+    if (resolutionScore < 0.6) {
+      distanceHint = "closer";
+    } else if (
       estimatedDistanceMm !== null &&
       estimatedDistanceMm < CAPTURE_DISTANCE_MM_BOUNDS.min
     ) {
