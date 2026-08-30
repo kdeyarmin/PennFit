@@ -270,6 +270,114 @@ function windowScore(value: number, min: number, max: number): number {
 }
 
 /**
+ * The largest disagreement between the matrix pitch and the geometric
+ * one that still reads as the same head.
+ *
+ * The geometric estimator is confounded by anatomy — a long chin or a
+ * high nose shifts its ratio by ~±5° with the head perfectly level,
+ * which is why PITCH_GRACE_DEG exists — so the two will never agree
+ * exactly. But a runtime whose matrix convention differs from the one
+ * assumed below (a transposed read, an inverted axis) disagrees by
+ * roughly TWICE the angle: ~20° at a real 10° nod. 12° sits cleanly
+ * between the two, so a wrong convention degrades to today's behaviour
+ * instead of silently correcting spans the wrong way.
+ */
+export const MATRIX_GEO_PITCH_AGREEMENT_DEG = 12;
+
+/** MediaPipe's 4x4 facial transformation matrix, as it arrives. */
+export interface FacialTransformationMatrixLike {
+  rows: number;
+  columns: number;
+  data: number[] | Float32Array;
+}
+
+/**
+ * Head pose from MediaPipe's own transformation matrix.
+ *
+ * Far better than inferring pitch from landmark ratios, because it is a
+ * rigid-body solve rather than a proxy: it does not care that this
+ * patient's chin is long. Returns null for anything malformed — the
+ * caller then keeps the geometric estimate rather than trusting a
+ * partially-read matrix.
+ *
+ * Column-major, matching the convention tasks-vision emits (the same
+ * layout THREE.js consumes directly), so element (i, j) is data[j*4+i].
+ * Tait-Bryan extraction in the same yaw/pitch/roll convention the
+ * geometric estimator reports, so every consumer downstream is
+ * unaffected by which one produced the numbers.
+ */
+export function poseFromFacialTransformationMatrix(
+  matrix: FacialTransformationMatrixLike | null | undefined,
+): { yawDeg: number; pitchDeg: number; rollDeg: number } | null {
+  if (!matrix) return null;
+  const { rows, columns, data } = matrix;
+  if (rows !== 4 || columns !== 4 || !data || data.length !== 16) return null;
+  const m = (i: number, j: number) => Number(data[j * 4 + i]);
+  const r00 = m(0, 0);
+  const r10 = m(1, 0);
+  const r20 = m(2, 0);
+  const r21 = m(2, 1);
+  const r22 = m(2, 2);
+  if (![r00, r10, r20, r21, r22].every((n) => Number.isFinite(n))) return null;
+  const deg = (rad: number) => (rad * 180) / Math.PI;
+  return {
+    yawDeg: deg(Math.atan2(-r20, Math.hypot(r00, r10))),
+    pitchDeg: deg(Math.atan2(r21, r22)),
+    rollDeg: deg(Math.atan2(r10, r00)),
+  };
+}
+
+/**
+ * The head pose to score and correct this frame with.
+ *
+ * Prefers the matrix, but only once it has agreed with the geometric
+ * estimate about what it is looking at. The runtime's exact convention
+ * is not something this codebase can verify from here, and a silently
+ * transposed or sign-flipped matrix would be worse than the estimator it
+ * replaces: the geometric pitch is merely noisy, while a wrong-signed
+ * one would drive the depth correction in exactly the wrong direction.
+ *
+ * Two gates, both failing toward today's behaviour:
+ *
+ *   * YAW SIGN. At a meaningful turn the two must at least agree which
+ *     way the head is facing. The turn steps are direction-locked off
+ *     this sign, so a disagreement would break the coaching as well as
+ *     the measurement.
+ *   * PITCH AGREEMENT. See MATRIX_GEO_PITCH_AGREEMENT_DEG.
+ *
+ * `poseSource` rides on the result so the record can say which produced
+ * a given frame's angles, and so the depth-aware pitch correction can
+ * refuse to run on the estimate it does not trust.
+ */
+export function resolveFramePose(
+  matrix: FacialTransformationMatrixLike | null | undefined,
+  landmarks: Point2D[],
+  frame?: { width: number; height: number },
+): {
+  yawDeg: number;
+  pitchDeg: number;
+  rollDeg: number;
+  poseSource: "matrix" | "geometric";
+} {
+  const geometric = estimatePoseFromLandmarks(landmarks, frame);
+  const fromMatrix = poseFromFacialTransformationMatrix(matrix);
+  if (!fromMatrix) return { ...geometric, poseSource: "geometric" };
+
+  const meaningfulYaw = Math.abs(geometric.yawDeg) > 8;
+  const signsDisagree = fromMatrix.yawDeg * geometric.yawDeg < 0;
+  if (meaningfulYaw && signsDisagree) {
+    return { ...geometric, poseSource: "geometric" };
+  }
+  if (
+    Math.abs(fromMatrix.pitchDeg - geometric.pitchDeg) >
+    MATRIX_GEO_PITCH_AGREEMENT_DEG
+  ) {
+    return { ...geometric, poseSource: "geometric" };
+  }
+  return { ...fromMatrix, poseSource: "matrix" };
+}
+
+/**
  * Derive head pose from landmark geometry.
  *
  * A fallback for runtimes where the facial transformation matrix is not
@@ -708,6 +816,17 @@ export interface FrameMeasurement {
    * keeps the pre-existing scoring rather than being silently discounted.
    */
   source?: "burst" | "guided";
+  /**
+   * Diagnostics, carried for the clinical record and read by nothing in
+   * the scoring below. They exist because pose alone cannot explain a
+   * span that reads short: too far away, an iris across too few pixels,
+   * and a depth correction that never ran are all equally consistent
+   * with it. See the fit-assess frames schema.
+   */
+  irisPx?: number;
+  depthCorrected?: boolean;
+  /** Matrix-derived head pose, or the geometric fallback. */
+  poseSource?: "matrix" | "geometric";
 }
 
 export interface AggregateResult {
@@ -732,6 +851,20 @@ export const CONFIDENCE_BANDS = { high: 0.75, moderate: 0.5 } as const;
  * error. See the note in `aggregateFrames`.
  */
 export const BURST_AGREEMENT_CEILING = 0.85;
+
+/**
+ * The most agreement a set of same-posture frames may claim when they
+ * were not a single shutter burst.
+ *
+ * Between the burst ceiling and full independence, because that is
+ * where the evidence sits: the guided flow's two front captures are
+ * separated by a fresh steady-streak — ~540 ms of held position, a
+ * blink and a hand-shake apart — so they rule out more than five frames
+ * fired over 560 ms do. They still share the session's systematics: the
+ * same light, the same distance, the same anatomy, the same hair across
+ * the same cheek.
+ */
+export const SAME_POSTURE_AGREEMENT_CEILING = 0.9;
 
 const HORIZONTAL_KEYS = new Set([
   "noseWidth",
@@ -763,6 +896,36 @@ const HORIZONTAL_KEYS = new Set([
 export const MEASUREMENT_YAW_LIMIT_DEG = 10;
 
 /**
+ * `noseToChin`'s depth component over its frontal length, from the
+ * canonical face: the chin sits ~33 mm behind the nose tip against an
+ * ~89 mm frontal span. This is the orthographic limit of the pitch
+ * factor below; the fit against projected faces recovers it to within
+ * 4% without being given it.
+ */
+const NOSE_TO_CHIN_DEPTH_RATIO = 33.23 / 89.4;
+
+/**
+ * The perspective half of the pitch factor, in millimetres, fitted
+ * against pinhole projections at 280 / 400 / 550 mm. It decays as 1/D
+ * because that is what perspective does — at arm's length it roughly
+ * doubles the depth term, and by a metre it is a third of it.
+ */
+const PITCH_PERSPECTIVE_GAIN_MM = 158;
+
+/** Used when a frame could not estimate its own camera distance. */
+const NOMINAL_CAPTURE_DISTANCE_MM = 400;
+
+/**
+ * Past this the correction stops being a correction.
+ *
+ * The pose gate refuses frames well inside it (PITCH_GRACE_DEG plus the
+ * pose target's own tolerance), so a pitch beyond 15 degrees reaching
+ * here means something else is wrong — and the model would be claiming
+ * a ~20% adjustment on the strength of an angle it should not trust.
+ */
+const PITCH_DEPTH_CORRECTION_MAX_DEG = 15;
+
+/**
  * Correct a span for head rotation.
  *
  * The naive model — divide a horizontal span by cos(yaw) — is wrong,
@@ -790,13 +953,92 @@ export function poseCorrect(
   value: number,
   yawDeg: number,
   pitchDeg: number,
+  opts?: {
+    /**
+     * Use the depth-aware model for `noseToChin`. Only ever true for a
+     * MATRIX-backed pitch — see the note on the constants below.
+     */
+    depthAwarePitch?: boolean;
+    /** Camera distance for this frame, for the perspective term. */
+    estimatedDistanceMm?: number | null;
+  },
 ): number {
   if (HORIZONTAL_KEYS.has(key)) return value;
   const yawFactor = Math.cos((Math.min(30, Math.abs(yawDeg)) * Math.PI) / 180);
+  if (opts?.depthAwarePitch && key === "noseToChin") {
+    return (
+      (value * yawFactor) /
+      noseToChinPitchFactor(pitchDeg, opts.estimatedDistanceMm)
+    );
+  }
   const pitchFactor = Math.cos(
     (Math.min(30, Math.abs(pitchDeg)) * Math.PI) / 180,
   );
   return (value * yawFactor) / (pitchFactor > 0.1 ? pitchFactor : 1);
+}
+
+/**
+ * How much of `noseToChin` survives projection at a given head pitch.
+ *
+ * The span runs ~33 mm through the face's DEPTH as well as ~89 mm down
+ * its front, so pitching the head does not merely foreshorten it — it
+ * swings the chin toward or away from the camera. That makes the
+ * projection ASYMMETRIC in the sign of the pitch, which the plain
+ * `cos(pitch)` model cannot express at all: cosine is even, so it
+ * lengthens the span for a chin-down capture, which is the direction
+ * that actually shortens it.
+ *
+ * Measured against pinhole projections of the canonical face
+ * (`face-measurements.accuracy.test.ts`), the ratio is
+ *
+ *     cos(t) - K(D)·sin(t)
+ *
+ * with K stable to ±0.01 across ±12 degrees at any fixed distance, and
+ * varying with distance exactly as perspective predicts:
+ *
+ *     K(D) = NOSE_TO_CHIN_DEPTH_RATIO + PITCH_PERSPECTIVE_GAIN_MM / D
+ *
+ * The constant term is the span's own depth-to-length ratio — the
+ * orthographic limit, which the fit recovers to within 4% without being
+ * told it — and the 1/D term is the perspective that doubles the effect
+ * at arm's length. Fitted K: 0.94 at 280 mm, 0.77 at 400 mm, 0.66 at
+ * 550 mm.
+ *
+ * WHY THIS IS MATRIX-ONLY. The geometric pitch estimator reads +5.4
+ * degrees on the canonical face with the head perfectly LEVEL — the
+ * anatomy confound PITCH_GRACE_DEG exists for. Feeding that into this
+ * correction would "fix" a level capture by 5 degrees and introduce
+ * ~7 mm of error where the raw reading was within 1.4 mm. The
+ * transformation matrix is a rigid-body solve and carries no such
+ * offset, and `resolveFramePose` only reports `matrix` once the two
+ * agree about what they are looking at.
+ */
+function noseToChinPitchFactor(
+  pitchDeg: number,
+  estimatedDistanceMm?: number | null,
+): number {
+  const t =
+    (Math.max(
+      -PITCH_DEPTH_CORRECTION_MAX_DEG,
+      Math.min(PITCH_DEPTH_CORRECTION_MAX_DEG, pitchDeg),
+    ) *
+      Math.PI) /
+    180;
+  // Nominal arm's length when the frame could not estimate its own
+  // distance: the middle of the capture window, so the correction is
+  // never scaled by a number that was never measured.
+  const distance =
+    typeof estimatedDistanceMm === "number" &&
+    Number.isFinite(estimatedDistanceMm) &&
+    estimatedDistanceMm > 0
+      ? Math.min(900, Math.max(200, estimatedDistanceMm))
+      : NOMINAL_CAPTURE_DISTANCE_MM;
+  const k = NOSE_TO_CHIN_DEPTH_RATIO + PITCH_PERSPECTIVE_GAIN_MM / distance;
+  const factor = Math.cos(t) - k * Math.sin(t);
+  // A factor this far from 1 means the inputs are not describing a face
+  // the model understands; correcting by it would amplify error rather
+  // than remove it. Fall through to no pitch correction at all.
+  return factor > 0.6 && factor < 1.5 ? factor : 1;
 }
 
 function median(values: number[]): number {
@@ -862,7 +1104,14 @@ export function aggregateFrames(frames: FrameMeasurement[]): AggregateResult {
   for (const key of keys) {
     const corrected = usable
       .map((f) =>
-        poseCorrect(key, f.values[key] ?? Number.NaN, f.yawDeg, f.pitchDeg),
+        poseCorrect(key, f.values[key] ?? Number.NaN, f.yawDeg, f.pitchDeg, {
+          // Only a rigid-body pose earns the depth-aware model: the
+          // geometric estimator reads +5.4 degrees on a level canonical
+          // face, and correcting THAT would introduce ~7 mm of error
+          // where the raw reading was within 1.4 mm.
+          depthAwarePitch: f.poseSource === "matrix",
+          estimatedDistanceMm: f.quality.estimatedDistanceMm,
+        }),
       )
       .filter((v) => Number.isFinite(v));
     if (corrected.length === 0) continue;
@@ -935,9 +1184,32 @@ export function aggregateFrames(frames: FrameMeasurement[]): AggregateResult {
   // independence than a re-pose but stronger than a shutter burst.
   const allBurst =
     usable.length > 0 && usable.every((f) => f.source === "burst");
+  // The same argument one step out. A GUIDED run captures four frames,
+  // but only the near-frontal ones contribute measurement samples — the
+  // two turns contribute quality evidence and nothing else. Counting
+  // them as independent looks paid the run for evidence it did not
+  // produce, and the two front frames it did produce share a posture:
+  // separated by a fresh steady-streak (~540 ms of held position), which
+  // is more than a shutter burst earns and less than a genuine re-pose.
+  //
+  // Solving the confidence formula, that discount was worth ~1.6x: an
+  // ideal guided run reached the high band at a mean frame quality of
+  // ~0.47 where a burst needs ~0.74. It now needs ~0.62 — still credited
+  // for the extra work, no longer paid twice for it.
+  //
+  // Scoped exactly like the burst rule: only a set where every frame
+  // states its source is repriced, so an untagged or legacy caller keeps
+  // the scoring it had rather than being silently discounted.
+  const allTagged = frames.length > 0 && frames.every((f) => f.source);
+  const contributors = usable;
+  const samePosture =
+    contributors.length > 1 &&
+    new Set(contributors.map((f) => f.pose)).size === 1;
   const effectiveAgreement = allBurst
     ? Math.min(meanAgreement, BURST_AGREEMENT_CEILING)
-    : meanAgreement;
+    : allTagged && samePosture
+      ? Math.min(meanAgreement, SAME_POSTURE_AGREEMENT_CEILING)
+      : meanAgreement;
   // `frames.length`, not `usable.length`: the guided run captures four
   // frames of which only the two near-frontal ones contribute
   // measurement samples (MEASUREMENT_YAW_LIMIT_DEG), so keying off
@@ -945,7 +1217,11 @@ export function aggregateFrames(frames: FrameMeasurement[]): AggregateResult {
   // and could tip a scan sitting on a threshold — a discount this change
   // was never meant to apply. Non-burst sets keep exactly the count they
   // had; only an all-burst set collapses to one look.
-  const independentLooks = allBurst ? 1 : frames.length;
+  const independentLooks = allBurst
+    ? 1
+    : allTagged
+      ? contributors.length
+      : frames.length;
 
   const measurementConfidence = clamp01(
     meanQuality * 0.45 +

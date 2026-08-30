@@ -14,20 +14,23 @@ import {
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 
-import { FilesetResolver, FaceLandmarker } from "@mediapipe/tasks-vision";
+import type { FaceLandmarker } from "@mediapipe/tasks-vision";
+import {
+  LandmarkerLoadTimeout,
+  loadFaceLandmarker,
+} from "@/lib/landmarker-loader";
 import type { FacialMeasurements } from "@workspace/api-client-react/storefront";
 import { track } from "@/lib/track";
+import { BrandName } from "@/components/company-contact";
 import { useDocumentTitle } from "@/hooks/use-document-title";
-import { findImplausibleMeasurement } from "@/lib/measure-flow";
-import { buildScanSignals, payloadFromAggregate } from "@/lib/scan-signals";
+import { failureHints, findImplausibleMeasurement } from "@/lib/measure-flow";
+import { payloadFromAggregate } from "@/lib/scan-signals";
 import { sampleFrame } from "@/lib/frame-sampling";
 import {
   aggregateFrames,
   assessFrameQuality,
-  CAPTURE_DISTANCE_MM_BOUNDS,
   centroidOf,
-  estimateCameraDistanceMm,
-  estimatePoseFromLandmarks,
+  resolveFramePose,
   type FrameMeasurement,
   type Point2D,
 } from "@/lib/scan-quality";
@@ -43,37 +46,6 @@ import {
 // engaged user doesn't feel stalled. Users can also click "Continue"
 // to skip the wait.
 const AUTO_ADVANCE_MS = 2600;
-
-const FAIL_HINTS: Record<ExtractionFailReason, string[]> = {
-  no_face: [
-    "Center your face inside the oval guide.",
-    "Look directly at the camera — not up, down, or to the side.",
-    "Make sure your forehead, eyes, nose, and chin are all in frame.",
-  ],
-  iris_too_small: [
-    "Hold the camera closer — about an arm's length from your face.",
-    "Use the front (selfie) camera, not the rear camera.",
-    "Take off glasses, sunglasses, or anything covering your eyes.",
-  ],
-  implausible_measurements: [
-    "Make sure it's a real face in the frame, not a photo or screen.",
-    "Take off glasses and remove anything covering parts of your face.",
-    "Even, front-on lighting works best — avoid strong side or back light.",
-  ],
-  image_decode: [
-    "Try retaking the photo — the captured frame couldn't be decoded.",
-  ],
-  image_decode_timeout: [
-    "The captured photo took too long to load. Try again, ideally on Wi-Fi or after closing other camera-using apps.",
-  ],
-  model_load_timeout: [
-    "The measurement model took too long to download. Check your connection — Wi-Fi helps — and try again.",
-    "If this keeps happening, you can browse the mask catalog or ask our team for help instead.",
-  ],
-  unknown: [
-    "Try retaking the photo with even lighting and your face centered.",
-  ],
-};
 
 /** Whether /measure will render the "taken a little far away" retake
  *  hint for these signals — the same predicate the JSX uses, so the
@@ -129,6 +101,8 @@ export function Measure() {
     setMeasurements,
     setCapturedImage,
     setCapturedFrames,
+    scanFailureCount,
+    bumpScanFailureCount,
   } = useFitterStore();
   const [progress, setProgress] = useState(0);
   // Which way the patient would have to move to improve the capture, when
@@ -145,6 +119,11 @@ export function Measure() {
   const [error, setError] = useState<{
     message: string;
     reason: ExtractionFailReason;
+    /** Advice chosen from what the frames actually scored — see
+     *  `failureHints`. Static bullets when there is nothing to read. */
+    bullets: string[];
+    /** Enough attempts have failed that another one is not the answer. */
+    escalate: boolean;
   } | null>(null);
   // Flips once we've kicked off (manual click or auto-advance) the
   // navigation to /questionnaire so subsequent presses / timer fires are
@@ -221,93 +200,48 @@ export function Measure() {
     let faceLandmarker: FaceLandmarker | null = null;
 
     const processImage = async () => {
+      // Declared outside the try so the failure path can read what the
+      // frames scored: the six quality checks ran on every frame that
+      // reached the extractor, and answering a lighting failure with
+      // "center your face in the oval" is a worse answer than the one
+      // already computed.
+      let perFrame: FrameMeasurement[] = [];
       try {
         if (!isMountedRef.current) return;
         setProgress(15);
         setStatus("Loading on-device facial landmark model…");
 
-        // Self-hosted MediaPipe — see scripts/setup-mediapipe.mjs. Loading
-        // these from our own origin (instead of jsdelivr/Google Storage)
-        // is what backs Penn Home Medical Supply's "100% private" claim end-to-end and
+        // Self-hosted MediaPipe — see scripts/setup-mediapipe.mjs.
+        // Loading these from our own origin (instead of jsdelivr / Google
+        // Storage) is what backs the "100% private" claim end-to-end and
         // also lets the app pass a strict same-origin CSP.
-        const base = import.meta.env.BASE_URL; // includes trailing slash
-
-        const landmarkerOptions = (delegate: "GPU" | "CPU") => ({
-          baseOptions: {
-            modelAssetPath: `${base}mediapipe/models/face_landmarker.task`,
-            delegate,
-          },
-          outputFaceBlendshapes: false,
-          runningMode: "IMAGE" as const,
-          numFaces: 1,
-        });
-        const loadModel = async (): Promise<FaceLandmarker> => {
-          const vision = await FilesetResolver.forVisionTasks(
-            `${base}mediapipe/wasm`,
-          );
-          if (isMountedRef.current) {
-            setProgress(40);
-            setStatus("Configuring landmark detection…");
-          }
-          try {
-            return await FaceLandmarker.createFromOptions(
-              vision,
-              landmarkerOptions("GPU"),
-            );
-          } catch {
-            // Devices without usable WebGL (older phones, locked-down
-            // browsers, remote desktops) reject the GPU delegate outright.
-            // Without this fallback they hit "unknown error" → retake →
-            // identical failure, forever.
-            return await FaceLandmarker.createFromOptions(
-              vision,
-              landmarkerOptions("CPU"),
-            );
-          }
-        };
-        // Bounded, like the image decode below: the WASM fileset + model
-        // are a multi-MB download, and a blackholed fetch used to strand
-        // the patient at 15-40% progress forever with no error and no
-        // escape hatch.
-        const modelLoad = loadModel();
-        let modelTimer: ReturnType<typeof setTimeout> | undefined;
+        //
+        // The GPU→CPU fallback, the bounded load, and closing a landmarker
+        // that arrives after the timeout all live in the shared loader now
+        // — the guided capture and the live coach need the identical
+        // dance, and the late-arrival close is exactly the detail that
+        // gets copied correctly twice and wrongly the third time.
         try {
-          faceLandmarker = await Promise.race([
-            modelLoad,
-            new Promise<never>((_, reject) => {
-              modelTimer = setTimeout(
-                () =>
-                  reject(
-                    new ExtractionError(
-                      "model_load_timeout",
-                      "The measurement model took too long to load. Please try again.",
-                    ),
-                  ),
-                20_000,
-              );
-            }),
-          ]);
-        } catch (raceErr) {
-          // The timeout won (or the load itself failed). If the slow load
-          // eventually lands, close it — nothing will use it. Attached
-          // only HERE, on the losing path: a pre-attached .then runs
-          // before the race's await resumes (same microtask queue, earlier
-          // registration), so it would see `faceLandmarker` still null and
-          // close the SUCCESSFUL landmarker on every ordinary run.
-          void modelLoad
-            .then((l) => {
-              try {
-                l.close?.();
-              } catch {
-                /* best-effort */
-              }
-            })
-            .catch(() => {
-              /* the load failed outright — nothing to close */
-            });
-          throw raceErr;
-        } finally {
-          if (modelTimer !== undefined) clearTimeout(modelTimer);
+          faceLandmarker = await loadFaceLandmarker({
+            runningMode: "IMAGE",
+            // The head-pose matrix: a rigid-body solve rather than the
+            // landmark-ratio proxy, whose pitch is confounded by
+            // anatomy. `resolveFramePose` still checks the two agree
+            // before trusting it.
+            outputFacialTransformationMatrixes: true,
+          });
+        } catch (loadErr) {
+          if (loadErr instanceof LandmarkerLoadTimeout) {
+            throw new ExtractionError(
+              "model_load_timeout",
+              "The measurement model took too long to load. Please try again.",
+            );
+          }
+          throw loadErr;
+        }
+        if (isMountedRef.current) {
+          setProgress(40);
+          setStatus("Configuring landmark detection…");
         }
 
         if (!isMountedRef.current) return;
@@ -330,7 +264,7 @@ export function Measure() {
           // to move. The distinction drives the status copy and the
           // motion check below.
           const isBurst = capturedFrames.every((f) => f.source === "burst");
-          const perFrame: FrameMeasurement[] = [];
+          perFrame = [];
           // Motion baseline for bursts: the IMMEDIATELY PRECEDING frame's
           // centroid only. Judging against the worst of ALL prior
           // centroids would let one jolt mid-burst poison every later
@@ -358,13 +292,15 @@ export function Measure() {
                   "No face detected in the image. Please try the capture again.",
                 );
               }
-              const { values, irisPix } = extractMeasurementValues(
+              const { values, irisPix, depthCorrected } =
+                extractMeasurementValues(landmarks, frameImg);
+              // Quality scalars for this frame. sampleFrame never throws
+              // (neutral fallback) and the checks are pure math.
+              const angles = resolveFramePose(
+                detection.facialTransformationMatrixes?.[0],
                 landmarks,
                 frameImg,
               );
-              // Quality scalars for this frame. sampleFrame never throws
-              // (neutral fallback) and the checks are pure math.
-              const angles = estimatePoseFromLandmarks(landmarks, frameImg);
               const sample = sampleFrame(frameImg, landmarks);
               const quality = assessFrameQuality({
                 pose: frame.pose,
@@ -399,6 +335,12 @@ export function Measure() {
                 // burst's frames agree with each other by construction
                 // (see BURST_AGREEMENT_CEILING).
                 source: frame.source,
+                // Diagnostics for the record, read by nothing in the
+                // scoring: which of the several explanations for an odd
+                // span actually applied to THIS frame.
+                irisPx: irisPix,
+                depthCorrected,
+                poseSource: angles.poseSource,
               });
             } catch (err) {
               lastFailure =
@@ -454,7 +396,18 @@ export function Measure() {
           if (!isMountedRef.current) return;
           setProgress(100);
           setStatus("Analysis complete.");
-          const aggregatePayload = payloadFromAggregate(aggregate, usedFrames);
+          // ALL frames go into the record, `usedFrames` says which the
+          // numbers rest on. The rejected ones are exactly the frames
+          // worth having when a fitting looks wrong later — passing only
+          // the survivors made them invisible, so `acceptable: false`
+          // could appear solely in the everything-failed fallback.
+          // (Frames that failed EXTRACTION still cannot appear: they
+          // produced no scalars to record.)
+          const aggregatePayload = payloadFromAggregate(
+            aggregate,
+            perFrame,
+            usedFrames,
+          );
           // The frames the numbers actually rest on decide the advice: if
           // they agree on a direction, say it; if they disagree (one too
           // close, one too far), there is no single instruction to give.
@@ -480,91 +433,15 @@ export function Measure() {
           return;
         }
 
-        // ── Single-frame path (the default). ──
-        setStatus("Analyzing facial structure…");
-
-        // Bounded image-load with explicit error + timeout so a hung decode
-        // can't strand the user on this page indefinitely (the stall this
-        // page is otherwise prone to). Data URLs decode synchronously in
-        // most browsers but mobile Safari has been known to stall.
-        const img = await decodeImage(capturedImage);
-
-        if (!isMountedRef.current) return;
-        setProgress(75);
-        setStatus("Calibrating to your iris and extracting measurements…");
-
-        const result = faceLandmarker.detect(img);
-
-        if (result.faceLandmarks && result.faceLandmarks.length > 0) {
-          const landmarks = result.faceLandmarks[0];
-
-          const { values, irisPix } = extractMeasurementValues(landmarks, img);
-          const measurements: FacialMeasurements = {
-            ...values,
-            calibrationMethod: "iris",
-          };
-
-          const implausibleField = findImplausibleMeasurement(measurements);
-          if (implausibleField) {
-            throw new ExtractionError(
-              "implausible_measurements",
-              "We couldn't get a confident reading from this photo. Please retake it.",
-            );
-          }
-
-          // Assess the frame these measurements came from. Scalars only
-          // — the image itself never leaves this function, and nothing
-          // image-derived beyond these numbers is stored or transmitted.
-          // Never allowed to throw: a probe failure must not cost the
-          // patient their recommendation, so fall back to "no signals"
-          // and let the server apply its neutral default.
-          let scanSignals = null;
-          try {
-            scanSignals = buildScanSignals({
-              image: img,
-              landmarks,
-              irisWidthPx: irisPix,
-              values,
-            });
-          } catch {
-            scanSignals = null;
-          }
-
-          if (!isMountedRef.current) return;
-          setProgress(100);
-          setStatus("Analysis complete.");
-          // Same estimate the distance check scores, so the hint the
-          // patient reads and the score that drove it can never disagree.
-          // Only derived when that check actually marked the frame down —
-          // a good capture has no direction to offer.
-          const estimatedMm = showsDistanceHint(scanSignals)
-            ? estimateCameraDistanceMm(irisPix, img.width, img.height)
-            : null;
-          setDistanceHint(
-            estimatedMm === null
-              ? null
-              : estimatedMm < CAPTURE_DISTANCE_MM_BOUNDS.min
-                ? "farther"
-                : "closer",
-          );
-          setMeasurements(measurements, scanSignals);
-          track("measurements_extracted");
-
-          // Auto-advance after a short delay so users can register the
-          // extracted measurements; the manual "Continue" button below
-          // calls the same goToQuestionnaire() handler for users who
-          // want to skip the wait. Held when the distance hint renders —
-          // navigating away 2.6s after offering a retake takes the
-          // choice away right as it's offered.
-          if (!showsDistanceHint(scanSignals)) {
-            setTimeout(goToQuestionnaire, AUTO_ADVANCE_MS);
-          }
-        } else {
-          throw new ExtractionError(
-            "no_face",
-            "No face detected in the image. Please try the capture again.",
-          );
-        }
+        // Unreachable: both capture pages commit `capturedFrames` in the
+        // same flushSync as `capturedImage`, and the no-image guard above
+        // has already redirected when neither survived. Kept as a throw
+        // rather than a silent fall-through, which would strand the
+        // patient on the loading status with nothing in flight.
+        throw new ExtractionError(
+          "no_face",
+          "No face detected in the image. Please try the capture again.",
+        );
       } catch (err: unknown) {
         console.error("Measurement error:", err);
         const reason: ExtractionFailReason =
@@ -574,7 +451,27 @@ export function Measure() {
             ? err.message
             : "An error occurred during measurement extraction.";
         track("measurement_error", { reason });
-        if (isMountedRef.current) setError({ message: msg, reason });
+        // Everything below is gated on still being mounted, and the
+        // COUNTER is the reason why. Escalation counts failures the
+        // patient actually SAW: a patient who navigated away mid-
+        // extraction — hit back, took an escape hatch — never rendered
+        // an error, so banking one here would make their next real
+        // failure the "second" one and offer them a hand-off a try
+        // early. The `track` above is left ungated on purpose: the
+        // extraction genuinely failed, and that is worth knowing whether
+        // or not anyone was still watching.
+        if (isMountedRef.current) {
+          // Bump BEFORE reading, so this failure counts toward its own
+          // escalation — the second failure is the one that should offer
+          // a person, not the third.
+          bumpScanFailureCount();
+          const { bullets, escalate } = failureHints(
+            reason,
+            perFrame,
+            scanFailureCount + 1,
+          );
+          setError({ message: msg, reason, bullets, escalate });
+        }
       } finally {
         // Release the WASM-backed landmarker eagerly — both on success
         // (we've already extracted what we need) and on error (so a retry
@@ -616,14 +513,37 @@ export function Measure() {
             Tips for the next try
           </p>
           <ul className="text-sm text-foreground/85 space-y-1.5 list-disc pl-5">
-            {FAIL_HINTS[error.reason].map((hint) => (
+            {error.bullets.map((hint) => (
               <li key={hint}>{hint}</li>
             ))}
           </ul>
         </div>
+        {/* After two failed attempts, stop implying the next one will
+            work. The advice above is worth following once; a patient on
+            their third try has a device, a room or a face the scanner is
+            not going to get along with, and the honest move is to offer
+            them a person before they conclude the product is broken. */}
+        {error.escalate && (
+          <div
+            className="text-left callout-gold px-4 py-3 rounded-xl space-y-2"
+            data-testid="measure-error-escalation"
+          >
+            <p className="text-sm font-semibold">
+              Two tries is plenty — you don&apos;t need a perfect photo.
+            </p>
+            <p className="text-sm text-foreground/85 leading-relaxed">
+              Leave your details instead and the <BrandName /> team will take it
+              from here, including fitting you in person if that is easier.
+            </p>
+          </div>
+        )}
         <div className="flex flex-wrap gap-3 justify-center">
           <Button
-            onClick={() => setLocation("/capture")}
+            // `?simple=1`: a photo that would not measure is exactly when
+            // the one-tap page — with the how-tos and the escape hatches —
+            // should own the retry, rather than dropping the patient back
+            // into a guided flow they may already have escaped once.
+            onClick={() => setLocation("/capture?simple=1")}
             className="rounded-full btn-primary-glow px-6 gap-2"
             data-testid="measure-retake"
           >
@@ -642,6 +562,30 @@ export function Measure() {
             data-testid="measure-error-fallback-shop"
           >
             <Link href="/masks">Skip for now — browse the mask catalog</Link>
+          </Button>
+          {/* The two exits the camera-error screen has always offered and
+              this one did not. A patient whose photo will not measure is
+              in exactly the same position as one whose camera was
+              refused — and rather more likely to have given up on the
+              flow — but their only way off this screen was a retake or
+              the catalog. Neither reaches a person. */}
+          <Button
+            asChild
+            variant="outline"
+            className="rounded-full glass-panel border-0 px-6"
+            data-testid="measure-error-fallback-insurance"
+          >
+            <Link href="/insurance">Use insurance instead</Link>
+          </Button>
+          <Button
+            asChild
+            variant="outline"
+            className="rounded-full glass-panel border-0 px-6"
+            data-testid="measure-error-fallback-callback"
+          >
+            <Link href="/fit-request?mode=callback&source=scan">
+              Ask us to call you instead
+            </Link>
           </Button>
         </div>
       </div>

@@ -1,5 +1,6 @@
 /**
- * Build the `scan` payload the clinical assessment expects.
+ * Project the measured frames onto the `scan` payload the clinical
+ * assessment expects.
  *
  * Why this exists: `scan-quality.ts` (the pure checks) and the API's
  * `scanSchema` both shipped, but nothing ever joined them — `results.tsx`
@@ -9,16 +10,11 @@
  * sits below the 0.75 `highScan` floor, so no fitting could ever reach
  * high confidence no matter how good the frame was.
  *
- * This module is that join. It takes what `measure.tsx` already has — the
- * decoded frame, the landmarks, the iris calibration, and the millimetre
- * measurements — and produces the scalar signal set.
- *
- * Single-frame honesty: `aggregateFrames` scores a lone frame's
- * cross-frame agreement at 0.7 ("we only looked once") and caps its band
- * at moderate. That is deliberate and stays true here — one frame can now
- * clear the high-confidence scan floor only when its own quality is
- * genuinely excellent, and a poor frame correctly falls below the moderate
- * floor, which is the behaviour the marketing copy describes.
+ * This module is that join. `measure.tsx` scores and aggregates the
+ * frames; this turns the result into the scalar wire shape. It does no
+ * assessment of its own — a single-frame builder used to live here for a
+ * code path that both capture pages had already stopped producing, and
+ * scoring a frame in two places is how the two definitions drift.
  *
  * PHI: every field is a scalar in [0, 1] plus a frame count and a band
  * label. Nothing image-derived beyond those numbers is produced here, and
@@ -26,16 +22,10 @@
  */
 
 import {
-  aggregateFrames,
-  assessFrameQuality,
-  estimatePoseFromLandmarks,
   MEASUREMENT_YAW_LIMIT_DEG,
   type AggregateResult,
-  type CapturePose,
   type FrameMeasurement,
-  type Point2D,
 } from "./scan-quality";
-import { sampleFrame } from "./frame-sampling";
 import type { ScanSignalsRequest } from "./fit-assess-api";
 
 /**
@@ -52,15 +42,6 @@ const AGREEMENT_KEYS = [
   "mouthWidth",
   "faceWidthAtCheekbones",
 ] as const;
-
-export interface BuildScanSignalsInput {
-  image: CanvasImageSource & { width: number; height: number };
-  landmarks: readonly Point2D[];
-  irisWidthPx: number;
-  /** The millimetre measurements this frame produced. */
-  values: Record<string, number>;
-  pose?: CapturePose;
-}
 
 /** Clamp into [0, 1] and round, so the payload always satisfies the schema. */
 function unit(n: number): number {
@@ -92,48 +73,6 @@ function degrees(n: number): number {
 }
 
 /**
- * Assess one captured frame and fold it into the wire shape.
- *
- * Never throws: a fitting must not fail because a quality probe did.
- */
-export function buildScanSignals(
-  input: BuildScanSignalsInput,
-): ScanSignalsPayload {
-  const pose: CapturePose = input.pose ?? "front";
-  const sample = sampleFrame(input.image, input.landmarks);
-  const angles = estimatePoseFromLandmarks(input.landmarks as Point2D[], {
-    width: input.image.width,
-    height: input.image.height,
-  });
-
-  const quality = assessFrameQuality({
-    pose,
-    landmarks: input.landmarks as Point2D[],
-    irisWidthPx: input.irisWidthPx,
-    frameWidth: input.image.width,
-    frameHeight: input.image.height,
-    faceLuma: sample.faceLuma,
-    faceLumaLeft: sample.faceLumaLeft,
-    faceLumaRight: sample.faceLumaRight,
-    sharpness: sample.sharpness,
-    yawDeg: angles.yawDeg,
-    pitchDeg: angles.pitchDeg,
-    rollDeg: angles.rollDeg,
-  });
-
-  const frame: FrameMeasurement = {
-    pose,
-    quality,
-    values: input.values,
-    yawDeg: angles.yawDeg,
-    pitchDeg: angles.pitchDeg,
-  };
-  const aggregate = aggregateFrames([frame]);
-
-  return payloadFromAggregate(aggregate, [frame]);
-}
-
-/**
  * Project the per-frame numbers onto the wire shape.
  *
  * Scalars only — head angles, the millimetre values that frame
@@ -146,8 +85,20 @@ export function buildScanSignals(
  */
 export function framesFromMeasurements(
   frames: readonly FrameMeasurement[],
+  // The frames the reported measurements actually rest on. Defaults to
+  // all of them, which is what a caller that does no filtering means.
+  //
+  // It matters because the RECORD should carry every frame — including
+  // the ones rejected for failing their gates, which are precisely the
+  // ones worth having when a fitting looks wrong — while `contributed`
+  // must still name the smaller set the numbers came from. Passing one
+  // list for both made rejected frames invisible, so the record showed
+  // only successes and `acceptable: false` appeared solely in the
+  // everything-failed fallback.
+  aggregated: readonly FrameMeasurement[] = frames,
 ): ScanSignalsPayload["frames"] {
-  const anyNearFrontal = frames.some(
+  const contributing = new Set(aggregated);
+  const anyNearFrontal = aggregated.some(
     (f) => Math.abs(f.yawDeg) <= MEASUREMENT_YAW_LIMIT_DEG,
   );
   const round = (n: number) =>
@@ -161,7 +112,8 @@ export function framesFromMeasurements(
     // Matches the all-turned fallback: when nothing is near-frontal,
     // every frame contributes.
     contributed:
-      !anyNearFrontal || Math.abs(f.yawDeg) <= MEASUREMENT_YAW_LIMIT_DEG,
+      contributing.has(f) &&
+      (!anyNearFrontal || Math.abs(f.yawDeg) <= MEASUREMENT_YAW_LIMIT_DEG),
     // Finite, not merely `typeof number`: `NaN` and `Infinity` are both
     // numbers, and rounding either would record 0.0 mm — a reading no
     // face produces, indistinguishable from a real measurement, in the
@@ -182,6 +134,17 @@ export function framesFromMeasurements(
       motion: unit(f.quality.scores.motion),
       framing: unit(f.quality.scores.framing),
     },
+    // Diagnostics. Omitted rather than zeroed when absent — a 0 mm
+    // distance or a 0 px iris is a reading no capture produces, and the
+    // record exists to be trusted.
+    ...(Number.isFinite(f.quality.estimatedDistanceMm)
+      ? { estimatedDistanceMm: round(f.quality.estimatedDistanceMm as number) }
+      : {}),
+    ...(Number.isFinite(f.irisPx) ? { irisPx: round(f.irisPx as number) } : {}),
+    ...(typeof f.depthCorrected === "boolean"
+      ? { depthCorrected: f.depthCorrected }
+      : {}),
+    ...(f.poseSource ? { poseSource: f.poseSource } : {}),
   }));
 }
 
@@ -201,6 +164,8 @@ export function framesFromMeasurements(
 export function payloadFromAggregate(
   aggregate: AggregateResult,
   frames?: readonly FrameMeasurement[],
+  /** The subset the aggregate measured from; defaults to `frames`. */
+  aggregated?: readonly FrameMeasurement[],
 ): ScanSignalsPayload {
   const agreement: ScanSignalsPayload["agreement"] = {};
   for (const key of AGREEMENT_KEYS) {
@@ -222,7 +187,7 @@ export function payloadFromAggregate(
     measurementConfidence: unit(aggregate.measurementConfidence),
     band: aggregate.band,
     ...(frames && frames.length > 0
-      ? { frames: framesFromMeasurements(frames) }
+      ? { frames: framesFromMeasurements(frames, aggregated ?? frames) }
       : {}),
   };
 }

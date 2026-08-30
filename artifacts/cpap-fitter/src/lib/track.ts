@@ -93,6 +93,14 @@ export type TrackStep =
   | "guided_capture_dead_loop_fallback"
   | "guided_capture_manual"
   | "guided_capture_skip"
+  // A granted camera that never delivered a frame, and the patient's
+  // deliberate retreat from the guided flow to the simple one. Both are
+  // silent failures otherwise: the funnel would show the drop-off with
+  // no way to tell a stalled sensor from a patient who lost interest.
+  | "capture_auto_fired"
+  | "capture_video_stalled"
+  | "guided_capture_video_stalled"
+  | "guided_capture_simple_fallback"
   | "web_vital";
 
 type MetadataForStep<T extends TrackStep> = T extends "capture_blocked"

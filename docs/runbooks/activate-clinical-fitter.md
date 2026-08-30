@@ -11,11 +11,27 @@ Companion to
 which explains _why_ this matters commercially. This one is the _how_.
 
 > **The short version.** Until step A is done, do not flip anything. The
-> catalog's millimetre bands are **estimates**, and the engine knows it —
-> an unreviewed size band can never produce a high-confidence
-> recommendation. Turning the master switch on first doesn't ship bad
-> recommendations (the cap holds), it ships a fitter that routes almost
-> everything to human review, which looks broken. Do the sign-off first.
+> catalog's millimetre bands are **clinically-reasoned estimates**, and
+> nothing in the engine compensates for that any more: the confidence
+> gate that once held an unreviewed band below high confidence was
+> **removed on purpose** (see the note below), so an unreviewed estimate
+> can and will produce a high-confidence recommendation. The sign-off is
+> now the _only_ place a human checks those numbers against the
+> manufacturer's own guide. Do it first.
+>
+> **What changed, and why this runbook used to say the opposite.**
+> Requiring a clinician to hand-approve ~290 seeded bands before the
+> fitter produced anything but "see a human" made it unusable at the
+> scale it exists for, so `resolveConfidence`
+> ([`confidence.ts`](../../artifacts/resupply-api/src/lib/fitting/confidence.ts))
+> dropped the cap. Confidence is now scan quality × how well the winning
+> size sits in its band × profile completeness, and nothing else.
+> Sign-off still does two real things — it drives the review queue, and
+> the fit report prints either the provenance you recorded or "pending
+> clinical review" — which is what makes the report evidence rather than
+> an assertion. It is a record, not a rubber stamp: nothing writes
+> `mask_size_variants.needs_clinical_review = false`, and a tenant clears
+> a row only for itself by adding a `mask_variant_reviews` row.
 
 All seven switches below are **runtime feature flags**, flipped in
 **Control Center** (`/admin/control-center`), effective within ~5 s with
@@ -34,10 +50,17 @@ from `0494`); a tenant only needs the models it actually dispenses.
 
 Why this is a hard prerequisite, in the codebase's own words: the 0486
 seed bands are "clinically-reasoned estimates rather than published
-manufacturer data," every row lands `needs_clinical_review = true`, and
-`lib/fitting/confidence.ts` independently caps an unreviewed variant
-below high confidence. The flag is the second line of defence, not the
-only one.
+manufacturer data," and every row lands `needs_clinical_review = true`.
+There is **no longer a second line of defence** behind that flag —
+`lib/fitting/confidence.ts` used to cap an unreviewed variant below high
+confidence and deliberately no longer does, so this queue is the one and
+only point at which a person compares a seeded millimetre band against
+the manufacturer's own numbers. What the engine still enforces on its own
+is _safety_, in the tier 1–2 hard filters
+([`tiers.ts`](../../artifacts/resupply-api/src/lib/fitting/tiers.ts)),
+which remove a contraindicated or therapy-incompatible mask from
+consideration entirely. Those are the floor, and they were never this
+flag's job.
 
 Procedure, per model you dispense:
 
@@ -55,9 +78,13 @@ Procedure, per model you dispense:
    for the model's pending sizes, the form arrives **pre-filled** from it
    — confirm it, or change it to what you actually checked.
 4. Check each size's millimetre bands against the guide. A band you
-   believe is **wrong** should be **left unsigned** — an unsigned band
-   caps confidence, which is the correct outcome for a number you don't
-   trust. Platform bands are read-only from the tenant console
+   believe is **wrong** should be **left unsigned** — leaving it in the
+   queue is the honest record, and the fit report will say "pending
+   clinical review" instead of citing a source you did not verify. Be
+   aware that this no longer holds the recommendation back: an unsigned
+   band can still reach high confidence, which is exactly why a band you
+   don't trust needs escalating (below) rather than just skipping.
+   Platform bands are read-only from the tenant console
    (`platform_row_read_only`); corrections to the shared catalog go
    through a platform migration, so report the discrepancy rather than
    signing it off. (Only a tenant-private mask's bands are editable
@@ -164,9 +191,23 @@ Independent of the server work above; can be flipped at any point, on its
 own. Guided multi-angle capture with live quality checks (lighting,
 distance, head position, obstruction, movement).
 
+**The default one-tap page now runs the same live checks** (2026-08-30):
+it coaches the patient on the viewfinder and fires the shutter itself
+once the frame has been acceptable for ~half a second, degrading silently
+to the old manual-only page on any device where the model will not load.
+So this flag is no longer the difference between "coached" and "blind" —
+it is the difference between one posture and four, which buys turn frames
+as quality evidence and a second front capture as a genuine second look.
+
 - **Precondition:** none beyond wanting it. Still patient-visible — watch
   the capture drop-off in the acquisition funnel, and the scan-failure
   reason mix.
+- **Expect confidence to read LOWER than it used to, on both paths.** A
+  guided run is now priced as two looks rather than four (its two turn
+  frames contribute no measurement samples), and its two front frames
+  share a posture, so some runs that reported high confidence now report
+  moderate. Nothing about the measurements changed — this corrects an
+  over-count, and the same correction landed for one-tap bursts earlier.
 - **Rollback:** flip OFF; capture returns to single-frame.
 
 ### B6. `fitter.clinical_report` — already ON

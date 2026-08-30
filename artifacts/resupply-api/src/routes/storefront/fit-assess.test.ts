@@ -848,6 +848,91 @@ describe("POST /api/fit/assess — structured recommendation columns", () => {
     expect(frames[1]!.contributed).toBe(false);
   });
 
+  it("persists the four numbers that attribute a systematic offset", async () => {
+    // Pose alone cannot explain a short span: distance, iris resolution
+    // and a depth correction that silently did not run are all equally
+    // consistent with it. These say which — and `poseSource` says
+    // whether the angles came from MediaPipe's own head-pose matrix or
+    // the anatomy-confounded geometric fallback.
+    db.persistOk = true;
+    const res = await post({
+      measurements: VALID_MEASUREMENTS,
+      profile: VALID_PROFILE,
+      scan: {
+        frameCount: 1,
+        quality: { lighting: 0.95 },
+        agreement: { noseWidth: 0.97 },
+        measurementConfidence: 0.9,
+        band: "high",
+        frames: [
+          {
+            pose: "front",
+            source: "burst",
+            yawDeg: 1.2,
+            pitchDeg: -9.4,
+            acceptable: false,
+            contributed: false,
+            values: { noseToChin: 77.4 },
+            quality: { lighting: 0.95 },
+            estimatedDistanceMm: 412.5,
+            irisPx: 26.4,
+            depthCorrected: true,
+            poseSource: "matrix",
+          },
+        ],
+      },
+    });
+
+    expect(res.status).toBe(200);
+    const row = db.inserts.find((i) => i.table === "fit_sessions")!
+      .payload as Record<string, unknown>;
+    const frames = row.measurement_frames as Array<Record<string, unknown>>;
+    expect(frames[0]).toMatchObject({
+      estimatedDistanceMm: 412.5,
+      irisPx: 26.4,
+      depthCorrected: true,
+      poseSource: "matrix",
+      // A frame that FAILED its gates is exactly the one worth keeping:
+      // the record used to carry only the frames that passed.
+      acceptable: false,
+    });
+  });
+
+  it("rejects out-of-range forensic numbers and an unknown pose source", async () => {
+    db.persistOk = true;
+    const frame = (over: Record<string, unknown>) => ({
+      pose: "front",
+      yawDeg: 0,
+      pitchDeg: 0,
+      acceptable: true,
+      contributed: true,
+      values: { noseWidth: 37 },
+      quality: { lighting: 0.9 },
+      ...over,
+    });
+    const scan = (over: Record<string, unknown>) => ({
+      frameCount: 1,
+      quality: { lighting: 0.95 },
+      agreement: { noseWidth: 0.97 },
+      measurementConfidence: 0.9,
+      band: "high",
+      frames: [frame(over)],
+    });
+
+    for (const bad of [
+      { irisPx: 900 },
+      { estimatedDistanceMm: -1 },
+      { poseSource: "guessed" },
+    ]) {
+      const res = await post({
+        measurements: VALID_MEASUREMENTS,
+        profile: VALID_PROFILE,
+        scan: scan(bad),
+      });
+      expect(res.status).toBe(400);
+    }
+  });
+
   it("rejects an empty frame array", async () => {
     // Carries nothing the omitted field does not, and the client never
     // sends one. Note what is deliberately NOT rejected alongside it: a

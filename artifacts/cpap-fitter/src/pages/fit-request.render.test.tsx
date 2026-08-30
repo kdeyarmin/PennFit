@@ -64,6 +64,9 @@ vi.mock("@/hooks/use-fitter-store", () => ({
     },
     email: "alice@example.com",
     population: store.population,
+    setPopulation: (v: unknown) => {
+      store.population = v as "adult" | "pediatric";
+    },
     inviteToken: store.inviteToken,
     fitSessionId: store.fitSessionId,
   }),
@@ -267,5 +270,51 @@ describe("fit-request — honeypot is autofill-proof", () => {
       expect(screen.getByText(/We have your request/i)).toBeTruthy(),
     );
     expect(submitFitRequest).not.toHaveBeenCalled();
+  });
+});
+
+describe("fit-request — reachable without a fitting", () => {
+  it("asks the adult-or-child question inline when the flow never got to it", async () => {
+    // A patient who arrives from a failed capture has no measurements and
+    // so never saw the questionnaire. Population is not optional — it
+    // picks the service-line filter that keeps a pediatric interface away
+    // from an adult — so the page asks for it here rather than bouncing
+    // to a questionnaire that would send them straight back.
+    store.population = null;
+    store.fitSessionId = null;
+    store.chosenMask = null;
+    setMode("callback");
+
+    const { rerender } = render(<FitRequest />);
+
+    // The form is not shown until the question is answered.
+    expect(screen.queryByTestId("input-fit-request-name")).toBeNull();
+    fireEvent.click(screen.getByTestId("button-population-adult"));
+    // The real provider re-renders on its own; this mock holds the value
+    // in module state, so drive the re-read explicitly.
+    rerender(<FitRequest />);
+
+    await waitFor(() =>
+      expect(screen.getByTestId("input-fit-request-name")).toBeTruthy(),
+    );
+  });
+
+  it("files a callback with no fitting attached", async () => {
+    store.population = "adult";
+    store.fitSessionId = null;
+    store.chosenMask = null;
+    setMode("callback");
+
+    render(<FitRequest />);
+    fill("input-fit-request-name", "Alice Nguyen");
+    fill("input-fit-request-phone", "5551234567");
+    fireEvent.click(screen.getByTestId("button-fit-request-submit"));
+
+    await waitFor(() => expect(submitFitRequest).toHaveBeenCalledTimes(1));
+    expect(submitFitRequest.mock.calls[0]?.[0]).toMatchObject({
+      requestType: "callback",
+      fitSessionId: null,
+      recommendedMaskId: null,
+    });
   });
 });

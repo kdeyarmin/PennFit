@@ -643,6 +643,7 @@ import { FitterProvider, useFitterStore } from "@/hooks/use-fitter-store";
 import { useShopIdentity } from "@/lib/identity";
 import { isPlatformHomeHost } from "@/lib/platform-host";
 import { canStayOnMeasure } from "@/lib/measure-flow";
+import { readFitRequestMode } from "@/lib/fit-request-mode";
 import { isDemoActive } from "@/demo/state";
 import { DemoModeProvider } from "@/demo/DemoModeProvider";
 import { DemoBanner } from "@/demo/DemoBanner";
@@ -912,13 +913,28 @@ function GuardedFitRequest() {
   // It also does not re-check the invite TOKEN beyond
   // `useFitterInviteGate`, which is satisfied by demo mode without one —
   // the demo sandbox has no invite and must still walk this page.
-  if (!measurements) return <Redirect to="/" replace />;
+  // A CALLBACK needs no fitting. This is the patient whose camera was
+  // refused, whose photo would not measure, or who gave up before the
+  // scan — and until now they could not reach a person at all: this
+  // guard bounced them home, so the only exits from a failed capture
+  // were the catalog and the insurance page. Nobody at the DME ever
+  // learned they had tried. "Send us your fitting" still requires one,
+  // because a fitting is what it claims to send.
+  const callbackOnly = readFitRequestMode() === "callback";
+  if (!measurements && !callbackOnly) return <Redirect to="/" replace />;
   // Mirrors GuardedResults. Without it a session that never answered the
   // gate — one predating this deployment, or a direct hop from /measure —
   // reaches the form, which then serializes `population ?? "adult"`: the
   // request row and the team email would claim an adult fitting nobody
   // was ever asked about.
-  if (!population) return <Redirect to="/questionnaire" replace />;
+  //
+  // Only meaningful when a fitting exists: /questionnaire needs
+  // measurements to be worth walking, so a measurement-less callback
+  // asks the one question inline instead of being sent to a page that
+  // would bounce it straight back here.
+  if (!population && measurements) {
+    return <Redirect to="/questionnaire" replace />;
+  }
   return <FitRequest />;
 }
 

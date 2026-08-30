@@ -37,10 +37,15 @@ import {
   VolumeX,
 } from "lucide-react";
 
-import { FilesetResolver, FaceLandmarker } from "@mediapipe/tasks-vision";
+import type { FaceLandmarker } from "@mediapipe/tasks-vision";
 
 import { useFitterStore, type CapturedFrame } from "@/hooks/use-fitter-store";
 import { track } from "@/lib/track";
+import { CAMERA_FEED_TIMEOUT_MS } from "@/lib/capture-readiness";
+import {
+  loadFaceLandmarker,
+  MODEL_LOAD_TIMEOUT_MS,
+} from "@/lib/landmarker-loader";
 import { sampleFrame } from "@/lib/frame-sampling";
 import {
   createCaptureFeedback,
@@ -51,7 +56,7 @@ import {
 import {
   assessFrameQuality,
   centroidOf,
-  estimatePoseFromLandmarks,
+  resolveFramePose,
   POSE_PROMPT,
   turnCoachNudge,
   type CapturePose,
@@ -73,10 +78,6 @@ import {
 /** Preview assessment cadence. ~5-6 checks/sec is plenty for a coach and
  *  keeps CPU cool on older phones. */
 const TICK_MS = 180;
-
-/** Give the model this long to load before falling back to single-frame
- *  — the same stall /measure's image decode guards against. */
-const MODEL_LOAD_TIMEOUT_MS = 20_000;
 
 /** Recent-centroid window for the movement check. */
 const MOTION_WINDOW = 3;
@@ -123,6 +124,9 @@ export function GuidedCapture({ onFallback }: { onFallback: () => void }) {
   const captureCanvasRef = useRef<HTMLCanvasElement>(null);
   const sampleCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  // Cleared by the ready handler; cleared again on unmount so a stalled
+  // feed can't fire onFallback into a page that has already gone.
+  const stallTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const landmarkerRef = useRef<FaceLandmarker | null>(null);
   const machineRef = useRef<GuidedCaptureState>(initialGuidedState(0));
   const framesRef = useRef<CapturedFrame[]>([]);
@@ -197,10 +201,25 @@ export function GuidedCapture({ onFallback }: { onFallback: () => void }) {
           return;
         }
         streamRef.current = stream;
+        // Watchdog: getUserMedia resolving is not a picture arriving. The
+        // dead-loop fallback below only runs INSIDE the tick loop, and
+        // the tick loop needs `videoReady` — so a feed that never fires
+        // its ready events left this page on a spinner forever, with no
+        // buttons rendered and the camera light on. Hand those sessions
+        // to the single-frame page, which owns the recovery UX.
+        const stallTimer = setTimeout(() => {
+          if (!active) return;
+          track("guided_capture_video_stalled");
+          onFallback();
+        }, CAMERA_FEED_TIMEOUT_MS);
+        stallTimerRef.current = stallTimer;
         const video = videoRef.current;
         if (video) {
           video.srcObject = stream;
-          const ready = () => setVideoReady(true);
+          const ready = () => {
+            clearTimeout(stallTimer);
+            setVideoReady(true);
+          };
           video.onloadeddata = ready;
           // iOS Safari can defer `loadeddata` for camera streams — arm
           // the earlier `loadedmetadata` too and nudge playback. The tick
@@ -218,6 +237,7 @@ export function GuidedCapture({ onFallback }: { onFallback: () => void }) {
     })();
     return () => {
       active = false;
+      if (stallTimerRef.current) clearTimeout(stallTimerRef.current);
       stopCamera();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -226,54 +246,31 @@ export function GuidedCapture({ onFallback }: { onFallback: () => void }) {
   // ── Landmarker (VIDEO mode, GPU → CPU fallback, bounded load) ──
   useEffect(() => {
     let active = true;
-    let timedOut = false;
-    const timer = setTimeout(() => {
-      timedOut = true;
-      if (active) onFallback();
-    }, MODEL_LOAD_TIMEOUT_MS);
-    (async () => {
+    void (async () => {
       try {
-        const base = import.meta.env.BASE_URL;
-        const vision = await FilesetResolver.forVisionTasks(
-          `${base}mediapipe/wasm`,
-        );
-        const options = (delegate: "GPU" | "CPU") => ({
-          baseOptions: {
-            modelAssetPath: `${base}mediapipe/models/face_landmarker.task`,
-            delegate,
-          },
-          outputFaceBlendshapes: false,
-          runningMode: "VIDEO" as const,
-          numFaces: 1,
+        const landmarker = await loadFaceLandmarker({
+          runningMode: "VIDEO",
+          timeoutMs: MODEL_LOAD_TIMEOUT_MS,
+          // See measure.tsx: the matrix is a rigid-body pose solve, and
+          // `resolveFramePose` only trusts it once it agrees with the
+          // geometric estimate about which way the head is facing.
+          outputFacialTransformationMatrixes: true,
         });
-        let landmarker: FaceLandmarker;
-        try {
-          landmarker = await FaceLandmarker.createFromOptions(
-            vision,
-            options("GPU"),
-          );
-        } catch {
-          landmarker = await FaceLandmarker.createFromOptions(
-            vision,
-            options("CPU"),
-          );
-        }
-        if (!active || timedOut) {
+        if (!active) {
           landmarker.close?.();
           return;
         }
-        clearTimeout(timer);
         landmarkerRef.current = landmarker;
         setLandmarkerReady(true);
         track("guided_capture_ready");
       } catch {
-        clearTimeout(timer);
-        if (active && !timedOut) onFallback();
+        // Timed out, or both delegates failed. Either way this page
+        // cannot coach, and the single-frame page owns recovery.
+        if (active) onFallback();
       }
     })();
     return () => {
       active = false;
-      clearTimeout(timer);
       try {
         landmarkerRef.current?.close?.();
       } catch {
@@ -493,10 +490,11 @@ export function GuidedCapture({ onFallback }: { onFallback: () => void }) {
             ? sampleFrame(sampleCanvas, landmarks)
             : sampleFrame(video as never, landmarks);
 
-          const angles = estimatePoseFromLandmarks(landmarks, {
-            width: w,
-            height: h,
-          });
+          const angles = resolveFramePose(
+            result.facialTransformationMatrixes?.[0],
+            landmarks,
+            { width: w, height: h },
+          );
           liveYawDeg = angles.yawDeg;
           const assessFor = (pose: CapturePose) =>
             assessFrameQuality({
@@ -825,6 +823,26 @@ export function GuidedCapture({ onFallback }: { onFallback: () => void }) {
         photo is taken, so there&apos;s no need to watch the screen. It all
         happens on this device; photos never leave your phone.
       </p>
+
+      {/* The way out of the guided flow itself.
+          `onFallback` was previously reachable only from a SETUP failure
+          or a dead tick loop — never from "I can hold the pose and it
+          still won't take". Front cannot be skipped (it is the
+          calibration anchor), so without this a patient stuck on the
+          first angle had no exit that led anywhere but a retake into the
+          same flow. The single-frame page owns every recovery hatch,
+          which is where this sends them. */}
+      <button
+        type="button"
+        onClick={() => {
+          track("guided_capture_simple_fallback");
+          onFallback();
+        }}
+        className="mt-3 text-xs underline decoration-dotted text-muted-foreground hover:text-foreground"
+        data-testid="guided-simple-fallback"
+      >
+        Having trouble? Use the simple camera instead
+      </button>
     </div>
   );
 }

@@ -11,8 +11,13 @@
 
 import { describe, expect, it, vi } from "vitest";
 
-import { buildScanSignals, framesFromMeasurements } from "./scan-signals";
+import { framesFromMeasurements, payloadFromAggregate } from "./scan-signals";
 import { UNKNOWN_FRAME_SAMPLE } from "./frame-sampling";
+import {
+  aggregateFrames,
+  assessFrameQuality,
+  estimatePoseFromLandmarks,
+} from "./scan-quality";
 import type { FrameMeasurement, Point2D } from "./scan-quality";
 
 vi.mock("./frame-sampling", async () => {
@@ -69,28 +74,55 @@ const VALUES = {
   faceWidthAtCheekbones: 153.3,
 };
 
-function build(
-  sample: Parameters<typeof sampleFrame>[0] extends never
-    ? never
-    : {
-        faceLuma: number;
-        faceLumaLeft: number;
-        faceLumaRight: number;
-        sharpness: number;
-      },
-) {
+function build(sample: {
+  faceLuma: number;
+  faceLumaLeft: number;
+  faceLumaRight: number;
+  sharpness: number;
+}) {
   vi.mocked(sampleFrame).mockReturnValue(sample);
-  return buildScanSignals({
-    image: { width: 1080, height: 1440 } as unknown as CanvasImageSource & {
-      width: number;
-      height: number;
-    },
-    landmarks: frontFaceLandmarks(),
+  // The composition `measure.tsx` performs per frame, exercised end to
+  // end rather than through a wrapper: sample the pixels, read the head
+  // angles, score the frame, aggregate, project onto the wire. A
+  // single-frame builder used to live in scan-signals.ts for a code path
+  // both capture pages had already stopped producing.
+  const image = {
+    width: 1080,
+    height: 1440,
+  } as unknown as CanvasImageSource & {
+    width: number;
+    height: number;
+  };
+  const landmarks = frontFaceLandmarks();
+  const frameSample = sampleFrame(image, landmarks);
+  const angles = estimatePoseFromLandmarks(landmarks as Point2D[], {
+    width: image.width,
+    height: image.height,
+  });
+  const quality = assessFrameQuality({
+    pose: "front",
+    landmarks: landmarks as Point2D[],
     // ~45 cm from the camera on this 1080x1440 frame — mid-window for
     // CAPTURE_DISTANCE_MM_BOUNDS, and comfortably resolved.
     irisWidthPx: 28,
-    values: VALUES,
+    frameWidth: image.width,
+    frameHeight: image.height,
+    faceLuma: frameSample.faceLuma,
+    faceLumaLeft: frameSample.faceLumaLeft,
+    faceLumaRight: frameSample.faceLumaRight,
+    sharpness: frameSample.sharpness,
+    yawDeg: angles.yawDeg,
+    pitchDeg: angles.pitchDeg,
+    rollDeg: angles.rollDeg,
   });
+  const frame: FrameMeasurement = {
+    pose: "front",
+    quality,
+    values: VALUES,
+    yawDeg: angles.yawDeg,
+    pitchDeg: angles.pitchDeg,
+  };
+  return payloadFromAggregate(aggregateFrames([frame]), [frame]);
 }
 
 describe("per-frame numbers reach the wire", () => {
@@ -234,7 +266,7 @@ describe("per-frame numbers reach the wire", () => {
   });
 });
 
-describe("buildScanSignals", () => {
+describe("one frame through the production composition", () => {
   it("emits only the keys the strict server schema accepts", () => {
     const out = build({
       faceLuma: 135,
@@ -326,5 +358,72 @@ describe("buildScanSignals", () => {
     const out = build(UNKNOWN_FRAME_SAMPLE);
     expect(Number.isFinite(out.measurementConfidence)).toBe(true);
     expect(out.frameCount).toBe(1);
+  });
+});
+
+describe("the record keeps the frames that failed", () => {
+  const frame = (
+    over: Partial<FrameMeasurement> & { acceptable?: boolean } = {},
+  ): FrameMeasurement => {
+    const { acceptable = true, ...rest } = over;
+    return {
+      pose: "front",
+      yawDeg: 0,
+      pitchDeg: 0,
+      values: { noseWidth: 35.7, noseToChin: 89.4 },
+      quality: {
+        scores: {
+          lighting: 0.9,
+          distance: 0.9,
+          pose: 0.9,
+          occlusion: 0.9,
+          motion: 0.9,
+          framing: 1,
+        },
+        overall: 0.9,
+        acceptable,
+        failing: [],
+        distanceHint: null,
+      } as unknown as FrameMeasurement["quality"],
+      ...rest,
+    };
+  };
+
+  it("records a rejected frame, and says it did not contribute", () => {
+    // The rejected frames are exactly the ones worth having when a
+    // fitting looks wrong later. Passing only the survivors made them
+    // invisible, so `acceptable: false` could appear solely in the
+    // everything-failed fallback.
+    const bad = frame({ acceptable: false });
+    const good = frame();
+    const out = framesFromMeasurements([bad, good], [good]);
+
+    expect(out).toHaveLength(2);
+    expect(out![0]).toMatchObject({ acceptable: false, contributed: false });
+    expect(out![1]).toMatchObject({ acceptable: true, contributed: true });
+  });
+
+  it("treats every frame as contributing when the caller does no filtering", () => {
+    const frames = [frame(), frame()];
+    const out = framesFromMeasurements(frames);
+    expect(out!.every((f) => f.contributed)).toBe(true);
+  });
+
+  it("carries the diagnostics, and omits them rather than zeroing", () => {
+    const withDiag = frame({
+      irisPx: 26.42,
+      depthCorrected: true,
+      poseSource: "matrix",
+    });
+    const out = framesFromMeasurements([withDiag, frame()]);
+    expect(out![0]).toMatchObject({
+      irisPx: 26.4,
+      depthCorrected: true,
+      poseSource: "matrix",
+    });
+    // A 0 mm distance or a 0 px iris is a reading no capture produces;
+    // absent is the honest record.
+    expect(out![1]).not.toHaveProperty("irisPx");
+    expect(out![1]).not.toHaveProperty("poseSource");
   });
 });

@@ -104,6 +104,12 @@ irreducible ±6% gaze ambiguity.
    gaze-independent (the iris's horizontal diameter — the calibration —
    is unaffected by pitch regardless of where the eyes point).
 
+   _Updated 2026-08-30:_ `noseToChin` no longer uses the cos(pitch)
+   factor when the frame's pitch came from MediaPipe's transformation
+   matrix — see the pitch entry under **Known residual limitations**.
+   Every other vertical span, and every geometric-pitch frame, is
+   unchanged.
+
 3. **Measurements sample near-frontal frames only** (`|yaw| ≤ 10°`,
    where the gaze ambiguity is ≤ ~1.5%), on BOTH axes, with a fall-back
    to all frames when none qualifies. Turned frames still contribute
@@ -203,12 +209,30 @@ pipeline's readings, per finding 6 above.
 
 ## Known residual limitations (documented, not hidden)
 
-- **Pitch** remains the weakest axis for vertical spans: at ±8° (the
-  front-pose gate's edge) tip-referenced heights can still err ~±10%,
-  because the tip/chin depth geometry moves beyond what a cos model can
-  express. The pose gate bounds it; the measurement readout on /measure
-  lets the patient sanity-check; a transformation-matrix pitch estimate
-  (rather than the anatomy-confounded geometric fallback) is future work.
+- **Pitch — half fixed (2026-08-30).** The transformation-matrix pitch
+  estimate this section called future work now exists
+  (`resolveFramePose`), and `noseToChin` — the span that gates every
+  full-face size — is corrected for the depth lever rather than by
+  cos alone. Two things made that possible: MediaPipe's rigid-body
+  matrix carries no anatomy confound (the geometric estimator reads
+  **+5.4° on a perfectly level canonical face**, which is why the
+  correction is matrix-only and `resolveFramePose` falls back to
+  geometric on any sign or magnitude disagreement), and the harness
+  measured the projection ratio directly:
+  `cos t − K(D)·sin t`, with `K(D) = 0.372 + 158/D` mm — the constant
+  being the span's own 33.23/89.40 depth ratio, recovered from the fit
+  without being given it, and the 1/D term the perspective that roughly
+  doubles the effect at arm's length. Corrected error at ±6° and ±10° of
+  pitch is strictly smaller than uncorrected and stays inside ±3.5%; the
+  correction is exactly inert at 0° and clamped past 15°.
+
+  What remains: **`noseHeight` is still cos-only.** Its endpoints carry
+  their own, different depth ratio (~0.61), so it needs its own pass
+  through the harness rather than a shared constant — deliberately one
+  span at a time. Its ±8° residual is unchanged (~±10%), still bounded
+  by the pose gate and still visible to the patient in the /measure
+  readout.
+
 - The depth correction inherits MediaPipe's z quality ("roughly the
   same scale as x"); the clamp and the per-key gating bound the damage
   of a bad z, and a missing z falls back cleanly.

@@ -183,6 +183,17 @@ interface FitterContextType extends FitterState {
    *  when a new capture is committed, so a reload mid-analysis can't
    *  resurrect the scan the patient just replaced. */
   clearMeasurements: () => void;
+  /**
+   * How many times extraction has failed in this fitting.
+   *
+   * Drives the escalation on /measure: after the second failure the page
+   * stops offering only another attempt and offers a person. Survives
+   * the /capture → /measure round trip (sessionStorage), because that
+   * round trip IS the retry — a counter held in page state would reset
+   * on every one and never reach two.
+   */
+  scanFailureCount: number;
+  bumpScanFailureCount: () => void;
   updateAnswers: (answers: Partial<QuestionnaireAnswers>) => void;
   updateFitAnswers: (answers: FitAnswers) => void;
   /** Replace the WHOLE v2 answer set. The merge-based updater above can
@@ -226,6 +237,7 @@ interface FitterContextType extends FitterState {
 
 const FitterContext = createContext<FitterContextType | undefined>(undefined);
 const MEASUREMENTS_STORAGE_KEY = "fitter_measurements";
+const SCAN_FAILURES_STORAGE_KEY = "fitter_scan_failures";
 const SCAN_SIGNALS_STORAGE_KEY = "fitter_scan_signals";
 
 /**
@@ -352,6 +364,27 @@ function restoreScanFrames(
     if (typeof f.contributed !== "boolean") return undefined;
     if (!objectOf(f.values, FRAME_VALUE_KEYS, 0, 300)) return undefined;
     if (!objectOf(f.quality, FRAME_QUALITY_KEYS, 0, 1)) return undefined;
+    // Diagnostics — optional, but bounded to the SAME windows the route
+    // enforces. A value the server would reject must not survive a
+    // reload and 400 the whole assessment for a field that only exists
+    // to explain a measurement after the fact.
+    if (f.estimatedDistanceMm !== undefined) {
+      if (!bounded(f.estimatedDistanceMm, 0, 10_000)) return undefined;
+    }
+    if (f.irisPx !== undefined && !bounded(f.irisPx, 0, 500)) return undefined;
+    if (
+      f.depthCorrected !== undefined &&
+      typeof f.depthCorrected !== "boolean"
+    ) {
+      return undefined;
+    }
+    if (
+      f.poseSource !== undefined &&
+      f.poseSource !== "matrix" &&
+      f.poseSource !== "geometric"
+    ) {
+      return undefined;
+    }
     // Rebuilt key by key, like the aggregate above: an extra key would
     // fail the server's `.strict()` even with every known field valid.
     frames.push({
@@ -363,6 +396,16 @@ function restoreScanFrames(
       contributed: f.contributed,
       values: f.values,
       quality: f.quality,
+      ...(f.estimatedDistanceMm !== undefined
+        ? { estimatedDistanceMm: f.estimatedDistanceMm as number }
+        : {}),
+      ...(f.irisPx !== undefined ? { irisPx: f.irisPx as number } : {}),
+      ...(f.depthCorrected !== undefined
+        ? { depthCorrected: f.depthCorrected as boolean }
+        : {}),
+      ...(f.poseSource !== undefined
+        ? { poseSource: f.poseSource as "matrix" | "geometric" }
+        : {}),
     });
   }
   return frames;
@@ -755,12 +798,52 @@ export function FitterProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  // Reset by a SUCCESSFUL extraction and by starting a new fitting —
+  // deliberately not by `clearMeasurements`, which runs on every capture
+  // commit and would zero the count on the very retry it is counting.
+  const [scanFailureCount, setScanFailureCountState] = useState<number>(() => {
+    try {
+      const raw = sessionStorage.getItem(SCAN_FAILURES_STORAGE_KEY);
+      const n = raw ? Number.parseInt(raw, 10) : 0;
+      return Number.isFinite(n) && n > 0 ? n : 0;
+    } catch {
+      return 0;
+    }
+  });
+
+  const persistScanFailureCount = (next: number) => {
+    try {
+      if (next > 0) {
+        sessionStorage.setItem(SCAN_FAILURES_STORAGE_KEY, String(next));
+      } else {
+        sessionStorage.removeItem(SCAN_FAILURES_STORAGE_KEY);
+      }
+    } catch {
+      // Storage unusable — the count still works for this page's life.
+    }
+  };
+
+  const bumpScanFailureCount = () => {
+    setScanFailureCountState((prev) => {
+      const next = prev + 1;
+      persistScanFailureCount(next);
+      return next;
+    });
+  };
+
+  const resetScanFailureCount = () => {
+    setScanFailureCountState(0);
+    persistScanFailureCount(0);
+  };
+
   const setMeasurements = (
     nextMeasurements: FacialMeasurements,
     nextScanSignals?: ScanSignalsPayload | null,
   ) => {
     setMeasurementsState(nextMeasurements);
     if (nextScanSignals !== undefined) setScanSignalsState(nextScanSignals);
+    // A scan that worked ends the run of failures.
+    resetScanFailureCount();
     try {
       sessionStorage.setItem(
         MEASUREMENTS_STORAGE_KEY,
@@ -812,6 +895,9 @@ export function FitterProvider({ children }: { children: ReactNode }) {
   const resetForNewFitting = () => {
     setMeasurementsState(null);
     setScanSignalsState(null);
+    // A fresh fitting starts with a clean slate — the previous run's
+    // failures say nothing about this one.
+    resetScanFailureCount();
     setAnswers({});
     setFitAnswers({});
     // The population is an ANSWER about this fitting, not identity — a
@@ -893,6 +979,8 @@ export function FitterProvider({ children }: { children: ReactNode }) {
         storagePersisted,
         setMeasurements,
         clearMeasurements,
+        scanFailureCount,
+        bumpScanFailureCount,
         updateAnswers,
         updateFitAnswers,
         replaceFitAnswers,
