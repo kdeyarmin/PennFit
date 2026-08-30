@@ -13,8 +13,10 @@ import type { Mock } from "vitest";
 import {
   submitFitterLead,
   submitFitterComplete,
+  submitFitterInviteComplete,
   fetchShopProducts,
   startCheckout,
+  type FitterInviteCompleteInput,
 } from "./shop-api";
 
 const ORIGINAL_FETCH = globalThis.fetch;
@@ -497,5 +499,161 @@ describe("startCheckout", () => {
   test("throws checkout_retired without calling the network", async () => {
     await expect(startCheckout([])).rejects.toThrow(/checkout_retired/);
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("submitFitterInviteComplete", () => {
+  // On the legacy engine path this POST is the only writer of the
+  // finished fitting onto the invite row, so the wrapper retries
+  // transient failures and keeps the request alive across a tab close.
+  const INPUT: FitterInviteCompleteInput = {
+    token: "tok-123",
+    measurements: {
+      noseWidth: 34,
+      noseHeight: 50,
+      noseToChin: 70,
+      mouthWidth: 48,
+      faceWidthAtCheekbones: 132,
+    },
+    answers: {} as FitterInviteCompleteInput["answers"],
+    recommendation: null,
+  };
+
+  const okResponse = () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ ok: true, matched: true }),
+  });
+
+  test("posts once with keepalive on first-attempt success", async () => {
+    fetchMock.mockResolvedValue(okResponse());
+
+    const result = await submitFitterInviteComplete(INPUT);
+
+    expect(result).toEqual({ ok: true, matched: true });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("/resupply-api/shop/fitter-invite/complete");
+    expect(init.method).toBe("POST");
+    // A patient who closes the tab the moment they see their result must
+    // not cancel the in-flight transmission.
+    expect(init.keepalive).toBe(true);
+  });
+
+  test("retries a network failure and succeeds on the second attempt", async () => {
+    vi.useFakeTimers();
+    try {
+      fetchMock
+        .mockRejectedValueOnce(new TypeError("network down"))
+        .mockResolvedValueOnce(okResponse());
+
+      const pending = submitFitterInviteComplete(INPUT);
+      await vi.advanceTimersByTimeAsync(1_000);
+
+      await expect(pending).resolves.toEqual({ ok: true, matched: true });
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("retries a 5xx and succeeds on a later attempt", async () => {
+    vi.useFakeTimers();
+    try {
+      fetchMock
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 503,
+          json: async () => ({ error: "unavailable" }),
+        })
+        .mockResolvedValueOnce(okResponse());
+
+      const pending = submitFitterInviteComplete(INPUT);
+      await vi.advanceTimersByTimeAsync(1_000);
+
+      await expect(pending).resolves.toEqual({ ok: true, matched: true });
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("treats a 2xx that is not the route's JSON as a retryable failure", async () => {
+    // Mid-deploy a proxy can answer with the SPA's HTML shell and status
+    // 200. Reporting that as a recorded fitting would latch the results
+    // page's once-only guard over a lead the server never saw.
+    vi.useFakeTimers();
+    try {
+      fetchMock
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => {
+            throw new SyntaxError("Unexpected token '<'");
+          },
+        })
+        .mockResolvedValueOnce(okResponse());
+
+      const pending = submitFitterInviteComplete(INPUT);
+      await vi.advanceTimersByTimeAsync(1_000);
+
+      await expect(pending).resolves.toEqual({ ok: true, matched: true });
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("a 200 whose JSON lacks ok:true never reports success", async () => {
+    vi.useFakeTimers();
+    try {
+      fetchMock.mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({ someOtherShape: true }),
+      });
+
+      const pending = expect(submitFitterInviteComplete(INPUT)).rejects.toThrow(
+        "malformed_success_body",
+      );
+      await vi.advanceTimersByTimeAsync(6_000);
+
+      await pending;
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("does NOT retry a deterministic 4xx — throws its error code once", async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 409,
+      json: async () => ({ error: "revoked" }),
+    });
+
+    await expect(submitFitterInviteComplete(INPUT)).rejects.toThrow("revoked");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  test("gives up after exhausting the retry budget", async () => {
+    vi.useFakeTimers();
+    try {
+      fetchMock.mockResolvedValue({
+        ok: false,
+        status: 503,
+        json: async () => ({ error: "unavailable" }),
+      });
+
+      const pending = expect(submitFitterInviteComplete(INPUT)).rejects.toThrow(
+        "unavailable",
+      );
+      await vi.advanceTimersByTimeAsync(6_000);
+
+      await pending;
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

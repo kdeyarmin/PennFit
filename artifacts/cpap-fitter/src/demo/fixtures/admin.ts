@@ -64,6 +64,10 @@ export function demoInboxCounts() {
     overdueFollowups: 5,
     newPatientDocuments: 2,
     newInboundFaxes: 1,
+    pendingFitReviews: 1,
+    newFitRequests: 2,
+    openFitterFollowups: 3,
+    pacwareReadyToSync: 0,
     serverTime: NOW_ISO(),
   };
 }

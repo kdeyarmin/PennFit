@@ -39,6 +39,8 @@ export type NavLink = {
     | "newPatientDocuments"
     | "newInboundFaxes"
     | "pendingFitReviews"
+    | "newFitRequests"
+    | "openFitterFollowups"
     | "pacwareReadyToSync";
   /**
    * Granular RBAC permission key required to USE the destination page

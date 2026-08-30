@@ -232,3 +232,40 @@ describe("fit-request — submission", () => {
     });
   });
 });
+
+describe("fit-request — honeypot is autofill-proof", () => {
+  it("renders the trap read-only so password managers skip it", () => {
+    // Browser autofill ignores autoComplete="off" and fills hidden
+    // inputs; a tripped honeypot shows a REAL patient a fake success
+    // screen with no request ever filed. Read-only fields are skipped
+    // by every autofill engine, while no human can focus the off-screen
+    // input to release it.
+    render(<FitRequest />);
+    const trap = document.getElementById(
+      "fit-request-website",
+    ) as HTMLInputElement;
+    expect(trap).toBeTruthy();
+    expect(trap.readOnly).toBe(true);
+    // A bot that focuses the field (simulated typing) still releases
+    // the trap and gets caught by the value check on submit.
+    fireEvent.focus(trap);
+    expect(trap.readOnly).toBe(false);
+  });
+
+  it("a filled trap still short-circuits with a fake success and no API call", async () => {
+    render(<FitRequest />);
+    fill("input-fit-request-name", "Alice Nguyen");
+    fill("input-fit-request-phone", "5551234567");
+    const trap = document.getElementById(
+      "fit-request-website",
+    ) as HTMLInputElement;
+    fireEvent.focus(trap);
+    fireEvent.change(trap, { target: { value: "http://spam.example" } });
+    fireEvent.click(screen.getByTestId("button-fit-request-submit"));
+
+    await waitFor(() =>
+      expect(screen.getByText(/We have your request/i)).toBeTruthy(),
+    );
+    expect(submitFitRequest).not.toHaveBeenCalled();
+  });
+});

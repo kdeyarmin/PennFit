@@ -16,6 +16,14 @@ export interface AdminInboxCounts {
   /** Fit sessions waiting on a clinician (review_status = pending_review). */
   pendingFitReviews: number;
   /**
+   * Fit requests nobody has picked up (status = new) — the queue the mask
+   * fitter ends in. The email that announces one is fail-soft, so this
+   * badge is the signal that cannot silently not arrive.
+   */
+  newFitRequests: number;
+  /** Open fitter follow-up alerts — who went quiet after a link went out. */
+  openFitterFollowups: number;
+  /**
    * Confirmed resupply episodes waiting on a PacWare CSV export.
    * Always 0 unless the operator opted into auto-sync notices
    * (the pacware.auto_sync toggle on /admin/pacware).

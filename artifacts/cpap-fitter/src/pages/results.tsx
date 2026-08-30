@@ -182,6 +182,31 @@ export function Results() {
     setLocation("/fit-request?mode=callback");
   };
 
+  /**
+   * Send the patient back to re-scan, dropping what the LAST fitting
+   * produced.
+   *
+   * A retake starts a different fitting, but `chosenMask` and
+   * `fitSessionId` are sessionStorage-backed and survived the trip — so
+   * a patient who picked a mask, retook their photo, and then landed on
+   * a no-result screen could open the context-free callback and file a
+   * request stamped with the PREVIOUS run's mask and session. That is
+   * not cosmetic: `fitter_fit_requests.fit_session_id` is what a CSR
+   * closing the request `fulfilled` stamps `dispensed_at` on, so the
+   * dispense would be attributed to a fitting the patient abandoned,
+   * and the queue would show a mask this fitting never recommended.
+   *
+   * Deliberately narrower than `resetForNewFitting()`: the measurements
+   * and answers are about to be re-collected anyway, and clearing the
+   * population here would re-ask the adult-or-child gate of someone who
+   * is only retaking a photo.
+   */
+  const goRetake = () => {
+    setChosenMask(null);
+    setFitSessionId(null);
+    setLocation("/capture");
+  };
+
   // The mask fitter is invitation-only: the recommendation endpoint
   // requires the signed invite token (set by /fitter-invite) in a
   // request header. Without it the server returns 403, mirroring the
@@ -238,7 +263,15 @@ export function Results() {
    */
   const runAssessment = React.useCallback(
     async (safety: SafetyScreenSubmission | null, signal?: AbortSignal) => {
-      if (!measurements || !inviteToken) return;
+      // Throw rather than silently return: every caller catches and
+      // renders its own failure state ("unavailable", or the safety
+      // screen's retry message). A bare return here left the page on
+      // the "probing" skeletons forever when the sessionStorage token
+      // vanished mid-session and "Try again" re-entered with nothing
+      // to send.
+      if (!measurements || !inviteToken) {
+        throw new Error("fitter_assessment_preconditions_missing");
+      }
       const result = await requestFitAssessment({
         inviteToken,
         measurements,
@@ -524,6 +557,12 @@ export function Results() {
           }
         : null,
     }).catch((err) => {
+      // The helper already retried the transient shapes (network, 5xx).
+      // Whatever remains is a dead invite or a long outage — un-latch so
+      // a later effect re-run, or a return to this page, gets another
+      // attempt. The server's completion claim is conditional, so a
+      // duplicate transmission is folded, never double-counted.
+      hasTransmittedInvite.current = false;
       console.warn("fitter-invite transmission failed (continuing)", err);
     });
   }, [inviteToken, measurements, topPick, fullAnswers, fittingAnswered]);
@@ -603,9 +642,14 @@ export function Results() {
         // A withheld fitting named no mask, so the request carries none —
         // which is the honest record: staff need to know this patient was
         // stopped, not which card they happened to be looking at.
-        onRequestCallback={
-          leadCaptureOnly ? () => handleRequestCallback() : undefined
-        }
+        //
+        // Offered REGARDLESS of `leadCaptureOnly`: that flag decides
+        // whether a patient with a mask orders it themselves, but a
+        // withheld fitting has no mask, so /order is unreachable and the
+        // request queue is the only path that reaches a person. Gating on
+        // the flag left a checkout-mode tenant's most at-risk patient —
+        // the one the engine explicitly stopped — with no way to ask.
+        onRequestCallback={() => handleRequestCallback()}
       />
     );
   }
@@ -654,9 +698,22 @@ export function Results() {
           >
             Try again
           </Button>
-          <Button variant="outline" onClick={() => setLocation("/capture")}>
+          <Button variant="outline" onClick={goRetake}>
             <RefreshCcw className="h-4 w-4 mr-2" />
             Retake photo
+          </Button>
+          {/* The lead-capture exit. Without it this screen told the
+              patient to come back later and offered no way to be
+              reached — a finished questionnaire and a captured scan
+              walking away over a transient outage. The request form
+              needs no fitting result; a person follows up. */}
+          <Button
+            variant="outline"
+            onClick={() => handleRequestCallback()}
+            data-testid="results-unavailable-callback"
+          >
+            <PhoneCall className="h-4 w-4 mr-2" />
+            Ask us to contact me instead
           </Button>
         </div>
       </div>
@@ -746,6 +803,16 @@ export function Results() {
           >
             Start Over
           </Button>
+          {/* Same lead-capture exit as the clinical-unavailable screen:
+              an engine failure must not be the end of the conversation. */}
+          <Button
+            variant="outline"
+            onClick={() => handleRequestCallback()}
+            data-testid="results-error-callback"
+          >
+            <PhoneCall className="h-4 w-4 mr-2" />
+            Ask us to contact me instead
+          </Button>
         </div>
       </div>
     );
@@ -796,7 +863,7 @@ export function Results() {
             track("results_retake_requested", {
               outcome: assessment.outcome,
             });
-            setLocation("/capture");
+            goRetake();
           }}
         />
         {leadCaptureOnly && (
@@ -886,19 +953,20 @@ export function Results() {
             our team fit you in person.
           </p>
           <div className="flex flex-wrap justify-center gap-3 pt-2">
-            <Button onClick={() => setLocation("/capture")}>
+            <Button onClick={goRetake}>
               <RefreshCcw className="h-4 w-4 mr-2" />
               Retake photo
             </Button>
-            {leadCaptureOnly && (
-              <Button
-                variant="outline"
-                onClick={() => handleRequestCallback()}
-                data-testid="results-empty-callback"
-              >
-                Ask us to contact you
-              </Button>
-            )}
+            {/* Unconditional, like the pediatric branch above: an empty
+                ranking has no mask to order, so the request queue is the
+                only path to a person whatever `leadCaptureOnly` says. */}
+            <Button
+              variant="outline"
+              onClick={() => handleRequestCallback()}
+              data-testid="results-empty-callback"
+            >
+              Ask us to contact you
+            </Button>
             <Button variant="outline" onClick={() => setLocation("/masks")}>
               Browse all masks
             </Button>
@@ -980,7 +1048,7 @@ export function Results() {
               size="sm"
               onClick={() => {
                 track("results_retake_requested", { topConfidencePct });
-                setLocation("/capture");
+                goRetake();
               }}
               data-testid="results-retake-photo"
             >
