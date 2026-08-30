@@ -545,7 +545,11 @@ export function Measure() {
         </div>
         <div className="flex flex-wrap gap-3 justify-center">
           <Button
-            onClick={() => setLocation("/capture")}
+            // `?simple=1`: a photo that would not measure is exactly when
+            // the one-tap page — with the how-tos and the escape hatches —
+            // should own the retry, rather than dropping the patient back
+            // into a guided flow they may already have escaped once.
+            onClick={() => setLocation("/capture?simple=1")}
             className="rounded-full btn-primary-glow px-6 gap-2"
             data-testid="measure-retake"
           >

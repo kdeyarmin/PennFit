@@ -7,7 +7,11 @@ import { useFitterStore } from "@/hooks/use-fitter-store";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { track } from "@/lib/track";
 import { useDocumentTitle } from "@/hooks/use-document-title";
-import { getCaptureBlockers, isCaptureReady } from "@/lib/capture-readiness";
+import {
+  CAMERA_FEED_TIMEOUT_MS,
+  getCaptureBlockers,
+  isCaptureReady,
+} from "@/lib/capture-readiness";
 import { useVisionRuntimeHealth } from "@/hooks/use-vision-runtime-health";
 import { BrandName } from "@/components/company-contact";
 import { GuidedCapture } from "./capture-guided";
@@ -20,20 +24,94 @@ import { GuidedCapture } from "./capture-guided";
 const BURST_FRAME_COUNT = 5;
 const BURST_FRAME_INTERVAL_MS = 140;
 
+/**
+ * `?simple=1` forces the one-tap page regardless of the tenant's guided
+ * flag.
+ *
+ * The retake on /measure's ERROR screen carries it, and that is the loop
+ * it breaks: `guidedFallback` is component state, so a patient who fell
+ * back to the simple camera, took a photo that wouldn't measure, and
+ * pressed "Retake photo" re-mounted this component with the flag reset
+ * and landed back in the guided flow they had already escaped. A photo
+ * that failed to measure is exactly when the page with the how-tos and
+ * the escape hatches should own the retry.
+ *
+ * Read at mount only: this is a routing decision, not live state, and a
+ * patient who navigates here fresh should get their tenant's flow.
+ */
+function forcedSimpleFromUrl(): boolean {
+  if (typeof window === "undefined") return false;
+  return new URLSearchParams(window.location.search).get("simple") === "1";
+}
+
 export function Capture() {
   useDocumentTitle("Take a photo");
   const { multiframeCapture } = useFitterStore();
   // The guided scan FAILS OPEN: any setup problem (camera denied, model
   // unreachable, landmarker refusing to start) drops this session back to
   // the proven single-frame page, which owns the full recovery UX.
+  const [forcedSimple] = useState(forcedSimpleFromUrl);
   const [guidedFallback, setGuidedFallback] = useState(false);
   useEffect(() => {
     track("capture_started");
   }, []);
-  if (multiframeCapture && !guidedFallback) {
+  if (multiframeCapture && !guidedFallback && !forcedSimple) {
     return <GuidedCapture onFallback={() => setGuidedFallback(true)} />;
   }
   return <SingleFrameCapture />;
+}
+
+/**
+ * The ways out of a capture that isn't working.
+ *
+ * Rendered from four places — the fatal camera screen, a degraded vision
+ * runtime, a stalled feed, and a shutter that has failed twice — so a
+ * patient who cannot get a photo is never left without a next step, and
+ * so the four never drift into offering different help. The `prefix`
+ * keeps each caller's testids distinct for the e2e specs that assert on
+ * a specific one.
+ */
+function CaptureEscapeHatches({ prefix }: { prefix: string }) {
+  return (
+    <div className="flex flex-wrap gap-3 justify-center">
+      {/* asChild so the Button styling lands ON the link itself — a
+          <button> nested inside wouter's <a> is invalid HTML and
+          confuses keyboard/screen-reader navigation. */}
+      <Button
+        asChild
+        variant="outline"
+        className="rounded-full glass-panel border-0 px-6"
+        data-testid={`${prefix}-fallback-shop`}
+      >
+        <Link href="/masks">Skip for now — browse the mask catalog</Link>
+      </Button>
+      {/* Camera-blocked patients (older users, locked-down devices) are
+          exactly the cohort who need the insurance / in-person path the
+          body copy promises — so give them a direct link to it. */}
+      <Button
+        asChild
+        variant="outline"
+        className="rounded-full glass-panel border-0 px-6"
+        data-testid={`${prefix}-fallback-insurance`}
+      >
+        <Link href="/insurance">Use insurance instead</Link>
+      </Button>
+      {/* The one exit that reaches a PERSON. A patient who cannot produce
+          a photo could previously only browse or read about insurance —
+          the request queue was unreachable without measurements, so the
+          fitter simply lost them. */}
+      <Button
+        asChild
+        variant="outline"
+        className="rounded-full glass-panel border-0 px-6"
+        data-testid={`${prefix}-fallback-callback`}
+      >
+        <Link href="/fit-request?mode=callback&source=camera">
+          Ask us to call you instead
+        </Link>
+      </Button>
+    </div>
+  );
 }
 
 function SingleFrameCapture() {
@@ -49,9 +127,36 @@ function SingleFrameCapture() {
   const streamRef = useRef<MediaStream | null>(null);
 
   const [hasPermission, setHasPermission] = useState<boolean | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  // Two error channels, deliberately separate.
+  //
+  // A FATAL error is a state the viewfinder cannot exist in — permission
+  // refused, no camera, the stream itself failing — and it replaces the
+  // page with the recovery screen. A TRANSIENT one is a capture that
+  // didn't take (the feed hadn't produced a frame yet, no 2D context):
+  // the camera is alive and the next tap will probably work, so it
+  // renders inline UNDER the shutter with the preview still running.
+  //
+  // They shared one `error` string before, so a shutter tapped a beat
+  // early tore the whole viewfinder down and captioned it "Camera access
+  // required" — a permission failure the patient had not had. `kind`
+  // rather than a regex over the message: the copy is the symptom, not
+  // the diagnosis.
+  const [fatalError, setFatalError] = useState<{
+    kind: "permission" | "no-device" | "camera" | "capture";
+    message: string;
+  } | null>(null);
+  const [transientNotice, setTransientNotice] = useState<string | null>(null);
+  // Consecutive taps that produced nothing. One is bad luck; two says
+  // this device is not going to cooperate, and the patient should be
+  // shown the way out rather than left tapping.
+  const transientFailuresRef = useRef(0);
   const [capturing, setCapturing] = useState(false);
   const [videoReady, setVideoReady] = useState(false);
+  // getUserMedia resolved but no frame ever arrived. Distinct from every
+  // error above: nothing threw, so without a watchdog the page sits on
+  // "Getting your camera ready…" forever with a disabled shutter, no
+  // message, and the camera light on.
+  const [videoStalled, setVideoStalled] = useState(false);
   // Unmount latch shared by every acquisition path. The mount effect's
   // `active` flag only covers the INITIAL startCamera call — the error
   // screen's "Try again" invokes startCamera directly, and a patient who
@@ -95,7 +200,10 @@ function SingleFrameCapture() {
   };
 
   const startCamera = async (): Promise<MediaStream | null> => {
-    setError(null);
+    setFatalError(null);
+    setTransientNotice(null);
+    setVideoStalled(false);
+    transientFailuresRef.current = 0;
     setVideoReady(false);
     try {
       // Stop any existing stream before acquiring a new one (retry path).
@@ -127,13 +235,21 @@ function SingleFrameCapture() {
       const name = err instanceof Error ? err.name : "";
       const message = err instanceof Error ? err.message : String(err);
       if (name === "NotAllowedError") {
-        setError(
-          "Camera access was denied. Please enable camera permissions in your browser settings to continue.",
-        );
+        setFatalError({
+          kind: "permission",
+          message:
+            "Camera access was denied. Please enable camera permissions in your browser settings to continue.",
+        });
       } else if (name === "NotFoundError") {
-        setError("No camera found on this device.");
+        setFatalError({
+          kind: "no-device",
+          message: "No camera found on this device.",
+        });
       } else {
-        setError("An error occurred while accessing the camera: " + message);
+        setFatalError({
+          kind: "camera",
+          message: "An error occurred while accessing the camera: " + message,
+        });
       }
       return null;
     }
@@ -168,7 +284,7 @@ function SingleFrameCapture() {
   // srcObject identity guard makes redundant runs no-ops.
   useEffect(() => {
     attachStream();
-  }, [hasPermission, error]);
+  }, [hasPermission, fatalError]);
 
   // Capture a short burst of frames from the video feed on ONE tap.
   //
@@ -190,7 +306,7 @@ function SingleFrameCapture() {
   const captureBurst = async (): Promise<boolean> => {
     try {
       if (!videoRef.current || !canvasRef.current) {
-        setError("Camera or canvas was not ready. Please try again.");
+        setTransientNotice("Camera or canvas was not ready. Please try again.");
         return false;
       }
 
@@ -199,13 +315,15 @@ function SingleFrameCapture() {
 
       // Guard against zero-size video (camera not ready)
       if (!video.videoWidth || !video.videoHeight) {
-        setError("Camera feed wasn't ready yet. Please try again in a moment.");
+        setTransientNotice(
+          "Camera feed wasn't ready yet. Please try again in a moment.",
+        );
         return false;
       }
 
       const ctx = canvas.getContext("2d");
       if (!ctx) {
-        setError("Could not initialize image capture.");
+        setTransientNotice("Could not initialize image capture.");
         return false;
       }
 
@@ -244,7 +362,9 @@ function SingleFrameCapture() {
         return false;
       }
       if (frames.length === 0) {
-        setError("Camera feed wasn't ready yet. Please try again in a moment.");
+        setTransientNotice(
+          "Camera feed wasn't ready yet. Please try again in a moment.",
+        );
         return false;
       }
 
@@ -277,7 +397,13 @@ function SingleFrameCapture() {
         err instanceof Error ? err.message : String(err),
       );
       const message = err instanceof Error ? err.message : "unknown error";
-      setError("Failed to capture an image: " + message);
+      // A THROW from the capture path, unlike the preflight checks above,
+      // says the camera pipeline itself broke — fatal, and titled as a
+      // capture failure rather than a permission one.
+      setFatalError({
+        kind: "capture",
+        message: "Failed to capture an image: " + message,
+      });
       return false;
     }
   };
@@ -300,12 +426,39 @@ function SingleFrameCapture() {
       return;
     }
     setCapturing(true);
+    setTransientNotice(null);
     void captureBurst().then((ok) => {
-      if (!ok && !unmountedRef.current) setCapturing(false);
+      if (unmountedRef.current) return;
+      if (ok) {
+        transientFailuresRef.current = 0;
+        return;
+      }
+      transientFailuresRef.current += 1;
+      setCapturing(false);
     });
   };
 
-  if (hasPermission === false || error) {
+  // Camera-feed watchdog.
+  //
+  // Armed only once permission has been GRANTED and no frame has arrived:
+  // while `hasPermission` is null the browser is still showing its own
+  // permission prompt, and a patient reading that prompt must never be
+  // told the camera stalled. getUserMedia resolving without a frame is a
+  // real state (an OS-level camera lock, another app holding the device,
+  // a Safari tab restored from the background), and nothing else in this
+  // page notices it: no promise rejects, so the shutter simply stays
+  // disabled under "Getting your camera ready…" indefinitely.
+  useEffect(() => {
+    if (hasPermission !== true || videoReady || fatalError) return;
+    const timer = setTimeout(() => {
+      if (unmountedRef.current) return;
+      setVideoStalled(true);
+      track("capture_video_stalled");
+    }, CAMERA_FEED_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, [hasPermission, videoReady, fatalError]);
+
+  if (hasPermission === false || fatalError) {
     // Browser-specific instructions for re-enabling the camera. We
     // detect via UA — coarse but right for the common cases (iOS
     // Safari, Android Chrome, desktop Chrome / Safari / Firefox).
@@ -332,8 +485,15 @@ function SingleFrameCapture() {
       howTo =
         'Click the lock or camera icon to the left of the address bar, set Camera to "Allow" for this site, refresh, then tap Try again.';
     }
-    const isPermissionDenied = /denied|notallowederror/i.test(error ?? "");
-    const isNoDevice = /no camera/i.test(error ?? "");
+    const isPermissionDenied = fatalError?.kind === "permission";
+    const isNoDevice = fatalError?.kind === "no-device";
+    const title = isPermissionDenied
+      ? "Camera permission was blocked"
+      : isNoDevice
+        ? "We couldn't find a camera on this device"
+        : fatalError?.kind === "capture"
+          ? "We couldn't take the photo"
+          : "Camera access required";
     return (
       <div className="container max-w-2xl mx-auto px-4 py-16 animate-shimmer-in space-y-6">
         <Alert
@@ -342,15 +502,9 @@ function SingleFrameCapture() {
           data-testid="capture-camera-error"
         >
           <AlertCircle className="h-4 w-4" />
-          <AlertTitle>
-            {isPermissionDenied
-              ? "Camera permission was blocked"
-              : isNoDevice
-                ? "We couldn't find a camera on this device"
-                : "Camera access required"}
-          </AlertTitle>
+          <AlertTitle>{title}</AlertTitle>
           <AlertDescription className="space-y-3">
-            <p>{error}</p>
+            <p>{fatalError?.message}</p>
             {isPermissionDenied && (
               <p
                 className="text-xs leading-relaxed bg-white/40 border border-destructive/20 rounded-lg p-2.5"
@@ -372,29 +526,8 @@ function SingleFrameCapture() {
               <RefreshCw className="h-4 w-4" /> Try again
             </Button>
           )}
-          {/* asChild so the Button styling lands ON the link itself — a
-              <button> nested inside wouter's <a> is invalid HTML and
-              confuses keyboard/screen-reader navigation. */}
-          <Button
-            asChild
-            variant="outline"
-            className="rounded-full glass-panel border-0 px-6"
-            data-testid="capture-camera-fallback-shop"
-          >
-            <Link href="/masks">Skip for now — browse the mask catalog</Link>
-          </Button>
-          {/* Camera-blocked patients (older users, locked-down devices) are
-              exactly the cohort who need the insurance / in-person path the
-              body copy promises — so give them a direct link to it. */}
-          <Button
-            asChild
-            variant="outline"
-            className="rounded-full glass-panel border-0 px-6"
-            data-testid="capture-camera-fallback-insurance"
-          >
-            <Link href="/insurance">Use insurance instead</Link>
-          </Button>
         </div>
+        <CaptureEscapeHatches prefix="capture-camera" />
 
         <p className="text-xs text-center text-muted-foreground/85 max-w-md mx-auto leading-relaxed">
           The camera is only used to measure your face on this device. Photos
@@ -538,23 +671,52 @@ function SingleFrameCapture() {
           disabled forever — give those patients the same escape hatches
           the camera-error screen offers instead of a dead end. */}
       {visionHealth === "degraded" && (
-        <div className="flex flex-wrap gap-3 justify-center mb-4">
-          <Button
-            asChild
-            variant="outline"
-            className="rounded-full glass-panel border-0 px-6"
-            data-testid="capture-degraded-fallback-shop"
-          >
-            <Link href="/masks">Skip for now — browse the mask catalog</Link>
-          </Button>
-          <Button
-            asChild
-            variant="outline"
-            className="rounded-full glass-panel border-0 px-6"
-            data-testid="capture-degraded-fallback-insurance"
-          >
-            <Link href="/insurance">Use insurance instead</Link>
-          </Button>
+        <div className="mb-4">
+          <CaptureEscapeHatches prefix="capture-degraded" />
+        </div>
+      )}
+
+      {/* A granted camera that never delivered a frame. The viewfinder
+          stays mounted — the feed can still arrive late, and if it does
+          this block disappears on its own. */}
+      {videoStalled && !videoReady && (
+        <div className="mb-4 space-y-3" data-testid="capture-video-stalled">
+          <Alert className="glass-card">
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>The camera connected but no picture arrived</AlertTitle>
+            <AlertDescription className="space-y-2">
+              <p>
+                This usually means another app is still using the camera. Close
+                any other app that might have it open, then try again.
+              </p>
+            </AlertDescription>
+          </Alert>
+          <div className="flex justify-center">
+            <Button
+              onClick={startCamera}
+              className="gap-2 rounded-full btn-primary-glow px-6"
+              data-testid="capture-stalled-retry"
+            >
+              <RefreshCw className="h-4 w-4" /> Try again
+            </Button>
+          </div>
+          <CaptureEscapeHatches prefix="capture-stalled" />
+        </div>
+      )}
+
+      {/* A tap that didn't take. Inline and non-destructive: the preview
+          is still live and the next tap will probably work. After two in
+          a row, stop insisting and show the way out. */}
+      {transientNotice && (
+        <div className="mb-4 space-y-3" data-testid="capture-transient-error">
+          <Alert className="glass-card" role="alert">
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>That photo didn&apos;t take</AlertTitle>
+            <AlertDescription>{transientNotice}</AlertDescription>
+          </Alert>
+          {transientFailuresRef.current >= 2 && (
+            <CaptureEscapeHatches prefix="capture-transient" />
+          )}
         </div>
       )}
 

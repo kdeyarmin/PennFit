@@ -12,7 +12,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { framesFromMeasurements, payloadFromAggregate } from "./scan-signals";
-import { sampleFrame, UNKNOWN_FRAME_SAMPLE } from "./frame-sampling";
+import { UNKNOWN_FRAME_SAMPLE } from "./frame-sampling";
 import {
   aggregateFrames,
   assessFrameQuality,

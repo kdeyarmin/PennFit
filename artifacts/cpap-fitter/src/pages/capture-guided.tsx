@@ -41,6 +41,7 @@ import { FilesetResolver, FaceLandmarker } from "@mediapipe/tasks-vision";
 
 import { useFitterStore, type CapturedFrame } from "@/hooks/use-fitter-store";
 import { track } from "@/lib/track";
+import { CAMERA_FEED_TIMEOUT_MS } from "@/lib/capture-readiness";
 import { sampleFrame } from "@/lib/frame-sampling";
 import {
   createCaptureFeedback,
@@ -123,6 +124,9 @@ export function GuidedCapture({ onFallback }: { onFallback: () => void }) {
   const captureCanvasRef = useRef<HTMLCanvasElement>(null);
   const sampleCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  // Cleared by the ready handler; cleared again on unmount so a stalled
+  // feed can't fire onFallback into a page that has already gone.
+  const stallTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const landmarkerRef = useRef<FaceLandmarker | null>(null);
   const machineRef = useRef<GuidedCaptureState>(initialGuidedState(0));
   const framesRef = useRef<CapturedFrame[]>([]);
@@ -197,10 +201,25 @@ export function GuidedCapture({ onFallback }: { onFallback: () => void }) {
           return;
         }
         streamRef.current = stream;
+        // Watchdog: getUserMedia resolving is not a picture arriving. The
+        // dead-loop fallback below only runs INSIDE the tick loop, and
+        // the tick loop needs `videoReady` — so a feed that never fires
+        // its ready events left this page on a spinner forever, with no
+        // buttons rendered and the camera light on. Hand those sessions
+        // to the single-frame page, which owns the recovery UX.
+        const stallTimer = setTimeout(() => {
+          if (!active) return;
+          track("guided_capture_video_stalled");
+          onFallback();
+        }, CAMERA_FEED_TIMEOUT_MS);
+        stallTimerRef.current = stallTimer;
         const video = videoRef.current;
         if (video) {
           video.srcObject = stream;
-          const ready = () => setVideoReady(true);
+          const ready = () => {
+            clearTimeout(stallTimer);
+            setVideoReady(true);
+          };
           video.onloadeddata = ready;
           // iOS Safari can defer `loadeddata` for camera streams — arm
           // the earlier `loadedmetadata` too and nudge playback. The tick
@@ -218,6 +237,7 @@ export function GuidedCapture({ onFallback }: { onFallback: () => void }) {
     })();
     return () => {
       active = false;
+      if (stallTimerRef.current) clearTimeout(stallTimerRef.current);
       stopCamera();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -825,6 +845,26 @@ export function GuidedCapture({ onFallback }: { onFallback: () => void }) {
         photo is taken, so there&apos;s no need to watch the screen. It all
         happens on this device; photos never leave your phone.
       </p>
+
+      {/* The way out of the guided flow itself.
+          `onFallback` was previously reachable only from a SETUP failure
+          or a dead tick loop — never from "I can hold the pose and it
+          still won't take". Front cannot be skipped (it is the
+          calibration anchor), so without this a patient stuck on the
+          first angle had no exit that led anywhere but a retake into the
+          same flow. The single-frame page owns every recovery hatch,
+          which is where this sends them. */}
+      <button
+        type="button"
+        onClick={() => {
+          track("guided_capture_simple_fallback");
+          onFallback();
+        }}
+        className="mt-3 text-xs underline decoration-dotted text-muted-foreground hover:text-foreground"
+        data-testid="guided-simple-fallback"
+      >
+        Having trouble? Use the simple camera instead
+      </button>
     </div>
   );
 }

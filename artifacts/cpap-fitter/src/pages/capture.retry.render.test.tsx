@@ -23,10 +23,24 @@ import {
 
 vi.mock("wouter", () => ({
   useLocation: () => ["/capture", vi.fn()],
-  Link: ({ children }: { children: React.ReactNode }) => <a>{children}</a>,
+  // Spread the rest: the escape-hatch buttons render `asChild`, so Radix
+  // merges their data-testid onto the Link itself. A mock that dropped
+  // props made those hatches invisible to the tests that assert on them.
+  Link: ({
+    children,
+    ...props
+  }: {
+    children: React.ReactNode;
+    [key: string]: unknown;
+  }) => <a {...props}>{children}</a>,
 }));
 vi.mock("@/hooks/use-fitter-store", () => ({
-  useFitterStore: () => ({ setCapturedImage: vi.fn() }),
+  useFitterStore: () => ({
+    setCapturedImage: vi.fn(),
+    setCapturedFrames: vi.fn(),
+    clearMeasurements: vi.fn(),
+    multiframeCapture: false,
+  }),
 }));
 vi.mock("@/lib/track", () => ({ track: vi.fn() }));
 vi.mock("@/hooks/use-document-title", () => ({
@@ -37,6 +51,7 @@ vi.mock("@/hooks/use-vision-runtime-health", () => ({
 }));
 
 import { Capture } from "./capture";
+import { CAMERA_FEED_TIMEOUT_MS } from "@/lib/capture-readiness";
 
 // jsdom's HTMLMediaElement doesn't reliably store srcObject — shim it
 // as a plain data property so the component's assignment round-trips.
@@ -98,5 +113,93 @@ describe("Capture — camera retry after a denied permission", () => {
     });
     expect(screen.queryByText("Getting your camera ready…")).toBeNull();
     expect(screen.getByText("Camera ready")).toBeTruthy();
+  });
+});
+
+describe("Capture — a camera that never delivers a frame", () => {
+  it("offers a retry and the escape hatches instead of waiting forever", async () => {
+    // getUserMedia RESOLVES but no loadeddata/loadedmetadata ever fires
+    // (OS camera lock, another app holding the device). Nothing rejects,
+    // so without the watchdog the page sits on a disabled shutter under
+    // "Getting your camera ready…" with the camera light on.
+    vi.useFakeTimers();
+    try {
+      const stream = makeStream();
+      Object.defineProperty(navigator, "mediaDevices", {
+        configurable: true,
+        value: { getUserMedia: vi.fn().mockResolvedValue(stream) },
+      });
+
+      render(<Capture />);
+      await act(async () => {});
+      expect(screen.queryByTestId("capture-video-stalled")).toBeNull();
+
+      await act(async () => {
+        vi.advanceTimersByTime(CAMERA_FEED_TIMEOUT_MS + 100);
+      });
+
+      expect(screen.getByTestId("capture-video-stalled")).toBeTruthy();
+      expect(screen.getByTestId("capture-stalled-retry")).toBeTruthy();
+      // Including the one exit that reaches a person.
+      expect(
+        screen.getByTestId("capture-stalled-fallback-callback"),
+      ).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("never arms the watchdog while the permission prompt is still open", async () => {
+    vi.useFakeTimers();
+    try {
+      // getUserMedia stays pending — that is the browser's own permission
+      // dialog. Telling a patient reading it that the camera stalled
+      // would be both wrong and alarming.
+      Object.defineProperty(navigator, "mediaDevices", {
+        configurable: true,
+        value: { getUserMedia: vi.fn().mockReturnValue(new Promise(() => {})) },
+      });
+
+      render(<Capture />);
+      await act(async () => {
+        vi.advanceTimersByTime(CAMERA_FEED_TIMEOUT_MS * 2);
+      });
+
+      expect(screen.queryByTestId("capture-video-stalled")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("Capture — a tap that didn't take", () => {
+  it("keeps the viewfinder and does not claim a permission problem", async () => {
+    // The burst preflight fails when the feed has no dimensions yet. The
+    // camera is alive and the next tap will probably work, so this must
+    // not tear down the page — and above all must not be captioned
+    // "Camera access required", a failure the patient never had.
+    const stream = makeStream();
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: { getUserMedia: vi.fn().mockResolvedValue(stream) },
+    });
+
+    const { container } = render(<Capture />);
+    await act(async () => {});
+    const video = container.querySelector("video") as HTMLVideoElement;
+    await act(async () => {
+      fireEvent(video, new Event("loadeddata"));
+    });
+
+    // videoWidth/Height stay 0 in jsdom, which is exactly the preflight
+    // failure under test.
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("button-capture"));
+    });
+
+    expect(screen.getByTestId("capture-transient-error")).toBeTruthy();
+    expect(screen.queryByTestId("capture-camera-error")).toBeNull();
+    expect(container.querySelector("video")).not.toBeNull();
+    expect(screen.getByTestId("button-capture")).toBeTruthy();
   });
 });
