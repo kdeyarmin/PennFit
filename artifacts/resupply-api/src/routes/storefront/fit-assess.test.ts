@@ -848,6 +848,57 @@ describe("POST /api/fit/assess — structured recommendation columns", () => {
     expect(frames[1]!.contributed).toBe(false);
   });
 
+  it("rejects an empty frame array", async () => {
+    // Carries nothing the omitted field does not, and the client never
+    // sends one. Note what is deliberately NOT rejected alongside it: a
+    // `frames.length` that disagrees with `frameCount`. Making that a
+    // 400 would let a diagnostic-only field cost a patient their whole
+    // assessment, which is the trade this record exists to avoid.
+    db.persistOk = true;
+    const res = await post({
+      measurements: VALID_MEASUREMENTS,
+      profile: VALID_PROFILE,
+      scan: {
+        frameCount: 1,
+        quality: {},
+        agreement: {},
+        measurementConfidence: 0.9,
+        band: "high",
+        frames: [],
+      },
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("accepts a frame count that disagrees with the aggregate", async () => {
+    db.persistOk = true;
+    const res = await post({
+      measurements: VALID_MEASUREMENTS,
+      profile: VALID_PROFILE,
+      scan: {
+        frameCount: 5,
+        quality: {},
+        agreement: {},
+        measurementConfidence: 0.9,
+        band: "high",
+        frames: [
+          {
+            pose: "front",
+            yawDeg: 0,
+            pitchDeg: 0,
+            acceptable: true,
+            contributed: true,
+            values: {},
+            quality: {},
+          },
+        ],
+      },
+    });
+    // A record that is internally odd is readable and can be discounted
+    // in analysis; a fitting that 400s cannot be recovered at all.
+    expect(res.status).toBe(200);
+  });
+
   it("rejects a frame set carrying anything but numbers", async () => {
     // The strict schema is the PHI boundary: `measurement_frames` is
     // documented as numbers only, and an image smuggled through a frame

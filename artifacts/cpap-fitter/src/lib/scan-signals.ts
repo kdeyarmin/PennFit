@@ -162,8 +162,14 @@ export function framesFromMeasurements(
     // every frame contributes.
     contributed:
       !anyNearFrontal || Math.abs(f.yawDeg) <= MEASUREMENT_YAW_LIMIT_DEG,
+    // Finite, not merely `typeof number`: `NaN` and `Infinity` are both
+    // numbers, and rounding either would record 0.0 mm — a reading no
+    // face produces, indistinguishable from a real measurement, in the
+    // one record meant to explain where measurements come from. The key
+    // is optional on the wire, so an unmeasurable dimension is simply
+    // absent, which is what it is.
     values: Object.fromEntries(
-      AGREEMENT_KEYS.filter((k) => typeof f.values[k] === "number").map((k) => [
+      AGREEMENT_KEYS.filter((k) => Number.isFinite(f.values[k])).map((k) => [
         k,
         round(f.values[k]!),
       ]),

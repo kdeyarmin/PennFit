@@ -180,6 +180,14 @@ const scanSchema = z
           })
           .strict(),
       )
+      // An empty array carries nothing the omitted field does not; the
+      // client never sends one. Deliberately NOT cross-checked against
+      // `frameCount`: the two always agree coming from this client, but
+      // making a mismatch a 400 would let a diagnostic-only field cost a
+      // patient their whole assessment — the exact trade this record is
+      // built to avoid. An inconsistent record is readable and can be
+      // discounted; a dead-ended fitting cannot be recovered.
+      .min(1)
       .max(10)
       .optional(),
   })

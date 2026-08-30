@@ -170,6 +170,41 @@ describe("per-frame numbers reach the wire", () => {
     expect(frame!.yawDeg).toBe(90);
   });
 
+  // `typeof NaN === "number"`, so a bare typeof filter would let a
+  // non-finite reading through and round it to 0.0 mm — a value no face
+  // produces, and indistinguishable from a real one in the record meant
+  // to explain where measurements come from.
+  it("omits a non-finite measurement rather than recording it as zero", () => {
+    const partial: FrameMeasurement = {
+      pose: "front",
+      quality: {
+        scores: {
+          lighting: 0.9,
+          distance: 0.9,
+          pose: 0.9,
+          occlusion: 1,
+          motion: 0.95,
+          framing: 0.9,
+        },
+        failing: [],
+        acceptable: true,
+        overall: 0.92,
+      },
+      values: {
+        noseWidth: 31.2,
+        noseToChin: Number.NaN,
+        mouthWidth: Number.POSITIVE_INFINITY,
+      },
+      yawDeg: 1,
+      pitchDeg: -2,
+    };
+
+    const [frame] = framesFromMeasurements([partial])!;
+    expect(frame!.values.noseWidth).toBeCloseTo(31.2, 1);
+    expect(frame!.values).not.toHaveProperty("noseToChin");
+    expect(frame!.values).not.toHaveProperty("mouthWidth");
+  });
+
   it("keeps an in-range angle exactly as measured", () => {
     const ordinary: FrameMeasurement = {
       pose: "front",
