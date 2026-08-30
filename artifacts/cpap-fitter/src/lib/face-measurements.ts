@@ -60,6 +60,13 @@ export interface MeasureLandmark {
 
 export type ExtractionFailReason =
   | "no_face"
+  // The face was found; the IRISES were not readable enough to
+  // calibrate from. Split out from `no_face` because the advice is
+  // different and the most common cause is specific: glare off glasses,
+  // a heavy lash line, a squint against a bright screen. Telling that
+  // patient to "center your face in the oval" — the no_face advice —
+  // sends them to fix something that was never wrong.
+  | "eyes_unreadable"
   | "iris_too_small"
   | "implausible_measurements"
   | "image_decode"
@@ -165,7 +172,7 @@ export function extractMeasurementValues(
   // with an unhelpful "unknown" error.
   if (!landmarks[469] || !landmarks[471]) {
     throw new ExtractionError(
-      "no_face",
+      "eyes_unreadable",
       "We couldn't locate your eyes precisely enough to calibrate. Please retake the photo.",
     );
   }

@@ -318,7 +318,7 @@ describe("end-to-end accuracy through extractMeasurementValues", () => {
 });
 
 describe("failure modes", () => {
-  it("throws no_face when the iris landmarks are missing", () => {
+  it("throws eyes_unreadable when the iris landmarks are missing", () => {
     const landmarks = project(
       canonicalScene().filter((p) => p.index !== 469),
       { D: 400, fovDeg: ASSUMED_HFOV_DEG },
@@ -331,7 +331,10 @@ describe("failure modes", () => {
     } catch (err) {
       reason = err instanceof ExtractionError ? err.reason : "wrong-type";
     }
-    expect(reason).toBe("no_face");
+    // Its own reason, not `no_face`: the face WAS found, and the advice
+    // that helps here (glasses off, glare off the lenses) is not the
+    // advice for a face that isn't in frame.
+    expect(reason).toBe("eyes_unreadable");
   });
 
   it("throws iris_too_small when the face is too far to calibrate", () => {

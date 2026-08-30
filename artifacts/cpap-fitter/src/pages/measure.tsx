@@ -17,8 +17,9 @@ import { Button } from "@/components/ui/button";
 import { FilesetResolver, FaceLandmarker } from "@mediapipe/tasks-vision";
 import type { FacialMeasurements } from "@workspace/api-client-react/storefront";
 import { track } from "@/lib/track";
+import { BrandName } from "@/components/company-contact";
 import { useDocumentTitle } from "@/hooks/use-document-title";
-import { findImplausibleMeasurement } from "@/lib/measure-flow";
+import { failureHints, findImplausibleMeasurement } from "@/lib/measure-flow";
 import { payloadFromAggregate } from "@/lib/scan-signals";
 import { sampleFrame } from "@/lib/frame-sampling";
 import {
@@ -41,37 +42,6 @@ import {
 // engaged user doesn't feel stalled. Users can also click "Continue"
 // to skip the wait.
 const AUTO_ADVANCE_MS = 2600;
-
-const FAIL_HINTS: Record<ExtractionFailReason, string[]> = {
-  no_face: [
-    "Center your face inside the oval guide.",
-    "Look directly at the camera — not up, down, or to the side.",
-    "Make sure your forehead, eyes, nose, and chin are all in frame.",
-  ],
-  iris_too_small: [
-    "Hold the camera closer — about an arm's length from your face.",
-    "Use the front (selfie) camera, not the rear camera.",
-    "Take off glasses, sunglasses, or anything covering your eyes.",
-  ],
-  implausible_measurements: [
-    "Make sure it's a real face in the frame, not a photo or screen.",
-    "Take off glasses and remove anything covering parts of your face.",
-    "Even, front-on lighting works best — avoid strong side or back light.",
-  ],
-  image_decode: [
-    "Try retaking the photo — the captured frame couldn't be decoded.",
-  ],
-  image_decode_timeout: [
-    "The captured photo took too long to load. Try again, ideally on Wi-Fi or after closing other camera-using apps.",
-  ],
-  model_load_timeout: [
-    "The measurement model took too long to download. Check your connection — Wi-Fi helps — and try again.",
-    "If this keeps happening, you can browse the mask catalog or ask our team for help instead.",
-  ],
-  unknown: [
-    "Try retaking the photo with even lighting and your face centered.",
-  ],
-};
 
 /** Whether /measure will render the "taken a little far away" retake
  *  hint for these signals — the same predicate the JSX uses, so the
@@ -127,6 +97,8 @@ export function Measure() {
     setMeasurements,
     setCapturedImage,
     setCapturedFrames,
+    scanFailureCount,
+    bumpScanFailureCount,
   } = useFitterStore();
   const [progress, setProgress] = useState(0);
   // Which way the patient would have to move to improve the capture, when
@@ -143,6 +115,11 @@ export function Measure() {
   const [error, setError] = useState<{
     message: string;
     reason: ExtractionFailReason;
+    /** Advice chosen from what the frames actually scored — see
+     *  `failureHints`. Static bullets when there is nothing to read. */
+    bullets: string[];
+    /** Enough attempts have failed that another one is not the answer. */
+    escalate: boolean;
   } | null>(null);
   // Flips once we've kicked off (manual click or auto-advance) the
   // navigation to /questionnaire so subsequent presses / timer fires are
@@ -219,6 +196,12 @@ export function Measure() {
     let faceLandmarker: FaceLandmarker | null = null;
 
     const processImage = async () => {
+      // Declared outside the try so the failure path can read what the
+      // frames scored: the six quality checks ran on every frame that
+      // reached the extractor, and answering a lighting failure with
+      // "center your face in the oval" is a worse answer than the one
+      // already computed.
+      let perFrame: FrameMeasurement[] = [];
       try {
         if (!isMountedRef.current) return;
         setProgress(15);
@@ -328,7 +311,7 @@ export function Measure() {
           // to move. The distinction drives the status copy and the
           // motion check below.
           const isBurst = capturedFrames.every((f) => f.source === "burst");
-          const perFrame: FrameMeasurement[] = [];
+          perFrame = [];
           // Motion baseline for bursts: the IMMEDIATELY PRECEDING frame's
           // centroid only. Judging against the worst of ALL prior
           // centroids would let one jolt mid-burst poison every later
@@ -496,7 +479,18 @@ export function Measure() {
             ? err.message
             : "An error occurred during measurement extraction.";
         track("measurement_error", { reason });
-        if (isMountedRef.current) setError({ message: msg, reason });
+        // Bump BEFORE reading, so this failure counts toward its own
+        // escalation — the second failure is the one that should offer a
+        // person, not the third.
+        bumpScanFailureCount();
+        const { bullets, escalate } = failureHints(
+          reason,
+          perFrame,
+          scanFailureCount + 1,
+        );
+        if (isMountedRef.current) {
+          setError({ message: msg, reason, bullets, escalate });
+        }
       } finally {
         // Release the WASM-backed landmarker eagerly — both on success
         // (we've already extracted what we need) and on error (so a retry
@@ -538,11 +532,30 @@ export function Measure() {
             Tips for the next try
           </p>
           <ul className="text-sm text-foreground/85 space-y-1.5 list-disc pl-5">
-            {FAIL_HINTS[error.reason].map((hint) => (
+            {error.bullets.map((hint) => (
               <li key={hint}>{hint}</li>
             ))}
           </ul>
         </div>
+        {/* After two failed attempts, stop implying the next one will
+            work. The advice above is worth following once; a patient on
+            their third try has a device, a room or a face the scanner is
+            not going to get along with, and the honest move is to offer
+            them a person before they conclude the product is broken. */}
+        {error.escalate && (
+          <div
+            className="text-left callout-gold px-4 py-3 rounded-xl space-y-2"
+            data-testid="measure-error-escalation"
+          >
+            <p className="text-sm font-semibold">
+              Two tries is plenty — you don&apos;t need a perfect photo.
+            </p>
+            <p className="text-sm text-foreground/85 leading-relaxed">
+              Leave your details instead and the <BrandName /> team will take it
+              from here, including fitting you in person if that is easier.
+            </p>
+          </div>
+        )}
         <div className="flex flex-wrap gap-3 justify-center">
           <Button
             // `?simple=1`: a photo that would not measure is exactly when
