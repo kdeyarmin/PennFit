@@ -184,7 +184,15 @@ export async function runFitterLeadReengageSweep(
     skippedAlreadyClaimed: 0,
     errors: 0,
   };
-  if (!cfg.sendgridApiKey || !cfg.sendgridFromName || !cfg.publicBaseUrl) {
+  // Only what the sweep actually consumes gates the run: the platform
+  // SendGrid key (every tenant sends through it — see tenant-sender.ts)
+  // and the platform link base (the seed org's resume-link fallback).
+  // `sendgridFromName` used to be required here too, which silently
+  // disabled the ENTIRE sweep — every tenant, including ones with their
+  // own From identity — on a deploy that left SENDGRID_FROM_NAME unset,
+  // even though the send path never reads it (the tenant client resolves
+  // its own From, and the platform default name backstops the rest).
+  if (!cfg.sendgridApiKey || !cfg.publicBaseUrl) {
     stats.skippedNoConfig = 1;
     logger.warn(
       { event: "fitter-lead.reengage.skipped_no_config" },
@@ -220,10 +228,12 @@ async function fitterLeadReengageSweepForOrg(
     return;
   }
   // The caller (runFitterLeadReengageSweep) only fans out once messaging
-  // config is complete; re-narrow the nullable fields locally so the types
-  // flow through this function boundary.
-  const { sendgridApiKey, sendgridFromName, publicBaseUrl } = cfg;
-  if (!sendgridApiKey || !sendgridFromName || !publicBaseUrl) return;
+  // config is complete; re-narrow the nullable field locally so the type
+  // flows through this function boundary. Only `publicBaseUrl` is read
+  // below — the From identity and the API key live inside
+  // createTenantSendgridClient.
+  const { publicBaseUrl } = cfg;
+  if (!publicBaseUrl) return;
   const supabase = getOrgScopedClient(orgId);
   const now = Date.now();
   const youngerThan = new Date(now - MIN_AGE_MS).toISOString();
@@ -361,7 +371,11 @@ async function fitterLeadReengageSweepForOrg(
 
   for (const lead of candidates) {
     stats.scanned += 1;
-    if (convertedSet.has(lead.email)) {
+    // Lowercased to match how convertedSet was built. The insert path
+    // lowercases lead emails, but rows from older paths or imports may
+    // not be — and a case miss here re-emails a patient who already
+    // converted (the first-day sibling normalizes the same way).
+    if (convertedSet.has(lead.email.toLowerCase())) {
       stats.skippedConverted += 1;
       continue;
     }

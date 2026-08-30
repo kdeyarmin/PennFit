@@ -899,32 +899,70 @@ export interface FitterInviteCompleteInput {
 export async function submitFitterInviteComplete(
   input: FitterInviteCompleteInput,
 ): Promise<{ ok: true; matched: boolean }> {
-  const res = await fetch("/resupply-api/shop/fitter-invite/complete", {
-    method: "POST",
-    headers: {
-      Accept: "application/json",
-      "Content-Type": "application/json",
-      ...csrfHeader(),
-    },
-    body: JSON.stringify({
-      t: input.token,
-      measurements: input.measurements,
-      answers: input.answers,
-      recommendation: input.recommendation,
-    }),
+  // On the LEGACY engine path this POST is the only writer of the
+  // finished fitting onto the invite row — the clinical route records
+  // its own completions server-side, but /api/recommend records nothing.
+  // It fires exactly once from /results with no user-visible failure
+  // state, so a single dropped request used to leave the invite at
+  // "opened" forever: staff then chased a patient who had actually
+  // finished. Hence two hardenings confined to this call:
+  //
+  //   * transient failures (network reject, 5xx, 429) are retried a
+  //     couple of times with a short backoff. Deterministic refusals
+  //     (revoked / expired / invalid body) throw immediately — retrying
+  //     cannot change those answers.
+  //   * `keepalive: true`, so a patient who closes the tab the moment
+  //     they see their result doesn't cancel the in-flight transmission.
+  //     (The payload is a few KB of numbers and catalog refs, far under
+  //     the keepalive body cap.)
+  const body = JSON.stringify({
+    t: input.token,
+    measurements: input.measurements,
+    answers: input.answers,
+    recommendation: input.recommendation,
   });
-  if (!res.ok) {
+  const RETRY_DELAYS_MS = [1_000, 4_000];
+  let lastErr: unknown = new Error("http_0");
+  for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
+    if (attempt > 0) {
+      await new Promise((resolve) =>
+        setTimeout(resolve, RETRY_DELAYS_MS[attempt - 1]),
+      );
+    }
+    let res: Response;
+    try {
+      res = await fetch("/resupply-api/shop/fitter-invite/complete", {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+          ...csrfHeader(),
+        },
+        body,
+        keepalive: true,
+      });
+    } catch (err) {
+      lastErr = err;
+      continue;
+    }
+    if (res.ok) {
+      const parsed = (await res.json().catch(() => ({}))) as {
+        ok?: true;
+        matched?: boolean;
+      };
+      return { ok: true, matched: Boolean(parsed.matched) };
+    }
     let code = `http_${res.status}`;
     try {
-      const body = (await res.json()) as { error?: string };
-      if (body && typeof body.error === "string") code = body.error;
+      const errBody = (await res.json()) as { error?: string };
+      if (errBody && typeof errBody.error === "string") code = errBody.error;
     } catch {
       /* keep http_<status> */
     }
-    throw new Error(code);
+    if (res.status < 500 && res.status !== 429) throw new Error(code);
+    lastErr = new Error(code);
   }
-  const body = (await res.json()) as { ok: true; matched?: boolean };
-  return { ok: true, matched: Boolean(body.matched) };
+  throw lastErr;
 }
 
 // ─────────────────────────────────────────── sleep apnea quiz capture

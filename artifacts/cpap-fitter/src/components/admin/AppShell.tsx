@@ -669,6 +669,10 @@ export const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             icon: Inbox,
             matchPrefix: "/admin/fitter-requests",
             hint: "Finished fittings waiting for you to place the order",
+            // A promise-shaped queue ("within one business day"), whose
+            // email notification is fail-soft — the badge is the signal
+            // that cannot silently not arrive.
+            badgeKey: "newFitRequests",
           },
           {
             href: "/admin/fitter-followups",
@@ -676,6 +680,7 @@ export const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             icon: BellRing,
             matchPrefix: "/admin/fitter-followups",
             hint: "Who went quiet — links nobody opened, fittings nobody finished, and finished fittings that never became a request",
+            badgeKey: "openFitterFollowups",
           },
           {
             href: "/admin/fitter-leads",
@@ -1423,6 +1428,9 @@ export const MASK_FITTER_NAV_GROUPS: ReadonlyArray<NavGroup> = [
         href: "/admin/fitter-requests",
         matchPrefix: "/admin/fitter-requests",
         hint: "Finished fittings waiting for you to place the order",
+        // Same badge as the full console: for a fitter-only tenant this
+        // queue IS the business, and the email notification is fail-soft.
+        badgeKey: "newFitRequests",
       },
       {
         label: "Fitter Follow-ups",
@@ -1430,6 +1438,7 @@ export const MASK_FITTER_NAV_GROUPS: ReadonlyArray<NavGroup> = [
         href: "/admin/fitter-followups",
         matchPrefix: "/admin/fitter-followups",
         hint: "Who went quiet — links nobody opened, fittings nobody finished, and finished fittings that never became a request",
+        badgeKey: "openFitterFollowups",
       },
       {
         label: "Fitter Prospects",

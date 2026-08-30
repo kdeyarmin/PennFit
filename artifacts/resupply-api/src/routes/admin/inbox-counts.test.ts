@@ -3,7 +3,7 @@
 //   * 401 without admin
 //   * Returns the count buckets in shape, with zeros when no rows
 //   * Surfaces non-zero counts when the staged probes return them
-//   * Each of the six tables is touched exactly once per request
+//   * Each counted table is touched exactly once per request
 //     (regression guard against silently dropping a bucket)
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -44,18 +44,24 @@ const ADMIN: MockAdminCtx = {
   role: "admin",
 };
 
-// The six count probes the route issues in parallel. Stage all six
+// The count probes the route issues in parallel. Stage every table
 // each test (even when they all return zero) so missing stages can't
 // silently make assertions pass against a `null` count default.
+const COUNT_TABLES = [
+  "conversations",
+  "shop_returns",
+  "shop_reviews",
+  "patient_documents",
+  "shop_customer_followups",
+  "patient_followups",
+  "inbound_faxes",
+  "fit_sessions",
+  "fitter_fit_requests",
+  "fitter_followup_alerts",
+] as const;
+
 function stageAllZero(): void {
-  for (const t of [
-    "conversations",
-    "shop_returns",
-    "shop_reviews",
-    "patient_documents",
-    "shop_customer_followups",
-    "patient_followups",
-  ]) {
+  for (const t of COUNT_TABLES) {
     stageSupabaseResponse(t, "select", { data: null, count: 0 });
   }
 }
@@ -83,6 +89,8 @@ describe("GET /admin/inbox-counts", () => {
       pendingReviews: 0,
       overdueFollowups: 0,
       newPatientDocuments: 0,
+      newFitRequests: 0,
+      openFitterFollowups: 0,
     });
     expect(typeof res.body.serverTime).toBe("string");
   });
@@ -107,6 +115,17 @@ describe("GET /admin/inbox-counts", () => {
       data: null,
       count: 2,
     });
+    // The two fitter-funnel queues: leads waiting for a person, and
+    // follow-up alerts nobody has looked at. Without these badges a
+    // fit request whose notification email failed sat invisible.
+    stageSupabaseResponse("fitter_fit_requests", "select", {
+      data: null,
+      count: 6,
+    });
+    stageSupabaseResponse("fitter_followup_alerts", "select", {
+      data: null,
+      count: 9,
+    });
 
     const res = await request(makeApp()).get("/admin/inbox-counts");
     expect(res.status).toBe(200);
@@ -117,22 +136,21 @@ describe("GET /admin/inbox-counts", () => {
       newPatientDocuments: 4,
       // Sums shop + patient overdue across both surfaces.
       overdueFollowups: 7,
+      newFitRequests: 6,
+      openFitterFollowups: 9,
     });
   });
 
-  it("issues exactly one SELECT per bucket — six tables touched", async () => {
+  it("issues exactly one SELECT per bucket", async () => {
     mockAdmin.current = ADMIN;
     stageAllZero();
 
     await request(makeApp()).get("/admin/inbox-counts");
     // Regression guard: if a future refactor drops any of these the
     // corresponding bucket would silently report zero.
-    expect(getSupabaseCallCount("conversations", "select")).toBe(1);
-    expect(getSupabaseCallCount("shop_returns", "select")).toBe(1);
-    expect(getSupabaseCallCount("shop_reviews", "select")).toBe(1);
-    expect(getSupabaseCallCount("patient_documents", "select")).toBe(1);
-    expect(getSupabaseCallCount("shop_customer_followups", "select")).toBe(1);
-    expect(getSupabaseCallCount("patient_followups", "select")).toBe(1);
+    for (const t of COUNT_TABLES) {
+      expect(getSupabaseCallCount(t, "select")).toBe(1);
+    }
   });
 
   it("treats a null count from PostgREST as zero in the response", async () => {
@@ -140,30 +158,9 @@ describe("GET /admin/inbox-counts", () => {
     // PostgREST can return `count: null` if the count header was
     // dropped (e.g. transient transport hiccup); the route must
     // coerce to 0 rather than emit `null` in the JSON body.
-    stageSupabaseResponse("conversations", "select", {
-      data: null,
-      count: null,
-    });
-    stageSupabaseResponse("shop_returns", "select", {
-      data: null,
-      count: null,
-    });
-    stageSupabaseResponse("shop_reviews", "select", {
-      data: null,
-      count: null,
-    });
-    stageSupabaseResponse("patient_documents", "select", {
-      data: null,
-      count: null,
-    });
-    stageSupabaseResponse("shop_customer_followups", "select", {
-      data: null,
-      count: null,
-    });
-    stageSupabaseResponse("patient_followups", "select", {
-      data: null,
-      count: null,
-    });
+    for (const t of COUNT_TABLES) {
+      stageSupabaseResponse(t, "select", { data: null, count: null });
+    }
 
     const res = await request(makeApp()).get("/admin/inbox-counts");
     expect(res.status).toBe(200);
@@ -172,5 +169,7 @@ describe("GET /admin/inbox-counts", () => {
     expect(res.body.pendingReviews).toBe(0);
     expect(res.body.newPatientDocuments).toBe(0);
     expect(res.body.overdueFollowups).toBe(0);
+    expect(res.body.newFitRequests).toBe(0);
+    expect(res.body.openFitterFollowups).toBe(0);
   });
 });

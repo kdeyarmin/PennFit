@@ -123,6 +123,40 @@ describe("runFitterLeadReengageSweep", () => {
     expect(sendEmailMock).not.toHaveBeenCalled();
   });
 
+  it("still sweeps when only SENDGRID_FROM_NAME is unset", async () => {
+    // The send path never reads the platform From NAME — the tenant
+    // client resolves its own From identity and the platform default
+    // backstops the rest. Gating the whole sweep on it silently
+    // disabled re-engagement for every tenant on a deploy that left
+    // the variable out.
+    stageSupabaseResponse("fitter_leads", "select", {
+      data: [
+        {
+          id: "fl_noname",
+          email: "dana@example.com",
+          created_at: "2026-05-01T00:00:00Z",
+        },
+      ],
+    });
+    stageSupabaseResponse("orders", "select", { data: [] });
+    stageSupabaseResponse("fitter_leads", "update", {
+      data: [{ id: "fl_noname" }],
+    });
+
+    const stats = await runFitterLeadReengageSweep({
+      ...FULL_CFG,
+      sendgridFromName: null,
+    });
+
+    expect(stats).toMatchObject({
+      scanned: 1,
+      emailed: 1,
+      skippedNoConfig: 0,
+      errors: 0,
+    });
+    expect(sendEmailMock).toHaveBeenCalledTimes(1);
+  });
+
   it("emails an eligible lead and stamps nudged_at", async () => {
     // Eligibility scan — one row.
     stageSupabaseResponse("fitter_leads", "select", {
@@ -204,6 +238,34 @@ describe("runFitterLeadReengageSweep", () => {
     ];
     const sentTo = firstCall[0].to;
     expect(sentTo).toBe("carol@example.com");
+  });
+
+  it("matches a converted lead case-insensitively", async () => {
+    // The insert path lowercases lead emails, but rows from older paths
+    // or imports may not be. The converted set is built lowercased from
+    // the ilike results, so the membership test must lowercase too — a
+    // case miss here re-emails a patient who already converted.
+    stageSupabaseResponse("fitter_leads", "select", {
+      data: [
+        {
+          id: "fl_case",
+          email: "Bob@Example.com",
+          created_at: "2026-05-01T00:00:00Z",
+        },
+      ],
+    });
+    stageSupabaseResponse("orders", "select", {
+      data: [{ patient_email: "bob@example.com" }],
+    });
+
+    const stats = await runFitterLeadReengageSweep(FULL_CFG);
+
+    expect(stats).toMatchObject({
+      scanned: 1,
+      emailed: 0,
+      skippedConverted: 1,
+    });
+    expect(sendEmailMock).not.toHaveBeenCalled();
   });
 
   it("skips leads that a concurrent worker already claimed", async () => {

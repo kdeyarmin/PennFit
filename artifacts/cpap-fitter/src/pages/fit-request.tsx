@@ -105,8 +105,13 @@ const buildSchema = (mode: FitRequestType) =>
       prescribingPhysician: z.string().max(120).optional().or(z.literal("")),
       notes: z.string().max(2000).optional().or(z.literal("")),
       // Honeypot — hidden from real users via CSS + aria. The server
-      // runs the same check.
-      website: z.string().max(0).optional().or(z.literal("")),
+      // runs the same check. Deliberately NOT max(0): a schema-level
+      // rejection blocked submit with no visible error (the field is
+      // off-screen, so react-hook-form "focused" an invisible input and
+      // the page just appeared dead), and it made the fake-success
+      // branch in onSubmit unreachable — a bot should believe it
+      // succeeded and move on, exactly like the server's own check.
+      website: z.string().max(200).optional().or(z.literal("")),
     })
     .superRefine((values, ctx) => {
       // A number is only required when it is the channel they picked.
@@ -168,6 +173,20 @@ export function FitRequest() {
 
   const [submitting, setSubmitting] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
+  // The failure alert renders ABOVE the form while the submit button sits
+  // at the bottom of it — on a phone a failed submit was invisible: the
+  // spinner flicked, nothing else changed on screen, and the patient
+  // reasonably concluded their request went through. Scroll the alert
+  // into view whenever a failure lands (role="alert" already announces
+  // it to screen readers).
+  const failureAlertRef = React.useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const el = failureAlertRef.current;
+    // typeof-guarded — jsdom (the test environment) has no scrollIntoView.
+    if (failure && el && typeof el.scrollIntoView === "function") {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, [failure]);
   const [filed, setFiled] = useState<{ confirmationEmailed: boolean } | null>(
     null,
   );
@@ -333,7 +352,7 @@ export function FitRequest() {
       </div>
 
       {failure && (
-        <Alert variant="destructive" className="mb-6">
+        <Alert variant="destructive" className="mb-6" ref={failureAlertRef}>
           <AlertCircle className="h-4 w-4" />
           <AlertTitle>We couldn&apos;t send that</AlertTitle>
           <AlertDescription data-testid="fit-request-error">
@@ -501,7 +520,16 @@ export function FitRequest() {
         )}
 
         {/* Honeypot. Hidden from sighted users, screen readers, and the
-            tab order alike — a bot that fills every input trips it. */}
+            tab order alike — a bot that fills every input trips it.
+
+            readOnly until focused: browser autofill and password managers
+            ignore `autoComplete="off"` and will populate hidden inputs,
+            and a tripped honeypot shows a REAL patient a fake success
+            screen with no request ever filed — a silently lost lead.
+            They all skip read-only fields, while a bot that types into
+            whatever it finds first fires focus (or writes `value`
+            directly, which register's onChange still records). No human
+            can focus it — it is off-screen and out of the tab order. */}
         <div
           aria-hidden="true"
           className="absolute w-px h-px overflow-hidden -left-[9999px]"
@@ -511,6 +539,10 @@ export function FitRequest() {
             id="fit-request-website"
             tabIndex={-1}
             autoComplete="off"
+            readOnly
+            onFocus={(e) => {
+              e.currentTarget.readOnly = false;
+            }}
             {...register("website")}
           />
         </div>

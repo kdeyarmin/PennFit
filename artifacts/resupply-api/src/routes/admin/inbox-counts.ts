@@ -19,10 +19,16 @@
 //     that no admin has yet marked as reviewed (reviewed_at IS NULL).
 //     Drives the badge on the Patients nav link so CSRs know when
 //     something new needs their attention.
+//   * newInboundFaxes / pendingFitReviews / newFitRequests /
+//     openFitterFollowups / pacwareReadyToSync — later additions, each
+//     documented at its probe below. The fitter pair matters most for
+//     lead capture: the mask fitter ends in a request a person works,
+//     and the email that announces one is fail-soft — the badge is the
+//     signal that cannot silently not arrive.
 //
-// All five counts (four scalar subqueries + overdue-followup pair) land
-// in three db round-trips to keep the endpoint cheap for a query that
-// fires on every admin nav render.
+// Every count is a cheap index-backed head query, run in parallel, to
+// keep the endpoint cheap for a query that fires on every admin nav
+// render.
 //
 // Pure SQL counts. No PHI. Same boot-time-safe pattern as
 // /admin/ops-status — fast enough for the nav to call on every page
@@ -71,11 +77,11 @@ router.get(
         (autoSyncRow as { value?: string } | null)?.value === "true";
     }
 
-    // Eight counts in parallel. Each individual query is already
+    // Ten counts in parallel. Each individual query is already
     // index-backed (every WHERE clause hits a partial or narrow index),
-    // so the wall-clock cost is the slowest of the eight rather than
+    // so the wall-clock cost is the slowest of the ten rather than
     // their sum.
-    // Throw on ANY of the eight errors so a partial Supabase failure
+    // Throw on ANY of the ten errors so a partial Supabase failure
     // surfaces as a 500 rather than silently rendering "queue empty"
     // on every nav badge. The previous code destructured only `count`
     // from each result and ignored `error`, which masked transient
@@ -123,6 +129,27 @@ router.get(
         .from("fit_sessions")
         .select("*", { count: "exact", head: true })
         .eq("review_status", "pending_review"),
+      // Fit requests nobody has picked up — the queue the mask fitter now
+      // ends in, and a promise-shaped one (the confirmation email tells
+      // the patient "within one business day"). The staff notification
+      // email for a new request is deliberately fail-soft, so without
+      // this badge a lead whose email never arrived sat invisible until
+      // someone happened to open /admin/fitter-requests. Backed by
+      // fitter_fit_requests_org_status_created_idx (migration 0518).
+      supabase
+        .from("fitter_fit_requests")
+        .select("*", { count: "exact", head: true })
+        .eq("status", "new"),
+      // Fitter follow-up alerts still open — who went quiet after a
+      // fitter link went out (never opened, abandoned mid-fitting,
+      // finished but never asked, or asked and sat unworked). The sweep
+      // only ever writes rows; nothing pushes them at staff, so the
+      // badge is what makes the worklist self-announcing. Backed by
+      // fitter_followup_alerts_org_status_idx (migration 0536).
+      supabase
+        .from("fitter_followup_alerts")
+        .select("*", { count: "exact", head: true })
+        .eq("status", "open"),
     ]);
     for (const r of results) {
       if (r.error) throw r.error;
@@ -136,6 +163,8 @@ router.get(
       { count: overduePatient },
       { count: newInboundFaxes },
       { count: pendingFitReviews },
+      { count: newFitRequests },
+      { count: openFitterFollowups },
     ] = results;
 
     // Only query the episodes count when the operator has opted into
@@ -163,6 +192,8 @@ router.get(
       newPatientDocuments: newPatientDocuments ?? 0,
       newInboundFaxes: newInboundFaxes ?? 0,
       pendingFitReviews: pendingFitReviews ?? 0,
+      newFitRequests: newFitRequests ?? 0,
+      openFitterFollowups: openFitterFollowups ?? 0,
       pacwareReadyToSync: pacwareConfirmed,
       serverTime: new Date().toISOString(),
     });
