@@ -257,3 +257,33 @@ describe("GuardedOrderSuccess — cancellation cleanup", () => {
     expect(GUARDED_SRC).toMatch(/return \(\) => \{[\s\S]*?cancelled = true/);
   });
 });
+
+describe("GuardedFitRequest — a callback needs no fitting", () => {
+  // A patient whose camera was refused, or whose photo would not measure,
+  // has no measurements and never saw the questionnaire. Before this the
+  // guard bounced them home, so the request queue — the only exit that
+  // reaches a person — was unreachable from every capture failure, and
+  // nobody at the DME learned they had tried.
+  const GUARD = SRC.slice(
+    SRC.indexOf("function GuardedFitRequest()"),
+    SRC.indexOf("function GuardedOrder()"),
+  );
+
+  it("admits a measurement-less patient only in callback mode", () => {
+    expect(GUARD).toContain('readFitRequestMode() === "callback"');
+    expect(GUARD).toContain("if (!measurements && !callbackOnly)");
+  });
+
+  it("still requires a fitting for the full 'send us your fitting' form", () => {
+    // The relaxation is scoped: full_details claims to send a fitting, so
+    // it must still have one.
+    expect(GUARD).toMatch(/!measurements && !callbackOnly.*Redirect to="\/"/s);
+  });
+
+  it("only detours to the questionnaire when a fitting exists", () => {
+    // /questionnaire needs measurements to be worth walking, so sending a
+    // measurement-less callback there would bounce it straight back here.
+    // That case asks the one question inline instead.
+    expect(GUARD).toContain("if (!population && measurements)");
+  });
+});

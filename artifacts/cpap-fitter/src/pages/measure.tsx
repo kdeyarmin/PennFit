@@ -569,6 +569,30 @@ export function Measure() {
           >
             <Link href="/masks">Skip for now — browse the mask catalog</Link>
           </Button>
+          {/* The two exits the camera-error screen has always offered and
+              this one did not. A patient whose photo will not measure is
+              in exactly the same position as one whose camera was
+              refused — and rather more likely to have given up on the
+              flow — but their only way off this screen was a retake or
+              the catalog. Neither reaches a person. */}
+          <Button
+            asChild
+            variant="outline"
+            className="rounded-full glass-panel border-0 px-6"
+            data-testid="measure-error-fallback-insurance"
+          >
+            <Link href="/insurance">Use insurance instead</Link>
+          </Button>
+          <Button
+            asChild
+            variant="outline"
+            className="rounded-full glass-panel border-0 px-6"
+            data-testid="measure-error-fallback-callback"
+          >
+            <Link href="/fit-request?mode=callback&source=scan">
+              Ask us to call you instead
+            </Link>
+          </Button>
         </div>
       </div>
     );

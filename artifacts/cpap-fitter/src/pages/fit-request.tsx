@@ -61,10 +61,16 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { Field } from "@/components/form-field";
+import { PopulationGate } from "@/components/population-gate";
 import { track } from "@/lib/track";
 import { formatUsPhone } from "@/lib/format-phone";
 import { isPlausibleDob } from "@/lib/dob-validation";
 import { submitFitRequest, type FitRequestType } from "@/lib/fit-request-api";
+import {
+  readFitRequestEntry,
+  readFitRequestMode,
+  type FitRequestEntry,
+} from "@/lib/fit-request-mode";
 
 const CONTACT_METHODS = [
   { value: "phone", label: "Phone call" },
@@ -149,14 +155,11 @@ const buildSchema = (mode: FitRequestType) =>
 
 type FormValues = z.infer<ReturnType<typeof buildSchema>>;
 
-function readModeFromUrl(): FitRequestType {
-  if (typeof window === "undefined") return "full_details";
-  const mode = new URLSearchParams(window.location.search).get("mode");
-  return mode === "callback" ? "callback" : "full_details";
-}
-
 export function FitRequest() {
-  const [mode] = useState<FitRequestType>(readModeFromUrl);
+  const [mode] = useState<FitRequestType>(readFitRequestMode);
+  // Which capture failure sent them here, when one did. Seeds an
+  // editable note; never travels to the server (the body is `.strict()`).
+  const [entry] = useState<FitRequestEntry>(readFitRequestEntry);
   useDocumentTitle(
     mode === "callback" ? "Ask us to call you" : "Send us your fitting",
   );
@@ -167,6 +170,7 @@ export function FitRequest() {
     setChosenMask,
     email: fitterEmail,
     population,
+    setPopulation,
     inviteToken,
     fitSessionId,
   } = useFitterStore();
@@ -204,6 +208,10 @@ export function FitRequest() {
       // again here. Still editable.
       email: fitterEmail ?? "",
       preferredContactMethod: "phone",
+      // Say why there is no fitting attached, so the CSR plans an
+      // in-person fit rather than waiting for a scan that is never
+      // coming. Editable — it is the patient's note, not a system flag.
+      notes: entry ? "I wasn't able to complete the photo scan." : "",
       website: "",
     } as Partial<FormValues> as FormValues,
     mode: "onBlur",
@@ -271,6 +279,31 @@ export function FitRequest() {
     track("fit_request_submitted", { mode });
     setFiled({ confirmationEmailed: result.confirmationEmailed });
   };
+
+  // The adult-or-child question, asked HERE when the flow never got to
+  // it — a patient who reached this page from a failed capture has no
+  // fitting and so never saw the questionnaire. It is not optional and
+  // has no "not sure": population picks the service-line filter that
+  // keeps a pediatric interface away from an adult and the reverse, and
+  // the request row and the team email both state it. Sending them to
+  // /questionnaire instead would bounce straight back — that page needs
+  // measurements this patient does not have.
+  if (!population) {
+    return (
+      <div className="container max-w-2xl mx-auto px-4 py-12 animate-shimmer-in">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="mb-6 -ml-2 text-muted-foreground"
+          onClick={() => setLocation("/capture?simple=1")}
+        >
+          <ArrowLeft className="w-4 h-4 mr-2" />
+          Back to the camera
+        </Button>
+        <PopulationGate value={population} onSelect={setPopulation} />
+      </div>
+    );
+  }
 
   if (filed) {
     return (
