@@ -74,8 +74,12 @@ export interface QualityResult {
   acceptable: boolean;
   overall: number;
   /** Which way the patient needs to move when `distance` is the problem.
-   *  Null when distance is fine, or when the shortfall is the camera's
-   *  resolution rather than the patient's position. */
+   *  `"farther"` when they are nearer than the window's minimum,
+   *  `"closer"` otherwise — INCLUDING when the shortfall is the camera's
+   *  resolution rather than their position, since coming closer is what
+   *  fixes an under-resolved iris too. Null when `distance` is passing,
+   *  or when no range estimate could be derived at all (no frame
+   *  dimensions, no iris) and so there is nothing to advise. */
   distanceHint?: "closer" | "farther" | null;
   /** Estimated camera-to-eye distance in mm, or null when it could not
    *  be derived (no frame dimensions, no iris). Diagnostic only. */
