@@ -11,8 +11,10 @@ import { describe, expect, it } from "vitest";
 import {
   aggregateFrames,
   assessFrameQuality,
+  CAPTURE_DISTANCE_MM_BOUNDS,
   centroidOf,
   coachMessage,
+  estimateCameraDistanceMm,
   estimatePoseFromLandmarks,
   poseCorrect,
   turnCoachNudge,
@@ -21,6 +23,7 @@ import {
   type Point2D,
   type QualityInput,
 } from "./scan-quality";
+import { ASSUMED_HFOV_DEG, IRIS_DIAMETER_MM } from "./face-measurements";
 
 /** A landmark array with every index the checks look at, centred and level. */
 function goodLandmarks(): Point2D[] {
@@ -41,7 +44,7 @@ function goodLandmarks(): Point2D[] {
 function input(over: Partial<QualityInput> = {}): QualityInput {
   return {
     landmarks: goodLandmarks(),
-    irisWidthPx: 30, // pxPerMm ~2.56, mid-window
+    irisWidthPx: 30, // ~37 cm on this 1280x720 frame — inside the window
     frameWidth: 1280,
     frameHeight: 720,
     faceLuma: 135,
@@ -80,13 +83,247 @@ describe("frame quality gates", () => {
     expect(result.failing).toContain("lighting");
   });
 
+  // 110 px (~10 cm on this frame), not the 70 px an earlier revision
+  // used: the near bound carries the assumed-FOV tolerance
+  // (CAPTURE_DISTANCE_MM_BOUNDS), so a 16 cm hold is inside what a
+  // wide-lens camera could legitimately report and is no longer refused.
   it("rejects a face held too far away and too close", () => {
     expect(assessFrameQuality(input({ irisWidthPx: 10 })).failing).toContain(
       "distance",
     );
-    expect(assessFrameQuality(input({ irisWidthPx: 70 })).failing).toContain(
+    expect(assessFrameQuality(input({ irisWidthPx: 110 })).failing).toContain(
       "distance",
     );
+  });
+
+  it("tells the patient WHICH WAY to move, not just that distance is wrong", () => {
+    const tooFar = assessFrameQuality(input({ irisWidthPx: 10 }));
+    expect(tooFar.distanceHint).toBe("closer");
+    expect(coachMessage(tooFar, "front")).toMatch(/closer/i);
+
+    const tooClose = assessFrameQuality(input({ irisWidthPx: 110 }));
+    expect(tooClose.distanceHint).toBe("farther");
+    expect(coachMessage(tooClose, "front")).toMatch(/further|back/i);
+
+    // A frame at a good range carries no hint to give.
+    expect(assessFrameQuality(input()).distanceHint).toBeNull();
+  });
+
+  // The check used to be a raw px/mm window, which is a function of the
+  // CAPTURE RESOLUTION as much as of where the patient is standing.
+  // `getUserMedia` only asks for 1280x720 with `ideal`, so any device
+  // that serves something else had its distance mis-read — a patient at
+  // a correct arm's length was rejected on a 640-wide stream, and one at
+  // 25 cm was told they were too FAR on a 1920-wide one.
+  describe("distance is judged in millimetres, not pixels", () => {
+    /** Iris pixel width a real camera produces at this range. */
+    const irisPxAt = (longAxis: number, distanceMm: number) => {
+      const focalPx =
+        longAxis / (2 * Math.tan((ASSUMED_HFOV_DEG / 2) * (Math.PI / 180)));
+      return (focalPx * IRIS_DIAMETER_MM) / distanceMm;
+    };
+
+    const STREAMS: Array<[number, number]> = [
+      [640, 480],
+      [1280, 720],
+      [1920, 1080],
+      [1080, 1440], // portrait, the posture phones actually use
+    ];
+
+    it("accepts arm's length on every stream size a camera might serve", () => {
+      for (const [w, h] of STREAMS) {
+        const long = Math.max(w, h);
+        // 640-long-axis streams resolve the iris to ~14 px at 40 cm and
+        // ~11 px at 50 cm — under `extractMeasurementValues`'s own
+        // `iris_too_small` cliff — so their usable range genuinely ends
+        // sooner. Everything from 1280 up covers the whole span.
+        const range = long <= 640 ? [300, 400] : [300, 400, 500];
+        for (const distanceMm of range) {
+          const result = assessFrameQuality(
+            input({
+              frameWidth: w,
+              frameHeight: h,
+              irisWidthPx: irisPxAt(long, distanceMm),
+            }),
+          );
+          expect(
+            result.failing,
+            `${w}x${h} at ${distanceMm}mm should not fail on distance`,
+          ).not.toContain("distance");
+        }
+      }
+    });
+
+    it("asks a low-resolution camera to come closer rather than stalling", () => {
+      // 50 cm on a 640-wide stream leaves the iris ~11 px across, below
+      // the extractor's calibration cliff. The frame must be refused —
+      // but with the one instruction that actually fixes it, since the
+      // patient cannot change their camera's resolution.
+      const result = assessFrameQuality(
+        input({
+          frameWidth: 640,
+          frameHeight: 480,
+          irisWidthPx: irisPxAt(640, 500),
+        }),
+      );
+      expect(result.failing).toContain("distance");
+      expect(result.distanceHint).toBe("closer");
+      expect(coachMessage(result, "front")).toMatch(/closer/i);
+    });
+
+    it("still refuses genuinely bad range on every stream size", () => {
+      for (const [w, h] of STREAMS) {
+        const long = Math.max(w, h);
+        for (const distanceMm of [120, 950]) {
+          const result = assessFrameQuality(
+            input({
+              frameWidth: w,
+              frameHeight: h,
+              irisWidthPx: irisPxAt(long, distanceMm),
+            }),
+          );
+          expect(
+            result.failing,
+            `${w}x${h} at ${distanceMm}mm should fail on distance`,
+          ).toContain("distance");
+        }
+      }
+    });
+
+    it("scores a 10 cm hold as TOO CLOSE on a high-resolution stream", () => {
+      // The old px/mm window read this as "too far" — the exact opposite
+      // instruction — because 1920 pixels put the iris well past its
+      // upper bound.
+      //
+      // 10 cm, not 15: the range estimate assumes a 68° field of view it
+      // cannot measure, so it resolves gross error and nothing finer
+      // (see CAPTURE_DISTANCE_MM_BOUNDS). Asserting a 15 cm hold would
+      // pin precision the estimate does not have on a real camera.
+      const result = assessFrameQuality(
+        input({
+          frameWidth: 1920,
+          frameHeight: 1080,
+          irisWidthPx: irisPxAt(1920, 100),
+        }),
+      );
+      expect(result.failing).toContain("distance");
+      expect(result.distanceHint).toBe("farther");
+    });
+
+    it("does not refuse arm's length on a camera wider than the assumed FOV", () => {
+      // The estimate scales by tan(θ_true/2)/tan(34°), so an 80° front
+      // camera reads a genuine 550 mm as ~684 mm. Bounds drawn tightly
+      // around the range we want would reject this patient for owning
+      // the wrong phone — which is why they are widened by that factor.
+      const focalPx80 = 1280 / (2 * Math.tan((80 / 2) * (Math.PI / 180)));
+      const irisPx = (focalPx80 * IRIS_DIAMETER_MM) / 550;
+      const result = assessFrameQuality(
+        input({ frameWidth: 1280, frameHeight: 720, irisWidthPx: irisPx }),
+      );
+      expect(result.failing).not.toContain("distance");
+    });
+
+    it("says CLOSER when the iris is under-resolved, even inside the near bound", () => {
+      // A 320x240 stream at ~249 mm leaves the iris ~11 px — under the
+      // extractor's calibration cliff — while the range term reads "too
+      // close". Keying the hint on range alone told this patient to move
+      // BACK, which shrinks the iris further and walks them straight
+      // into `iris_too_small`.
+      const result = assessFrameQuality(
+        input({
+          frameWidth: 320,
+          frameHeight: 240,
+          irisWidthPx: irisPxAt(320, 249),
+        }),
+      );
+      expect(result.failing).toContain("distance");
+      expect(result.distanceHint).toBe("closer");
+      expect(coachMessage(result, "front")).toMatch(/closer/i);
+    });
+
+    it("marks down an iris too few pixels across to calibrate from", () => {
+      // Correct range, but a low-resolution sensor: the millimetre scale
+      // is one short iris span, so every measurement inherits its noise.
+      const result = assessFrameQuality(
+        input({ frameWidth: 640, frameHeight: 480, irisWidthPx: 12 }),
+      );
+      expect(result.scores.distance).toBeLessThan(0.8);
+      expect(
+        result.distanceHint === null || result.distanceHint === "closer",
+      ).toBe(true);
+    });
+
+    it("agrees with the extractor's own distance estimate", () => {
+      // Same physics, same long-axis focal anchor — the two must not
+      // drift, or the quality gate and the measurement disagree about
+      // where the patient is.
+      expect(
+        estimateCameraDistanceMm(irisPxAt(1280, 400), 1280, 720),
+      ).toBeCloseTo(400, 3);
+      expect(
+        estimateCameraDistanceMm(irisPxAt(1440, 400), 1080, 1440),
+      ).toBeCloseTo(400, 3);
+      expect(estimateCameraDistanceMm(0, 1280, 720)).toBeNull();
+      expect(estimateCameraDistanceMm(30, 0, 0)).toBeNull();
+    });
+
+    it("carries enough FOV tolerance that no real camera rejects arm's length", () => {
+      // The bounds are the range we want (250-630 mm) widened by the
+      // worst-case field-of-view error, because the estimate assumes a
+      // 68 degree FOV it cannot measure and real front cameras run
+      // 55-85. Pin the derivation, not the numbers: whatever the bounds
+      // become, they must still admit both edges of the intended range
+      // as the most extreme lens would report them.
+      const reportedFactor = (trueFovDeg: number) =>
+        Math.tan((trueFovDeg / 2) * (Math.PI / 180)) /
+        Math.tan((ASSUMED_HFOV_DEG / 2) * (Math.PI / 180));
+      // A patient at 250 mm on the narrowest lens reads shorter...
+      expect(CAPTURE_DISTANCE_MM_BOUNDS.min).toBeLessThanOrEqual(
+        250 * reportedFactor(55),
+      );
+      // ...and one at 630 mm on the widest reads longer.
+      expect(CAPTURE_DISTANCE_MM_BOUNDS.max).toBeGreaterThanOrEqual(
+        630 * reportedFactor(85),
+      );
+      // Tolerance, not abdication — the term must still catch gross error.
+      expect(CAPTURE_DISTANCE_MM_BOUNDS.min).toBeGreaterThanOrEqual(150);
+      expect(CAPTURE_DISTANCE_MM_BOUNDS.max).toBeLessThanOrEqual(1000);
+    });
+  });
+
+  it("never refuses a frame without naming something to fix", () => {
+    // Acceptance needs the COMPOSITE over 0.6 as well as every check
+    // over its own floor, and the composite is dragged down by the
+    // weakest check whether or not that check is itself failing. A frame
+    // where everything sits just above the floor is therefore refused
+    // with nothing in `failing` — and the coach answered an empty list
+    // with "Hold it right there…", so the patient held a frame that
+    // would never be taken while being told they had it right.
+    const marginal = assessFrameQuality(
+      input({
+        faceLuma: 70,
+        faceLumaLeft: 51,
+        faceLumaRight: 89,
+        sharpness: 34.5,
+        irisWidthPx: 12.285, // barely-resolved iris on this 1280x720 frame
+        yawDeg: 5,
+        pitchDeg: 10,
+        rollDeg: 8,
+      }),
+    );
+    // The situation this exists for: nothing is under its own floor…
+    for (const [check, score] of Object.entries(marginal.scores)) {
+      expect(
+        score,
+        `${check} should sit above its own 0.6 floor`,
+      ).toBeGreaterThanOrEqual(0.6);
+    }
+    // …yet the composite refuses the frame.
+    expect(marginal.overall).toBeLessThan(0.6);
+    expect(marginal.acceptable).toBe(false);
+    // So the coach must still have something to say — the weakest check.
+    expect(marginal.failing.length).toBeGreaterThan(0);
+    expect(coachMessage(marginal, "front")).not.toMatch(/hold it right there/i);
   });
 
   it("rejects a turned head on the frontal pose but accepts it on a turn pose", () => {
@@ -207,6 +444,72 @@ describe("geometric pose fallback", () => {
     expect(Math.abs(estimatePoseFromLandmarks(tilted).rollDeg)).toBeGreaterThan(
       10,
     );
+  });
+
+  it("reads roll in true degrees, not degrees times the frame's aspect", () => {
+    // Landmarks are normalised PER AXIS, so an atan2 that mixes x and y
+    // reports atan(aspect · tan θ) unless the frame is square. Yaw (a
+    // ratio of x's) and pitch (a ratio of y's) cancel the aspect out;
+    // roll does not. Left unfixed, a true 10° tilt read as 17.4° on a
+    // 16:9 landscape stream — past where the pose score collapses — and
+    // as 5.7° on a 9:16 portrait one, slack enough to pass.
+    const tiltedBy = (deg: number, w: number, h: number): Point2D[] => {
+      const pts = goodLandmarks();
+      const half = 0.12; // half the eye span, in normalised x
+      const rad = (deg * Math.PI) / 180;
+      // Build the eye line at a TRUE `deg` tilt in pixel space, then
+      // express it back in normalised units the way MediaPipe would.
+      const dxPx = 2 * half * w * Math.cos(rad);
+      const dyPx = 2 * half * w * Math.sin(rad);
+      pts[33] = { x: 0.5 - dxPx / (2 * w), y: 0.4 - dyPx / (2 * h) };
+      pts[263] = { x: 0.5 + dxPx / (2 * w), y: 0.4 + dyPx / (2 * h) };
+      return pts;
+    };
+
+    for (const [w, h] of [
+      [1280, 720],
+      [1080, 1440],
+      [640, 480],
+    ] as Array<[number, number]>) {
+      for (const trueDeg of [0, 6, 12]) {
+        const read = estimatePoseFromLandmarks(tiltedBy(trueDeg, w, h), {
+          width: w,
+          height: h,
+        }).rollDeg;
+        expect(
+          Math.abs(read - trueDeg),
+          `${w}x${h} at ${trueDeg}° read as ${read.toFixed(1)}°`,
+        ).toBeLessThan(0.5);
+      }
+    }
+  });
+
+  it("does not let a level head fail the pose gate on a 16:9 stream", () => {
+    // The regression this guards: a patient holding a 16:9 phone with a
+    // 10° head tilt had roll reported as 17.4°, which zeroed the roll
+    // sub-score, dragged `overall` under the acceptance floor, and
+    // refused every frame — while `failing` stayed empty, so the coach
+    // said "Hold it right there…".
+    const w = 1280;
+    const h = 720;
+    const pts = goodLandmarks();
+    const rad = (4 * Math.PI) / 180;
+    const dxPx = 0.24 * w * Math.cos(rad);
+    const dyPx = 0.24 * w * Math.sin(rad);
+    pts[33] = { x: 0.5 - dxPx / (2 * w), y: 0.4 - dyPx / (2 * h) };
+    pts[263] = { x: 0.5 + dxPx / (2 * w), y: 0.4 + dyPx / (2 * h) };
+    const angles = estimatePoseFromLandmarks(pts, { width: w, height: h });
+    const result = assessFrameQuality(
+      input({
+        landmarks: pts,
+        frameWidth: w,
+        frameHeight: h,
+        yawDeg: angles.yawDeg,
+        pitchDeg: angles.pitchDeg,
+        rollDeg: angles.rollDeg,
+      }),
+    );
+    expect(result.acceptable).toBe(true);
   });
 });
 

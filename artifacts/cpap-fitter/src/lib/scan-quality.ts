@@ -22,6 +22,8 @@
  * confidence".
  */
 
+import { ASSUMED_HFOV_DEG, IRIS_DIAMETER_MM } from "./face-measurements";
+
 export type QualityCheck =
   | "lighting"
   | "distance"
@@ -65,11 +67,23 @@ export interface LandmarkSample {
 
 export interface QualityResult {
   scores: Record<QualityCheck, number>;
-  /** Checks currently failing, worst first. Drives the on-screen coach. */
+  /** Checks currently failing, worst first. Drives the on-screen coach.
+   *  Never empty while `acceptable` is false — see `assessFrameQuality`. */
   failing: QualityCheck[];
   /** Whether this frame is good enough to measure from. */
   acceptable: boolean;
   overall: number;
+  /** Which way the patient needs to move when `distance` is the problem.
+   *  `"farther"` when they are nearer than the window's minimum,
+   *  `"closer"` otherwise — INCLUDING when the shortfall is the camera's
+   *  resolution rather than their position, since coming closer is what
+   *  fixes an under-resolved iris too. Null when `distance` is passing,
+   *  or when no range estimate could be derived at all (no frame
+   *  dimensions, no iris) and so there is nothing to advise. */
+  distanceHint?: "closer" | "farther" | null;
+  /** Estimated camera-to-eye distance in mm, or null when it could not
+   *  be derived (no frame dimensions, no iris). Diagnostic only. */
+  estimatedDistanceMm?: number | null;
 }
 
 /**
@@ -91,8 +105,78 @@ const LEFT_EYE_OUTER = 33;
 const RIGHT_EYE_OUTER = 263;
 const NOSE_BRIDGE = 168;
 
-/** mm-per-pixel window: roughly arm's length on a phone front camera. */
-export const PX_PER_MM_BOUNDS = { min: 1.5, max: 3.8 } as const;
+/**
+ * Camera-to-eye distance window, in millimetres — "about arm's length".
+ *
+ * This check used to be a raw pixels-per-millimetre window
+ * (`PX_PER_MM_BOUNDS`, 1.5–3.8), and that was unsound: px/mm is a
+ * function of the CAPTURE RESOLUTION as much as of the patient's
+ * distance, so the window only described arm's length on the one stream
+ * size it was tuned against. `getUserMedia` asks for 1280×720 with
+ * `ideal`, which is a preference, not a guarantee — a device that cannot
+ * serve it returns whatever it has, and the check then mis-read distance
+ * in BOTH directions:
+ *
+ *   * at a 640-long-axis stream a patient at a correct 40 cm scored
+ *     0.51 — under the 0.6 acceptance floor — so the guided capture
+ *     never auto-captured (it coached "hold it at arm's length" until
+ *     the struggle timer offered a way out) and the burst path showed
+ *     its "taken a little far away" retake hint on every single scan;
+ *   * at a 1920-long-axis stream a patient at 25–30 cm scored 0.00–0.13,
+ *     rejected as "too far" when they were in fact too CLOSE; past
+ *     2560 every distance failed.
+ *
+ * Distance in millimetres is the quantity the check was always trying to
+ * express, and it is recoverable from the frame itself: the iris
+ * subtends a known 11.7 mm, so its pixel width against the focal length
+ * implied by the sensor's long axis gives the range. That is the same
+ * estimate `face-measurements.ts` already runs for its depth-plane
+ * correction, so the two now agree by construction rather than by luck.
+ *
+ * WHY THE BOUNDS ARE WIDER THAN THE RANGE WE ACTUALLY WANT. The estimate
+ * is only as good as the field of view it assumes, and that is a
+ * population constant, not a measurement: `face-measurements.ts` puts
+ * real front cameras at 60–80° against its assumed 68°. The estimate
+ * therefore scales by tan(θ_true/2)/tan(34°) — ×0.77 at 55°, ×1.36 at
+ * 85° — so a patient at a perfectly good 550 mm on a wide 80° camera
+ * reads 684 mm. Bounds drawn tightly around the range we want would
+ * reject them for owning the wrong phone.
+ *
+ * So the window is deliberately drawn at the range we want, 250–630 mm,
+ * WIDENED by that worst-case factor on each edge (250 × 0.77, 630 ×
+ * 1.36). Inside 55–85° no patient genuinely at arm's length is ever
+ * refused by this term. What it still catches is gross error — a phone
+ * held at 10 cm, or a metre away — which is all an FOV-blind estimate
+ * can honestly claim to resolve.
+ *
+ * The precision comes from the OTHER term instead. Iris pixel width
+ * (below) needs no FOV assumption at all: it is measured, not inferred,
+ * and "too far to measure" and "iris too small to calibrate from" are
+ * the same physical fact. So the far end is policed by pixels and the
+ * near end — the one pixels cannot speak to, since a close iris only
+ * grows — by this necessarily approximate range.
+ */
+export const CAPTURE_DISTANCE_MM_BOUNDS = { min: 190, max: 860 } as const;
+
+/**
+ * Iris width, in pixels, at which the millimetre scale is resolved well
+ * enough to score clean.
+ *
+ * Distance alone no longer says whether a frame is MEASURABLE: a
+ * low-resolution stream puts a patient at a perfectly good 45 cm behind
+ * an iris only ~14 px across, and every millimetre in the fitting is
+ * that iris divided into a span — so the scale error is whatever the
+ * landmark error is relative to those few pixels.
+ *
+ * Scored as a linear ramp to zero rather than a cliff, so an
+ * under-resolved capture still measures and simply says so through the
+ * confidence band. The ramp is set so the 0.6 acceptance floor lands at
+ * 11.7 px — exactly where `extractMeasurementValues` throws
+ * `iris_too_small` — which keeps the two gates from disagreeing about
+ * whether a frame can be measured at all.
+ */
+export const IRIS_RESOLUTION_TARGET_PX = 19.5;
+
 export const LUMA_BOUNDS = { min: 60, max: 210 } as const;
 export const MAX_LUMA_SIDE_DELTA = 35;
 export const SHARPNESS_FLOOR = 45;
@@ -137,6 +221,40 @@ function clamp01(n: number): number {
   return Math.min(1, Math.max(0, n));
 }
 
+/**
+ * Estimated camera-to-eye distance in millimetres, from the iris's
+ * angular size.
+ *
+ * Identical physics to `face-measurements.ts`'s depth-correction
+ * estimate, including the LONG-axis focal anchor — pixels are square, so
+ * focal length in pixels is axis-independent, and anchoring the
+ * population FOV constant to `frameWidth` alone would under-estimate the
+ * focal (and so the distance) by ~44% on the portrait captures phones
+ * actually produce.
+ *
+ * Returns null when the inputs cannot support an estimate, so callers
+ * degrade to "we don't know" rather than to a confident wrong number.
+ */
+export function estimateCameraDistanceMm(
+  irisWidthPx: number,
+  frameWidth: number,
+  frameHeight: number,
+): number | null {
+  const longAxis = Math.max(frameWidth, frameHeight);
+  if (
+    !Number.isFinite(irisWidthPx) ||
+    irisWidthPx <= 0 ||
+    !Number.isFinite(longAxis) ||
+    longAxis <= 0
+  ) {
+    return null;
+  }
+  const focalPx =
+    longAxis / (2 * Math.tan((ASSUMED_HFOV_DEG / 2) * (Math.PI / 180)));
+  const mm = (focalPx * IRIS_DIAMETER_MM) / irisWidthPx;
+  return Number.isFinite(mm) ? mm : null;
+}
+
 /** Score a value inside [min, max], falling off outside it. */
 function windowScore(value: number, min: number, max: number): number {
   if (!Number.isFinite(value)) return 0;
@@ -158,8 +276,24 @@ function windowScore(value: number, min: number, max: number): number {
  * available. Deliberately crude — it only needs to be good enough to tell
  * "facing the camera" from "turned 20 degrees", which is exactly what the
  * gates test.
+ *
+ * `frame` (the capture's pixel dimensions) matters for ROLL and only for
+ * roll. Landmarks are normalised per axis, so x is divided by the frame
+ * width and y by its height — a ratio of two x's (yaw) or two y's
+ * (pitch) cancels that out, but roll is an `atan2` that MIXES the axes
+ * and does not. Without the frame it reads `atan(aspect · tan θ)`: on a
+ * 16:9 landscape stream a true 6° head tilt reports 10.6°, and a true
+ * 10° tilt reports 17.4° — past the point where the pose score collapses
+ * to zero and the frame is silently refused. On the portrait captures
+ * phones actually produce the error runs the other way and the gate goes
+ * slack, passing tilts it was written to catch. Optional so callers
+ * without dimensions keep the old behaviour rather than breaking; every
+ * in-app caller passes it.
  */
-export function estimatePoseFromLandmarks(landmarks: Point2D[]): {
+export function estimatePoseFromLandmarks(
+  landmarks: Point2D[],
+  frame?: { width: number; height: number },
+): {
   yawDeg: number;
   pitchDeg: number;
   rollDeg: number;
@@ -201,9 +335,15 @@ export function estimatePoseFromLandmarks(landmarks: Point2D[]): {
   const yawDeg =
     (Math.atan(asymmetry / YAW_ASYMMETRY_TAN_GAIN) * 180) / Math.PI;
 
-  // Roll: the tilt of the eye line.
+  // Roll: the tilt of the eye line, measured in PIXEL space so the
+  // frame's aspect ratio cannot masquerade as head tilt (see the note on
+  // `frame` above). Falls back to normalised units — i.e. an assumed
+  // square frame — when no dimensions are supplied.
+  const pxW = frame && frame.width > 0 ? frame.width : 1;
+  const pxH = frame && frame.height > 0 ? frame.height : 1;
   const rollDeg =
-    (Math.atan2(eyeR.y - eyeL.y, eyeR.x - eyeL.x) * 180) / Math.PI;
+    (Math.atan2((eyeR.y - eyeL.y) * pxH, (eyeR.x - eyeL.x) * pxW) * 180) /
+    Math.PI;
 
   // Pitch: how the eye-line-to-NOSE-TIP span compares with
   // eye-line-to-chin. The nose tip projects up toward the eye line as the
@@ -290,13 +430,59 @@ export function assessFrameQuality(input: QualityInput): QualityResult {
   const balance = clamp01(1 - sideDelta / (sideAllowance * 2));
   scores.lighting = clamp01(exposure * (0.5 + 0.5 * balance));
 
-  // ── Distance, via the iris reference already used for calibration. ──
-  const pxPerMm = input.irisWidthPx / 11.7;
-  scores.distance = windowScore(
-    pxPerMm,
-    PX_PER_MM_BOUNDS.min,
-    PX_PER_MM_BOUNDS.max,
+  // ── Distance, via the iris reference already used for calibration.
+  //
+  //    Two independent things have to be true, and they are scored
+  //    separately because they call for different instructions: the
+  //    patient has to be at a workable RANGE (physical millimetres, not
+  //    pixels — see CAPTURE_DISTANCE_MM_BOUNDS), and the iris has to
+  //    land on enough PIXELS for the millimetre scale to mean anything
+  //    (see IRIS_RESOLUTION_TARGET_PX). A 640-wide stream satisfies the
+  //    first at arm's length and fails the second; a 4K stream at 15 cm
+  //    does the reverse. The worse of the two is the score, because
+  //    either one alone spoils the measurement. ──
+  const estimatedDistanceMm = estimateCameraDistanceMm(
+    input.irisWidthPx,
+    input.frameWidth,
+    input.frameHeight,
   );
+  const rangeScore =
+    estimatedDistanceMm === null
+      ? 0
+      : windowScore(
+          estimatedDistanceMm,
+          CAPTURE_DISTANCE_MM_BOUNDS.min,
+          CAPTURE_DISTANCE_MM_BOUNDS.max,
+        );
+  const resolutionScore = clamp01(
+    input.irisWidthPx / IRIS_RESOLUTION_TARGET_PX,
+  );
+  scores.distance = Math.min(rangeScore, resolutionScore);
+
+  // Which way to move, keyed to WHICH TERM failed — not to the range
+  // alone.
+  //
+  // An under-resolved iris is only ever fixed by coming closer, and on a
+  // low-resolution stream it can fail while the estimated range is
+  // already at or inside the near bound: at 320×240 and ~249 mm the iris
+  // is ~11 px, under the calibration cliff, yet the range reads "too
+  // close". Deciding on range alone told that patient to move BACK,
+  // which shrinks the iris further and walks them into
+  // `iris_too_small` — the one instruction guaranteed to make it worse.
+  // So resolution is checked first and wins.
+  let distanceHint: "closer" | "farther" | null = null;
+  if (scores.distance < 0.6) {
+    if (resolutionScore < 0.6) {
+      distanceHint = "closer";
+    } else if (
+      estimatedDistanceMm !== null &&
+      estimatedDistanceMm < CAPTURE_DISTANCE_MM_BOUNDS.min
+    ) {
+      distanceHint = "farther";
+    } else if (estimatedDistanceMm !== null) {
+      distanceHint = "closer";
+    }
+  }
 
   // ── Head position against this pose's target. ──
   const target = POSE_TARGETS[input.pose];
@@ -382,12 +568,40 @@ export function assessFrameQuality(input: QualityInput): QualityResult {
   const weakest = Math.min(...Object.values(scores));
   const overall = clamp01(weighted * (0.5 + 0.5 * weakest));
 
+  // Framing is non-negotiable; the rest must clear a floor together.
+  const acceptable =
+    scores.framing === 1 && failing.length === 0 && overall >= 0.6;
+
+  // A refused frame must always name something the patient can act on.
+  //
+  // `failing` lists the checks under their own 0.6 floor, but acceptance
+  // ALSO requires the composite to clear 0.6 — and the composite is
+  // dragged down by the weakest check whether or not that check is
+  // itself failing. Several checks sitting just above the floor (every
+  // score at 0.62 is enough) therefore produce a refused frame with an
+  // EMPTY failing list, and `coachMessage` answers an empty list with
+  // "Hold it right there…". The patient then holds a frame that will
+  // never be taken, perfectly still, being told they are doing it right,
+  // until the struggle timer eventually offers a way out.
+  //
+  // So when the composite is what refused the frame, surface the weakest
+  // check as the thing to improve. It is the honest answer — the weakest
+  // check IS what the composite penalised — and it keeps the invariant
+  // every consumer already assumes: not acceptable ⇒ something to say.
+  if (!acceptable && failing.length === 0) {
+    const weakestCheck = (Object.keys(scores) as QualityCheck[]).reduce(
+      (worst, k) => (scores[k] < scores[worst] ? k : worst),
+    );
+    failing.push(weakestCheck);
+  }
+
   return {
     scores,
     failing,
-    // Framing is non-negotiable; the rest must clear a floor together.
-    acceptable: scores.framing === 1 && failing.length === 0 && overall >= 0.6,
+    acceptable,
     overall,
+    distanceHint,
+    estimatedDistanceMm,
   };
 }
 
@@ -408,9 +622,27 @@ export const POSE_PROMPT: Record<CapturePose, string> = {
   turn_right: "And now slightly to your right.",
 };
 
+/**
+ * Directional coaching for a failing DISTANCE check.
+ *
+ * "Hold the phone about an arm's length from your face" is the same
+ * sentence whether the patient is 15 cm away or 80 cm away, so it leaves
+ * them guessing which way to move — and a patient mid-scan is watching
+ * their own face, not reading carefully. Now that the check knows the
+ * estimated range (see CAPTURE_DISTANCE_MM_BOUNDS) it can just say.
+ */
+export const DISTANCE_COACH_COPY = {
+  closer: "A little closer — bring the phone toward you.",
+  farther: "A little further back — hold the phone away from you.",
+} as const;
+
 export function coachMessage(result: QualityResult, pose: CapturePose): string {
   if (result.failing.length === 0) return "Hold it right there…";
-  return COACH_COPY[result.failing[0]!] ?? POSE_PROMPT[pose];
+  const worst = result.failing[0]!;
+  if (worst === "distance" && result.distanceHint) {
+    return DISTANCE_COACH_COPY[result.distanceHint];
+  }
+  return COACH_COPY[worst] ?? POSE_PROMPT[pose];
 }
 
 /**

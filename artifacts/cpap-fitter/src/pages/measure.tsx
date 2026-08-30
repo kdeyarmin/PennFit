@@ -24,7 +24,9 @@ import { sampleFrame } from "@/lib/frame-sampling";
 import {
   aggregateFrames,
   assessFrameQuality,
+  CAPTURE_DISTANCE_MM_BOUNDS,
   centroidOf,
+  estimateCameraDistanceMm,
   estimatePoseFromLandmarks,
   type FrameMeasurement,
   type Point2D,
@@ -129,6 +131,14 @@ export function Measure() {
     setCapturedFrames,
   } = useFitterStore();
   const [progress, setProgress] = useState(0);
+  // Which way the patient would have to move to improve the capture, when
+  // the distance check marked it down. Held locally rather than in the
+  // store: it is advice about the photo on screen right now, not part of
+  // the measurement record, and the wire `scan` payload is a strict set
+  // of scalars the server schema will not accept an extra key into.
+  const [distanceHint, setDistanceHint] = useState<"closer" | "farther" | null>(
+    null,
+  );
   const [status, setStatus] = useState(
     "Initializing secure on-device processor…",
   );
@@ -354,7 +364,7 @@ export function Measure() {
               );
               // Quality scalars for this frame. sampleFrame never throws
               // (neutral fallback) and the checks are pure math.
-              const angles = estimatePoseFromLandmarks(landmarks);
+              const angles = estimatePoseFromLandmarks(landmarks, frameImg);
               const sample = sampleFrame(frameImg, landmarks);
               const quality = assessFrameQuality({
                 pose: frame.pose,
@@ -440,6 +450,15 @@ export function Measure() {
           setProgress(100);
           setStatus("Analysis complete.");
           const aggregatePayload = payloadFromAggregate(aggregate);
+          // The frames the numbers actually rest on decide the advice: if
+          // they agree on a direction, say it; if they disagree (one too
+          // close, one too far), there is no single instruction to give.
+          const frameHints = new Set(
+            usedFrames
+              .map((f) => f.quality.distanceHint)
+              .filter((h): h is "closer" | "farther" => Boolean(h)),
+          );
+          setDistanceHint(frameHints.size === 1 ? [...frameHints][0]! : null);
           setMeasurements(measurements, aggregatePayload);
           track("measurements_extracted", {
             frames: usedFrames.length,
@@ -509,6 +528,20 @@ export function Measure() {
           if (!isMountedRef.current) return;
           setProgress(100);
           setStatus("Analysis complete.");
+          // Same estimate the distance check scores, so the hint the
+          // patient reads and the score that drove it can never disagree.
+          // Only derived when that check actually marked the frame down —
+          // a good capture has no direction to offer.
+          const estimatedMm = showsDistanceHint(scanSignals)
+            ? estimateCameraDistanceMm(irisPix, img.width, img.height)
+            : null;
+          setDistanceHint(
+            estimatedMm === null
+              ? null
+              : estimatedMm < CAPTURE_DISTANCE_MM_BOUNDS.min
+                ? "farther"
+                : "closer",
+          );
           setMeasurements(measurements, scanSignals);
           track("measurements_extracted");
 
@@ -698,19 +731,28 @@ export function Measure() {
             {progress === 100 &&
             typeof scanSignals?.quality.distance === "number" &&
             scanSignals.quality.distance < 0.6 ? (
-              // The photo passed extraction but was taken far enough away
-              // that the distance check scored it poorly — which quietly
-              // caps confidence downstream. Say so NOW, while retaking is
-              // one tap, instead of letting the fitting end in a vague
-              // "we need a better scan".
+              // The photo passed extraction but the distance check scored
+              // it poorly — which quietly caps confidence downstream. Say
+              // so NOW, while retaking is one tap, instead of letting the
+              // fitting end in a vague "we need a better scan".
+              //
+              // Which WAY to move is named, not implied. This used to read
+              // "taken a little far from the camera" whatever the cause,
+              // and a patient who was in fact too close was being told to
+              // do more of exactly what went wrong.
               <div
                 className="flex items-start gap-2.5 text-xs rounded-xl callout-gold p-3"
                 data-testid="measure-distance-hint"
+                data-hint={distanceHint ?? "range"}
               >
                 <AlertCircle className="w-4 h-4 mt-0.5 text-[hsl(var(--penn-navy))] shrink-0" />
                 <span className="text-foreground/85 leading-relaxed">
-                  This photo was taken a little far from the camera. You can
-                  continue, but{" "}
+                  {distanceHint === "farther"
+                    ? "This photo was taken a little close to the camera."
+                    : distanceHint === "closer"
+                      ? "This photo was taken a little far from the camera."
+                      : "This photo was taken outside the range we measure best at."}{" "}
+                  You can continue, but{" "}
                   <button
                     type="button"
                     className="underline font-medium"
