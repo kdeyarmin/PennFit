@@ -97,6 +97,7 @@ export type TrackStep =
   // deliberate retreat from the guided flow to the simple one. Both are
   // silent failures otherwise: the funnel would show the drop-off with
   // no way to tell a stalled sensor from a patient who lost interest.
+  | "capture_auto_fired"
   | "capture_video_stalled"
   | "guided_capture_video_stalled"
   | "guided_capture_simple_fallback"

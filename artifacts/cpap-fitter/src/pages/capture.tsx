@@ -13,6 +13,7 @@ import {
   isCaptureReady,
 } from "@/lib/capture-readiness";
 import { useVisionRuntimeHealth } from "@/hooks/use-vision-runtime-health";
+import { useLiveFrameCoach } from "@/hooks/use-live-frame-coach";
 import { BrandName } from "@/components/company-contact";
 import { GuidedCapture } from "./capture-guided";
 
@@ -438,6 +439,38 @@ function SingleFrameCapture() {
     });
   };
 
+  // ── Live coaching (and the auto-shutter it earns) ──
+  //
+  // Advice, never a gate: `captureReady` above is untouched, so the
+  // patient can always take the photo the coach is still complaining
+  // about. When the model cannot load, or the device is too slow to
+  // tick, the hook reports `unavailable` and this page renders exactly
+  // as it did before coaching existed.
+  const coach = useLiveFrameCoach(videoRef, {
+    enabled: videoReady && !capturing && !fatalError,
+  });
+
+  // Fire once the frame has been good for a beat. This is the whole
+  // point of coaching: told "a little closer" and then "hold it right
+  // there", a patient no longer has to judge for themselves when the
+  // photo is worth taking — the same bar the guided flow has always
+  // used, on the page nearly everyone actually sees.
+  //
+  // Latched: one capture per page, and it navigates. A manual tap that
+  // beats the streak wins harmlessly — `handleCapture` no-ops while
+  // `capturing`.
+  const autoCapturedRef = useRef(false);
+  useEffect(() => {
+    if (!coach.steady || autoCapturedRef.current) return;
+    if (!captureReady || capturing) return;
+    autoCapturedRef.current = true;
+    track("capture_auto_fired");
+    handleCapture();
+    // `handleCapture` is re-created every render and stable in behaviour;
+    // depending on it would re-run this effect constantly.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [coach.steady, captureReady, capturing]);
+
   // Camera-feed watchdog.
   //
   // Armed only once permission has been GRANTED and no frame has arrived:
@@ -637,7 +670,13 @@ function SingleFrameCapture() {
               height on mobile so the oval stays fully inside the
               capped frame; off width on desktop where the frame is
               wider than tall. */}
-          <div className="h-4/5 max-h-[80%] aspect-[2/3] md:h-auto md:w-1/3 md:max-h-none border-[3px] border-primary/80 rounded-[100%] shadow-[0_0_0_9999px_rgba(0,0,0,0.45),inset_0_0_30px_rgba(255,255,255,0.08)]" />
+          <div
+            className={`h-4/5 max-h-[80%] aspect-[2/3] md:h-auto md:w-1/3 md:max-h-none border-[3px] rounded-[100%] shadow-[0_0_0_9999px_rgba(0,0,0,0.45),inset_0_0_30px_rgba(255,255,255,0.08)] transition-colors ${
+              coach.status === "active" && coach.ready
+                ? "border-emerald-400"
+                : "border-primary/80"
+            }`}
+          />
 
           {/* Corner brackets for 'sci-fi' tech feel */}
           <CornerBrackets />
@@ -721,20 +760,16 @@ function SingleFrameCapture() {
       )}
 
       {/* Before you shoot.
-          The default capture is ONE tap with no live coaching (the guided
-          multi-angle scan is a per-tenant opt-in), so everything the
-          patient could get wrong is only discovered afterwards — on the
-          extraction error screen, or as a quietly capped confidence
-          score. These three are not general photography advice: they are
-          the pipeline's own failure reasons, in the order it reports them
+          These three are not general photography advice: they are the
+          pipeline's own failure reasons, in the order it reports them
           (`iris_too_small`, `lighting`, `implausible_measurements` — see
-          FAIL_HINTS in measure.tsx). Saying them BEFORE the shutter is
-          the cheapest accuracy win available here.
-
-          Desktop only by layout: on a phone the frame is capped at 50vh
-          precisely so the oval and the shutter share one screen, and a
-          list here would push the button under the fold. The mobile
-          heading carries the same three points in one line instead. */}
+          FAIL_HINTS in lib/measure-flow.ts). They stay even now that the
+          page coaches live, as the checklist a patient can read while
+          the model loads — and because the coach line is one sentence
+          about the current frame, not a summary of what makes a good
+          one. Desktop-only: on mobile the compressed one-liner above
+          plus the live coach carry it, and a list would push the shutter
+          off-screen. */}
       <ul
         className="hidden md:block mb-5 text-sm text-muted-foreground space-y-1.5 list-disc pl-5 max-w-md"
         data-testid="capture-reminders"
@@ -744,6 +779,29 @@ function SingleFrameCapture() {
         <li>Take off glasses and clear hair from your eyes and cheeks.</li>
       </ul>
 
+      {/* The coach line. Fixed height so the layout does not jump as it
+          changes, polite so a screen reader hears it without interrupting.
+          Rendered only when the hook is genuinely running — `loading` and
+          `unavailable` produce exactly the DOM that shipped before. */}
+      {coach.status === "active" && (
+        <p
+          className="min-h-[1.5rem] mb-2 text-sm text-center font-medium"
+          style={{
+            color: coach.ready
+              ? "hsl(142 72% 29%)"
+              : "hsl(var(--muted-foreground))",
+          }}
+          role="status"
+          aria-live="polite"
+          data-testid="capture-coach"
+        >
+          {coach.steady
+            ? "Hold it right there…"
+            : coach.ready
+              ? "Looking good — hold still."
+              : (coach.message ?? "")}
+        </p>
+      )}
       <Button
         size="lg"
         className="h-12 md:h-16 px-8 md:px-12 rounded-full text-base md:text-lg btn-primary-glow hover:scale-[1.02] transition-transform disabled:opacity-60"

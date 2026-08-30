@@ -61,13 +61,20 @@ export function shouldSpeakCoachLine(
   last: SpokenCoachLine | null,
   text: string,
   nowMs: number,
+  // Optional so the VISUAL coach on the capture page can hold lines for
+  // a shorter beat than the spoken one — a line you read tolerates
+  // changing sooner than a line you are being told. Defaults are the
+  // speech values, so every existing caller is unchanged.
+  gaps?: { minGapMs?: number; repeatGapMs?: number },
 ): boolean {
+  const minGap = gaps?.minGapMs ?? COACH_SPEECH_MIN_GAP_MS;
+  const repeatGap = gaps?.repeatGapMs ?? COACH_SPEECH_REPEAT_GAP_MS;
   if (!text) return false;
   if (!last) return true;
   const elapsed = nowMs - last.atMs;
-  if (elapsed < COACH_SPEECH_MIN_GAP_MS) return false;
+  if (elapsed < minGap) return false;
   if (text !== last.text) return true;
-  return elapsed >= COACH_SPEECH_REPEAT_GAP_MS;
+  return elapsed >= repeatGap;
 }
 
 export interface CaptureFeedback {
