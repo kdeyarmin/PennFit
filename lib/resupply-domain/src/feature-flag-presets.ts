@@ -71,6 +71,15 @@ const FITTER = [
   // tenant should not start out letting patients submit their own
   // insurance orders, and a tenant that wants that can turn it off.
   "fitter.lead_capture_only",
+  // Follow up when a fitter link goes unanswered (migration 0536).
+  // Belongs with the fitter for the same reason as the flag above: a
+  // plan that sells the fitter sells a funnel, and a funnel whose
+  // drop-offs nobody chases is the thing this exists to fix. It only
+  // ever sends a SECOND message on a thread the tenant started by
+  // mailing this person a link, and the staff worklist is built with
+  // the flag either way — so the flag is really "may we write to them
+  // as well as tell you", and the plan answer is yes.
+  "fitter.followup_nudges",
 ] as const;
 
 /** Resupply reminders — the Launch-tier core. */

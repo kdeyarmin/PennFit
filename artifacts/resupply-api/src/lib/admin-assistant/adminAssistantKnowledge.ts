@@ -239,6 +239,13 @@ ORDERS & LEADS:
         marks the fitting as dispensed, which is what Fitter outcomes counts and
         what the re-fit campaign reads; the others just close the row. A duplicate
         submission from the same patient does not create a second row,
+        Fitter Follow-ups (/admin/fitter-followups) — everyone whose fitting went
+        quiet: a link nobody opened, a fitting nobody finished, a finished fitting
+        that never became a request, and requests we have not worked past one
+        business day. Reminders to the patient go out on their own (the
+        fitter.followup_nudges flag); the worklist is built either way, and a row
+        closes itself the moment the patient acts, so an open row means somebody
+        is still waiting,
         Fitter Prospects (/admin/fitter-leads).
 
 BILLING (the claims + revenue-cycle hub):

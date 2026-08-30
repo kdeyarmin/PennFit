@@ -155,6 +155,14 @@ export const FEATURE_FLAG_KEYS = [
   // and a claim is the safe direction, so an unresolvable flag must not
   // hand them the self-serve order form.
   "fitter.lead_capture_only",
+  // Follow up when a fitter link goes unanswered (migration 0536).
+  // Seeded ON: unlike the re-fit campaign above, this is a second
+  // message on a thread the TENANT started by sending this person a
+  // link, and the sweep is structurally incapable of chasing a backlog
+  // (cohort A only touches invites still inside their own expiry;
+  // cohort B looks back 30 days). Gates the PATIENT messages only —
+  // the staff worklist is built either way.
+  "fitter.followup_nudges",
 ] as const;
 
 export type FeatureFlagKey = (typeof FEATURE_FLAG_KEYS)[number];

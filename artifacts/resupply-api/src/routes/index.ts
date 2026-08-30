@@ -136,6 +136,7 @@ import insuranceLeadsAdminRouter from "./admin/insurance-leads.js";
 import fitterLeadsAdminRouter from "./admin/fitter-leads.js";
 import fitterInvitesAdminRouter from "./admin/fitter-invites.js";
 import fitterRequestsAdminRouter from "./admin/fitter-requests.js";
+import fitterFollowupAlertsAdminRouter from "./admin/fitter-followup-alerts.js";
 import payerProfilesRouter from "./admin/payer-profiles.js";
 import officeAllySubmissionsRouter from "./admin/office-ally-submissions.js";
 import officeAllyUploadAckRouter from "./admin/office-ally-upload-ack.js";
@@ -406,6 +407,12 @@ router.use(fitterInvitesAdminRouter);
 // (the marketing funnel) and from Insurance Leads (benefit checks with
 // no fitting behind them).
 router.use(fitterRequestsAdminRouter);
+// /admin/fitter-followup-alerts/* — the worklist of fittings that went
+// quiet: a link nobody opened, a fitting nobody finished, a finished
+// fitting that never turned into a request, and a request nobody
+// worked. Raised by the hourly `fitter-followup.scan` sweep (migration
+// 0536), which also sends the patient-facing follow-ups.
+router.use(fitterFollowupAlertsAdminRouter);
 // /admin/payer-profiles/* — Pennsylvania payer catalog (migration
 // 0128). Read by every admin; write restricted to requireAdminOnly.
 // Drives 837P NM1*PR loop population on Office Ally submissions.

@@ -482,6 +482,11 @@ const AdminFitterRequestsPage = lazyWithRetry(() =>
     default: m.AdminFitterRequestsPage,
   })),
 );
+const AdminFitterFollowupsPage = lazyWithRetry(() =>
+  import("@/pages/admin/admin-fitter-followups").then((m) => ({
+    default: m.AdminFitterFollowupsPage,
+  })),
+);
 const AdminFitterInvitesPage = lazyWithRetry(() =>
   import("@/pages/admin/admin-fitter-invites").then((m) => ({
     default: m.AdminFitterInvitesPage,
@@ -1093,6 +1098,10 @@ function AdminConsole() {
             <Route
               path="/admin/fitter-requests"
               component={AdminFitterRequestsPage}
+            />
+            <Route
+              path="/admin/fitter-followups"
+              component={AdminFitterFollowupsPage}
             />
             <Route
               path="/admin/fitter-leads"

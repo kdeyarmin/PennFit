@@ -1489,12 +1489,71 @@ export interface Database {
           // The legacy jsonb columns above keep being written alongside
           // it so the existing admin surfaces don't regress.
           fit_session_id: string | null;
+          // Mig 0536 — follow-up nudge stamps, two per cohort. Compared
+          // against sent_at / completed_at respectively: a stamp that
+          // predates the anchor is stale (the invite was resent) and
+          // does not suppress a fresh nudge.
+          fit_reminder_sent_at: string | null;
+          fit_final_reminder_sent_at: string | null;
+          post_fit_reminder_sent_at: string | null;
+          post_fit_final_reminder_sent_at: string | null;
         };
         Insert: Partial<
           Database["resupply"]["Tables"]["fitter_invites"]["Row"]
         >;
         Update: Partial<
           Database["resupply"]["Tables"]["fitter_invites"]["Row"]
+        >;
+        Relationships: [];
+      };
+      // Mig 0536 — the staff worklist for a fitter funnel that went
+      // quiet: a link nobody opened, a fitting nobody finished, a
+      // finished fitting that never turned into a request, and a
+      // request nobody worked.
+      //
+      // Deliberately carries NO contact details, name or clinical
+      // finding — only foreign keys and a counts-only `detail`. The
+      // admin route joins the invite/request in at read time, so the
+      // one copy of a patient's email stays in the table that owns it.
+      fitter_followup_alerts: {
+        Row: {
+          id: string;
+          org_id: string;
+          alert_type:
+            | "fit_not_started"
+            | "fit_abandoned"
+            | "fit_no_request"
+            | "request_unworked";
+          severity: "low" | "medium" | "high";
+          status: "open" | "resolved" | "dismissed";
+          // Exactly one of these two is set (DB CHECK).
+          fitter_invite_id: string | null;
+          fit_request_id: string | null;
+          fit_session_id: string | null;
+          patient_id: string | null;
+          detail: Json;
+          nudge_count: number;
+          last_nudge_at: string | null;
+          last_nudge_channel: string | null;
+          resolved_at: string | null;
+          resolved_reason:
+            | "fit_completed"
+            | "request_received"
+            | "dispensed"
+            | "invite_revoked"
+            | "request_worked"
+            | null;
+          dismissed_at: string | null;
+          dismissed_by_email: string | null;
+          staff_note: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["fitter_followup_alerts"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["fitter_followup_alerts"]["Row"]
         >;
         Relationships: [];
       };

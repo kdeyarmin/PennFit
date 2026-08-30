@@ -206,6 +206,12 @@ const MASK_FITTER_ALLOWED_PREFIXES: readonly string[] = [
   "/admin/fitter-invites", // THE product: send links, review results/sizes
   "/admin/fitter-leads", // fitter funnel / prospects
   "/admin/fitter-requests", // fittings waiting for staff to place the order
+  // The worklist of fittings that went quiet (migration 0536). This IS
+  // the fitter funnel, so a fitter-only tenant needs it as much as the
+  // queue above. Spelled in full rather than as a "/admin/fitter-follow"
+  // stem: the server matches by SUBSTRING, and a stem would grant any
+  // future endpoint that happens to start the same way.
+  "/admin/fitter-followup-alerts",
   // The clinical fitting core. These ARE the product for a fitter-only
   // tenant — the RT review queue, the downloadable fit report, the mask
   // catalog they fit against, and their own formulary.
