@@ -177,6 +177,26 @@ const scanSchema = z
               })
               .strict()
               .default({}),
+            // ── What it takes to attribute a systematic offset ──
+            //
+            // Migration 0483's column exists so a reading that looks
+            // wrong later can be explained. Pose alone cannot do it: a
+            // span that reads short is equally consistent with a chin
+            // tucked down, a patient a hand's width too far away, an
+            // iris resolved across too few pixels to calibrate from, or
+            // a depth correction that silently did not run because
+            // MediaPipe returned no usable z. These four say which.
+            //
+            // All optional, so an older client keeps working — and all
+            // scalars, like everything else on this wire.
+            estimatedDistanceMm: z.number().min(0).max(10_000).optional(),
+            irisPx: z.number().min(0).max(500).optional(),
+            depthCorrected: z.boolean().optional(),
+            // Whether the angles above are MediaPipe's own head-pose
+            // matrix or the geometric fallback, whose pitch is
+            // confounded by anatomy. A correction that trusts one and
+            // not the other has to be auditable afterwards.
+            poseSource: z.enum(["matrix", "geometric"]).optional(),
           })
           .strict(),
       )
