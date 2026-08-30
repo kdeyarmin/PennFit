@@ -21,7 +21,7 @@
  * A later migration that edits bands has to extend `BAND_SOURCES` below.
  */
 
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -475,6 +475,43 @@ describe("only the dimensions that size an interface gate it", () => {
       )
       .map((r) => r.model.slug);
     expect(missing).toEqual([]);
+  });
+
+  it("no migration authors a face-width band", () => {
+    // Face width is the one measured dimension that gates NOTHING, and
+    // that is a decision rather than an oversight — 0511's per-interface
+    // table assigns it to no interface, and every migration that names
+    // the column only ever NULLs it.
+    //
+    // It stays that way until someone has data on the right axis, and
+    // this guard exists because the wrong axis is so easy to reach for.
+    // `faceWidthAtCheekbones` is the mesh's frontal SILHOUETTE width at
+    // landmarks 234/454 — ~153 mm on the canonical face — not the
+    // caliper bizygomatic breadth of the anthropometric tables, which
+    // runs ~20 mm narrower. Bands copied from those tables would sit
+    // below every real reading, and `scoreVariant` averages each
+    // non-NULL dimension, so a wrong-axis band does not merely add
+    // nothing: it drags every mask's fit score down and pushes patients
+    // out of band. That is precisely the silent, one-directional failure
+    // 0511 was written to undo, and nothing currently stops it recurring
+    // on this column.
+    //
+    // Authoring one is legitimate — from observed fitter readings, per
+    // the convention note in cpap-fitter's face-measurements.ts. Doing
+    // so means updating this test deliberately, which is the point.
+    const offenders: string[] = [];
+    for (const file of readdirSync(MIGRATIONS).filter((f) =>
+      f.endsWith(".sql"),
+    )) {
+      const sql = read(file);
+      for (const [i, line] of sql.split("\n").entries()) {
+        // A SET/assignment giving either bound anything but NULL.
+        if (/"face_width_(min|max)_mm"\s*=\s*(?!NULL)\S/i.test(line)) {
+          offenders.push(`${file}:${i + 1}`);
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
   });
 
   it("full-face nose-to-chin bands bracket the canonical adult", () => {

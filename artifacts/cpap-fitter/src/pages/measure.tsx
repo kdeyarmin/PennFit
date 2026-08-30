@@ -394,6 +394,11 @@ export function Measure() {
                 values,
                 yawDeg: angles.yawDeg,
                 pitchDeg: angles.pitchDeg,
+                // Carried through so the aggregate can tell repeated
+                // looks at ONE posture from independent evidence — a
+                // burst's frames agree with each other by construction
+                // (see BURST_AGREEMENT_CEILING).
+                source: frame.source,
               });
             } catch (err) {
               lastFailure =
