@@ -73,6 +73,10 @@ import { registerDlqMonitorJob } from "./jobs/dlq-monitor.js";
 import { registerDeliveryFailureMonitorJob } from "./jobs/delivery-failure-monitor.js";
 import { registerOwnerDigestJob } from "./jobs/owner-digest.js";
 import { registerRefitCampaignJob } from "./jobs/refit-campaign.js";
+import {
+  FITTER_FOLLOWUP_JOB,
+  registerFitterFollowupScanJob,
+} from "./jobs/fitter-followup-scan.js";
 import { registerTherapyFleetAlertsJob } from "./jobs/therapy-fleet-alerts-scan.js";
 import { registerSetupDeadlineOutreachJob } from "./jobs/therapy-setup-deadline-outreach.js";
 import { registerResupplyAutoDraftJob } from "./jobs/resupply-auto-draft.js";
@@ -883,6 +887,26 @@ async function doStartWorker(): Promise<void> {
   // who did not ask to be contacted, so starting it is a tenant decision.
   await safeRegister("registerRefitCampaignJob", registrationFailures, () =>
     registerRefitCampaignJob(boss),
+  );
+
+  // Hourly at :31 — chase the mask-fitter funnel's two silent drop-offs
+  // (a link sent and never used, a fitting finished that never turned
+  // into a request) and maintain the staff worklist at
+  // /admin/fitter-followups. Registered UNCONDITIONALLY: the patient
+  // messages are gated per tenant by fitter.followup_nudges (migration
+  // 0536), but the alert feed is built regardless of that flag, of a
+  // missing vendor key, and of whether the tenant has a verified
+  // domain — nobody should go quiet without staff knowing.
+  await safeRegister(
+    "registerFitterFollowupScanJob",
+    registrationFailures,
+    () =>
+      registerIfProvisioned(
+        boss,
+        FITTER_FOLLOWUP_JOB,
+        ["fitter_followup_alerts", "fitter_invites", "fitter_fit_requests"],
+        registerFitterFollowupScanJob,
+      ),
   );
 
   // Daily CPAP setup-deadline outreach (05:05 UTC, BEFORE the 05:15

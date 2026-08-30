@@ -1319,3 +1319,310 @@ export function demoAdminOrderDetail(id: string) {
     },
   };
 }
+
+// ── /admin/fitter-followups — who went quiet after a fitting ─────────
+//
+// Seeded so the demo console shows a real worklist rather than the
+// "Nobody is waiting" empty state, which would misrepresent the page as
+// having nothing to show. One row per alert type, in the severity order
+// the live page sorts into.
+interface DemoFollowupAlert {
+  id: string;
+  alertType:
+    | "fit_not_started"
+    | "fit_abandoned"
+    | "fit_no_request"
+    | "request_unworked";
+  severity: "low" | "medium" | "high";
+  status: "open" | "resolved" | "dismissed";
+  fitterInviteId: string | null;
+  fitRequestId: string | null;
+  fitSessionId: string | null;
+  patientId: string | null;
+  detail: Record<string, unknown>;
+  nudgeCount: number;
+  lastNudgeAt: string | null;
+  lastNudgeChannel: string | null;
+  resolvedAt: string | null;
+  resolvedReason: string | null;
+  dismissedAt: string | null;
+  dismissedByEmail: string | null;
+  staffNote: string | null;
+  createdAt: string;
+  contact: {
+    name: string | null;
+    email: string | null;
+    phone: string | null;
+    preferredMethod: string;
+    preferredTime: string | null;
+  } | null;
+  inviteStatus: string | null;
+  inviteChannel: string | null;
+  inviteExpiresAt: string | null;
+  recommendedMaskName: string | null;
+  fittingCompletedAt: string | null;
+  linkSentAt: string | null;
+  requestStatus: string | null;
+  requestType: string | null;
+  requestCreatedAt: string | null;
+}
+
+let followupAlertRows: DemoFollowupAlert[] | null = null;
+
+function seedFollowupAlerts(): DemoFollowupAlert[] {
+  return [
+    {
+      id: "demo-followup-1",
+      alertType: "fit_no_request",
+      severity: "high",
+      status: "open",
+      fitterInviteId: "demo-invite-7",
+      fitRequestId: null,
+      fitSessionId: "demo-fit-7",
+      patientId: "demo-patient-3",
+      detail: {
+        channel: "email",
+        days_since_fitting: 6,
+        is_prospect: false,
+        has_fit_session: true,
+      },
+      nudgeCount: 1,
+      lastNudgeAt: daysAgo(3),
+      lastNudgeChannel: "email",
+      resolvedAt: null,
+      resolvedReason: null,
+      dismissedAt: null,
+      dismissedByEmail: null,
+      staffNote: null,
+      createdAt: daysAgo(3),
+      contact: {
+        name: "Jordan Avery",
+        email: "jordan.avery@caremetric.example",
+        phone: "+12155550137",
+        preferredMethod: "email",
+        preferredTime: null,
+      },
+      inviteStatus: "completed",
+      inviteChannel: "email",
+      inviteExpiresAt: daysFromNow(12),
+      recommendedMaskName: "ResMed AirFit P30i",
+      fittingCompletedAt: daysAgo(6),
+      linkSentAt: daysAgo(9),
+      requestStatus: null,
+      requestType: null,
+      requestCreatedAt: null,
+    },
+    {
+      id: "demo-followup-2",
+      alertType: "fit_abandoned",
+      severity: "high",
+      status: "open",
+      fitterInviteId: "demo-invite-8",
+      fitRequestId: null,
+      fitSessionId: null,
+      patientId: null,
+      detail: {
+        channel: "sms",
+        days_since_sent: 5,
+        days_until_link_expires: 25,
+        is_prospect: true,
+      },
+      nudgeCount: 1,
+      lastNudgeAt: daysAgo(2),
+      lastNudgeChannel: "sms",
+      resolvedAt: null,
+      resolvedReason: null,
+      dismissedAt: null,
+      dismissedByEmail: null,
+      staffNote: null,
+      createdAt: daysAgo(2),
+      contact: {
+        name: "Sam Whitfield",
+        email: null,
+        phone: "+12155550128",
+        preferredMethod: "text",
+        preferredTime: null,
+      },
+      inviteStatus: "opened",
+      inviteChannel: "sms",
+      inviteExpiresAt: daysFromNow(25),
+      recommendedMaskName: null,
+      fittingCompletedAt: null,
+      linkSentAt: daysAgo(5),
+      requestStatus: null,
+      requestType: null,
+      requestCreatedAt: null,
+    },
+    {
+      id: "demo-followup-3",
+      alertType: "request_unworked",
+      severity: "medium",
+      status: "open",
+      fitterInviteId: null,
+      fitRequestId: "demo-fitreq-2",
+      fitSessionId: "demo-fit-2",
+      patientId: null,
+      detail: { request_type: "callback", days_waiting: 3 },
+      nudgeCount: 0,
+      lastNudgeAt: null,
+      lastNudgeChannel: null,
+      resolvedAt: null,
+      resolvedReason: null,
+      dismissedAt: null,
+      dismissedByEmail: null,
+      staffNote: null,
+      createdAt: daysAgo(1),
+      contact: {
+        name: "Casey Demo",
+        email: "casey.demo@caremetric.example",
+        phone: "+12155550111",
+        preferredMethod: "phone",
+        preferredTime: "Morning",
+      },
+      inviteStatus: null,
+      inviteChannel: null,
+      inviteExpiresAt: null,
+      recommendedMaskName: null,
+      fittingCompletedAt: null,
+      linkSentAt: null,
+      requestStatus: "new",
+      requestType: "callback",
+      requestCreatedAt: daysAgo(3),
+    },
+    {
+      id: "demo-followup-4",
+      alertType: "fit_not_started",
+      severity: "medium",
+      status: "open",
+      fitterInviteId: "demo-invite-9",
+      fitRequestId: null,
+      fitSessionId: null,
+      patientId: "demo-patient-5",
+      detail: {
+        channel: "email",
+        days_since_sent: 4,
+        days_until_link_expires: 26,
+        is_prospect: false,
+      },
+      nudgeCount: 1,
+      lastNudgeAt: hoursAgo(20),
+      lastNudgeChannel: "email",
+      resolvedAt: null,
+      resolvedReason: null,
+      dismissedAt: null,
+      dismissedByEmail: null,
+      staffNote: null,
+      createdAt: hoursAgo(20),
+      contact: {
+        name: "Morgan Reese",
+        email: "morgan.reese@caremetric.example",
+        phone: null,
+        preferredMethod: "email",
+        preferredTime: null,
+      },
+      inviteStatus: "sent",
+      inviteChannel: "email",
+      inviteExpiresAt: daysFromNow(26),
+      recommendedMaskName: null,
+      fittingCompletedAt: null,
+      linkSentAt: daysAgo(4),
+      requestStatus: null,
+      requestType: null,
+      requestCreatedAt: null,
+    },
+    {
+      id: "demo-followup-5",
+      alertType: "fit_no_request",
+      severity: "high",
+      status: "resolved",
+      fitterInviteId: "demo-invite-10",
+      fitRequestId: null,
+      fitSessionId: "demo-fit-10",
+      patientId: "demo-patient-1",
+      detail: { channel: "email", days_since_fitting: 4, is_prospect: false },
+      nudgeCount: 1,
+      lastNudgeAt: daysAgo(8),
+      lastNudgeChannel: "email",
+      resolvedAt: daysAgo(6),
+      resolvedReason: "request_received",
+      dismissedAt: null,
+      dismissedByEmail: null,
+      staffNote: null,
+      createdAt: daysAgo(9),
+      contact: {
+        name: "Taylor Nguyen",
+        email: "taylor.nguyen@caremetric.example",
+        phone: "+12155550144",
+        preferredMethod: "email",
+        preferredTime: null,
+      },
+      inviteStatus: "attached",
+      inviteChannel: "email",
+      inviteExpiresAt: daysFromNow(4),
+      recommendedMaskName: "Fisher & Paykel Evora Full",
+      fittingCompletedAt: daysAgo(13),
+      linkSentAt: daysAgo(16),
+      requestStatus: null,
+      requestType: null,
+      requestCreatedAt: null,
+    },
+  ];
+}
+
+function getFollowupAlertRows(): DemoFollowupAlert[] {
+  if (!followupAlertRows) followupAlertRows = seedFollowupAlerts();
+  return followupAlertRows;
+}
+
+/** GET /admin/fitter-followup-alerts */
+export function demoFollowupAlerts(
+  status: string | null = "open",
+  type: string | null = null,
+) {
+  const rows = getFollowupAlertRows();
+  const counts = {
+    fit_not_started: 0,
+    fit_abandoned: 0,
+    fit_no_request: 0,
+    request_unworked: 0,
+  };
+  let openHigh = 0;
+  for (const r of rows) {
+    if (r.status !== "open") continue;
+    counts[r.alertType] += 1;
+    if (r.severity === "high") openHigh += 1;
+  }
+  const openTotal = Object.values(counts).reduce((a, b) => a + b, 0);
+
+  let filtered = rows;
+  if (status && status !== "all") {
+    filtered = filtered.filter((r) => r.status === status);
+  }
+  if (type && type !== "all") {
+    filtered = filtered.filter((r) => r.alertType === type);
+  }
+  return { alerts: filtered, counts, openTotal, openHigh };
+}
+
+/** PATCH /admin/fitter-followup-alerts/:id */
+export function demoPatchFollowupAlert(
+  id: string,
+  patch: { status?: string; staffNote?: string | null },
+): DemoFollowupAlert | null {
+  const row = getFollowupAlertRows().find((r) => r.id === id);
+  if (!row) return null;
+  const now = NOW_ISO();
+  if (patch.status === "dismissed") {
+    row.status = "dismissed";
+    row.dismissedAt = now;
+    row.dismissedByEmail = "demo.admin@caremetric.example";
+  } else if (patch.status === "open") {
+    row.status = "open";
+    row.dismissedAt = null;
+    row.dismissedByEmail = null;
+    row.resolvedAt = null;
+    row.resolvedReason = null;
+  }
+  if (patch.staffNote !== undefined) row.staffNote = patch.staffNote;
+  return row;
+}

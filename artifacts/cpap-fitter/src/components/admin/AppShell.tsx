@@ -671,6 +671,13 @@ export const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             hint: "Finished fittings waiting for you to place the order",
           },
           {
+            href: "/admin/fitter-followups",
+            label: "Fitter Follow-ups",
+            icon: BellRing,
+            matchPrefix: "/admin/fitter-followups",
+            hint: "Who went quiet — links nobody opened, fittings nobody finished, and finished fittings that never became a request",
+          },
+          {
             href: "/admin/fitter-leads",
             label: "Fitter Prospects",
             icon: UsersRound,
@@ -1418,6 +1425,13 @@ export const MASK_FITTER_NAV_GROUPS: ReadonlyArray<NavGroup> = [
         hint: "Finished fittings waiting for you to place the order",
       },
       {
+        label: "Fitter Follow-ups",
+        icon: BellRing,
+        href: "/admin/fitter-followups",
+        matchPrefix: "/admin/fitter-followups",
+        hint: "Who went quiet — links nobody opened, fittings nobody finished, and finished fittings that never became a request",
+      },
+      {
         label: "Fitter Prospects",
         icon: UsersRound,
         href: "/admin/fitter-leads",
@@ -1530,6 +1544,7 @@ export const MASK_FITTER_NAV_GROUPS: ReadonlyArray<NavGroup> = [
 export const MASK_FITTER_ALLOWED_ROUTE_PREFIXES: readonly string[] = [
   "/admin/fitter-invites",
   "/admin/fitter-requests",
+  "/admin/fitter-followups",
   "/admin/fitter-leads",
   // The clinical fitting core. These were already in MASK_FITTER_NAV_GROUPS
   // above and already allowed by the server, but were missing here — so the

@@ -23,6 +23,8 @@ import {
   demoFitterLeads,
   demoFitRequests,
   demoPatchFitRequest,
+  demoFollowupAlerts,
+  demoPatchFollowupAlert,
   demoBillingDirectorSummary,
   demoAdminOrders,
   demoAdminOrderDetail,
@@ -221,6 +223,23 @@ export const adminHandlers: DemoHandler[] = [
       dispenseCleared: false,
     });
   }),
+  // Fitter follow-ups — the worklist of fittings that went quiet. Seeded
+  // for the same reason as the fit-request queue above: an empty state
+  // here reads as "nothing to do", which misrepresents the page.
+  route("GET", "/resupply-api/admin/fitter-followup-alerts", (req) =>
+    json(demoFollowupAlerts(req.query.get("status"), req.query.get("type"))),
+  ),
+  route(
+    "PATCH",
+    "/resupply-api/admin/fitter-followup-alerts/:id",
+    (req, { id }) => {
+      const body =
+        req.json<{ status?: string; staffNote?: string | null }>() ?? {};
+      const row = demoPatchFollowupAlert(id, body);
+      if (!row) return json({ error: "not_found" }, 404);
+      return json({ alert: row });
+    },
+  ),
   route("GET", "/resupply-api/admin/catalog/low-stock", () =>
     json({ products: demoAdminCatalog({ lowStockOnly: true }).products }),
   ),
