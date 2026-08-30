@@ -37,11 +37,15 @@ import {
   VolumeX,
 } from "lucide-react";
 
-import { FilesetResolver, FaceLandmarker } from "@mediapipe/tasks-vision";
+import type { FaceLandmarker } from "@mediapipe/tasks-vision";
 
 import { useFitterStore, type CapturedFrame } from "@/hooks/use-fitter-store";
 import { track } from "@/lib/track";
 import { CAMERA_FEED_TIMEOUT_MS } from "@/lib/capture-readiness";
+import {
+  loadFaceLandmarker,
+  MODEL_LOAD_TIMEOUT_MS,
+} from "@/lib/landmarker-loader";
 import { sampleFrame } from "@/lib/frame-sampling";
 import {
   createCaptureFeedback,
@@ -74,10 +78,6 @@ import {
 /** Preview assessment cadence. ~5-6 checks/sec is plenty for a coach and
  *  keeps CPU cool on older phones. */
 const TICK_MS = 180;
-
-/** Give the model this long to load before falling back to single-frame
- *  — the same stall /measure's image decode guards against. */
-const MODEL_LOAD_TIMEOUT_MS = 20_000;
 
 /** Recent-centroid window for the movement check. */
 const MOTION_WINDOW = 3;
@@ -246,54 +246,27 @@ export function GuidedCapture({ onFallback }: { onFallback: () => void }) {
   // ── Landmarker (VIDEO mode, GPU → CPU fallback, bounded load) ──
   useEffect(() => {
     let active = true;
-    let timedOut = false;
-    const timer = setTimeout(() => {
-      timedOut = true;
-      if (active) onFallback();
-    }, MODEL_LOAD_TIMEOUT_MS);
-    (async () => {
+    void (async () => {
       try {
-        const base = import.meta.env.BASE_URL;
-        const vision = await FilesetResolver.forVisionTasks(
-          `${base}mediapipe/wasm`,
-        );
-        const options = (delegate: "GPU" | "CPU") => ({
-          baseOptions: {
-            modelAssetPath: `${base}mediapipe/models/face_landmarker.task`,
-            delegate,
-          },
-          outputFaceBlendshapes: false,
-          runningMode: "VIDEO" as const,
-          numFaces: 1,
+        const landmarker = await loadFaceLandmarker({
+          runningMode: "VIDEO",
+          timeoutMs: MODEL_LOAD_TIMEOUT_MS,
         });
-        let landmarker: FaceLandmarker;
-        try {
-          landmarker = await FaceLandmarker.createFromOptions(
-            vision,
-            options("GPU"),
-          );
-        } catch {
-          landmarker = await FaceLandmarker.createFromOptions(
-            vision,
-            options("CPU"),
-          );
-        }
-        if (!active || timedOut) {
+        if (!active) {
           landmarker.close?.();
           return;
         }
-        clearTimeout(timer);
         landmarkerRef.current = landmarker;
         setLandmarkerReady(true);
         track("guided_capture_ready");
       } catch {
-        clearTimeout(timer);
-        if (active && !timedOut) onFallback();
+        // Timed out, or both delegates failed. Either way this page
+        // cannot coach, and the single-frame page owns recovery.
+        if (active) onFallback();
       }
     })();
     return () => {
       active = false;
-      clearTimeout(timer);
       try {
         landmarkerRef.current?.close?.();
       } catch {

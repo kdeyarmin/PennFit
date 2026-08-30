@@ -14,7 +14,11 @@ import {
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 
-import { FilesetResolver, FaceLandmarker } from "@mediapipe/tasks-vision";
+import type { FaceLandmarker } from "@mediapipe/tasks-vision";
+import {
+  LandmarkerLoadTimeout,
+  loadFaceLandmarker,
+} from "@/lib/landmarker-loader";
 import type { FacialMeasurements } from "@workspace/api-client-react/storefront";
 import { track } from "@/lib/track";
 import { BrandName } from "@/components/company-contact";
@@ -207,88 +211,30 @@ export function Measure() {
         setProgress(15);
         setStatus("Loading on-device facial landmark model…");
 
-        // Self-hosted MediaPipe — see scripts/setup-mediapipe.mjs. Loading
-        // these from our own origin (instead of jsdelivr/Google Storage)
-        // is what backs Penn Home Medical Supply's "100% private" claim end-to-end and
+        // Self-hosted MediaPipe — see scripts/setup-mediapipe.mjs.
+        // Loading these from our own origin (instead of jsdelivr / Google
+        // Storage) is what backs the "100% private" claim end-to-end and
         // also lets the app pass a strict same-origin CSP.
-        const base = import.meta.env.BASE_URL; // includes trailing slash
-
-        const landmarkerOptions = (delegate: "GPU" | "CPU") => ({
-          baseOptions: {
-            modelAssetPath: `${base}mediapipe/models/face_landmarker.task`,
-            delegate,
-          },
-          outputFaceBlendshapes: false,
-          runningMode: "IMAGE" as const,
-          numFaces: 1,
-        });
-        const loadModel = async (): Promise<FaceLandmarker> => {
-          const vision = await FilesetResolver.forVisionTasks(
-            `${base}mediapipe/wasm`,
-          );
-          if (isMountedRef.current) {
-            setProgress(40);
-            setStatus("Configuring landmark detection…");
-          }
-          try {
-            return await FaceLandmarker.createFromOptions(
-              vision,
-              landmarkerOptions("GPU"),
-            );
-          } catch {
-            // Devices without usable WebGL (older phones, locked-down
-            // browsers, remote desktops) reject the GPU delegate outright.
-            // Without this fallback they hit "unknown error" → retake →
-            // identical failure, forever.
-            return await FaceLandmarker.createFromOptions(
-              vision,
-              landmarkerOptions("CPU"),
-            );
-          }
-        };
-        // Bounded, like the image decode below: the WASM fileset + model
-        // are a multi-MB download, and a blackholed fetch used to strand
-        // the patient at 15-40% progress forever with no error and no
-        // escape hatch.
-        const modelLoad = loadModel();
-        let modelTimer: ReturnType<typeof setTimeout> | undefined;
+        //
+        // The GPU→CPU fallback, the bounded load, and closing a landmarker
+        // that arrives after the timeout all live in the shared loader now
+        // — the guided capture and the live coach need the identical
+        // dance, and the late-arrival close is exactly the detail that
+        // gets copied correctly twice and wrongly the third time.
         try {
-          faceLandmarker = await Promise.race([
-            modelLoad,
-            new Promise<never>((_, reject) => {
-              modelTimer = setTimeout(
-                () =>
-                  reject(
-                    new ExtractionError(
-                      "model_load_timeout",
-                      "The measurement model took too long to load. Please try again.",
-                    ),
-                  ),
-                20_000,
-              );
-            }),
-          ]);
-        } catch (raceErr) {
-          // The timeout won (or the load itself failed). If the slow load
-          // eventually lands, close it — nothing will use it. Attached
-          // only HERE, on the losing path: a pre-attached .then runs
-          // before the race's await resumes (same microtask queue, earlier
-          // registration), so it would see `faceLandmarker` still null and
-          // close the SUCCESSFUL landmarker on every ordinary run.
-          void modelLoad
-            .then((l) => {
-              try {
-                l.close?.();
-              } catch {
-                /* best-effort */
-              }
-            })
-            .catch(() => {
-              /* the load failed outright — nothing to close */
-            });
-          throw raceErr;
-        } finally {
-          if (modelTimer !== undefined) clearTimeout(modelTimer);
+          faceLandmarker = await loadFaceLandmarker({ runningMode: "IMAGE" });
+        } catch (loadErr) {
+          if (loadErr instanceof LandmarkerLoadTimeout) {
+            throw new ExtractionError(
+              "model_load_timeout",
+              "The measurement model took too long to load. Please try again.",
+            );
+          }
+          throw loadErr;
+        }
+        if (isMountedRef.current) {
+          setProgress(40);
+          setStatus("Configuring landmark detection…");
         }
 
         if (!isMountedRef.current) return;
