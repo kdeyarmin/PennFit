@@ -938,7 +938,14 @@ export function aggregateFrames(frames: FrameMeasurement[]): AggregateResult {
   const effectiveAgreement = allBurst
     ? Math.min(meanAgreement, BURST_AGREEMENT_CEILING)
     : meanAgreement;
-  const independentLooks = allBurst ? 1 : usable.length;
+  // `frames.length`, not `usable.length`: the guided run captures four
+  // frames of which only the two near-frontal ones contribute
+  // measurement samples (MEASUREMENT_YAW_LIMIT_DEG), so keying off
+  // `usable` quietly cut the guided path's bonus from 0.100 to 0.0667
+  // and could tip a scan sitting on a threshold — a discount this change
+  // was never meant to apply. Non-burst sets keep exactly the count they
+  // had; only an all-burst set collapses to one look.
+  const independentLooks = allBurst ? 1 : frames.length;
 
   const measurementConfidence = clamp01(
     meanQuality * 0.45 +

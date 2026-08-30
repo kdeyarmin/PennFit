@@ -441,6 +441,23 @@ export interface FitAssessment {
      * given mask never appeared.
      */
     formularyExcludedSlugs: string[];
+    /**
+     * True when EVERY candidate's best size missed at least one gated
+     * dimension — not merely the winner's.
+     *
+     * This used to withhold the recommendation outright, and no longer
+     * does (see `resolveConfidence`): a patient whose dimensions land in
+     * different size buckets is an ordinary patient, not an unmeasurable
+     * one. But the distinction still matters to a reviewer, because the
+     * two situations have different causes and different fixes — one
+     * unconfirmed winner is a fitting question, every candidate missing
+     * is a statement about the catalog's geometry. Recorded so an
+     * operator can tell them apart after the fact, and so a run of these
+     * surfaces a band-calibration problem instead of disappearing into
+     * per-session `inBand` flags. Persisted to
+     * `fit_sessions.outside_validated_range` (migration 0537).
+     */
+    outsideValidatedRange: boolean;
     degraded: boolean;
   };
 }

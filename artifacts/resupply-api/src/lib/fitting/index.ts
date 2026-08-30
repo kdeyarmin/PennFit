@@ -312,6 +312,7 @@ export function assess(input: FitEngineInput): FitAssessment {
       catalogSnapshotVersion,
       formularyRulesMatched: tiers.formularyRulesMatched,
       formularyExcludedSlugs: tiers.formularyExcludedSlugs,
+      outsideValidatedRange: tiers.outsideValidatedRange,
       degraded: input.degraded,
     },
   };

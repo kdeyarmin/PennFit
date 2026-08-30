@@ -1037,6 +1037,15 @@ async function persistSession(input: PersistInput): Promise<string | null> {
         catalog_snapshot_version:
           input.assessment.provenance.catalogSnapshotVersion,
         degraded: input.assessment.provenance.degraded,
+        // Every candidate's best size missed a gated dimension (0537).
+        // No longer a gate — the engine recommends the closest size and
+        // caps it at moderate — but still recorded, because one
+        // unconfirmed winner and a catalog that could not size this
+        // patient at all look identical afterwards if only per-candidate
+        // `inBand` flags survive. A run of these is a band-calibration
+        // problem, and this is what makes it visible as one.
+        outside_validated_range:
+          input.assessment.provenance.outsideValidatedRange,
         // A high-confidence fitting normally skips the review queue —
         // but NEVER on the degraded path: the static fallback catalog
         // ships zero mask contraindications (catalog-store.ts

@@ -499,13 +499,40 @@ describe("only the dimensions that size an interface gate it", () => {
     // Authoring one is legitimate — from observed fitter readings, per
     // the convention note in cpap-fitter's face-measurements.ts. Doing
     // so means updating this test deliberately, which is the point.
+    // Checked by FILE, not by assignment syntax. An `=` pattern only
+    // catches UPDATE-shaped authoring, and this repo seeds bands the
+    // other way — `INSERT INTO mask_size_variants (<column list>)
+    // SELECT ... FROM (VALUES ...)`, as 0486, 0494 and 0522 all do.
+    // Adding the face-width columns to such a list with real values
+    // emits no `=` at all and would sail past a syntax check, while
+    // authoring exactly the bands this test forbids.
+    //
+    // So the invariant is on the SET OF FILES: these four are the only
+    // migrations allowed to name the column, and each is verified below
+    // to do so benignly. Any other migration touching face width fails
+    // here — which is the intended cost, because authoring these bands
+    // should be a deliberate act that updates this test.
+    const ALLOWED = new Map([
+      ["0481_mask_intelligence_catalog.sql", "declares the columns"],
+      ["0493_non_magnetic_mask_skus.sql", "copies a twin's existing values"],
+      ["0511_mask_fit_band_conventions.sql", "clears them to NULL"],
+      ["0512_mask_size_run_corrections.sql", "clears them to NULL"],
+    ]);
+    const COLUMN = /"?face_width_(?:min|max)_mm"?/i;
+
+    const unexpectedFiles: string[] = [];
     const offenders: string[] = [];
     for (const file of readdirSync(MIGRATIONS).filter((f) =>
       f.endsWith(".sql"),
     )) {
       const sql = read(file);
+      if (!COLUMN.test(sql)) continue;
+      if (!ALLOWED.has(file)) {
+        unexpectedFiles.push(file);
+        continue;
+      }
       for (const [i, line] of sql.split("\n").entries()) {
-        // A SET/assignment giving either bound anything but NULL.
+        // Within an allowed file, still refuse a non-NULL assignment.
         // Quotes optional: Postgres accepts a bare identifier, so a
         // migration written without them is valid SQL that a
         // quotes-required pattern would wave straight through.
@@ -514,6 +541,7 @@ describe("only the dimensions that size an interface gate it", () => {
         }
       }
     }
+    expect(unexpectedFiles).toEqual([]);
     expect(offenders).toEqual([]);
   });
 
