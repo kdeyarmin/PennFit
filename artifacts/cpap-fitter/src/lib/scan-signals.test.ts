@@ -11,8 +11,13 @@
 
 import { describe, expect, it, vi } from "vitest";
 
-import { buildScanSignals, framesFromMeasurements } from "./scan-signals";
-import { UNKNOWN_FRAME_SAMPLE } from "./frame-sampling";
+import { framesFromMeasurements, payloadFromAggregate } from "./scan-signals";
+import { sampleFrame, UNKNOWN_FRAME_SAMPLE } from "./frame-sampling";
+import {
+  aggregateFrames,
+  assessFrameQuality,
+  estimatePoseFromLandmarks,
+} from "./scan-quality";
 import type { FrameMeasurement, Point2D } from "./scan-quality";
 
 vi.mock("./frame-sampling", async () => {
@@ -69,28 +74,55 @@ const VALUES = {
   faceWidthAtCheekbones: 153.3,
 };
 
-function build(
-  sample: Parameters<typeof sampleFrame>[0] extends never
-    ? never
-    : {
-        faceLuma: number;
-        faceLumaLeft: number;
-        faceLumaRight: number;
-        sharpness: number;
-      },
-) {
+function build(sample: {
+  faceLuma: number;
+  faceLumaLeft: number;
+  faceLumaRight: number;
+  sharpness: number;
+}) {
   vi.mocked(sampleFrame).mockReturnValue(sample);
-  return buildScanSignals({
-    image: { width: 1080, height: 1440 } as unknown as CanvasImageSource & {
-      width: number;
-      height: number;
-    },
-    landmarks: frontFaceLandmarks(),
+  // The composition `measure.tsx` performs per frame, exercised end to
+  // end rather than through a wrapper: sample the pixels, read the head
+  // angles, score the frame, aggregate, project onto the wire. A
+  // single-frame builder used to live in scan-signals.ts for a code path
+  // both capture pages had already stopped producing.
+  const image = {
+    width: 1080,
+    height: 1440,
+  } as unknown as CanvasImageSource & {
+    width: number;
+    height: number;
+  };
+  const landmarks = frontFaceLandmarks();
+  const frameSample = sampleFrame(image, landmarks);
+  const angles = estimatePoseFromLandmarks(landmarks as Point2D[], {
+    width: image.width,
+    height: image.height,
+  });
+  const quality = assessFrameQuality({
+    pose: "front",
+    landmarks: landmarks as Point2D[],
     // ~45 cm from the camera on this 1080x1440 frame — mid-window for
     // CAPTURE_DISTANCE_MM_BOUNDS, and comfortably resolved.
     irisWidthPx: 28,
-    values: VALUES,
+    frameWidth: image.width,
+    frameHeight: image.height,
+    faceLuma: frameSample.faceLuma,
+    faceLumaLeft: frameSample.faceLumaLeft,
+    faceLumaRight: frameSample.faceLumaRight,
+    sharpness: frameSample.sharpness,
+    yawDeg: angles.yawDeg,
+    pitchDeg: angles.pitchDeg,
+    rollDeg: angles.rollDeg,
   });
+  const frame: FrameMeasurement = {
+    pose: "front",
+    quality,
+    values: VALUES,
+    yawDeg: angles.yawDeg,
+    pitchDeg: angles.pitchDeg,
+  };
+  return payloadFromAggregate(aggregateFrames([frame]), [frame]);
 }
 
 describe("per-frame numbers reach the wire", () => {
@@ -234,7 +266,7 @@ describe("per-frame numbers reach the wire", () => {
   });
 });
 
-describe("buildScanSignals", () => {
+describe("one frame through the production composition", () => {
   it("emits only the keys the strict server schema accepts", () => {
     const out = build({
       faceLuma: 135,

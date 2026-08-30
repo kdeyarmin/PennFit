@@ -19,14 +19,12 @@ import type { FacialMeasurements } from "@workspace/api-client-react/storefront"
 import { track } from "@/lib/track";
 import { useDocumentTitle } from "@/hooks/use-document-title";
 import { findImplausibleMeasurement } from "@/lib/measure-flow";
-import { buildScanSignals, payloadFromAggregate } from "@/lib/scan-signals";
+import { payloadFromAggregate } from "@/lib/scan-signals";
 import { sampleFrame } from "@/lib/frame-sampling";
 import {
   aggregateFrames,
   assessFrameQuality,
-  CAPTURE_DISTANCE_MM_BOUNDS,
   centroidOf,
-  estimateCameraDistanceMm,
   estimatePoseFromLandmarks,
   type FrameMeasurement,
   type Point2D,
@@ -480,91 +478,15 @@ export function Measure() {
           return;
         }
 
-        // ── Single-frame path (the default). ──
-        setStatus("Analyzing facial structure…");
-
-        // Bounded image-load with explicit error + timeout so a hung decode
-        // can't strand the user on this page indefinitely (the stall this
-        // page is otherwise prone to). Data URLs decode synchronously in
-        // most browsers but mobile Safari has been known to stall.
-        const img = await decodeImage(capturedImage);
-
-        if (!isMountedRef.current) return;
-        setProgress(75);
-        setStatus("Calibrating to your iris and extracting measurements…");
-
-        const result = faceLandmarker.detect(img);
-
-        if (result.faceLandmarks && result.faceLandmarks.length > 0) {
-          const landmarks = result.faceLandmarks[0];
-
-          const { values, irisPix } = extractMeasurementValues(landmarks, img);
-          const measurements: FacialMeasurements = {
-            ...values,
-            calibrationMethod: "iris",
-          };
-
-          const implausibleField = findImplausibleMeasurement(measurements);
-          if (implausibleField) {
-            throw new ExtractionError(
-              "implausible_measurements",
-              "We couldn't get a confident reading from this photo. Please retake it.",
-            );
-          }
-
-          // Assess the frame these measurements came from. Scalars only
-          // — the image itself never leaves this function, and nothing
-          // image-derived beyond these numbers is stored or transmitted.
-          // Never allowed to throw: a probe failure must not cost the
-          // patient their recommendation, so fall back to "no signals"
-          // and let the server apply its neutral default.
-          let scanSignals = null;
-          try {
-            scanSignals = buildScanSignals({
-              image: img,
-              landmarks,
-              irisWidthPx: irisPix,
-              values,
-            });
-          } catch {
-            scanSignals = null;
-          }
-
-          if (!isMountedRef.current) return;
-          setProgress(100);
-          setStatus("Analysis complete.");
-          // Same estimate the distance check scores, so the hint the
-          // patient reads and the score that drove it can never disagree.
-          // Only derived when that check actually marked the frame down —
-          // a good capture has no direction to offer.
-          const estimatedMm = showsDistanceHint(scanSignals)
-            ? estimateCameraDistanceMm(irisPix, img.width, img.height)
-            : null;
-          setDistanceHint(
-            estimatedMm === null
-              ? null
-              : estimatedMm < CAPTURE_DISTANCE_MM_BOUNDS.min
-                ? "farther"
-                : "closer",
-          );
-          setMeasurements(measurements, scanSignals);
-          track("measurements_extracted");
-
-          // Auto-advance after a short delay so users can register the
-          // extracted measurements; the manual "Continue" button below
-          // calls the same goToQuestionnaire() handler for users who
-          // want to skip the wait. Held when the distance hint renders —
-          // navigating away 2.6s after offering a retake takes the
-          // choice away right as it's offered.
-          if (!showsDistanceHint(scanSignals)) {
-            setTimeout(goToQuestionnaire, AUTO_ADVANCE_MS);
-          }
-        } else {
-          throw new ExtractionError(
-            "no_face",
-            "No face detected in the image. Please try the capture again.",
-          );
-        }
+        // Unreachable: both capture pages commit `capturedFrames` in the
+        // same flushSync as `capturedImage`, and the no-image guard above
+        // has already redirected when neither survived. Kept as a throw
+        // rather than a silent fall-through, which would strand the
+        // patient on the loading status with nothing in flight.
+        throw new ExtractionError(
+          "no_face",
+          "No face detected in the image. Please try the capture again.",
+        );
       } catch (err: unknown) {
         console.error("Measurement error:", err);
         const reason: ExtractionFailReason =

@@ -1,5 +1,6 @@
 /**
- * Build the `scan` payload the clinical assessment expects.
+ * Project the measured frames onto the `scan` payload the clinical
+ * assessment expects.
  *
  * Why this exists: `scan-quality.ts` (the pure checks) and the API's
  * `scanSchema` both shipped, but nothing ever joined them — `results.tsx`
@@ -9,16 +10,11 @@
  * sits below the 0.75 `highScan` floor, so no fitting could ever reach
  * high confidence no matter how good the frame was.
  *
- * This module is that join. It takes what `measure.tsx` already has — the
- * decoded frame, the landmarks, the iris calibration, and the millimetre
- * measurements — and produces the scalar signal set.
- *
- * Single-frame honesty: `aggregateFrames` scores a lone frame's
- * cross-frame agreement at 0.7 ("we only looked once") and caps its band
- * at moderate. That is deliberate and stays true here — one frame can now
- * clear the high-confidence scan floor only when its own quality is
- * genuinely excellent, and a poor frame correctly falls below the moderate
- * floor, which is the behaviour the marketing copy describes.
+ * This module is that join. `measure.tsx` scores and aggregates the
+ * frames; this turns the result into the scalar wire shape. It does no
+ * assessment of its own — a single-frame builder used to live here for a
+ * code path that both capture pages had already stopped producing, and
+ * scoring a frame in two places is how the two definitions drift.
  *
  * PHI: every field is a scalar in [0, 1] plus a frame count and a band
  * label. Nothing image-derived beyond those numbers is produced here, and
@@ -26,16 +22,10 @@
  */
 
 import {
-  aggregateFrames,
-  assessFrameQuality,
-  estimatePoseFromLandmarks,
   MEASUREMENT_YAW_LIMIT_DEG,
   type AggregateResult,
-  type CapturePose,
   type FrameMeasurement,
-  type Point2D,
 } from "./scan-quality";
-import { sampleFrame } from "./frame-sampling";
 import type { ScanSignalsRequest } from "./fit-assess-api";
 
 /**
@@ -52,15 +42,6 @@ const AGREEMENT_KEYS = [
   "mouthWidth",
   "faceWidthAtCheekbones",
 ] as const;
-
-export interface BuildScanSignalsInput {
-  image: CanvasImageSource & { width: number; height: number };
-  landmarks: readonly Point2D[];
-  irisWidthPx: number;
-  /** The millimetre measurements this frame produced. */
-  values: Record<string, number>;
-  pose?: CapturePose;
-}
 
 /** Clamp into [0, 1] and round, so the payload always satisfies the schema. */
 function unit(n: number): number {
@@ -89,48 +70,6 @@ function unit(n: number): number {
 function degrees(n: number): number {
   if (!Number.isFinite(n)) return 0;
   return Math.round(Math.min(90, Math.max(-90, n)) * 10) / 10;
-}
-
-/**
- * Assess one captured frame and fold it into the wire shape.
- *
- * Never throws: a fitting must not fail because a quality probe did.
- */
-export function buildScanSignals(
-  input: BuildScanSignalsInput,
-): ScanSignalsPayload {
-  const pose: CapturePose = input.pose ?? "front";
-  const sample = sampleFrame(input.image, input.landmarks);
-  const angles = estimatePoseFromLandmarks(input.landmarks as Point2D[], {
-    width: input.image.width,
-    height: input.image.height,
-  });
-
-  const quality = assessFrameQuality({
-    pose,
-    landmarks: input.landmarks as Point2D[],
-    irisWidthPx: input.irisWidthPx,
-    frameWidth: input.image.width,
-    frameHeight: input.image.height,
-    faceLuma: sample.faceLuma,
-    faceLumaLeft: sample.faceLumaLeft,
-    faceLumaRight: sample.faceLumaRight,
-    sharpness: sample.sharpness,
-    yawDeg: angles.yawDeg,
-    pitchDeg: angles.pitchDeg,
-    rollDeg: angles.rollDeg,
-  });
-
-  const frame: FrameMeasurement = {
-    pose,
-    quality,
-    values: input.values,
-    yawDeg: angles.yawDeg,
-    pitchDeg: angles.pitchDeg,
-  };
-  const aggregate = aggregateFrames([frame]);
-
-  return payloadFromAggregate(aggregate, [frame]);
 }
 
 /**
