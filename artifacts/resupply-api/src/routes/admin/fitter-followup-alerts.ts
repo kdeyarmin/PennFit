@@ -99,6 +99,14 @@ const ALERT_SELECT =
  * serves the status filter.
  */
 const SEVERITY_RANK: Record<string, number> = { high: 0, medium: 1, low: 2 };
+/** Read order for the banded queries — worst first. */
+const SEVERITY_ORDER = ["high", "medium", "low"] as const;
+/**
+ * Ceiling on pages walked by the open-alert count. 1000 * 10 open alerts
+ * in one tenant is already a queue nobody is working; counting past it
+ * would cost more than the number is worth.
+ */
+const MAX_COUNT_PAGES = 10;
 
 interface InviteContext {
   status: string;
@@ -141,17 +149,37 @@ router.get(
     }
     const supabase = getOrgScopedClient(orgId);
 
-    let query = supabase
-      .from("fitter_followup_alerts")
-      .select(ALERT_SELECT)
-      .order("created_at", { ascending: true })
-      .limit(limit);
-    if (status !== "all") query = query.eq("status", status);
-    if (type !== "all") query = query.eq("alert_type", type);
-
-    const { data, error } = await query;
-    if (error) throw error;
-    const rows = (data ?? []) as unknown as AlertRow[];
+    // Severity FIRST, then age — and the severity split happens in the
+    // database, not after.
+    //
+    // `severity` is text, so a single `.order("severity")` is
+    // alphabetical ('high' < 'low' < 'medium') and useless. Ordering by
+    // `created_at` alone and re-sorting the page in JS is worse than
+    // useless: the database hands back the oldest N regardless of
+    // severity, so with more than `limit` matches a brand-new
+    // high-severity row — a finished fitting nobody has acted on — is
+    // dropped before the route ever sees it, while older medium ones
+    // fill the page. The header says "Highest severity first"; this is
+    // what makes that true rather than true-of-a-truncated-set.
+    //
+    // Three bounded reads in priority order, stopping as soon as the
+    // page is full.
+    const rows: AlertRow[] = [];
+    for (const band of SEVERITY_ORDER) {
+      if (rows.length >= limit) break;
+      let query = supabase
+        .from("fitter_followup_alerts")
+        .select(ALERT_SELECT)
+        .eq("severity", band)
+        // Oldest first inside a band: the person waiting longest.
+        .order("created_at", { ascending: true })
+        .limit(limit - rows.length);
+      if (status !== "all") query = query.eq("status", status);
+      if (type !== "all") query = query.eq("alert_type", type);
+      const { data, error } = await query;
+      if (error) throw error;
+      rows.push(...((data ?? []) as unknown as AlertRow[]));
+    }
 
     const [invites, requests] = await Promise.all([
       hydrateInvites(
@@ -172,12 +200,33 @@ router.get(
     // second round-trip. Deliberately always the OPEN counts, whatever
     // the caller filtered by — a badge that changed meaning with the
     // filter would be unreadable.
-    const { data: openRows, error: countErr } = await supabase
-      .from("fitter_followup_alerts")
-      .select("alert_type, severity")
-      .eq("status", "open")
-      .limit(2000);
-    if (countErr) throw countErr;
+    // PAGED. `.limit(2000)` is silently capped by PostgREST's own
+    // configured maximum row count, so on a tenant with a real backlog
+    // the badges would under-report while presenting themselves as
+    // complete open counts — the queue would look shorter than it is,
+    // which is the one direction a "who is still waiting" number must
+    // never be wrong in. Same pattern #1357 applied across the repo.
+    const COUNT_PAGE = 1000;
+    const openRows: Array<{ alert_type: AlertType; severity: string }> = [];
+    for (
+      let from = 0;
+      from < COUNT_PAGE * MAX_COUNT_PAGES;
+      from += COUNT_PAGE
+    ) {
+      const { data: page, error: countErr } = await supabase
+        .from("fitter_followup_alerts")
+        .select("alert_type, severity")
+        .eq("status", "open")
+        .order("created_at", { ascending: true })
+        .range(from, from + COUNT_PAGE - 1);
+      if (countErr) throw countErr;
+      const batch = (page ?? []) as Array<{
+        alert_type: AlertType;
+        severity: string;
+      }>;
+      openRows.push(...batch);
+      if (batch.length < COUNT_PAGE) break;
+    }
 
     const counts: Record<AlertType, number> = {
       fit_not_started: 0,
@@ -186,23 +235,21 @@ router.get(
       request_unworked: 0,
     };
     let openHigh = 0;
-    for (const r of (openRows ?? []) as Array<{
-      alert_type: AlertType;
-      severity: string;
-    }>) {
+    for (const r of openRows) {
       if (r.alert_type in counts) counts[r.alert_type] += 1;
       if (r.severity === "high") openHigh += 1;
     }
     const openTotal = Object.values(counts).reduce((a, b) => a + b, 0);
 
+    // Already in severity-then-age order from the banded reads above;
+    // this only keeps the guarantee explicit for a caller reading the
+    // response rather than the query.
     const alerts = rows
       .map((row) => toView(row, invites, requests))
       .sort((a, b) => {
         const bySeverity =
           (SEVERITY_RANK[a.severity] ?? 9) - (SEVERITY_RANK[b.severity] ?? 9);
         if (bySeverity !== 0) return bySeverity;
-        // Oldest first inside a severity band: the person who has been
-        // waiting longest is the one to call.
         return a.createdAt.localeCompare(b.createdAt);
       });
 

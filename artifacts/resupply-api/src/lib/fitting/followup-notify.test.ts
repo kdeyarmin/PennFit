@@ -238,7 +238,55 @@ describe("channel selection", () => {
 });
 
 describe("failure is reported, never thrown", () => {
-  it("reports a tenant with no email credentials", async () => {
+  it("falls back to email when the tenant has no Twilio config", async () => {
+    // The sweep has already spent this round's stamp by the time we are
+    // called, and nothing ever clears a stamp — so giving up here would
+    // lose the follow-up permanently, not until somebody fixed Twilio.
+    smsConfigured.value = false;
+    const res = await sendFitterFollowup(
+      { ...BASE, channel: "sms" },
+      "unstarted",
+    );
+    expect(res).toMatchObject({ delivered: true, channel: "email" });
+    expect(sendEmail).toHaveBeenCalledTimes(1);
+  });
+
+  it("falls back to SMS when the tenant has no SendGrid config", async () => {
+    emailConfigured.value = false;
+    const res = await sendFitterFollowup(
+      { ...BASE, channel: "email" },
+      "unstarted",
+    );
+    expect(res).toMatchObject({ delivered: true, channel: "sms" });
+    expect(sendSms).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not fall back onto a channel the caller did not permit", async () => {
+    // Consent is the caller's call, and a config failure is not a
+    // reason to override it.
+    smsConfigured.value = false;
+    const res = await sendFitterFollowup(
+      { ...BASE, channel: "sms", allowEmail: false },
+      "unstarted",
+    );
+    expect(res.delivered).toBe(false);
+    expect(sendEmail).not.toHaveBeenCalled();
+  });
+
+  it("does not retry the other channel after a VENDOR rejection", async () => {
+    // A vendor refusing the send is a real answer about this message,
+    // not a missing capability — retrying elsewhere would double-send
+    // whenever the first call actually went out before failing.
+    sendSms.mockRejectedValueOnce(new Error("Twilio 400"));
+    const res = await sendFitterFollowup(
+      { ...BASE, channel: "sms" },
+      "unstarted",
+    );
+    expect(res).toMatchObject({ delivered: false, reason: "send_failed" });
+    expect(sendEmail).not.toHaveBeenCalled();
+  });
+
+  it("reports a tenant with no email credentials and no SMS to fall back to", async () => {
     emailConfigured.value = false;
     const res = await sendFitterFollowup(
       { ...BASE, channel: "email", allowSms: false },
@@ -250,7 +298,7 @@ describe("failure is reported, never thrown", () => {
     });
   });
 
-  it("reports a tenant with no SMS credentials", async () => {
+  it("reports a tenant with no SMS credentials and no email to fall back to", async () => {
     smsConfigured.value = false;
     const res = await sendFitterFollowup(
       { ...BASE, channel: "sms", allowEmail: false },

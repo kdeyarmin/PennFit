@@ -65,6 +65,7 @@ import { runFitterFollowupSweep } from "./fitter-followup-scan";
 const ORG = "00000000-0000-4000-8000-000000000001";
 const INVITE = "22222222-2222-4222-8222-222222222222";
 const REQUEST = "33333333-3333-4333-8333-333333333333";
+const PATIENT = "55555555-5555-4555-8555-555555555555";
 const DAY = 86_400_000;
 
 /** A fixed mid-afternoon UTC instant, comfortably inside the US SMS
@@ -183,7 +184,10 @@ describe("cohort A — the link was sent and the fitting never happened", () => 
 
   it("never raises a SECOND cohort-A alert for the same invite", async () => {
     stageOrg();
-    // resolveFinishedInvites reads the open cohort-A alerts first.
+    // The tick opens with two alert-side resolve passes (cohort A's
+    // finished/revoked invites, then acted-on fit_no_request), both of
+    // which read the open alerts before the cohort scans run.
+    stageSupabaseResponse("fitter_followup_alerts", "select", { data: [] });
     stageSupabaseResponse("fitter_followup_alerts", "select", { data: [] });
     stageSupabaseResponse("fitter_invites", "select", {
       data: [openInvite({ status: "opened" })],
@@ -484,6 +488,112 @@ describe("cohort B — the fitting happened and nothing followed", () => {
   });
 });
 
+describe("a returning patient is not silenced by an old request", () => {
+  it("alerts a new fitting even when the same email asked months ago", async () => {
+    // Migration 0519 is explicit that a patient may legitimately come
+    // back — its dedupe index is partial on `status <> 'closed'` for
+    // exactly that reason. An unbounded email match answers "has this
+    // person EVER asked", so a request closed after an earlier fitting
+    // would mark today's fitting as acted on and the patient would hear
+    // nothing at all.
+    stageOrg();
+    stageSupabaseResponse("fitter_invites", "select", { data: [] });
+    stageSupabaseResponse("fitter_invites", "select", {
+      data: [completedInvite({ fit_session_id: null })],
+    });
+    // The invite carries no fit_session_id, so the only correlation the
+    // sweep can make is by email — and the one row there predates this
+    // fitting by months.
+    stageSupabaseResponse("fitter_fit_requests", "select", {
+      data: [{ email: "prospect@example.com", created_at: agoDays(120) }],
+    });
+    // Nothing stale in the request queue itself.
+    stageSupabaseResponse("fitter_fit_requests", "select", { data: [] });
+    stageClaimWon();
+
+    const stats = await runFitterFollowupSweep(NOW);
+
+    expect(stats.alertsRaised).toBe(1);
+    const [alert] = getSupabaseWritePayloads(
+      "fitter_followup_alerts",
+      "insert",
+    ) as Array<Record<string, unknown>>;
+    expect(alert.alert_type).toBe("fit_no_request");
+  });
+
+  it("still stands down when the request came AFTER this fitting", async () => {
+    stageOrg();
+    stageSupabaseResponse("fitter_invites", "select", { data: [] });
+    stageSupabaseResponse("fitter_invites", "select", {
+      data: [completedInvite({ fit_session_id: null })],
+    });
+    stageSupabaseResponse("fitter_fit_requests", "select", {
+      data: [{ email: "prospect@example.com", created_at: agoDays(1) }],
+    });
+    stageSupabaseResponse("fitter_fit_requests", "select", { data: [] });
+
+    await runFitterFollowupSweep(NOW);
+
+    expect(getSupabaseCallCount("fitter_followup_alerts", "insert")).toBe(0);
+    expect(sendFollowup).not.toHaveBeenCalled();
+  });
+});
+
+describe("the stamps stay honest across a resend", () => {
+  it("SPENDS a stale first stamp when the final nudge goes out", async () => {
+    // A resend re-stamps `sent_at`, which makes the old first-round
+    // stamp stale on purpose. Preserving it with `?? nowIso` meant the
+    // next tick read it as unspent and fired the first reminder
+    // immediately after the final one — two messages in an hour.
+    stageOrg();
+    stageSupabaseResponse("fitter_invites", "select", {
+      data: [
+        openInvite({
+          sent_at: agoDays(28),
+          expires_at: inDays(2),
+          // From a round that ended before this invite was resent.
+          fit_reminder_sent_at: agoDays(60),
+        }),
+      ],
+    });
+    stageClaimWon();
+
+    await runFitterFollowupSweep(NOW);
+
+    const [patch] = getSupabaseWritePayloads(
+      "fitter_invites",
+      "update",
+    ) as Array<Record<string, string>>;
+    expect(patch.fit_final_reminder_sent_at).toBeTruthy();
+    // Refreshed to now, not left holding the stale value.
+    expect(new Date(patch.fit_reminder_sent_at).getTime()).toBeGreaterThan(
+      new Date(agoDays(1)).getTime(),
+    );
+  });
+
+  it("claims against the lifecycle it observed, not the stamp alone", async () => {
+    // The stamp does not move when a patient finishes the fitting or a
+    // CSR revokes the invite, so a claim conditional on the stamp alone
+    // would happily send "finish your mask fitting" to somebody who
+    // completed it thirty seconds earlier.
+    stageOrg();
+    stageSupabaseResponse("fitter_invites", "select", {
+      data: [openInvite()],
+    });
+    stageClaimWon();
+
+    await runFitterFollowupSweep(NOW);
+
+    const filters = getSupabaseFilterCalls("fitter_invites", "update");
+    expect(filters.some((f) => f.verb === "in" && f.args[0] === "status")).toBe(
+      true,
+    );
+    expect(
+      filters.some((f) => f.verb === "eq" && f.args[0] === "sent_at"),
+    ).toBe(true);
+  });
+});
+
 describe("request_unworked — the one that is ours", () => {
   it("raises a staff alert and messages nobody", async () => {
     stageOrg();
@@ -513,6 +623,24 @@ describe("request_unworked — the one that is ours", () => {
     expect(alert.fitter_invite_id).toBeUndefined();
     expect(stats.nudgesSent).toBe(0);
     expect(sendFollowup).not.toHaveBeenCalled();
+  });
+
+  it("pages the stale-request scan instead of re-reading one prefix", async () => {
+    // A request stays `status='new'` after its alert is raised (an alert
+    // does not work the queue) and the insert then no-ops on the unique
+    // index. With one fixed limit, every request past the first page
+    // would never be alerted at all until enough older ones were worked
+    // — the worklist would be quietly incomplete for exactly the tenant
+    // most in need of it.
+    stageOrg();
+    stageSupabaseResponse("fitter_invites", "select", { data: [] });
+    stageSupabaseResponse("fitter_invites", "select", { data: [] });
+    stageSupabaseResponse("fitter_fit_requests", "select", { data: [] });
+
+    await runFitterFollowupSweep(NOW);
+
+    const filters = getSupabaseFilterCalls("fitter_fit_requests", "select");
+    expect(filters.some((f) => f.verb === "range")).toBe(true);
   });
 
   it("escalates to high once a request has waited a week", async () => {
@@ -569,7 +697,8 @@ describe("an alert closes itself when the thing it was about happens", () => {
 
   it("closes a request alert from the ALERT side, not by scanning every request", async () => {
     stageOrg();
-    // resolveFinishedInvites finds nothing…
+    // Both opening resolve passes find nothing…
+    stageSupabaseResponse("fitter_followup_alerts", "select", { data: [] });
     stageSupabaseResponse("fitter_followup_alerts", "select", { data: [] });
     stageSupabaseResponse("fitter_invites", "select", { data: [] });
     stageSupabaseResponse("fitter_invites", "select", { data: [] });
@@ -700,16 +829,126 @@ describe("consent", () => {
     expect(target.allowEmail).toBe(true);
   });
 
+  it("reaches the preference record through a key that EXISTS", async () => {
+    // `resupply.shop_customers` has no `patient_id` column — it links to
+    // a chart through `auth_user_id` = `patients.portal_auth_user_id`,
+    // or by email (migration 0532 backfills through exactly that pair).
+    // Filtering on a column that does not exist does not return nothing;
+    // PostgREST returns an ERROR, and reading only `data` swallows it.
+    // The lookup then reads as "no stored preference", which for email
+    // means the opted-in default — so an explicit opt-out would be
+    // ignored and the patient messaged anyway.
+    stageOrg();
+    stageSupabaseResponse("fitter_invites", "select", {
+      data: [openInvite({ patient_id: PATIENT })],
+    });
+    stageSupabaseResponse("patients", "select", {
+      data: {
+        id: PATIENT,
+        email: "p@example.com",
+        timezone: null,
+        portal_auth_user_id: "auth-user-1",
+      },
+    });
+    stageClaimWon();
+
+    await runFitterFollowupSweep(NOW);
+
+    const filters = getSupabaseFilterCalls("shop_customers", "select");
+    const columns = filters
+      .filter((f) => f.verb === "eq")
+      .map((f) => f.args[0]);
+    expect(columns).not.toContain("patient_id");
+    expect(columns).toContain("auth_user_id");
+  });
+
+  it("declines to send when the consent lookup FAILS", async () => {
+    // A preference record we could not read might be a refusal. Sending
+    // on it is the one unrecoverable outcome; skipping costs an hour,
+    // because nothing is stamped and the next tick retries.
+    stageOrg();
+    stageSupabaseResponse("fitter_invites", "select", {
+      data: [openInvite({ patient_id: PATIENT })],
+    });
+    stageSupabaseResponse("patients", "select", {
+      error: { code: "PGRST100", message: "boom" },
+    });
+
+    const stats = await runFitterFollowupSweep(NOW);
+
+    expect(sendFollowup).not.toHaveBeenCalled();
+    expect(getSupabaseCallCount("fitter_invites", "update")).toBe(0);
+    // Deferred, not refused — a later tick tries again.
+    expect(stats.skippedQuietHours).toBe(1);
+    // …and the alert still stands, so staff can act meanwhile.
+    expect(stats.alertsRaised).toBe(1);
+  });
+
+  it("uses the customer's OWN timezone for the SMS window", async () => {
+    // 18:00Z is 11:00 in Los Angeles (inside the window) but the chart
+    // has no timezone, so reading only the chart would fall back to
+    // Eastern. The mirror case is what makes this a TCPA problem: at
+    // 13:00Z, Eastern reads 09:00 (allowed) while the patient's real
+    // 06:00 Pacific is not.
+    stageOrg();
+    stageSupabaseResponse("fitter_invites", "select", {
+      data: [
+        openInvite({
+          patient_id: PATIENT,
+          channel: "sms",
+          recipient_email: null,
+          recipient_phone_e164: "+12155550100",
+        }),
+      ],
+    });
+    stageSupabaseResponse("patients", "select", {
+      data: {
+        id: PATIENT,
+        email: null,
+        // The chart has no timezone — this is the case where reading
+        // only the chart silently falls back to Eastern.
+        timezone: null,
+        portal_auth_user_id: "auth-user-1",
+      },
+    });
+    stageSupabaseResponse("shop_customers", "select", {
+      data: {
+        communication_preferences: {
+          smsTransactional: true,
+          timezone: "America/Los_Angeles",
+        },
+      },
+    });
+    stageClaimWon();
+
+    const early = new Date("2026-06-10T13:00:00.000Z");
+    const stats = await runFitterFollowupSweep(early);
+
+    // 06:00 Pacific — outside 9am-8pm, so deferred rather than sent.
+    expect(sendFollowup).not.toHaveBeenCalled();
+    expect(stats.skippedQuietHours).toBe(1);
+  });
+
   it("honours a stored refusal on both channels", async () => {
     stageOrg();
     stageSupabaseResponse("fitter_invites", "select", {
       data: [
         openInvite({
-          patient_id: "55555555-5555-4555-8555-555555555555",
+          patient_id: PATIENT,
           channel: "sms",
           recipient_phone_e164: "+12155550100",
         }),
       ],
+    });
+    // `shop_customers` has no `patient_id`; the prefs are reached
+    // through `patients.portal_auth_user_id` = `auth_user_id`.
+    stageSupabaseResponse("patients", "select", {
+      data: {
+        id: PATIENT,
+        email: "opted.out@example.com",
+        timezone: "America/Los_Angeles",
+        portal_auth_user_id: "auth-user-1",
+      },
     });
     stageSupabaseResponse("shop_customers", "select", {
       data: {

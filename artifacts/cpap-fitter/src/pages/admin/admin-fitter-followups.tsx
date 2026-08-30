@@ -161,12 +161,20 @@ function daysSince(iso: string | null, nowMs: number): number | null {
   return Math.max(0, Math.floor((nowMs - t) / 86_400_000));
 }
 
-/** Whole days from now until an ISO timestamp, or null. */
+/**
+ * Whole days from now until an ISO timestamp — SIGNED, so a link that
+ * has already died reads as negative rather than as "expires today".
+ *
+ * A cohort-A alert stays open until the patient acts, which includes
+ * long after the invite itself expires. Clamping at zero told staff
+ * "their link expires today" forever, which is worse than saying
+ * nothing: it points them at a dead link instead of a resend.
+ */
 function daysUntil(iso: string | null, nowMs: number): number | null {
   if (!iso) return null;
   const t = new Date(iso).getTime();
   if (!Number.isFinite(t)) return null;
-  return Math.max(0, Math.floor((t - nowMs) / 86_400_000));
+  return Math.floor((t - nowMs) / 86_400_000);
 }
 
 export function AdminFitterFollowupsPage() {
@@ -542,10 +550,15 @@ function AlertRow({
         {typeof linkDaysLeft === "number" &&
           row.alertType !== "fit_no_request" &&
           row.alertType !== "request_unworked" && (
-            <div className="mt-1 text-slate-500">
+            <div
+              className="mt-1"
+              style={{ color: linkDaysLeft < 0 ? "#b91c1c" : "#64748b" }}
+            >
               {linkDaysLeft > 0
                 ? `Their link works for ${linkDaysLeft} more day(s)`
-                : "Their link expires today"}
+                : linkDaysLeft === 0
+                  ? "Their link expires today"
+                  : "Their link has expired — send them a new one"}
             </div>
           )}
         {row.status === "resolved" && row.resolvedReason && (

@@ -308,33 +308,124 @@ interface ResolvedPrefs {
    * is not "they said no".
    */
   explicit: boolean;
+  /**
+   * True when the lookup itself FAILED — as opposed to succeeding and
+   * finding nothing. Callers must not send on an unknown: a consent
+   * record we could not read might be a refusal, and the next hourly
+   * tick will try again at no cost (nothing is stamped yet).
+   */
+  unknown: boolean;
+  /** The chart's own timezone, read on the same round-trip. */
+  patientTimezone: string | null;
 }
+
+const UNKNOWN_PREFS: ResolvedPrefs = {
+  prefs: DEFAULT_COMMUNICATION_PREFERENCES,
+  explicit: false,
+  unknown: true,
+  patientTimezone: null,
+};
 
 /**
  * Read this person's stored communication preferences, and say whether
  * they HAVE any.
  *
- * A prospect with no chart has no record; so does a patient nobody has
- * ever asked. Callers must not read that silence as a refusal — see
- * `resolveChannels`, which is where the two cases diverge.
+ * HOW THE TWO TABLES ACTUALLY JOIN
+ * --------------------------------
+ * `resupply.shop_customers` has NO `patient_id` column. It is keyed by
+ * `customer_id`, and reaches a chart one of two ways:
+ *   * `shop_customers.auth_user_id` = `patients.portal_auth_user_id` —
+ *     the strong link, an actual portal login; or
+ *   * `shop_customers.email_lower` = `lower(patients.email)` — the
+ *     weaker one, used only when the portal link is absent.
+ * Migration 0532 exists precisely because there is no direct column: it
+ * backfills `customer_acquisition.patient_id` through exactly this pair
+ * of joins, in exactly this order.
+ *
+ * Filtering on a column that does not exist does not return nothing —
+ * PostgREST returns an ERROR. Destructuring only `data` swallows it, and
+ * the caller then reads "no stored preference", which for SMS means the
+ * same-channel fallback and for email means the opted-in default. In
+ * other words the bug is silent and it fails toward SENDING, which is
+ * the wrong direction for a consent check: a patient who explicitly
+ * turned these messages off would still get them.
+ *
+ * So the error is now surfaced (`unknown`) and the caller declines to
+ * send on it.
  */
 async function readPrefs(
   supabase: OrgScopedClient,
   patientId: string | null,
 ): Promise<ResolvedPrefs> {
   if (!patientId) {
-    return { prefs: DEFAULT_COMMUNICATION_PREFERENCES, explicit: false };
+    return {
+      prefs: DEFAULT_COMMUNICATION_PREFERENCES,
+      explicit: false,
+      unknown: false,
+      patientTimezone: null,
+    };
   }
   try {
-    const { data } = (await supabase
-      .from("shop_customers")
-      .select("communication_preferences")
-      .eq("patient_id", patientId)
+    const { data: patient, error: patientErr } = (await supabase
+      .from("patients")
+      .select("id, email, timezone, portal_auth_user_id")
+      .eq("id", patientId)
       .limit(1)
-      .maybeSingle()) as { data: Record<string, unknown> | null };
-    const raw = data?.communication_preferences;
+      .maybeSingle()) as {
+      data: Record<string, unknown> | null;
+      error: unknown;
+    };
+    if (patientErr) return UNKNOWN_PREFS;
+    // A chart that has since been deleted is not a refusal — the invite
+    // still carries its own contact details.
+    if (!patient) {
+      return {
+        prefs: DEFAULT_COMMUNICATION_PREFERENCES,
+        explicit: false,
+        unknown: false,
+        patientTimezone: null,
+      };
+    }
+    const patientTimezone = (patient.timezone as string | null) ?? null;
+    const authUserId = (patient.portal_auth_user_id as string | null) ?? null;
+    const email = (patient.email as string | null) ?? null;
+
+    const found = async (
+      column: "auth_user_id" | "email_lower",
+      value: string,
+    ): Promise<{ raw: unknown; failed: boolean }> => {
+      const { data, error } = (await supabase
+        .from("shop_customers")
+        .select("communication_preferences")
+        .eq(column, value)
+        .limit(1)
+        .maybeSingle()) as {
+        data: Record<string, unknown> | null;
+        error: unknown;
+      };
+      if (error) return { raw: null, failed: true };
+      return { raw: data?.communication_preferences ?? null, failed: false };
+    };
+
+    let raw: unknown = null;
+    if (authUserId) {
+      const byAuth = await found("auth_user_id", authUserId);
+      if (byAuth.failed) return UNKNOWN_PREFS;
+      raw = byAuth.raw;
+    }
+    if (!raw && email) {
+      const byEmail = await found("email_lower", email.toLowerCase());
+      if (byEmail.failed) return UNKNOWN_PREFS;
+      raw = byEmail.raw;
+    }
+
     if (!raw || typeof raw !== "object") {
-      return { prefs: DEFAULT_COMMUNICATION_PREFERENCES, explicit: false };
+      return {
+        prefs: DEFAULT_COMMUNICATION_PREFERENCES,
+        explicit: false,
+        unknown: false,
+        patientTimezone,
+      };
     }
     return {
       prefs: {
@@ -342,13 +433,11 @@ async function readPrefs(
         ...(raw as Partial<CommunicationPreferences>),
       },
       explicit: true,
+      unknown: false,
+      patientTimezone,
     };
   } catch {
-    // An unreadable preferences row is not a refusal either, but it IS
-    // an unknown — so fall back to the defaults AND to `explicit: false`,
-    // which keeps SMS on the narrow same-channel basis below rather than
-    // on a preference we could not actually read.
-    return { prefs: DEFAULT_COMMUNICATION_PREFERENCES, explicit: false };
+    return UNKNOWN_PREFS;
   }
 }
 
@@ -391,7 +480,16 @@ async function resolveChannels(
   invite: InviteRow,
   now: Date,
 ): Promise<ChannelPermission> {
-  const { prefs, explicit } = await readPrefs(supabase, invite.patient_id);
+  const { prefs, explicit, unknown, patientTimezone } = await readPrefs(
+    supabase,
+    invite.patient_id,
+  );
+  // A consent record we could not read is not consent. Decline, and mark
+  // it deferred so the caller leaves the stamp unspent and the next tick
+  // tries again — a transient blip must not cost the follow-up, and it
+  // must not send one either.
+  if (unknown) return { allowEmail: false, allowSms: false, deferred: true };
+
   const dnd = isInDndWindow(prefs, now);
   const allowEmail =
     Boolean(invite.recipient_email) &&
@@ -404,9 +502,17 @@ async function resolveChannels(
     ? shouldSendSms(prefs, "transactional", now)
     : invite.channel === "sms";
   if (invite.recipient_phone_e164 && smsConsented) {
-    const timezone = await readPatientTimezone(supabase, invite.patient_id);
+    // Same precedence `resolveTimezone` documents, and the same one
+    // `isInDndWindow` already applies internally: the customer's OWN
+    // stated timezone first, the chart's only as a fallback.
+    //
+    // Reading only the chart here is how a Pacific patient who set their
+    // timezone in the portal, but whose chart never got one, gets texted
+    // at 6:30am: this window would evaluate against the
+    // "America/New_York" default while DND used their real zone. The two
+    // gates must not disagree about what time it is for this person.
     const outsideWindow = isOutsideSmsSendWindow(now, {
-      timezone,
+      timezone: prefs.timezone ?? patientTimezone,
       shippingZip: null,
     });
     allowSms = !dnd && !outsideWindow;
@@ -417,24 +523,6 @@ async function resolveChannels(
   if (!allowEmail && dnd && invite.recipient_email) deferred = true;
 
   return { allowEmail, allowSms, deferred };
-}
-
-async function readPatientTimezone(
-  supabase: OrgScopedClient,
-  patientId: string | null,
-): Promise<string | null> {
-  if (!patientId) return null;
-  try {
-    const { data } = (await supabase
-      .from("patients")
-      .select("timezone")
-      .eq("id", patientId)
-      .limit(1)
-      .maybeSingle()) as { data: Record<string, unknown> | null };
-    return (data?.timezone as string | null) ?? null;
-  } catch {
-    return null;
-  }
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -451,6 +539,41 @@ async function readPatientTimezone(
  * index has to be the arbiter; 23505 is the expected outcome, not an
  * error.
  */
+/**
+ * Every open alert's subject id, for the given types — PAGED.
+ *
+ * A bare `.limit(1000)` is capped by PostgREST's own configured maximum
+ * and silently returns a prefix, so on a tenant with a real backlog the
+ * auto-resolve passes would simply never see the rest of the queue. The
+ * repo settled this in #1357 ("page all PostgREST .limit(N>1000)
+ * aggregation and worklist reads"); this is that pattern.
+ */
+async function openAlertSubjectIds(
+  supabase: OrgScopedClient,
+  column: "fitter_invite_id" | "fit_request_id",
+  alertTypes: readonly AlertType[],
+): Promise<string[]> {
+  const PAGE = 1000;
+  const out: string[] = [];
+  for (let from = 0; from < PAGE * MAX_PAGES; from += PAGE) {
+    const { data, error } = await supabase
+      .from("fitter_followup_alerts")
+      .select(column)
+      .eq("status", "open")
+      .in("alert_type", alertTypes as AlertType[])
+      .order("created_at", { ascending: true })
+      .range(from, from + PAGE - 1);
+    if (error) throw error;
+    const rows = (data ?? []) as Array<Record<string, string | null>>;
+    for (const r of rows) {
+      const id = r[column];
+      if (typeof id === "string") out.push(id);
+    }
+    if (rows.length < PAGE) break;
+  }
+  return out;
+}
+
 async function raiseAlert(
   supabase: OrgScopedClient,
   row: AlertInsert,
@@ -731,7 +854,19 @@ async function handleOpenInvite(
     ? {
         fit_final_reminder_sent_at: nowIso,
         // Spending both keeps the two windows mutually exclusive.
-        fit_reminder_sent_at: invite.fit_reminder_sent_at ?? nowIso,
+        //
+        // `?? nowIso` was not enough: after a resend the old first-round
+        // stamp is non-null but STALE relative to the new `sent_at`, so
+        // it survived — and on the next tick `stampIsSpent` read it as
+        // unspent and fired the first reminder immediately after the
+        // final one. Keep an existing stamp only while it is still
+        // current for THIS round.
+        fit_reminder_sent_at: stampIsSpent(
+          invite.fit_reminder_sent_at,
+          invite.sent_at,
+        )
+          ? invite.fit_reminder_sent_at
+          : nowIso,
       }
     : { fit_reminder_sent_at: nowIso };
   const claimed = await claimStamp(
@@ -740,6 +875,12 @@ async function handleOpenInvite(
     finalDue ? "fit_final_reminder_sent_at" : "fit_reminder_sent_at",
     finalDue ? invite.fit_final_reminder_sent_at : invite.fit_reminder_sent_at,
     stampPatch,
+    {
+      // Still un-finished, and still the same send we measured against.
+      statuses: ["sent", "opened"],
+      anchorColumn: "sent_at",
+      anchor: invite.sent_at,
+    },
   );
   if (!claimed) {
     stats.skippedAlreadyClaimed += 1;
@@ -877,6 +1018,10 @@ async function findActedOn(
     list.push(r.id);
     sessionToInvites.set(r.fit_session_id, list);
   }
+  const completionByInvite = new Map<string, string>();
+  for (const r of rows) {
+    if (r.completed_at) completionByInvite.set(r.id, r.completed_at);
+  }
 
   // 1a — requests linked to the fitting.
   for (const chunk of chunkIds(sessionIds)) {
@@ -903,9 +1048,44 @@ async function findActedOn(
     }
   }
 
-  // 1b + 3 — anything filed under the same email. Chunked so the
-  // PostgREST URI stays under the 8KB default even at a full page.
+  // 1b + 3 — anything filed under the same email.
+  //
+  // BOUNDED IN TIME, per invite. An unbounded email match answers "has
+  // this person EVER asked us for a mask", which is the wrong question:
+  // a returning patient whose earlier request was closed months ago
+  // would mark today's fitting as acted on, and that new fitting would
+  // get neither an alert nor a follow-up. Migration 0519 is explicit
+  // that a patient may legitimately come back — its dedupe index is
+  // partial on `status <> 'closed'` for exactly that reason — so a
+  // correlation that ignores time contradicts the schema.
+  //
+  // The chunk query is bounded once by the OLDEST fitting on the page
+  // (one round-trip), then each row is credited against ITS OWN
+  // invite's completion below. `fit_session_id` above remains the
+  // precise link; this is only the fallback for a patient who re-typed
+  // their email instead of coming through the fitter's own hand-off.
   const emails = [...emailToInvites.keys()];
+  const oldestCompletion = rows
+    .map((r) => r.completed_at)
+    .filter((v): v is string => typeof v === "string")
+    .sort()[0];
+  const creditIfAfter = (
+    email: string | null,
+    createdAt: string | null,
+  ): void => {
+    const key = (email ?? "").toLowerCase();
+    const created = createdAt ? new Date(createdAt).getTime() : NaN;
+    for (const id of emailToInvites.get(key) ?? []) {
+      const completedAt = completionByInvite.get(id);
+      // Nothing to compare against: credit it, which errs toward NOT
+      // chasing somebody who may already have asked.
+      if (!completedAt || !Number.isFinite(created)) {
+        acted.add(id);
+        continue;
+      }
+      if (created >= new Date(completedAt).getTime()) acted.add(id);
+    }
+  };
   const CHUNK = 50;
   for (let i = 0; i < emails.length; i += CHUNK) {
     const chunk = emails.slice(i, i + CHUNK);
@@ -915,36 +1095,40 @@ async function findActedOn(
     const orderOr = chunk
       .map((e) => `patient_email.ilike.${escapePostgRESTFilterValue(e)}`)
       .join(",");
+    let requestQuery = supabase
+      .from("fitter_fit_requests")
+      .select("email, created_at")
+      .or(requestOr);
+    let orderQuery = supabase
+      .raw()
+      .schema("public")
+      .from("orders")
+      .select("patient_email, created_at")
+      // Tenant-scoped (migration 0463): an order in another tenant is
+      // not this fitting's outcome.
+      .eq("org_id", supabase.orgId)
+      .or(orderOr);
+    if (oldestCompletion) {
+      requestQuery = requestQuery.gte("created_at", oldestCompletion);
+      orderQuery = orderQuery.gte("created_at", oldestCompletion);
+    }
     const [requestRes, orderRes] = await Promise.all([
-      supabase.from("fitter_fit_requests").select("email").or(requestOr),
-      supabase
-        .raw()
-        .schema("public")
-        .from("orders")
-        .select("patient_email")
-        // Tenant-scoped (migration 0463): an order in another tenant is
-        // not this fitting's outcome.
-        .eq("org_id", supabase.orgId)
-        .or(orderOr),
+      requestQuery,
+      orderQuery,
     ]);
     if (requestRes.error) throw requestRes.error;
     if (orderRes.error) throw orderRes.error;
     for (const r of (requestRes.data ?? []) as Array<{
       email: string | null;
+      created_at: string | null;
     }>) {
-      for (const id of emailToInvites.get((r.email ?? "").toLowerCase()) ??
-        []) {
-        acted.add(id);
-      }
+      creditIfAfter(r.email, r.created_at);
     }
     for (const r of (orderRes.data ?? []) as Array<{
       patient_email: string | null;
+      created_at: string | null;
     }>) {
-      for (const id of emailToInvites.get(
-        (r.patient_email ?? "").toLowerCase(),
-      ) ?? []) {
-        acted.add(id);
-      }
+      creditIfAfter(r.patient_email, r.created_at);
     }
   }
   return acted;
@@ -1010,7 +1194,13 @@ async function handleCompletedInvite(
   const stampPatch = finalDue
     ? {
         post_fit_final_reminder_sent_at: nowIso,
-        post_fit_reminder_sent_at: invite.post_fit_reminder_sent_at ?? nowIso,
+        // Same staleness rule as cohort A above.
+        post_fit_reminder_sent_at: stampIsSpent(
+          invite.post_fit_reminder_sent_at,
+          invite.completed_at,
+        )
+          ? invite.post_fit_reminder_sent_at
+          : nowIso,
       }
     : { post_fit_reminder_sent_at: nowIso };
   const claimed = await claimStamp(
@@ -1021,6 +1211,11 @@ async function handleCompletedInvite(
       ? invite.post_fit_final_reminder_sent_at
       : invite.post_fit_reminder_sent_at,
     stampPatch,
+    {
+      statuses: ["completed", "attached"],
+      anchorColumn: "completed_at",
+      anchor: invite.completed_at,
+    },
   );
   if (!claimed) {
     stats.skippedAlreadyClaimed += 1;
@@ -1064,61 +1259,76 @@ async function sweepStaleRequests(
   const nowIso = now.toISOString();
   const staleBefore = new Date(nowMs - REQUEST_UNWORKED_AGE_MS).toISOString();
 
-  const { data, error } = await ctx.supabase
-    .from("fitter_fit_requests")
-    .select("id, status, patient_id, fit_session_id, request_type, created_at")
-    .eq("status", "new")
-    .lte("created_at", staleBefore)
-    .order("created_at", { ascending: true })
-    .limit(PAGE_SIZE);
-  if (error) throw error;
-  const rows = (data ?? []) as unknown as Array<{
-    id: string;
-    patient_id: string | null;
-    fit_session_id: string | null;
-    request_type: string;
-    created_at: string;
-  }>;
+  // PAGED, like the two invite sweeps.
+  //
+  // A single fixed `limit(PAGE_SIZE)` re-reads the same oldest rows every
+  // hour: a request stays `status='new'` after its alert is raised (the
+  // alert does not work the queue), and the insert then no-ops on the
+  // unique index. So with a backlog larger than one page, every request
+  // past that prefix would never get an alert at all until enough older
+  // ones were worked — the worklist would quietly be incomplete for
+  // exactly the tenant most in need of it.
+  for (let page = 0; page < MAX_PAGES; page += 1) {
+    const { data, error } = await ctx.supabase
+      .from("fitter_fit_requests")
+      .select(
+        "id, status, patient_id, fit_session_id, request_type, created_at",
+      )
+      .eq("status", "new")
+      .lte("created_at", staleBefore)
+      .order("created_at", { ascending: true })
+      .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1);
+    if (error) throw error;
+    const rows = (data ?? []) as unknown as Array<{
+      id: string;
+      patient_id: string | null;
+      fit_session_id: string | null;
+      request_type: string;
+      created_at: string;
+    }>;
+    if (rows.length === 0) break;
 
-  for (const request of rows) {
-    stats.scannedRequests += 1;
-    const age = msSince(request.created_at, nowMs) ?? 0;
-    const days = Math.floor(age / 86_400_000);
-    const severity = days >= REQUEST_UNWORKED_HIGH_DAYS ? "high" : "medium";
-    await raiseAlert(
-      ctx.supabase,
-      {
-        alert_type: "request_unworked",
-        severity,
-        status: "open",
-        fit_request_id: request.id,
-        fit_session_id: request.fit_session_id,
-        patient_id: request.patient_id,
-        detail: {
-          request_type: request.request_type,
-          // Raise-time record. The page shows the LIVE wait computed
-          // from the request's own created_at, because this number is
-          // frozen the moment the row is inserted.
-          days_waiting: days,
+    for (const request of rows) {
+      stats.scannedRequests += 1;
+      const age = msSince(request.created_at, nowMs) ?? 0;
+      const days = Math.floor(age / 86_400_000);
+      const severity = days >= REQUEST_UNWORKED_HIGH_DAYS ? "high" : "medium";
+      await raiseAlert(
+        ctx.supabase,
+        {
+          alert_type: "request_unworked",
+          severity,
+          status: "open",
+          fit_request_id: request.id,
+          fit_session_id: request.fit_session_id,
+          patient_id: request.patient_id,
+          detail: {
+            request_type: request.request_type,
+            // Raise-time record. The page shows the LIVE wait computed
+            // from the request's own created_at, because this number is
+            // frozen the moment the row is inserted.
+            days_waiting: days,
+          },
         },
-      },
-      stats,
-    );
-    // …and escalate the one that was already raised. The insert above is
-    // a no-op after the first tick (the unique index is deliberately not
-    // scoped to open rows), so without this a request raised at two days
-    // would still read 'medium' three weeks later — the opposite of what
-    // a severity-sorted queue is for. Scoped to `open` so it can never
-    // disturb a row a CSR has dismissed.
-    if (severity === "high") {
-      await ctx.supabase
-        .from("fitter_followup_alerts")
-        .update({ severity: "high" })
-        .eq("fit_request_id", request.id)
-        .eq("alert_type", "request_unworked")
-        .eq("status", "open")
-        .neq("severity", "high");
+        stats,
+      );
+      // …and escalate the one that was already raised. The insert above
+      // is a no-op after the first tick (the unique index is
+      // deliberately not scoped to open rows), so without this a request
+      // raised at two days would still read 'medium' three weeks later —
+      // the opposite of what a severity-sorted queue is for. Scoped to
+      // `open` so it can never disturb a row a CSR has dismissed.
+      if (severity === "high") {
+        await ctx.supabase
+          .from("fitter_followup_alerts")
+          .update({ severity: "high" })
+          .eq("fit_request_id", request.id)
+          .eq("alert_type", "request_unworked")
+          .eq("status", "open")
+          .neq("severity", "high");
+      }
     }
+    if (rows.length < PAGE_SIZE) break;
   }
 
   // Auto-resolve: anything a CSR has since picked up.
@@ -1128,18 +1338,11 @@ async function sweepStaleRequests(
   // put thousands of ids into a PostgREST `.in(...)` filter; the open
   // alerts are the small set, and they are the only rows this could
   // possibly close.
-  const openAlerts = await ctx.supabase
-    .from("fitter_followup_alerts")
-    .select("fit_request_id")
-    .eq("status", "open")
-    .eq("alert_type", "request_unworked")
-    .limit(1000);
-  if (openAlerts.error) throw openAlerts.error;
-  const alertedRequestIds = (
-    (openAlerts.data ?? []) as Array<{ fit_request_id: string | null }>
-  )
-    .map((r) => r.fit_request_id)
-    .filter((v): v is string => typeof v === "string");
+  const alertedRequestIds = await openAlertSubjectIds(
+    ctx.supabase,
+    "fit_request_id",
+    ["request_unworked"],
+  );
 
   const worked: string[] = [];
   for (const chunk of chunkIds(alertedRequestIds)) {
@@ -1170,26 +1373,64 @@ async function sweepStaleRequests(
  * because a completed or revoked invite drops out of their filters
  * entirely.
  */
+/**
+ * Close `fit_no_request` alerts for fittings the patient has since acted
+ * on — at ANY age.
+ *
+ * Cohort B's scan is bounded to POST_FIT_MAX_AGE_MS so a first deploy
+ * cannot chase a backlog, and its conversion probe rides along inside
+ * that scan. That is right for RAISING and for SENDING, and wrong for
+ * RESOLVING: once an alert passes thirty days, the scan stops looking at
+ * that fitting, so a request the patient filed on day thirty-one is
+ * never observed and the alert stays open forever. Staff then ring
+ * somebody who already asked — the specific outcome an "everyone still
+ * waiting" queue must never produce.
+ *
+ * Driven from the alert side, so the bound on the scan does not apply.
+ */
+async function resolveActedOnFitNoRequest(
+  ctx: OrgContext,
+  stats: FitterFollowupStats,
+  now: Date,
+): Promise<void> {
+  const nowIso = now.toISOString();
+  const inviteIds = await openAlertSubjectIds(
+    ctx.supabase,
+    "fitter_invite_id",
+    ["fit_no_request"],
+  );
+  if (inviteIds.length === 0) return;
+
+  for (const chunk of chunkIds(inviteIds)) {
+    const { data, error } = await ctx.supabase
+      .from("fitter_invites")
+      .select(INVITE_SELECT)
+      .in("id", chunk);
+    if (error) throw error;
+    const rows = (data ?? []) as unknown as InviteRow[];
+    if (rows.length === 0) continue;
+    const acted = await findActedOn(ctx.supabase, rows);
+    await resolveAlerts(
+      ctx.supabase,
+      { inviteIds: rows.filter((r) => acted.has(r.id)).map((r) => r.id) },
+      "request_received",
+      stats,
+      nowIso,
+    );
+  }
+}
+
 async function resolveFinishedInvites(
   ctx: OrgContext,
   stats: FitterFollowupStats,
   now: Date,
 ): Promise<void> {
   const nowIso = now.toISOString();
-  const { data, error } = await ctx.supabase
-    .from("fitter_followup_alerts")
-    .select("fitter_invite_id")
-    .eq("status", "open")
-    .in("alert_type", COHORT_A_TYPES as AlertType[])
-    .limit(1000);
-  if (error) throw error;
-  const inviteIds = (
-    (data ?? []) as Array<{
-      fitter_invite_id: string | null;
-    }>
-  )
-    .map((r) => r.fitter_invite_id)
-    .filter((v): v is string => typeof v === "string");
+  const inviteIds = await openAlertSubjectIds(
+    ctx.supabase,
+    "fitter_invite_id",
+    COHORT_A_TYPES,
+  );
   if (inviteIds.length === 0) return;
 
   for (const chunk of chunkIds(inviteIds)) {
@@ -1240,11 +1481,35 @@ async function claimStamp(
   column: string,
   priorValue: string | null,
   patch: InviteUpdate,
+  /**
+   * The lifecycle the candidate scan actually observed. Re-asserted in
+   * the same conditional UPDATE so a state change between the read and
+   * the claim LOSES the claim instead of being written straight over.
+   *
+   * Without it the claim is conditional on the stamp alone, and the
+   * stamp does not move when a patient finishes their fitting or a CSR
+   * revokes the invite — so somebody who completed the fitter thirty
+   * seconds ago could still be sent "finish your mask fitting", and a
+   * just-revoked invite could still be advertised.
+   */
+  expected: {
+    statuses: string[];
+    anchorColumn: "sent_at" | "completed_at";
+    anchor: string | null;
+  },
 ): Promise<boolean> {
-  const base = supabase.from("fitter_invites").update(patch).eq("id", inviteId);
-  const claim = priorValue
-    ? base.eq(column, priorValue)
-    : base.is(column, null);
+  let claim = supabase
+    .from("fitter_invites")
+    .update(patch)
+    .eq("id", inviteId)
+    .in("status", expected.statuses);
+  // The anchor pins the ROUND: a resend re-stamps `sent_at`, which is
+  // exactly what makes an old stamp stale, so a resend landing mid-tick
+  // must lose this claim rather than spend the new round's nudge.
+  claim = expected.anchor
+    ? claim.eq(expected.anchorColumn, expected.anchor)
+    : claim.is(expected.anchorColumn, null);
+  claim = priorValue ? claim.eq(column, priorValue) : claim.is(column, null);
   const { data, error } = await claim.select("id");
   if (error) throw error;
   return (data ?? []).length > 0;
@@ -1378,6 +1643,7 @@ export async function runFitterFollowupSweep(
       // Resolve BEFORE raising, so a tick never reports an alert for
       // something that was settled since the last one.
       await resolveFinishedInvites(ctx, stats, now);
+      await resolveActedOnFitNoRequest(ctx, stats, now);
       await sweepOpenInvites(ctx, stats, now);
       await sweepCompletedInvites(ctx, stats, now);
       await sweepStaleRequests(ctx, stats, now);

@@ -185,6 +185,49 @@ describe("the staff note does not revert another CSR's edit", () => {
   });
 });
 
+describe("an already-dead link says so", () => {
+  it("does not claim a long-expired link 'expires today'", async () => {
+    // A cohort-A alert stays open until the patient acts, which includes
+    // long after the invite itself expires. Clamping the countdown at
+    // zero pointed staff at a dead link forever instead of a resend.
+    api.listFitterFollowupAlerts.mockResolvedValue({
+      ...payload(null),
+      alerts: [
+        {
+          ...alertRow(null),
+          alertType: "fit_not_started",
+          severity: "medium",
+          inviteExpiresAt: "2026-01-01T00:00:00.000Z",
+        },
+      ],
+    });
+    renderPage();
+    expect(await screen.findByText(/link has expired/)).toBeTruthy();
+    expect(screen.queryByText(/expires today/)).toBeNull();
+  });
+
+  it("still counts down a link that is alive", async () => {
+    // Plus an hour: the page reads its own `Date.now()` a moment after
+    // this line, and a flat 5 days would floor to 4.
+    const future = new Date(
+      Date.now() + 5 * 86_400_000 + 3_600_000,
+    ).toISOString();
+    api.listFitterFollowupAlerts.mockResolvedValue({
+      ...payload(null),
+      alerts: [
+        {
+          ...alertRow(null),
+          alertType: "fit_not_started",
+          severity: "medium",
+          inviteExpiresAt: future,
+        },
+      ],
+    });
+    renderPage();
+    expect(await screen.findByText(/works for 5 more day/)).toBeTruthy();
+  });
+});
+
 describe("the row tells a CSR how to reach this person", () => {
   it("renders the contact preference", async () => {
     api.listFitterFollowupAlerts.mockResolvedValue(payload(null));

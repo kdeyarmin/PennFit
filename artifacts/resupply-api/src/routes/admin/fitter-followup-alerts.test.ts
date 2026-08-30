@@ -24,6 +24,10 @@ const db = vi.hoisted(() => ({
   updates: [] as Array<Record<string, unknown>>,
   /** Tables the route read, in order. */
   selects: [] as string[],
+  /** Every `.eq(column, value)` the route applied, in order. */
+  eqFilters: [] as Array<[string, unknown]>,
+  /** How many `.range(...)` calls it made — paging, not one big limit. */
+  rangeCalls: 0,
   /** When set, reads of this table reject — the degrade path. */
   failTable: null as string | null,
   alert: {
@@ -65,13 +69,38 @@ vi.mock("@workspace/resupply-db", () => ({
   getOrgScopedClient: () => ({
     from: (table: string) => {
       const chain: Record<string, unknown> = {};
-      const passthrough = ["select", "eq", "in", "order", "limit", "not", "is"];
+      // Every filter/paging verb the route can chain. `range` and `neq`
+      // matter: the list now reads one bounded page PER SEVERITY BAND
+      // and pages the open-alert counts, rather than taking one
+      // `.limit()` and re-sorting in JS.
+      const passthrough = [
+        "select",
+        "eq",
+        "neq",
+        "in",
+        "order",
+        "limit",
+        "not",
+        "is",
+      ];
+      const filters: Array<[string, unknown]> = [];
+      let rangeFrom = 0;
+
       const rows = () => {
         db.selects.push(table);
         if (db.failTable === table) {
           return Promise.reject(new Error("postgrest exploded"));
         }
+        // A paged read past the first page is empty — otherwise the
+        // paging loops would never terminate.
+        if (rangeFrom > 0) return Promise.resolve({ data: [], error: null });
         if (table === "fitter_followup_alerts") {
+          // Honour a severity band filter so the banded reads return the
+          // row exactly once, in its own band.
+          const band = filters.find(([c]) => c === "severity")?.[1];
+          if (band !== undefined && band !== db.alert.severity) {
+            return Promise.resolve({ data: [], error: null });
+          }
           return Promise.resolve({ data: [db.alert], error: null });
         }
         if (table === "fitter_invites") {
@@ -79,7 +108,21 @@ vi.mock("@workspace/resupply-db", () => ({
         }
         return Promise.resolve({ data: [], error: null });
       };
-      for (const m of passthrough) chain[m] = () => chain;
+
+      for (const m of passthrough) {
+        chain[m] = (...args: unknown[]) => {
+          if (m === "eq") {
+            filters.push([String(args[0]), args[1]]);
+            db.eqFilters.push([String(args[0]), args[1]]);
+          }
+          return chain;
+        };
+      }
+      chain.range = (from: number) => {
+        rangeFrom = from;
+        db.rangeCalls += 1;
+        return chain;
+      };
       chain.then = (
         onFulfilled: (v: unknown) => unknown,
         onRejected?: (e: unknown) => unknown,
@@ -93,6 +136,7 @@ vi.mock("@workspace/resupply-db", () => ({
         db.updates.push(payload);
         const after: Record<string, unknown> = { ...chain };
         for (const m of passthrough) after[m] = () => after;
+        after.range = () => after;
         after.maybeSingle = async () => ({
           data: { ...db.alert, ...payload },
           error: null,
@@ -134,6 +178,8 @@ beforeEach(() => {
   db.alert.status = "open";
   db.alert.staff_note = "left a voicemail";
   db.invite.channel = "email";
+  db.eqFilters = [];
+  db.rangeCalls = 0;
 });
 
 describe("GET /admin/fitter-followup-alerts", () => {
@@ -185,6 +231,30 @@ describe("GET /admin/fitter-followup-alerts", () => {
       "text",
     );
     db.invite.channel = "email";
+  });
+
+  it("ranks severity in the DATABASE, not after the limit truncates", async () => {
+    // `severity` is text, so ordering by it is alphabetical and useless;
+    // ordering by age and re-sorting the page in JS is worse, because
+    // the database hands back the oldest N regardless of severity. With
+    // more matches than the limit, a brand-new high-severity row — a
+    // finished fitting nobody has acted on — would be dropped before
+    // the route ever saw it, while older medium ones filled the page.
+    const res = await request(makeApp()).get("/admin/fitter-followup-alerts");
+    expect(res.status).toBe(200);
+    const bands = db.eqFilters
+      .filter(([col]) => col === "severity")
+      .map(([, val]) => val);
+    expect(bands).toEqual(["high", "medium", "low"]);
+  });
+
+  it("pages the open-alert counts rather than trusting one big limit", async () => {
+    // `.limit(2000)` is silently capped by PostgREST's configured
+    // maximum, so the badges would under-report while presenting
+    // themselves as complete — the one direction a "who is still
+    // waiting" number must never be wrong in.
+    await request(makeApp()).get("/admin/fitter-followup-alerts");
+    expect(db.rangeCalls).toBeGreaterThan(0);
   });
 
   it("rejects an unknown status filter rather than silently widening", async () => {

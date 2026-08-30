@@ -202,47 +202,78 @@ export async function sendFitterFollowup(
       reason === "no_request" ? await getCompanyInfo(target.orgId) : null;
     const phoneDisplay = company?.supportPhoneDisplay || null;
 
-    if (channel === "sms") {
-      const phone = target.recipientPhoneE164;
-      if (!phone) return { delivered: false, reason: "no_contact", channel };
-      let twilio;
+    // Try the preferred channel, then fall back to the other one the
+    // caller already permitted.
+    //
+    // A definitive CONFIGURATION failure is not a reason to give up: the
+    // sweep has already spent this round's stamp by the time we are
+    // called, and nothing ever clears a stamp. So a tenant with no
+    // Twilio credentials but working SendGrid would silently lose every
+    // follow-up for an SMS-originated invite — permanently, not until
+    // they fixed it. Only a config refusal falls through; a vendor
+    // rejecting the send is a real answer and stops here.
+    const order: Array<"email" | "sms"> =
+      channel === "sms" ? ["sms", "email"] : ["email", "sms"];
+    let lastReason: FollowupDelivery["reason"] = "no_contact";
+    let lastChannel: "email" | "sms" | null = channel;
+    for (const attempt of order) {
+      if (attempt === "sms") {
+        if (!target.allowSms || !target.recipientPhoneE164) continue;
+        let twilio;
+        try {
+          twilio = createTwilioSmsClient(
+            await resolveTenantSmsClientOptions(target.orgId),
+          );
+        } catch (err) {
+          if (err instanceof TwilioConfigError) {
+            lastReason = "no_channel_config";
+            lastChannel = attempt;
+            continue;
+          }
+          throw err;
+        }
+        await twilio.sendSms({
+          to: target.recipientPhoneE164,
+          body: smsBody(reason, greeting, brandName, link, phoneDisplay),
+        });
+        return { delivered: true, reason: null, channel: attempt };
+      }
+
+      if (!target.allowEmail || !target.recipientEmail) continue;
+      let sendgrid;
       try {
-        twilio = createTwilioSmsClient(
-          await resolveTenantSmsClientOptions(target.orgId),
-        );
+        sendgrid = await createTenantSendgridClient(target.orgId);
       } catch (err) {
-        if (err instanceof TwilioConfigError) {
-          return { delivered: false, reason: "no_channel_config", channel };
+        if (err instanceof EmailConfigError) {
+          lastReason = "no_channel_config";
+          lastChannel = attempt;
+          continue;
         }
         throw err;
       }
-      await twilio.sendSms({
-        to: phone,
-        body: smsBody(reason, greeting, brandName, link, phoneDisplay),
+      const safeBrand = headerSafe(brandName);
+      await sendgrid.sendEmail({
+        to: target.recipientEmail,
+        // No PHI in the subject line — inbox subjects aren't encrypted.
+        subject: emailSubject(reason, safeBrand),
+        html: renderFollowupHtml(
+          reason,
+          greeting,
+          safeBrand,
+          link,
+          phoneDisplay,
+        ),
+        text: renderFollowupText(
+          reason,
+          greeting,
+          safeBrand,
+          link,
+          phoneDisplay,
+        ),
       });
-      return { delivered: true, reason: null, channel };
+      return { delivered: true, reason: null, channel: attempt };
     }
-
-    const email = target.recipientEmail;
-    if (!email) return { delivered: false, reason: "no_contact", channel };
-    let sendgrid;
-    try {
-      sendgrid = await createTenantSendgridClient(target.orgId);
-    } catch (err) {
-      if (err instanceof EmailConfigError) {
-        return { delivered: false, reason: "no_channel_config", channel };
-      }
-      throw err;
-    }
-    const safeBrand = headerSafe(brandName);
-    await sendgrid.sendEmail({
-      to: email,
-      // No PHI in the subject line — inbox subjects aren't encrypted.
-      subject: emailSubject(reason, safeBrand),
-      html: renderFollowupHtml(reason, greeting, safeBrand, link, phoneDisplay),
-      text: renderFollowupText(reason, greeting, safeBrand, link, phoneDisplay),
-    });
-    return { delivered: true, reason: null, channel };
+    return { delivered: false, reason: lastReason, channel: lastChannel };
   } catch (err) {
     logger.warn(
       {
