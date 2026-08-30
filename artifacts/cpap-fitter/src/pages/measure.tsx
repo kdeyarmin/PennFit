@@ -451,16 +451,25 @@ export function Measure() {
             ? err.message
             : "An error occurred during measurement extraction.";
         track("measurement_error", { reason });
-        // Bump BEFORE reading, so this failure counts toward its own
-        // escalation — the second failure is the one that should offer a
-        // person, not the third.
-        bumpScanFailureCount();
-        const { bullets, escalate } = failureHints(
-          reason,
-          perFrame,
-          scanFailureCount + 1,
-        );
+        // Everything below is gated on still being mounted, and the
+        // COUNTER is the reason why. Escalation counts failures the
+        // patient actually SAW: a patient who navigated away mid-
+        // extraction — hit back, took an escape hatch — never rendered
+        // an error, so banking one here would make their next real
+        // failure the "second" one and offer them a hand-off a try
+        // early. The `track` above is left ungated on purpose: the
+        // extraction genuinely failed, and that is worth knowing whether
+        // or not anyone was still watching.
         if (isMountedRef.current) {
+          // Bump BEFORE reading, so this failure counts toward its own
+          // escalation — the second failure is the one that should offer
+          // a person, not the third.
+          bumpScanFailureCount();
+          const { bullets, escalate } = failureHints(
+            reason,
+            perFrame,
+            scanFailureCount + 1,
+          );
           setError({ message: msg, reason, bullets, escalate });
         }
       } finally {

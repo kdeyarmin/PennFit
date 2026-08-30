@@ -26,6 +26,19 @@ const BURST_FRAME_COUNT = 5;
 const BURST_FRAME_INTERVAL_MS = 140;
 
 /**
+ * Consecutive captures that produced nothing before the page stops
+ * insisting and offers the way out.
+ *
+ * One is bad luck. Two says this device is not going to cooperate, and
+ * at that point two things happen together, deliberately: the escape
+ * hatches appear, and the auto-shutter stops re-arming — because a coach
+ * that keeps saying "hold it right there" while nothing is captured is
+ * worse than no coach at all. The manual shutter stays enabled either
+ * way.
+ */
+export const TRANSIENT_FAILURES_BEFORE_HATCHES = 2;
+
+/**
  * `?simple=1` forces the one-tap page regardless of the tenant's guided
  * flag.
  *
@@ -151,6 +164,10 @@ function SingleFrameCapture() {
   // this device is not going to cooperate, and the patient should be
   // shown the way out rather than left tapping.
   const transientFailuresRef = useRef(0);
+  // Whether the auto-shutter has already fired for this page. Declared
+  // here rather than beside its effect because `handleCapture` re-arms
+  // it: see the comment there.
+  const autoCapturedRef = useRef(false);
   const [capturing, setCapturing] = useState(false);
   const [videoReady, setVideoReady] = useState(false);
   // getUserMedia resolved but no frame ever arrived. Distinct from every
@@ -435,6 +452,18 @@ function SingleFrameCapture() {
         return;
       }
       transientFailuresRef.current += 1;
+      // Re-arm the auto-shutter. The latch means "one capture per page",
+      // and on the success path that holds — the page navigates away.
+      // A TRANSIENT failure leaves the patient here with a live
+      // viewfinder and a coach still telling them to hold still, so
+      // leaving it latched trains them to wait for a shutter that will
+      // never fire again. Bounded by the same count that surfaces the
+      // escape hatches: once we are offering human help, the coach stops
+      // trying to take the photo itself and the manual shutter — enabled
+      // throughout — is the only path.
+      if (transientFailuresRef.current < TRANSIENT_FAILURES_BEFORE_HATCHES) {
+        autoCapturedRef.current = false;
+      }
       setCapturing(false);
     });
   };
@@ -456,10 +485,10 @@ function SingleFrameCapture() {
   // photo is worth taking — the same bar the guided flow has always
   // used, on the page nearly everyone actually sees.
   //
-  // Latched: one capture per page, and it navigates. A manual tap that
-  // beats the streak wins harmlessly — `handleCapture` no-ops while
-  // `capturing`.
-  const autoCapturedRef = useRef(false);
+  // Latched: one capture per page on the path that succeeds, since it
+  // navigates. A manual tap that beats the streak wins harmlessly —
+  // `handleCapture` no-ops while `capturing` — and a capture that did
+  // not take re-arms the latch there so coaching can try again.
   useEffect(() => {
     if (!coach.steady || autoCapturedRef.current) return;
     if (!captureReady || capturing) return;
@@ -753,7 +782,8 @@ function SingleFrameCapture() {
             <AlertTitle>That photo didn&apos;t take</AlertTitle>
             <AlertDescription>{transientNotice}</AlertDescription>
           </Alert>
-          {transientFailuresRef.current >= 2 && (
+          {transientFailuresRef.current >=
+            TRANSIENT_FAILURES_BEFORE_HATCHES && (
             <CaptureEscapeHatches prefix="capture-transient" />
           )}
         </div>
