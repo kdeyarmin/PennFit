@@ -196,14 +196,50 @@ describe("the five exception states are each reachable", () => {
     expect(result.outcome).toBe("outside_validated_range");
   });
 
-  it("outside_validated_range — no candidate landed inside any size band", () => {
-    expect(
-      resolveConfidence({
-        ...base,
-        top: candidate(),
-        outsideValidatedRange: true,
-      }).outcome,
-    ).toBe("outside_validated_range");
+  it("does NOT withhold merely because no candidate landed in a band", () => {
+    // This used to return `outside_validated_range` and name no mask,
+    // and it dead-ended a real patient: every measurement comfortably
+    // inside the adult window, on a high-band scan with cross-frame
+    // agreement above 0.97 across all five spans, refused outright.
+    // Their nose width landed in the AirFit F20's MEDIUM bucket while
+    // their nose-to-chin and mouth width landed in its SMALL one, so no
+    // single size held them — as on 32 of the 33 mouth-covering adult
+    // masks. That is a statement about the catalog's per-dimension
+    // partitioning, not about the patient, and it must not read back to
+    // them as "your measurements fall outside the range our sizing data
+    // covers".
+    //
+    // The millimetre values and the date are deliberately not reproduced
+    // here: measurements tied to a date of service are patient-derived
+    // biometrics and stay in the database. The behaviour under test does
+    // not need them — the fixture below is synthetic.
+    const result = resolveConfidence({
+      ...base,
+      top: candidate({
+        cushion: { ...candidate().cushion!, inBand: false, bandMargin: 0 },
+      }),
+      outsideValidatedRange: true,
+    });
+    expect(result.outcome).not.toBe("outside_validated_range");
+    // Recommended, but never sold as a sure thing: the unconfirmed size
+    // caps at moderate, which promises clinical review before shipping.
+    expect(result.outcome).toBe("moderate_confidence");
+    expect(result.requiresReview).toBe(true);
+    expect(result.confidence).toBeGreaterThan(0);
+  });
+
+  it("still withholds when the measurement itself is implausible", () => {
+    // The half of the old condition that was right, kept: a value
+    // outside the plausibility window means the NUMBER is suspect, so
+    // nothing built on it can be trusted — even if some mask is in band.
+    const result = resolveConfidence({
+      ...base,
+      top: candidate(),
+      measurements: { ...MEASUREMENTS, noseToChin: 200 },
+      outsideValidatedRange: false,
+    });
+    expect(result.outcome).toBe("outside_validated_range");
+    expect(result.confidence).toBe(0);
   });
 });
 

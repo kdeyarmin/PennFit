@@ -700,6 +700,14 @@ export interface FrameMeasurement {
   values: Record<string, number>;
   yawDeg: number;
   pitchDeg: number;
+  /**
+   * How this frame was captured — which decides what its agreement with
+   * its siblings is EVIDENCE OF. See BURST_AGREEMENT_CEILING.
+   *
+   * Optional, and absent means "independent": a caller that does not say
+   * keeps the pre-existing scoring rather than being silently discounted.
+   */
+  source?: "burst" | "guided";
 }
 
 export interface AggregateResult {
@@ -712,6 +720,18 @@ export interface AggregateResult {
 }
 
 export const CONFIDENCE_BANDS = { high: 0.75, moderate: 0.5 } as const;
+
+/**
+ * The most cross-frame agreement a same-posture burst may claim.
+ *
+ * Placed deliberately between the two values that bracket it: a single
+ * frame's fixed 0.7 ("we only looked once") and the ~1.0 that genuinely
+ * consistent readings score. A burst has earned the gap — it ruled out
+ * detector jitter and let a blurred frame be discarded — and cannot have
+ * earned more, because every frame in it shares the same systematic
+ * error. See the note in `aggregateFrames`.
+ */
+export const BURST_AGREEMENT_CEILING = 0.85;
 
 const HORIZONTAL_KEYS = new Set([
   "noseWidth",
@@ -881,10 +901,56 @@ export function aggregateFrames(frames: FrameMeasurement[]): AggregateResult {
       ? agreementValues.reduce((a, b) => a + b, 0) / agreementValues.length
       : 0.7;
 
+  // ── What a burst's self-agreement is actually evidence OF. ──
+  //
+  // The default capture is one tap that fires five frames ~140 ms apart
+  // at one posture (capture.tsx). Those frames share every SYSTEMATIC
+  // error: the same distance, the same head angle, the same lighting,
+  // the same hair across the same cheek. What varies between them is
+  // landmark jitter — so their agreement measures DETECTOR STABILITY,
+  // not measurement validity. Five consistent readings of a face held
+  // 15 cm too close are five consistent wrong readings.
+  //
+  // Scored as ordinary agreement, that was worth ~0.99, and with the
+  // full frame-count bonus on top a burst cleared the route's 0.75
+  // high-confidence scan floor at a mean frame quality of just 0.45 —
+  // mediocre pixels reaching "you can go ahead and order" on the
+  // strength of agreeing with themselves. The capture cannot earn
+  // cross-angle evidence, so it must not be paid for it.
+  //
+  // Two corrections, both scoped to a set that is ENTIRELY burst frames:
+  //
+  //   * agreement is capped. Repeated looks at one posture do rule out
+  //     detector jitter and let a blurred frame be dropped, so a burst
+  //     is worth more than a single glance (0.7) — but it cannot reach
+  //     the confidence of evidence that survived the patient moving.
+  //   * the frame-count bonus counts POSTURES, not frames. Five looks at
+  //     one posture is one observation sampled five times.
+  //
+  // Net effect: a burst now needs genuinely good frames (mean quality
+  // ≳ 0.74) to reach the high band, where it previously needed ≳ 0.45.
+  // Nothing here touches the guided path, whose frames are tagged
+  // `guided` — its two front captures are separated by a fresh
+  // steady-streak (≥ ~540 ms of held position), which is weaker
+  // independence than a re-pose but stronger than a shutter burst.
+  const allBurst =
+    usable.length > 0 && usable.every((f) => f.source === "burst");
+  const effectiveAgreement = allBurst
+    ? Math.min(meanAgreement, BURST_AGREEMENT_CEILING)
+    : meanAgreement;
+  // `frames.length`, not `usable.length`: the guided run captures four
+  // frames of which only the two near-frontal ones contribute
+  // measurement samples (MEASUREMENT_YAW_LIMIT_DEG), so keying off
+  // `usable` quietly cut the guided path's bonus from 0.100 to 0.0667
+  // and could tip a scan sitting on a threshold — a discount this change
+  // was never meant to apply. Non-burst sets keep exactly the count they
+  // had; only an all-burst set collapses to one look.
+  const independentLooks = allBurst ? 1 : frames.length;
+
   const measurementConfidence = clamp01(
     meanQuality * 0.45 +
-      meanAgreement * 0.45 +
-      Math.min(1, frames.length / 3) * 0.1,
+      effectiveAgreement * 0.45 +
+      Math.min(1, independentLooks / 3) * 0.1,
   );
 
   let band: AggregateResult["band"] =

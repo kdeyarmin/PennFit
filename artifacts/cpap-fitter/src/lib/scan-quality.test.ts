@@ -22,6 +22,7 @@ import {
   type FrameMeasurement,
   type Point2D,
   type QualityInput,
+  type QualityResult,
 } from "./scan-quality";
 import { ASSUMED_HFOV_DEG, IRIS_DIAMETER_MM } from "./face-measurements";
 
@@ -658,6 +659,84 @@ describe("multi-frame aggregation", () => {
     ]);
     expect(result.band).toBe("high");
     expect(result.frameCount).toBe(3);
+  });
+
+  describe("a burst is one observation, sampled repeatedly", () => {
+    // Five frames ~140 ms apart at one posture share every systematic
+    // error — distance, head angle, lighting, occlusion. Their agreement
+    // measures detector stability, not measurement validity, so it must
+    // not buy the same confidence as evidence that survived re-posing.
+    const burst = (quality: QualityResult, n = 5) =>
+      Array.from({ length: n }, (_, i) =>
+        frame(
+          { noseWidth: 34 + i * 0.05, noseToChin: 66 + i * 0.05 },
+          { source: "burst", quality },
+        ),
+      );
+
+    it("does not let mediocre frames reach high on self-agreement alone", () => {
+      // The defect in one line: at a mean frame quality of ~0.5 the old
+      // scoring cleared the route's 0.75 high-confidence scan floor
+      // purely because five near-identical frames agreed with each other.
+      const mediocre = assessFrameQuality(
+        input({
+          faceLuma: 78,
+          faceLumaLeft: 66,
+          faceLumaRight: 90,
+          sharpness: 40,
+        }),
+      );
+      expect(mediocre.overall).toBeLessThan(0.75);
+      const result = aggregateFrames(burst(mediocre));
+      expect(result.measurementConfidence).toBeLessThan(0.75);
+      expect(result.band).not.toBe("high");
+    });
+
+    it("still lets a genuinely good burst reach high", () => {
+      // The cap is a discount, not a veto: excellent pixels still earn
+      // the band, they simply have to be excellent.
+      const result = aggregateFrames(burst(goodQuality));
+      expect(goodQuality.overall).toBeGreaterThan(0.8);
+      expect(result.band).toBe("high");
+    });
+
+    it("scores a burst below the same frames captured independently", () => {
+      const asBurst = aggregateFrames(burst(goodQuality));
+      const asIndependent = aggregateFrames(
+        burst(goodQuality).map((f) => ({ ...f, source: "guided" as const })),
+      );
+      expect(asBurst.measurementConfidence).toBeLessThan(
+        asIndependent.measurementConfidence,
+      );
+    });
+
+    it("leaves a caller that states no source on the old scoring", () => {
+      // `source` is optional, and absent means independent — an
+      // untagged caller must not be silently discounted.
+      const untagged = aggregateFrames(
+        burst(goodQuality).map(({ source: _source, ...f }) => f),
+      );
+      const tagged = aggregateFrames(burst(goodQuality));
+      expect(untagged.measurementConfidence).toBeGreaterThan(
+        tagged.measurementConfidence,
+      );
+    });
+
+    it("does not discount a guided set that merely contains a burst frame", () => {
+      // Scoped to a set that is ENTIRELY burst: a mixed set has some
+      // genuine independence and keeps it.
+      const mixed = aggregateFrames([
+        frame({ noseWidth: 34, noseToChin: 66 }, { source: "burst" }),
+        frame({ noseWidth: 34.1, noseToChin: 66.1 }, { source: "guided" }),
+      ]);
+      const allBurst = aggregateFrames([
+        frame({ noseWidth: 34, noseToChin: 66 }, { source: "burst" }),
+        frame({ noseWidth: 34.1, noseToChin: 66.1 }, { source: "burst" }),
+      ]);
+      expect(mixed.measurementConfidence).toBeGreaterThan(
+        allBurst.measurementConfidence,
+      );
+    });
   });
 
   it("caps a set with only ONE near-frontal frame at moderate — every measurement is single-sampled", () => {

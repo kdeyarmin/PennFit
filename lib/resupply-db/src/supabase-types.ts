@@ -6810,6 +6810,7 @@ export interface Database {
           frame_count: number;
           scan_quality: Json | null;
           scan_quality_grade: "good" | "marginal" | "poor" | null;
+          outside_validated_range: boolean | null;
           measurement_agreement: Json | null;
           measurement_confidence: number | null;
           measurement_confidence_band: "high" | "moderate" | "low" | null;

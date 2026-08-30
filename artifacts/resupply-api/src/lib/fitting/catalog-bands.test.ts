@@ -21,7 +21,7 @@
  * A later migration that edits bands has to extend `BAND_SOURCES` below.
  */
 
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -475,6 +475,74 @@ describe("only the dimensions that size an interface gate it", () => {
       )
       .map((r) => r.model.slug);
     expect(missing).toEqual([]);
+  });
+
+  it("no migration authors a face-width band", () => {
+    // Face width is the one measured dimension that gates NOTHING, and
+    // that is a decision rather than an oversight — 0511's per-interface
+    // table assigns it to no interface, and every migration that names
+    // the column only ever NULLs it.
+    //
+    // It stays that way until someone has data on the right axis, and
+    // this guard exists because the wrong axis is so easy to reach for.
+    // `faceWidthAtCheekbones` is the mesh's frontal SILHOUETTE width at
+    // landmarks 234/454 — ~153 mm on the canonical face — not the
+    // caliper bizygomatic breadth of the anthropometric tables, which
+    // runs ~20 mm narrower. Bands copied from those tables would sit
+    // below every real reading, and `scoreVariant` averages each
+    // non-NULL dimension, so a wrong-axis band does not merely add
+    // nothing: it drags every mask's fit score down and pushes patients
+    // out of band. That is precisely the silent, one-directional failure
+    // 0511 was written to undo, and nothing currently stops it recurring
+    // on this column.
+    //
+    // Authoring one is legitimate — from observed fitter readings, per
+    // the convention note in cpap-fitter's face-measurements.ts. Doing
+    // so means updating this test deliberately, which is the point.
+    // Checked by FILE, not by assignment syntax. An `=` pattern only
+    // catches UPDATE-shaped authoring, and this repo seeds bands the
+    // other way — `INSERT INTO mask_size_variants (<column list>)
+    // SELECT ... FROM (VALUES ...)`, as 0486, 0494 and 0522 all do.
+    // Adding the face-width columns to such a list with real values
+    // emits no `=` at all and would sail past a syntax check, while
+    // authoring exactly the bands this test forbids.
+    //
+    // So the invariant is on the SET OF FILES: these four are the only
+    // migrations allowed to name the column, and each is verified below
+    // to do so benignly. Any other migration touching face width fails
+    // here — which is the intended cost, because authoring these bands
+    // should be a deliberate act that updates this test.
+    const ALLOWED = new Map([
+      ["0481_mask_intelligence_catalog.sql", "declares the columns"],
+      ["0493_non_magnetic_mask_skus.sql", "copies a twin's existing values"],
+      ["0511_mask_fit_band_conventions.sql", "clears them to NULL"],
+      ["0512_mask_size_run_corrections.sql", "clears them to NULL"],
+    ]);
+    const COLUMN = /"?face_width_(?:min|max)_mm"?/i;
+
+    const unexpectedFiles: string[] = [];
+    const offenders: string[] = [];
+    for (const file of readdirSync(MIGRATIONS).filter((f) =>
+      f.endsWith(".sql"),
+    )) {
+      const sql = read(file);
+      if (!COLUMN.test(sql)) continue;
+      if (!ALLOWED.has(file)) {
+        unexpectedFiles.push(file);
+        continue;
+      }
+      for (const [i, line] of sql.split("\n").entries()) {
+        // Within an allowed file, still refuse a non-NULL assignment.
+        // Quotes optional: Postgres accepts a bare identifier, so a
+        // migration written without them is valid SQL that a
+        // quotes-required pattern would wave straight through.
+        if (/"?face_width_(min|max)_mm"?\s*=\s*(?!NULL)\S/i.test(line)) {
+          offenders.push(`${file}:${i + 1}`);
+        }
+      }
+    }
+    expect(unexpectedFiles).toEqual([]);
+    expect(offenders).toEqual([]);
   });
 
   it("full-face nose-to-chin bands bracket the canonical adult", () => {
