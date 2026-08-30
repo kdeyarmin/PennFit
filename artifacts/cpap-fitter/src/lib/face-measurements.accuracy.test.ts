@@ -36,7 +36,11 @@ import {
   type MeasureLandmark,
 } from "./face-measurements";
 import { PLAUSIBILITY_BOUNDS } from "./measure-flow";
-import { estimatePoseFromLandmarks, type Point2D } from "./scan-quality";
+import {
+  estimatePoseFromLandmarks,
+  poseCorrect,
+  type Point2D,
+} from "./scan-quality";
 
 /** Canonical face model vertices (mm). Index = MediaPipe landmark id. */
 const CANONICAL: Record<number, [number, number, number]> = {
@@ -400,6 +404,130 @@ describe("the /measure plausibility gate admits this face", () => {
         }
       }
     }
+  });
+});
+
+describe("noseToChin under head pitch", () => {
+  /**
+   * The canonical face rotated about X (pitch), mirroring `yawedScene`.
+   *
+   * Positive is chin-DOWN in the model's own axes — which of the two
+   * directions shortens the projected span is exactly what this suite
+   * establishes, rather than assuming it.
+   */
+  function pitchedScene(truePitchDeg: number) {
+    const pts = canonicalScene();
+    const th = (truePitchDeg * Math.PI) / 180;
+    return pts.map((p) => ({
+      ...p,
+      y: p.y * Math.cos(th) - p.z * Math.sin(th),
+      z: p.y * Math.sin(th) + p.z * Math.cos(th),
+    }));
+  }
+
+  const CANONICAL_NOSE_TO_CHIN = TRUTH.noseToChin;
+
+  /** The measured span at a given true pitch, uncorrected. */
+  function measuredAt(truePitchDeg: number): number {
+    const landmarks = project(pitchedScene(truePitchDeg), {
+      D: 400,
+      fovDeg: ASSUMED_HFOV_DEG,
+    });
+    return extractMeasurementValues(landmarks, {
+      width: WIDTH,
+      height: HEIGHT,
+    }).values.noseToChin;
+  }
+
+  it("is accurate with the head level", () => {
+    const err =
+      Math.abs(measuredAt(0) - CANONICAL_NOSE_TO_CHIN) / CANONICAL_NOSE_TO_CHIN;
+    expect(err).toBeLessThanOrEqual(0.035);
+  });
+
+  it("shortens in one pitch direction and lengthens in the other", () => {
+    // The behaviour the depth term models: noseToChin spans ~33 mm of
+    // DEPTH as well as its frontal length, so its projection is
+    // L·cos(t) ± D·sin(t) — asymmetric in the sign of the pitch, which
+    // a cos-only correction (even in t) cannot express.
+    const down = measuredAt(10);
+    const up = measuredAt(-10);
+    const level = measuredAt(0);
+    expect(Math.abs(down - level)).toBeGreaterThan(1);
+    expect(Math.abs(up - level)).toBeGreaterThan(1);
+    // Opposite directions — the asymmetry itself.
+    expect(Math.sign(down - level)).not.toBe(Math.sign(up - level));
+  });
+
+  it("corrects a pitched capture back inside the level tolerance", () => {
+    // The whole point of the depth-aware factor. `poseCorrect` is given
+    // the TRUE pitch, which is what a matrix-backed pose reports — and
+    // is the only pose the correction is allowed to run on.
+    for (const truePitch of [-10, -6, 6, 10]) {
+      const raw = measuredAt(truePitch);
+      const corrected = poseCorrect("noseToChin", raw, 0, truePitch, {
+        depthAwarePitch: true,
+        estimatedDistanceMm: 400,
+      });
+      const rawErr = Math.abs(raw - CANONICAL_NOSE_TO_CHIN);
+      const correctedErr = Math.abs(corrected - CANONICAL_NOSE_TO_CHIN);
+      expect(
+        correctedErr,
+        `pitch ${truePitch}: ${rawErr.toFixed(1)}mm -> ${correctedErr.toFixed(1)}mm`,
+      ).toBeLessThan(rawErr);
+      // …and lands inside the same tolerance a level capture gets.
+      expect(correctedErr / CANONICAL_NOSE_TO_CHIN).toBeLessThanOrEqual(0.035);
+    }
+  });
+
+  it("cannot make a level capture worse", () => {
+    // The correction must be a no-op at zero: a factor of exactly 1.
+    const raw = measuredAt(0);
+    expect(
+      poseCorrect("noseToChin", raw, 0, 0, {
+        depthAwarePitch: true,
+        estimatedDistanceMm: 400,
+      }),
+    ).toBeCloseTo(raw, 10);
+  });
+
+  it("leaves the reading alone when the pose is only an estimate", () => {
+    // The geometric estimator reads +5.4 degrees on this level face.
+    // Correcting by that would introduce ~7 mm of error, so a
+    // non-matrix pose must fall through to the old cos-only path.
+    const raw = measuredAt(0);
+    const geometric = poseCorrect("noseToChin", raw, 0, 5.4);
+    const depthAware = poseCorrect("noseToChin", raw, 0, 5.4, {
+      depthAwarePitch: true,
+      estimatedDistanceMm: 400,
+    });
+    expect(geometric).not.toBeCloseTo(depthAware, 1);
+    expect(Math.abs(geometric - raw)).toBeLessThan(0.5);
+  });
+
+  it("tracks the capture distance, because perspective does", () => {
+    // K is ~0.94 at 280 mm and ~0.66 at 550 mm: the same pitch costs
+    // half again as much of the span up close.
+    const near = poseCorrect("noseToChin", 80, 0, 10, {
+      depthAwarePitch: true,
+      estimatedDistanceMm: 280,
+    });
+    const far = poseCorrect("noseToChin", 80, 0, 10, {
+      depthAwarePitch: true,
+      estimatedDistanceMm: 550,
+    });
+    expect(near).toBeGreaterThan(far);
+  });
+
+  it("errs by more than a size step at the pose gate's edge", () => {
+    // Why this matters clinically: noseToChin gates every full-face and
+    // hybrid size server-side, and adjacent size bands are a few mm
+    // apart. An error this size is a size.
+    const worst = Math.max(
+      Math.abs(measuredAt(8) - CANONICAL_NOSE_TO_CHIN),
+      Math.abs(measuredAt(-8) - CANONICAL_NOSE_TO_CHIN),
+    );
+    expect(worst).toBeGreaterThan(3);
   });
 });
 

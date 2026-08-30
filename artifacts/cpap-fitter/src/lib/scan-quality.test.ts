@@ -548,20 +548,14 @@ describe("pose correction", () => {
     expect(poseCorrect("noseToChin", 65, 0, 20)).toBeGreaterThan(65);
   });
 
-  it("does NOT model the depth lever that dominates noseToChin under pitch", () => {
-    // Documented so nobody reads a pitch-driven offset in production as
-    // a population fact and re-centres the catalog on it.
-    //
+  it("models the depth lever that dominates noseToChin under pitch", () => {
     // `noseToChin` runs from the nose tip to the menton, and on the
     // canonical face those endpoints are 89.40 mm apart in the frontal
     // plane but ALSO 33.23 mm apart in DEPTH (z 75.87 -> 42.64). Pitch
-    // rotates that depth into the image plane, so the projected span is
-    //
-    //     89.40 * cos(t)  +  33.23 * sin(t)
-    //
-    // and `poseCorrect` models only the first term. At 10 degrees the
-    // term it ignores is 5.77 mm against the 1.36 mm it accounts for —
-    // roughly four times larger, and of the opposite sign.
+    // rotates that depth into the image plane, so the span the camera
+    // sees is not merely foreshortened — the chin swings toward or away
+    // from the lens. At 10 degrees the depth term is ~4x the cosine
+    // term, and of the opposite sign:
     const DY = 89.4;
     const DZ = 33.23;
     const rad = (10 * Math.PI) / 180;
@@ -569,16 +563,65 @@ describe("pose correction", () => {
     const depthTerm = Math.abs(DZ * Math.sin(rad));
     expect(depthTerm).toBeGreaterThan(3 * cosTerm);
 
-    // And because cos() is even, the correction always LENGTHENS: it
-    // moves the right way for a chin-up frame (which reads short) and
-    // the wrong way for chin-down (which reads long).
+    // cos() is even, so the cos-only model cannot express that at all —
+    // it lengthens the span for BOTH directions of pitch, which is the
+    // wrong way round for half of every real capture. The depth-aware
+    // model is signed: chin-down (positive pitch) reads short and is
+    // lengthened; chin-up reads long and is shortened.
+    const depthAware = { depthAwarePitch: true };
+    expect(poseCorrect("noseToChin", 80, 0, 12, depthAware)).toBeGreaterThan(
+      80,
+    );
+    expect(poseCorrect("noseToChin", 80, 0, -12, depthAware)).toBeLessThan(80);
+
+    // And it is exactly inert on a level head. A "correction" that moves
+    // a level capture is a bug, not a refinement — the accuracy harness
+    // (face-measurements.accuracy.test.ts) proves the magnitude against
+    // pinhole projections; this pins the identity.
+    expect(poseCorrect("noseToChin", 80, 0, 0, depthAware)).toBeCloseTo(80, 10);
+  });
+
+  it("refuses the depth model unless the pitch came from the matrix", () => {
+    // The geometric estimator reads ~+5 degrees on the canonical face
+    // with the head perfectly LEVEL — the anatomy confound
+    // PITCH_GRACE_DEG exists for — so driving this correction from it
+    // would introduce ~7 mm of error on a capture whose raw reading was
+    // within 1.4 mm. `aggregateFrames` opts in only for a frame whose
+    // `poseSource` is "matrix", and the default path is unchanged: still
+    // even, still lengthening in both directions.
     expect(poseCorrect("noseToChin", 80, 0, 12)).toBeGreaterThan(80);
     expect(poseCorrect("noseToChin", 80, 0, -12)).toBeGreaterThan(80);
 
-    // Which is why the per-frame pitch is now recorded (scan-signals.ts
-    // -> fit_sessions.measurement_frames): the correction cannot be
-    // fixed, nor a catalog offset confirmed, without knowing the angle
-    // each real measurement was taken at.
+    // It is also ONE span, not a general pitch model. `noseHeight` runs
+    // through its own (different, ~0.61) depth ratio and stays on the
+    // cos-only path until its own harness proof lands.
+    expect(
+      poseCorrect("noseHeight", 50, 0, 12, { depthAwarePitch: true }),
+    ).toBeCloseTo(poseCorrect("noseHeight", 50, 0, 12), 10);
+  });
+
+  it("scales the depth term with how close the camera was", () => {
+    // Perspective, not anatomy, is the larger half of the lever: the
+    // chin's swing through depth subtends more angle the closer the
+    // lens. So the same 10 degrees of chin-down needs a bigger
+    // correction at arm's length than at a metre, and the correction is
+    // never scaled by a distance nobody measured — a frame that could
+    // not estimate its own falls back to the middle of the capture
+    // window.
+    const near = poseCorrect("noseToChin", 80, 0, 10, {
+      depthAwarePitch: true,
+      estimatedDistanceMm: 280,
+    });
+    const far = poseCorrect("noseToChin", 80, 0, 10, {
+      depthAwarePitch: true,
+      estimatedDistanceMm: 900,
+    });
+    const unknown = poseCorrect("noseToChin", 80, 0, 10, {
+      depthAwarePitch: true,
+    });
+    expect(near).toBeGreaterThan(far);
+    expect(unknown).toBeGreaterThan(far);
+    expect(unknown).toBeLessThan(near);
   });
 
   it("stops correcting past 30 degrees rather than amplifying error", () => {
@@ -760,6 +803,12 @@ describe("multi-frame aggregation", () => {
     it("does not discount a guided set that merely contains a burst frame", () => {
       // Scoped to a set that is ENTIRELY burst: a mixed set has some
       // genuine independence and keeps it.
+      //
+      // This set is now ALSO subject to the same-posture ceiling below
+      // (both frames are `front`), which is the point of re-asserting it
+      // here: the two discounts stack in the right order. 0.9 beats
+      // 0.85, and the mixed set keeps the posture bonus a burst
+      // collapses to a single look.
       const mixed = aggregateFrames([
         frame({ noseWidth: 34, noseToChin: 66 }, { source: "burst" }),
         frame({ noseWidth: 34.1, noseToChin: 66.1 }, { source: "guided" }),
@@ -771,6 +820,162 @@ describe("multi-frame aggregation", () => {
       expect(mixed.measurementConfidence).toBeGreaterThan(
         allBurst.measurementConfidence,
       );
+    });
+  });
+
+  describe("a guided run is two looks, not four", () => {
+    // The same argument as the burst rule, one step out. A guided
+    // capture records four frames, but only the near-frontal ones
+    // contribute measurement samples — the two turns are quality
+    // evidence and nothing else (MEASUREMENT_YAW_LIMIT_DEG). The old
+    // scoring paid the run for all four as independent looks AND let its
+    // two front frames — separated by a held-steady streak, not a
+    // re-pose — claim uncapped agreement. Solving the formula, that was
+    // worth ~1.6x: an ideal run reached the high band at a mean frame
+    // quality of ~0.47 where a burst needs ~0.74.
+    //
+    // The realistic shape below is the one that matters: two front
+    // frames a patient held well, and two turns they did not. Turning
+    // your head into side light is harder than facing the lens, and the
+    // mean is taken over ALL frames while the unacceptable-frame floor
+    // is scoped to the ones that measured — so a set can sit well under
+    // 0.6 mean quality with every contributing frame passing its gates.
+    const dimFront = assessFrameQuality(
+      input({
+        faceLuma: 70,
+        faceLumaLeft: 58,
+        faceLumaRight: 82,
+        sharpness: 30,
+        yawDeg: 6,
+        pitchDeg: 6,
+      }),
+    );
+    const roughTurn = assessFrameQuality(
+      input({
+        pose: "turn_left",
+        yawDeg: -18,
+        faceLuma: 30,
+        faceLumaLeft: 12,
+        faceLumaRight: 55,
+        sharpness: 6,
+      }),
+    );
+    const okFront = assessFrameQuality(input({ sharpness: 60 }));
+    const okTurn = assessFrameQuality(
+      input({
+        pose: "turn_left",
+        yawDeg: -18,
+        faceLuma: 60,
+        faceLumaLeft: 40,
+        faceLumaRight: 80,
+        sharpness: 20,
+      }),
+    );
+
+    /** Two front captures plus the two turns, as the guided page records them. */
+    const guidedRun = (front: QualityResult, turn: QualityResult) => [
+      frame(
+        { noseWidth: 34, noseToChin: 66 },
+        { source: "guided", quality: front },
+      ),
+      frame(
+        { noseWidth: 34.1, noseToChin: 66.2 },
+        { source: "guided", quality: front },
+      ),
+      frame(
+        { noseWidth: 33.9, noseToChin: 65.8 },
+        { source: "guided", quality: turn, pose: "turn_left", yawDeg: -18 },
+      ),
+      frame(
+        { noseWidth: 34.05, noseToChin: 66.1 },
+        { source: "guided", quality: turn, pose: "turn_right", yawDeg: 18 },
+      ),
+    ];
+
+    it("no longer calls a dim run high — this is the intended drop", () => {
+      const frames = guidedRun(dimFront, roughTurn);
+      const meanQuality =
+        frames.reduce((sum, f) => sum + f.quality.overall, 0) / frames.length;
+      // Both front frames pass their own gates, so nothing here is a
+      // quality FLOOR firing — the change is purely how the evidence is
+      // priced.
+      expect(dimFront.acceptable).toBe(true);
+      expect(meanQuality).toBeGreaterThan(0.55);
+      expect(meanQuality).toBeLessThan(0.62);
+
+      const result = aggregateFrames(frames);
+      expect(result.band).toBe("moderate");
+      // And the number the SERVER reads: this run no longer clears the
+      // 0.75 scan floor that gates `high_confidence` in
+      // resupply-api's resolveConfidence.
+      expect(result.measurementConfidence).toBeLessThan(0.75);
+      // Under the old pricing (uncapped agreement, four looks) the same
+      // frames scored meanQuality * 0.45 + 0.55 — comfortably high.
+      expect(meanQuality * 0.45 + 0.55).toBeGreaterThan(0.75);
+    });
+
+    it("still calls a good run high — this is a discount, not a veto", () => {
+      const frames = guidedRun(okFront, okTurn);
+      const meanQuality =
+        frames.reduce((sum, f) => sum + f.quality.overall, 0) / frames.length;
+      expect(meanQuality).toBeGreaterThan(0.7);
+
+      const result = aggregateFrames(frames);
+      expect(result.band).toBe("high");
+      expect(result.measurementConfidence).toBeGreaterThan(0.75);
+    });
+
+    it("stops paying for turn frames that contributed no measurement", () => {
+      // Hold quality identical across all four so nothing but the
+      // independence bonus can move: dropping the two turns must now
+      // change the score by exactly nothing, because they were buying
+      // exactly nothing. Under the old `frames.length` count the
+      // four-frame set scored strictly higher for evidence it never
+      // produced.
+      const frames = guidedRun(okFront, okFront);
+      const withTurns = aggregateFrames(frames);
+      const frontOnly = aggregateFrames(frames.slice(0, 2));
+      expect(withTurns.measurementConfidence).toBe(
+        frontOnly.measurementConfidence,
+      );
+    });
+
+    it("prices a guided run between a burst and genuinely independent looks", () => {
+      // The ordering is the whole claim: a held-steady re-capture is
+      // worth more than a shutter burst and less than four unrelated
+      // observations. Pinned on identical frames so only the source
+      // tagging differs.
+      const frames = guidedRun(okFront, okTurn);
+      const guided = aggregateFrames(frames);
+      const allBurst = aggregateFrames(
+        frames.map((f) => ({ ...f, source: "burst" as const })),
+      );
+      const untagged = aggregateFrames(
+        frames.map(({ source: _source, ...f }) => f),
+      );
+      expect(allBurst.measurementConfidence).toBeLessThan(
+        guided.measurementConfidence,
+      );
+      expect(guided.measurementConfidence).toBeLessThan(
+        untagged.measurementConfidence,
+      );
+    });
+
+    it("leaves an untagged caller on the old pricing", () => {
+      // Same scoping as the burst rule: a set where any frame omits its
+      // source keeps the scoring it had. A legacy or third-party caller
+      // must not be silently discounted for not knowing about a field.
+      const frames = guidedRun(dimFront, roughTurn);
+      const meanQuality =
+        frames.reduce((sum, f) => sum + f.quality.overall, 0) / frames.length;
+      const untagged = aggregateFrames(
+        frames.map(({ source: _source, ...f }) => f),
+      );
+      expect(untagged.measurementConfidence).toBeCloseTo(
+        meanQuality * 0.45 + 0.55,
+        2,
+      );
+      expect(untagged.band).toBe("high");
     });
   });
 
