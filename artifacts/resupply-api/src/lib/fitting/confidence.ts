@@ -198,7 +198,15 @@ export interface ConfidenceInput {
   measurements: Record<string, number>;
   /** True when tiers 1-2 removed every candidate. */
   everythingExcluded: boolean;
-  /** True when no candidate landed inside any size band. */
+  /**
+   * True when no candidate landed inside any size band.
+   *
+   * Recorded for the clinician and the provenance trail; it no longer
+   * withholds on its own (see `resolveConfidence`). The patient-facing
+   * consequence of an unconfirmed size is the `topSizeConfirmed` cap
+   * below, which applies whether one candidate missed or all of them
+   * did.
+   */
   outsideValidatedRange: boolean;
   /** When false, everything resolves to high/moderate and nothing gates. */
   gatingEnabled: boolean;
@@ -232,7 +240,6 @@ export function resolveConfidence(input: ConfidenceInput): ConfidenceResult {
     profile,
     measurements,
     everythingExcluded,
-    outsideValidatedRange,
     gatingEnabled,
   } = input;
 
@@ -249,8 +256,48 @@ export function resolveConfidence(input: ConfidenceInput): ConfidenceResult {
   // 2. Measurements outside the validated window. Checked before the
   //    score bands so a physically implausible face can never produce a
   //    confident answer just because some mask happened to score well.
+  //
+  //    ONLY implausibility withholds. This used to be
+  //    `implausible || outsideValidatedRange`, and those two are not the
+  //    same claim:
+  //
+  //      * `implausible` — the measurement sits outside the population's
+  //        plausibility window. The NUMBER is suspect, so nothing built
+  //        on it can be trusted. Withholding is right.
+  //      * `outsideValidatedRange` — every candidate's best size misses
+  //        on at least one gated dimension. That says nothing about the
+  //        patient; it says the catalog has no size for this
+  //        COMBINATION of dimensions.
+  //
+  //    Conflating them turned an ordinary patient into a dead end. A real
+  //    fitting (2026-08-21) measured nose width 37.3, nose-to-chin 76.4,
+  //    mouth width 44.3 — every value comfortably inside the adult
+  //    window, on a scan that scored 0.851 with `high` band, `good`
+  //    grade and cross-frame agreement above 0.97 on all five spans. But
+  //    their nose width falls in the AirFit F20's MEDIUM bucket while
+  //    their nose-to-chin and mouth width fall in its SMALL one, and the
+  //    size run is a linear ladder, so no single size contains them.
+  //    Same on 32 of the 33 mouth-covering adult masks. The engine
+  //    answered a flawless scan of an unremarkable face with "your
+  //    measurements fall outside the range our sizing data covers" and
+  //    named no mask at all.
+  //
+  //    Bands are partitioned per dimension across each size run, which
+  //    assumes a patient sits at the same percentile on every axis.
+  //    Faces are not proportional — that is why masks come in sizes — so
+  //    this is reachable by design, not by a bad catalog row, and it
+  //    cannot be fixed by re-deriving bands alone.
+  //
+  //    Falling through is safe because the not-in-band case is ALREADY
+  //    handled below: `topSizeConfirmed` caps an unconfirmed size at
+  //    moderate, which promises clinical review before the order ships,
+  //    and `describeSize` (tiers.ts) already writes "sits just outside
+  //    the <size> range — <size> is the closest available size. Verify
+  //    the fit in person." Tiers 1-2 stay hard filters, so nothing
+  //    contraindicated reaches this point either way. The patient gets
+  //    the closest size, flagged, instead of nothing.
   const implausible = measurementsOutOfBounds(measurements, profile.population);
-  if (gatingEnabled && (implausible || outsideValidatedRange)) {
+  if (gatingEnabled && implausible) {
     return {
       outcome: "outside_validated_range",
       confidence: 0,
