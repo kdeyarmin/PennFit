@@ -269,18 +269,23 @@ export function resolveConfidence(input: ConfidenceInput): ConfidenceResult {
   //        patient; it says the catalog has no size for this
   //        COMBINATION of dimensions.
   //
-  //    Conflating them turned an ordinary patient into a dead end. A real
-  //    fitting (2026-08-21) measured nose width 37.3, nose-to-chin 76.4,
-  //    mouth width 44.3 — every value comfortably inside the adult
-  //    window, on a scan that scored 0.851 with `high` band, `good`
-  //    grade and cross-frame agreement above 0.97 on all five spans. But
-  //    their nose width falls in the AirFit F20's MEDIUM bucket while
-  //    their nose-to-chin and mouth width fall in its SMALL one, and the
-  //    size run is a linear ladder, so no single size contains them.
-  //    Same on 32 of the 33 mouth-covering adult masks. The engine
-  //    answered a flawless scan of an unremarkable face with "your
-  //    measurements fall outside the range our sizing data covers" and
-  //    named no mask at all.
+  //    Conflating them turned an ordinary patient into a dead end.
+  //    Observed in production: a fitting whose every measurement sat
+  //    comfortably inside the adult window, on a high-band scan with
+  //    cross-frame agreement above 0.97 across all five spans, was
+  //    refused outright. Their nose width fell in the AirFit F20's
+  //    MEDIUM bucket while their nose-to-chin and mouth width fell in
+  //    its SMALL one; the size run is a linear ladder, so no single size
+  //    contained them, and the same held on 32 of the 33 mouth-covering
+  //    adult masks. The engine answered a flawless scan of an
+  //    unremarkable face with "your measurements fall outside the range
+  //    our sizing data covers" and named no mask at all.
+  //
+  //    No dates or millimetre values are reproduced here on purpose:
+  //    facial measurements tied to a date of service are patient-derived
+  //    biometrics, and they belong in the database, not in source
+  //    control. The mechanism is what this comment needs, and the
+  //    mechanism does not require them.
   //
   //    Bands are partitioned per dimension across each size run, which
   //    assumes a patient sits at the same percentile on every axis.

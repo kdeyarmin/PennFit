@@ -506,7 +506,10 @@ describe("only the dimensions that size an interface gate it", () => {
       const sql = read(file);
       for (const [i, line] of sql.split("\n").entries()) {
         // A SET/assignment giving either bound anything but NULL.
-        if (/"face_width_(min|max)_mm"\s*=\s*(?!NULL)\S/i.test(line)) {
+        // Quotes optional: Postgres accepts a bare identifier, so a
+        // migration written without them is valid SQL that a
+        // quotes-required pattern would wave straight through.
+        if (/"?face_width_(min|max)_mm"?\s*=\s*(?!NULL)\S/i.test(line)) {
           offenders.push(`${file}:${i + 1}`);
         }
       }

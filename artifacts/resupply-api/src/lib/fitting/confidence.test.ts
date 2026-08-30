@@ -198,17 +198,21 @@ describe("the five exception states are each reachable", () => {
 
   it("does NOT withhold merely because no candidate landed in a band", () => {
     // This used to return `outside_validated_range` and name no mask,
-    // and it dead-ended a real patient. The 2026-08-21 fitting measured
-    // nose width 37.3, nose-to-chin 76.4, mouth width 44.3 — every value
-    // comfortably inside the adult window — on a scan scoring 0.851 with
-    // a `high` band and cross-frame agreement above 0.97 on all five
-    // spans. Their nose width lands in the AirFit F20's MEDIUM bucket
-    // while their nose-to-chin and mouth width land in its SMALL one, so
-    // no single size holds them; the same is true on 32 of the 33
-    // mouth-covering adult masks. That is a statement about the
-    // catalog's per-dimension partitioning, not about the patient, and
-    // it must not read back to them as "your measurements fall outside
-    // the range our sizing data covers".
+    // and it dead-ended a real patient: every measurement comfortably
+    // inside the adult window, on a high-band scan with cross-frame
+    // agreement above 0.97 across all five spans, refused outright.
+    // Their nose width landed in the AirFit F20's MEDIUM bucket while
+    // their nose-to-chin and mouth width landed in its SMALL one, so no
+    // single size held them — as on 32 of the 33 mouth-covering adult
+    // masks. That is a statement about the catalog's per-dimension
+    // partitioning, not about the patient, and it must not read back to
+    // them as "your measurements fall outside the range our sizing data
+    // covers".
+    //
+    // The millimetre values and the date are deliberately not reproduced
+    // here: measurements tied to a date of service are patient-derived
+    // biometrics and stay in the database. The behaviour under test does
+    // not need them — the fixture below is synthetic.
     const result = resolveConfidence({
       ...base,
       top: candidate({
