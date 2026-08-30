@@ -182,6 +182,31 @@ export function Results() {
     setLocation("/fit-request?mode=callback");
   };
 
+  /**
+   * Send the patient back to re-scan, dropping what the LAST fitting
+   * produced.
+   *
+   * A retake starts a different fitting, but `chosenMask` and
+   * `fitSessionId` are sessionStorage-backed and survived the trip — so
+   * a patient who picked a mask, retook their photo, and then landed on
+   * a no-result screen could open the context-free callback and file a
+   * request stamped with the PREVIOUS run's mask and session. That is
+   * not cosmetic: `fitter_fit_requests.fit_session_id` is what a CSR
+   * closing the request `fulfilled` stamps `dispensed_at` on, so the
+   * dispense would be attributed to a fitting the patient abandoned,
+   * and the queue would show a mask this fitting never recommended.
+   *
+   * Deliberately narrower than `resetForNewFitting()`: the measurements
+   * and answers are about to be re-collected anyway, and clearing the
+   * population here would re-ask the adult-or-child gate of someone who
+   * is only retaking a photo.
+   */
+  const goRetake = () => {
+    setChosenMask(null);
+    setFitSessionId(null);
+    setLocation("/capture");
+  };
+
   // The mask fitter is invitation-only: the recommendation endpoint
   // requires the signed invite token (set by /fitter-invite) in a
   // request header. Without it the server returns 403, mirroring the
@@ -673,7 +698,7 @@ export function Results() {
           >
             Try again
           </Button>
-          <Button variant="outline" onClick={() => setLocation("/capture")}>
+          <Button variant="outline" onClick={goRetake}>
             <RefreshCcw className="h-4 w-4 mr-2" />
             Retake photo
           </Button>
@@ -838,7 +863,7 @@ export function Results() {
             track("results_retake_requested", {
               outcome: assessment.outcome,
             });
-            setLocation("/capture");
+            goRetake();
           }}
         />
         {leadCaptureOnly && (
@@ -928,7 +953,7 @@ export function Results() {
             our team fit you in person.
           </p>
           <div className="flex flex-wrap justify-center gap-3 pt-2">
-            <Button onClick={() => setLocation("/capture")}>
+            <Button onClick={goRetake}>
               <RefreshCcw className="h-4 w-4 mr-2" />
               Retake photo
             </Button>
@@ -1023,7 +1048,7 @@ export function Results() {
               size="sm"
               onClick={() => {
                 track("results_retake_requested", { topConfidencePct });
-                setLocation("/capture");
+                goRetake();
               }}
               data-testid="results-retake-photo"
             >

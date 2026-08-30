@@ -673,6 +673,11 @@ export const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             // email notification is fail-soft — the badge is the signal
             // that cannot silently not arrive.
             badgeKey: "newFitRequests",
+            // Matches the route's own gate (GET /admin/fitter-requests is
+            // requirePermission("conversations.manage")). Without it the
+            // badge advertises a count to a limited-role admin whose click
+            // lands on a 403 — inbox-counts itself only needs a session.
+            requiredPermission: "conversations.manage",
           },
           {
             href: "/admin/fitter-followups",
@@ -681,6 +686,8 @@ export const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             matchPrefix: "/admin/fitter-followups",
             hint: "Who went quiet — links nobody opened, fittings nobody finished, and finished fittings that never became a request",
             badgeKey: "openFitterFollowups",
+            // GET /admin/fitter-followup-alerts is patients.read.
+            requiredPermission: "patients.read",
           },
           {
             href: "/admin/fitter-leads",
@@ -1431,6 +1438,7 @@ export const MASK_FITTER_NAV_GROUPS: ReadonlyArray<NavGroup> = [
         // Same badge as the full console: for a fitter-only tenant this
         // queue IS the business, and the email notification is fail-soft.
         badgeKey: "newFitRequests",
+        requiredPermission: "conversations.manage",
       },
       {
         label: "Fitter Follow-ups",
@@ -1439,6 +1447,7 @@ export const MASK_FITTER_NAV_GROUPS: ReadonlyArray<NavGroup> = [
         matchPrefix: "/admin/fitter-followups",
         hint: "Who went quiet — links nobody opened, fittings nobody finished, and finished fittings that never became a request",
         badgeKey: "openFitterFollowups",
+        requiredPermission: "patients.read",
       },
       {
         label: "Fitter Prospects",

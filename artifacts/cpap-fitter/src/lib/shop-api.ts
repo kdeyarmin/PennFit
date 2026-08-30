@@ -946,11 +946,23 @@ export async function submitFitterInviteComplete(
       continue;
     }
     if (res.ok) {
-      const parsed = (await res.json().catch(() => ({}))) as {
-        ok?: true;
+      // A 2xx is not proof the API answered. Mid-deploy (or through a
+      // misrouted proxy) the SPA's own HTML shell comes back with status
+      // 200 — this codebase has already been bitten by exactly that on
+      // /api/masks. Swallowing the parse failure would report the fitting
+      // as transmitted and latch the results-page guard over a fitting
+      // the server never recorded: the missed lead this retry exists to
+      // prevent. Only the route's own `{ ok: true }` counts; any other
+      // success body is treated as retryable.
+      const parsed = (await res.json().catch(() => null)) as {
+        ok?: boolean;
         matched?: boolean;
-      };
-      return { ok: true, matched: Boolean(parsed.matched) };
+      } | null;
+      if (parsed?.ok === true) {
+        return { ok: true, matched: Boolean(parsed.matched) };
+      }
+      lastErr = new Error("malformed_success_body");
+      continue;
     }
     let code = `http_${res.status}`;
     try {
