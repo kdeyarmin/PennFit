@@ -285,10 +285,8 @@ export function Measure() {
                   "No face detected in the image. Please try the capture again.",
                 );
               }
-              const { values, irisPix } = extractMeasurementValues(
-                landmarks,
-                frameImg,
-              );
+              const { values, irisPix, depthCorrected } =
+                extractMeasurementValues(landmarks, frameImg);
               // Quality scalars for this frame. sampleFrame never throws
               // (neutral fallback) and the checks are pure math.
               const angles = estimatePoseFromLandmarks(landmarks, frameImg);
@@ -326,6 +324,11 @@ export function Measure() {
                 // burst's frames agree with each other by construction
                 // (see BURST_AGREEMENT_CEILING).
                 source: frame.source,
+                // Diagnostics for the record, read by nothing in the
+                // scoring: which of the several explanations for an odd
+                // span actually applied to THIS frame.
+                irisPx: irisPix,
+                depthCorrected,
               });
             } catch (err) {
               lastFailure =
@@ -381,7 +384,18 @@ export function Measure() {
           if (!isMountedRef.current) return;
           setProgress(100);
           setStatus("Analysis complete.");
-          const aggregatePayload = payloadFromAggregate(aggregate, usedFrames);
+          // ALL frames go into the record, `usedFrames` says which the
+          // numbers rest on. The rejected ones are exactly the frames
+          // worth having when a fitting looks wrong later — passing only
+          // the survivors made them invisible, so `acceptable: false`
+          // could appear solely in the everything-failed fallback.
+          // (Frames that failed EXTRACTION still cannot appear: they
+          // produced no scalars to record.)
+          const aggregatePayload = payloadFromAggregate(
+            aggregate,
+            perFrame,
+            usedFrames,
+          );
           // The frames the numbers actually rest on decide the advice: if
           // they agree on a direction, say it; if they disagree (one too
           // close, one too far), there is no single instruction to give.

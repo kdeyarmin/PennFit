@@ -360,3 +360,70 @@ describe("one frame through the production composition", () => {
     expect(out.frameCount).toBe(1);
   });
 });
+
+describe("the record keeps the frames that failed", () => {
+  const frame = (
+    over: Partial<FrameMeasurement> & { acceptable?: boolean } = {},
+  ): FrameMeasurement => {
+    const { acceptable = true, ...rest } = over;
+    return {
+      pose: "front",
+      yawDeg: 0,
+      pitchDeg: 0,
+      values: { noseWidth: 35.7, noseToChin: 89.4 },
+      quality: {
+        scores: {
+          lighting: 0.9,
+          distance: 0.9,
+          pose: 0.9,
+          occlusion: 0.9,
+          motion: 0.9,
+          framing: 1,
+        },
+        overall: 0.9,
+        acceptable,
+        failing: [],
+        distanceHint: null,
+      } as unknown as FrameMeasurement["quality"],
+      ...rest,
+    };
+  };
+
+  it("records a rejected frame, and says it did not contribute", () => {
+    // The rejected frames are exactly the ones worth having when a
+    // fitting looks wrong later. Passing only the survivors made them
+    // invisible, so `acceptable: false` could appear solely in the
+    // everything-failed fallback.
+    const bad = frame({ acceptable: false });
+    const good = frame();
+    const out = framesFromMeasurements([bad, good], [good]);
+
+    expect(out).toHaveLength(2);
+    expect(out![0]).toMatchObject({ acceptable: false, contributed: false });
+    expect(out![1]).toMatchObject({ acceptable: true, contributed: true });
+  });
+
+  it("treats every frame as contributing when the caller does no filtering", () => {
+    const frames = [frame(), frame()];
+    const out = framesFromMeasurements(frames);
+    expect(out!.every((f) => f.contributed)).toBe(true);
+  });
+
+  it("carries the diagnostics, and omits them rather than zeroing", () => {
+    const withDiag = frame({
+      irisPx: 26.42,
+      depthCorrected: true,
+      poseSource: "matrix",
+    });
+    const out = framesFromMeasurements([withDiag, frame()]);
+    expect(out![0]).toMatchObject({
+      irisPx: 26.4,
+      depthCorrected: true,
+      poseSource: "matrix",
+    });
+    // A 0 mm distance or a 0 px iris is a reading no capture produces;
+    // absent is the honest record.
+    expect(out![1]).not.toHaveProperty("irisPx");
+    expect(out![1]).not.toHaveProperty("poseSource");
+  });
+});

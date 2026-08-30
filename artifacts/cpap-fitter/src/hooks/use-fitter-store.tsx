@@ -364,6 +364,27 @@ function restoreScanFrames(
     if (typeof f.contributed !== "boolean") return undefined;
     if (!objectOf(f.values, FRAME_VALUE_KEYS, 0, 300)) return undefined;
     if (!objectOf(f.quality, FRAME_QUALITY_KEYS, 0, 1)) return undefined;
+    // Diagnostics — optional, but bounded to the SAME windows the route
+    // enforces. A value the server would reject must not survive a
+    // reload and 400 the whole assessment for a field that only exists
+    // to explain a measurement after the fact.
+    if (f.estimatedDistanceMm !== undefined) {
+      if (!bounded(f.estimatedDistanceMm, 0, 10_000)) return undefined;
+    }
+    if (f.irisPx !== undefined && !bounded(f.irisPx, 0, 500)) return undefined;
+    if (
+      f.depthCorrected !== undefined &&
+      typeof f.depthCorrected !== "boolean"
+    ) {
+      return undefined;
+    }
+    if (
+      f.poseSource !== undefined &&
+      f.poseSource !== "matrix" &&
+      f.poseSource !== "geometric"
+    ) {
+      return undefined;
+    }
     // Rebuilt key by key, like the aggregate above: an extra key would
     // fail the server's `.strict()` even with every known field valid.
     frames.push({
@@ -375,6 +396,16 @@ function restoreScanFrames(
       contributed: f.contributed,
       values: f.values,
       quality: f.quality,
+      ...(f.estimatedDistanceMm !== undefined
+        ? { estimatedDistanceMm: f.estimatedDistanceMm as number }
+        : {}),
+      ...(f.irisPx !== undefined ? { irisPx: f.irisPx as number } : {}),
+      ...(f.depthCorrected !== undefined
+        ? { depthCorrected: f.depthCorrected as boolean }
+        : {}),
+      ...(f.poseSource !== undefined
+        ? { poseSource: f.poseSource as "matrix" | "geometric" }
+        : {}),
     });
   }
   return frames;

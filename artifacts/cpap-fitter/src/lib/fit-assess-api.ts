@@ -210,6 +210,17 @@ export interface ScanFrameRequest {
     motion?: number;
     framing?: number;
   };
+  /**
+   * Diagnostics, for the clinical record only — nothing in the engine
+   * reads them. Pose alone cannot explain a span that reads short: too
+   * far away, an iris across too few pixels to calibrate from, and a
+   * depth correction that never ran are all equally consistent with it.
+   */
+  estimatedDistanceMm?: number;
+  irisPx?: number;
+  depthCorrected?: boolean;
+  /** Matrix-derived head pose, or the anatomy-confounded fallback. */
+  poseSource?: "matrix" | "geometric";
 }
 
 export interface FitAssessRequest {

@@ -708,6 +708,17 @@ export interface FrameMeasurement {
    * keeps the pre-existing scoring rather than being silently discounted.
    */
   source?: "burst" | "guided";
+  /**
+   * Diagnostics, carried for the clinical record and read by nothing in
+   * the scoring below. They exist because pose alone cannot explain a
+   * span that reads short: too far away, an iris across too few pixels,
+   * and a depth correction that never ran are all equally consistent
+   * with it. See the fit-assess frames schema.
+   */
+  irisPx?: number;
+  depthCorrected?: boolean;
+  /** Matrix-derived head pose, or the geometric fallback. */
+  poseSource?: "matrix" | "geometric";
 }
 
 export interface AggregateResult {
