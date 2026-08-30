@@ -73,10 +73,20 @@ export type FollowupReason =
 
 export interface FollowupDelivery {
   delivered: boolean;
-  /** Machine-readable why-not, recorded on the staff alert. */
+  /**
+   * Machine-readable why-not, recorded on the staff alert.
+   *
+   * `no_contact` and `link_unavailable` are deliberately separate. Both
+   * end in "nothing was sent", but they are different problems with
+   * different fixes — one is "we have no way to reach this person", the
+   * other is "this tenant has no verified domain, so no invite link can
+   * be minted for anyone". Collapsing them would tell an operator to go
+   * looking for a missing email address when every address is fine.
+   */
   reason:
     | null
     | "no_contact"
+    | "link_unavailable"
     | "no_channel_config"
     | "in_office_handoff"
     | "send_failed";
@@ -178,7 +188,7 @@ export async function sendFitterFollowup(
     let link: string | null = null;
     if (reason !== "no_request") {
       if (!target.linkBase || !target.linkTtlMs || target.linkTtlMs <= 0) {
-        return { delivered: false, reason: "no_contact", channel };
+        return { delivered: false, reason: "link_unavailable", channel };
       }
       const token = signFitterInviteToken(
         target.inviteId,

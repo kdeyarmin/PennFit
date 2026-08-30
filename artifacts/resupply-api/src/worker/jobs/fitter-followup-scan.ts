@@ -201,6 +201,14 @@ export interface FitterFollowupStats {
   skippedFlagOff: number;
   /** No consented, reachable channel (or an in-office handover). */
   skippedNoChannel: number;
+  /**
+   * Cohort-A rows skipped because the tenant has no verified domain, so
+   * no invite link can be minted. Counted separately from
+   * `skippedNoChannel` because the fix is a different one — verify a
+   * domain, not check a patient's consent — and because it is the answer
+   * to "why did this tenant send nothing at all?".
+   */
+  skippedNoLinkBase: number;
   /** Deferred by DND / the TCPA send window — a later tick retries. */
   skippedQuietHours: number;
   /** Lost a claim race with a concurrent tick. */
@@ -220,6 +228,7 @@ function emptyStats(): FitterFollowupStats {
     nudgesSent: 0,
     skippedFlagOff: 0,
     skippedNoChannel: 0,
+    skippedNoLinkBase: 0,
     skippedQuietHours: 0,
     skippedAlreadyClaimed: 0,
     sendFailures: 0,
@@ -674,6 +683,24 @@ async function handleOpenInvite(
   if (ctx.sendBudget.remaining <= 0) return;
   if (invite.channel === "in_office") {
     stats.skippedNoChannel += 1;
+    return;
+  }
+  // This cohort's message IS a link, so a tenant with no verified domain
+  // has nothing it can send — and this check has to come BEFORE the
+  // claim below, not after.
+  //
+  // Claiming first would spend the stamp on every outstanding invite the
+  // first time the sweep ran for such a tenant, and nothing ever clears a
+  // stamp: the day they verified a domain, none of those invites would
+  // ever be nudged. It would also burn the shared per-tick send budget on
+  // guaranteed non-deliveries, starving the cohort-B follow-ups in the
+  // same tick — which need no link and would have gone out fine.
+  //
+  // Exactly the ordering rationale invite-acceptance-reminder states for
+  // resolving its SendGrid client before claiming: a missing domain is a
+  // condition that gets FIXED later, so it must cost nothing now.
+  if (!ctx.linkBase) {
+    stats.skippedNoLinkBase += 1;
     return;
   }
   // Refuse to advertise a link that dies before they can click it.
@@ -1252,6 +1279,11 @@ async function finishNudge(
     delivery.reason === "in_office_handoff"
   ) {
     stats.skippedNoChannel += 1;
+  } else if (delivery.reason === "link_unavailable") {
+    // Unreachable from cohort A now that the guard above runs before the
+    // claim, but the sender is callable from elsewhere and the tally
+    // should stay honest about which bucket a refusal fell into.
+    stats.skippedNoLinkBase += 1;
   }
   logger.info(
     {

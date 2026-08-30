@@ -133,6 +133,7 @@ beforeEach(() => {
   db.failTable = null;
   db.alert.status = "open";
   db.alert.staff_note = "left a voicemail";
+  db.invite.channel = "email";
 });
 
 describe("GET /admin/fitter-followup-alerts", () => {
@@ -160,6 +161,30 @@ describe("GET /admin/fitter-followup-alerts", () => {
     expect(res.body.counts.fit_no_request).toBe(1);
     expect(res.body.openTotal).toBe(1);
     expect(res.body.openHigh).toBe(1);
+  });
+
+  it("does not label an in-office handover as an email preference", async () => {
+    // A QR handed over at the counter picks no channel, and a COMPLETED
+    // in-office invite still reaches this queue as `fit_no_request` —
+    // that scan has no expiry filter. Defaulting it to "email" would
+    // tell a CSR the patient asked to be emailed when nobody chose.
+    db.invite.channel = "in_office";
+    const res = await request(makeApp()).get("/admin/fitter-followup-alerts");
+    const [row] = res.body.alerts as Array<Record<string, unknown>>;
+    expect((row.contact as Record<string, unknown>).preferredMethod).toBe(
+      "in_office",
+    );
+    db.invite.channel = "email";
+  });
+
+  it("maps an SMS invite to a text preference", async () => {
+    db.invite.channel = "sms";
+    const res = await request(makeApp()).get("/admin/fitter-followup-alerts");
+    const [row] = res.body.alerts as Array<Record<string, unknown>>;
+    expect((row.contact as Record<string, unknown>).preferredMethod).toBe(
+      "text",
+    );
+    db.invite.channel = "email";
   });
 
   it("rejects an unknown status filter rather than silently widening", async () => {

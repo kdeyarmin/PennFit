@@ -96,6 +96,18 @@ const TYPE_ORDER: readonly FitterFollowupAlertType[] = [
   "request_unworked",
 ];
 
+/**
+ * How this person was reached about the fitting. `in_office` is a real
+ * value, not a fallback: a QR handed over at the counter picks no
+ * channel, and a completed one still reaches this queue.
+ */
+const CONTACT_METHOD_LABEL: Record<string, string> = {
+  phone: "Asked for a call",
+  email: "Contacted by email",
+  text: "Contacted by text",
+  in_office: "Fitted in the office — no channel chosen",
+};
+
 const SEVERITY_STYLE: Record<
   FitterFollowupSeverity,
   { bg: string; fg: string; label: string }
@@ -394,6 +406,25 @@ function AlertRow({
   onPatch: (patch: UpdateFitterFollowupAlertInput) => void;
 }) {
   const [noteDraft, setNoteDraft] = useState(row.staffNote ?? "");
+  // Re-sync the draft when the SERVER's value changes underneath us.
+  //
+  // The row is keyed by id, so React keeps this component mounted across
+  // refetches and `useState`'s initial value is read exactly once. In a
+  // queue several CSRs work at the same time, that means a note another
+  // person saved would never appear here — and worse, blurring this
+  // field would then push the value captured at mount back over theirs,
+  // silently reverting their edit.
+  //
+  // Render-phase adjustment rather than an effect: it runs before paint,
+  // so the textarea never flashes the stale value. Guarded on the server
+  // value actually CHANGING, so an ordinary refetch (window focus, a
+  // status-only PATCH) leaves in-progress typing alone.
+  const serverNote = row.staffNote ?? "";
+  const [lastServerNote, setLastServerNote] = useState(serverNote);
+  if (serverNote !== lastServerNote) {
+    setLastServerNote(serverNote);
+    setNoteDraft(serverNote);
+  }
   const meta = TYPE_META[row.alertType];
   const sev = SEVERITY_STYLE[row.severity];
   const contact = row.contact;
@@ -440,9 +471,11 @@ function AlertRow({
             No contact on the record
           </div>
         )}
-        {contact?.preferredTime && (
+        {contact && (
           <div className="text-xs text-slate-500 mt-1">
-            Best time: {contact.preferredTime}
+            {CONTACT_METHOD_LABEL[contact.preferredMethod] ??
+              contact.preferredMethod}
+            {contact.preferredTime ? ` · ${contact.preferredTime}` : ""}
           </div>
         )}
         <div className="mt-1.5 flex flex-wrap gap-2 text-[11px]">

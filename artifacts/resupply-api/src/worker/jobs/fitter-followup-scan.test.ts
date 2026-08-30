@@ -359,14 +359,52 @@ describe("the worklist is not the nudge", () => {
     stageSupabaseResponse("fitter_invites", "select", {
       data: [openInvite()],
     });
-    stageClaimWon();
 
     const stats = await runFitterFollowupSweep(NOW);
 
     expect(stats.alertsRaised).toBe(1);
-    // The sender is handed a null base and refuses the link itself; what
-    // matters here is that the alert was recorded either way.
     expect(stats.errors).toBe(0);
+  });
+
+  it("spends NOTHING on a cohort-A row it has no domain to link to", async () => {
+    // Nothing clears a nudge stamp. Claiming one for a message that
+    // cannot be built would mean that the day this tenant verified a
+    // domain, every invite outstanding today had already burned its
+    // follow-up on a send that never happened.
+    stageSupabaseResponse("organizations", "select", {
+      data: [{ id: "org-nodomain" }],
+    });
+    stageSupabaseResponse("fitter_invites", "select", {
+      data: [openInvite()],
+    });
+
+    const stats = await runFitterFollowupSweep(NOW);
+
+    expect(getSupabaseCallCount("fitter_invites", "update")).toBe(0);
+    expect(sendFollowup).not.toHaveBeenCalled();
+    expect(stats.skippedNoLinkBase).toBe(1);
+  });
+
+  it("still sends cohort B's no-link follow-up when cohort A has no domain", async () => {
+    // Cohort B needs no link, so those follow-ups must still go out. The
+    // two cohorts share one per-tick send budget, so cohort A spending
+    // slots on guaranteed non-deliveries is what would silence the one
+    // cohort that could actually have been reached.
+    stageSupabaseResponse("organizations", "select", {
+      data: [{ id: "org-nodomain" }],
+    });
+    stageSupabaseResponse("fitter_invites", "select", {
+      data: [openInvite()],
+    });
+    stageSupabaseResponse("fitter_invites", "select", {
+      data: [completedInvite()],
+    });
+    stageClaimWon();
+
+    const stats = await runFitterFollowupSweep(NOW);
+
+    expect(stats.nudgesSent).toBe(1);
+    expect(sendFollowup.mock.calls[0]?.[1]).toBe("no_request");
   });
 });
 

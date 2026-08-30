@@ -408,6 +408,18 @@ async function hydrateRequests(
   return out;
 }
 
+/**
+ * How this person was contacted about the fitting, from the invite's own
+ * delivery channel. Not a stated preference — the fit-request side of
+ * this union carries a real one — so `in_office` says exactly that
+ * rather than guessing.
+ */
+function preferredMethodForChannel(channel: string): string {
+  if (channel === "sms") return "text";
+  if (channel === "in_office") return "in_office";
+  return "email";
+}
+
 function toView(
   row: AlertRow,
   invites: Map<string, InviteContext>,
@@ -427,7 +439,13 @@ function toView(
         name: invite.recipientName,
         email: invite.recipientEmail,
         phone: invite.recipientPhoneE164,
-        preferredMethod: invite.channel === "sms" ? "text" : "email",
+        // Mapped explicitly rather than "sms or else email". An
+        // in-office invite is a QR handed over at the counter, and it
+        // very much can reach this queue — a COMPLETED one raises
+        // `fit_no_request`, and that scan has no expiry filter at all.
+        // Defaulting it to "email" would tell a CSR the patient asked to
+        // be emailed when nobody ever chose a channel for them.
+        preferredMethod: preferredMethodForChannel(invite.channel),
         preferredTime: null as string | null,
       }
     : request

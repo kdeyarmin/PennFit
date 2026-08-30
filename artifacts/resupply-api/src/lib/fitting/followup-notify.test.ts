@@ -170,6 +170,25 @@ describe("the link still works — resume where they left off", () => {
     expect(res.delivered).toBe(false);
     expect(sendEmail).not.toHaveBeenCalled();
   });
+
+  it("says the LINK is unavailable, not that we have no contact", async () => {
+    // Both end in "nothing sent", but they are different problems with
+    // different fixes, and this reason is recorded as telemetry on the
+    // staff worklist. Reporting `no_contact` here would send an operator
+    // hunting for a missing email address when every address is fine and
+    // the tenant simply has no verified domain.
+    const res = await sendFitterFollowup(
+      { ...BASE, channel: "email", linkBase: null },
+      "unstarted",
+    );
+    expect(res.reason).toBe("link_unavailable");
+
+    const noContact = await sendFitterFollowup(
+      { ...BASE, channel: "email", allowEmail: false, allowSms: false },
+      "unstarted",
+    );
+    expect(noContact.reason).toBe("no_contact");
+  });
 });
 
 describe("channel selection", () => {
