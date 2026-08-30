@@ -162,6 +162,54 @@ export interface ScanSignalsRequest {
   };
   measurementConfidence: number;
   band: "high" | "moderate" | "low";
+  /**
+   * Per-frame numbers behind the aggregate above — head angles, the
+   * millimetre values that frame produced, and its own quality
+   * subscores.
+   *
+   * The aggregate alone cannot answer why a measurement came out where
+   * it did. `noseToChin` in particular carries a ~33 mm depth component
+   * (nose tip to chin), so its projected length moves with head PITCH
+   * roughly four times faster than the cos(pitch) model `poseCorrect`
+   * applies to it — meaning a modest tilt shifts it far more than the
+   * correction can account for. Distinguishing "this population
+   * measures short" from "these patients were looking down at their
+   * phones" needs the pitch each frame was taken at, and nothing
+   * recorded it.
+   *
+   * PHI posture is unchanged: scalars only, exactly like the aggregate.
+   * No images, no crops, no data URLs — the frames themselves never
+   * leave the browser and are discarded the moment the numbers are
+   * extracted.
+   */
+  frames?: ScanFrameRequest[];
+}
+
+/** One captured frame, as numbers. See `ScanSignalsRequest.frames`. */
+export interface ScanFrameRequest {
+  pose: "front" | "turn_left" | "turn_right";
+  source?: "burst" | "guided";
+  yawDeg: number;
+  pitchDeg: number;
+  /** Whether this frame cleared its own quality gates. */
+  acceptable: boolean;
+  /** Whether it contributed measurement samples to the aggregate. */
+  contributed: boolean;
+  values: {
+    noseWidth?: number;
+    noseHeight?: number;
+    noseToChin?: number;
+    mouthWidth?: number;
+    faceWidthAtCheekbones?: number;
+  };
+  quality: {
+    lighting?: number;
+    distance?: number;
+    pose?: number;
+    occlusion?: number;
+    motion?: number;
+    framing?: number;
+  };
 }
 
 export interface FitAssessRequest {

@@ -11,9 +11,9 @@
 
 import { describe, expect, it, vi } from "vitest";
 
-import { buildScanSignals } from "./scan-signals";
+import { buildScanSignals, framesFromMeasurements } from "./scan-signals";
 import { UNKNOWN_FRAME_SAMPLE } from "./frame-sampling";
-import type { Point2D } from "./scan-quality";
+import type { FrameMeasurement, Point2D } from "./scan-quality";
 
 vi.mock("./frame-sampling", async () => {
   const actual =
@@ -93,6 +93,147 @@ function build(
   });
 }
 
+describe("per-frame numbers reach the wire", () => {
+  // The column has existed since migration 0483 and nothing ever wrote
+  // it, which is why an apparent ~10 mm offset in `noseToChin` across
+  // real fittings could not be attributed. The aggregate says what was
+  // measured; only the frames say at what head angle.
+  it("carries head angles and per-frame values alongside the aggregate", () => {
+    const out = build({
+      faceLuma: 135,
+      faceLumaLeft: 133,
+      faceLumaRight: 137,
+      sharpness: 400,
+    });
+    expect(out.frames).toHaveLength(1);
+    const [frame] = out.frames!;
+    expect(frame!.pose).toBe("front");
+    expect(typeof frame!.pitchDeg).toBe("number");
+    expect(typeof frame!.yawDeg).toBe("number");
+    expect(frame!.values.noseToChin).toBeCloseTo(VALUES.noseToChin, 1);
+    expect(typeof frame!.acceptable).toBe("boolean");
+    expect(frame!.contributed).toBe(true);
+  });
+
+  it("sends scalars only — nothing image-derived", () => {
+    const out = build({
+      faceLuma: 135,
+      faceLumaLeft: 133,
+      faceLumaRight: 137,
+      sharpness: 400,
+    });
+    // The whole payload must survive JSON with no string that could
+    // carry pixels. The route independently rejects encoded media, but
+    // the client must not be the thing that tries.
+    const json = JSON.stringify(out);
+    expect(json).not.toMatch(/data:/i);
+    expect(json).not.toMatch(/base64/i);
+    for (const frame of out.frames ?? []) {
+      for (const v of Object.values(frame.values)) {
+        expect(typeof v).toBe("number");
+      }
+      for (const v of Object.values(frame.quality)) {
+        expect(typeof v).toBe("number");
+      }
+    }
+  });
+
+  // The route bounds head angles to [-90, 90], but the pitch estimator
+  // is `(ratio - 0.28) * 140` over an unbounded landmark ratio: a
+  // strongly chin-up capture swings the chin toward eye level, shrinks
+  // the denominator, and reports well past 90. Sending that verbatim
+  // 400s the whole assessment, dead-ending a patient whose scan should
+  // simply have come back low-confidence with a retake prompt.
+  it("clamps head angles the route would reject", () => {
+    const saturated: FrameMeasurement = {
+      pose: "front",
+      quality: {
+        scores: {
+          lighting: 0.8,
+          distance: 0.8,
+          pose: 0.1,
+          occlusion: 1,
+          motion: 0.9,
+          framing: 0.9,
+        },
+        failing: ["pose"],
+        acceptable: false,
+        overall: 0.4,
+      },
+      values: { noseToChin: 80 },
+      yawDeg: 140,
+      pitchDeg: -380.8,
+    };
+
+    const [frame] = framesFromMeasurements([saturated])!;
+    expect(frame!.pitchDeg).toBe(-90);
+    expect(frame!.yawDeg).toBe(90);
+  });
+
+  // `typeof NaN === "number"`, so a bare typeof filter would let a
+  // non-finite reading through and round it to 0.0 mm — a value no face
+  // produces, and indistinguishable from a real one in the record meant
+  // to explain where measurements come from.
+  it("omits a non-finite measurement rather than recording it as zero", () => {
+    const partial: FrameMeasurement = {
+      pose: "front",
+      quality: {
+        scores: {
+          lighting: 0.9,
+          distance: 0.9,
+          pose: 0.9,
+          occlusion: 1,
+          motion: 0.95,
+          framing: 0.9,
+        },
+        failing: [],
+        acceptable: true,
+        overall: 0.92,
+      },
+      values: {
+        noseWidth: 31.2,
+        noseToChin: Number.NaN,
+        mouthWidth: Number.POSITIVE_INFINITY,
+      },
+      yawDeg: 1,
+      pitchDeg: -2,
+    };
+
+    const [frame] = framesFromMeasurements([partial])!;
+    expect(frame!.values.noseWidth).toBeCloseTo(31.2, 1);
+    expect(frame!.values).not.toHaveProperty("noseToChin");
+    expect(frame!.values).not.toHaveProperty("mouthWidth");
+  });
+
+  it("keeps an in-range angle exactly as measured", () => {
+    const ordinary: FrameMeasurement = {
+      pose: "front",
+      quality: {
+        scores: {
+          lighting: 0.9,
+          distance: 0.9,
+          pose: 0.9,
+          occlusion: 1,
+          motion: 0.95,
+          framing: 0.9,
+        },
+        failing: [],
+        acceptable: true,
+        overall: 0.92,
+      },
+      values: { noseToChin: 80 },
+      yawDeg: 3.14,
+      pitchDeg: -8.76,
+    };
+
+    const [frame] = framesFromMeasurements([ordinary])!;
+    // Rounded to a tenth of a degree, not clamped — a clamped reading
+    // must stay distinguishable from a real one.
+    expect(frame!.pitchDeg).toBe(-8.8);
+    expect(frame!.yawDeg).toBe(3.1);
+  });
+});
+
 describe("buildScanSignals", () => {
   it("emits only the keys the strict server schema accepts", () => {
     const out = build({
@@ -105,6 +246,7 @@ describe("buildScanSignals", () => {
       "agreement",
       "band",
       "frameCount",
+      "frames",
       "measurementConfidence",
       "quality",
     ]);

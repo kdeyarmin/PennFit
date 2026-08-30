@@ -454,7 +454,7 @@ export function Measure() {
           if (!isMountedRef.current) return;
           setProgress(100);
           setStatus("Analysis complete.");
-          const aggregatePayload = payloadFromAggregate(aggregate);
+          const aggregatePayload = payloadFromAggregate(aggregate, usedFrames);
           // The frames the numbers actually rest on decide the advice: if
           // they agree on a direction, say it; if they disagree (one too
           // close, one too far), there is no single instruction to give.

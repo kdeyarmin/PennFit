@@ -795,6 +795,162 @@ describe("POST /api/fit/assess — structured recommendation columns", () => {
     expect(row.review_status).toBe("pending_review");
   });
 
+  it("persists the per-frame numbers to measurement_frames", async () => {
+    // `fit_sessions.measurement_frames` has existed since migration 0483
+    // and nothing ever wrote it. The consequence was concrete: an
+    // apparent ~10 mm offset in `noseToChin` across real fittings could
+    // not be attributed, because the aggregate records what was measured
+    // and only the frames record the head angle it was measured at.
+    db.persistOk = true;
+    const res = await post({
+      measurements: VALID_MEASUREMENTS,
+      profile: VALID_PROFILE,
+      scan: {
+        frameCount: 2,
+        quality: { lighting: 0.95, distance: 0.95, pose: 0.8 },
+        agreement: { noseWidth: 0.97, noseToChin: 0.97 },
+        measurementConfidence: 0.9,
+        band: "high",
+        frames: [
+          {
+            pose: "front",
+            source: "burst",
+            yawDeg: 1.2,
+            pitchDeg: -9.4,
+            acceptable: true,
+            contributed: true,
+            values: { noseToChin: 77.4, noseWidth: 37.3 },
+            quality: { lighting: 0.95, pose: 0.8 },
+          },
+          {
+            pose: "turn_right",
+            source: "guided",
+            yawDeg: 18.2,
+            pitchDeg: -2.1,
+            acceptable: true,
+            contributed: false,
+            values: { noseToChin: 74.9 },
+            quality: { lighting: 0.93, pose: 0.7 },
+          },
+        ],
+      },
+    });
+
+    expect(res.status).toBe(200);
+    const row = db.inserts.find((i) => i.table === "fit_sessions")!
+      .payload as Record<string, unknown>;
+    const frames = row.measurement_frames as Array<Record<string, unknown>>;
+    expect(frames).toHaveLength(2);
+    // The pitch is the whole point — it is what tells a posture artifact
+    // apart from a population effect.
+    expect(frames[0]!.pitchDeg).toBe(-9.4);
+    expect(frames[0]!.contributed).toBe(true);
+    expect(frames[1]!.contributed).toBe(false);
+  });
+
+  it("rejects an empty frame array", async () => {
+    // Carries nothing the omitted field does not, and the client never
+    // sends one. Note what is deliberately NOT rejected alongside it: a
+    // `frames.length` that disagrees with `frameCount`. Making that a
+    // 400 would let a diagnostic-only field cost a patient their whole
+    // assessment, which is the trade this record exists to avoid.
+    db.persistOk = true;
+    const res = await post({
+      measurements: VALID_MEASUREMENTS,
+      profile: VALID_PROFILE,
+      scan: {
+        frameCount: 1,
+        quality: {},
+        agreement: {},
+        measurementConfidence: 0.9,
+        band: "high",
+        frames: [],
+      },
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("accepts a frame count that disagrees with the aggregate", async () => {
+    db.persistOk = true;
+    const res = await post({
+      measurements: VALID_MEASUREMENTS,
+      profile: VALID_PROFILE,
+      scan: {
+        frameCount: 5,
+        quality: {},
+        agreement: {},
+        measurementConfidence: 0.9,
+        band: "high",
+        frames: [
+          {
+            pose: "front",
+            yawDeg: 0,
+            pitchDeg: 0,
+            acceptable: true,
+            contributed: true,
+            values: {},
+            quality: {},
+          },
+        ],
+      },
+    });
+    // A record that is internally odd is readable and can be discounted
+    // in analysis; a fitting that 400s cannot be recovered at all.
+    expect(res.status).toBe(200);
+  });
+
+  it("rejects a frame set carrying anything but numbers", async () => {
+    // The strict schema is the PHI boundary: `measurement_frames` is
+    // documented as numbers only, and an image smuggled through a frame
+    // would land in the clinical record.
+    db.persistOk = true;
+    const res = await post({
+      measurements: VALID_MEASUREMENTS,
+      profile: VALID_PROFILE,
+      scan: {
+        frameCount: 1,
+        quality: {},
+        agreement: {},
+        measurementConfidence: 0.9,
+        band: "high",
+        frames: [
+          {
+            pose: "front",
+            yawDeg: 0,
+            pitchDeg: 0,
+            acceptable: true,
+            contributed: true,
+            values: {},
+            quality: {},
+            crop: "data:image/jpeg;base64,AAAA",
+          },
+        ],
+      },
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("still accepts a scan with no frames at all", async () => {
+    // Optional by contract: an older client, or a probe that failed,
+    // must not lose its fitting over missing diagnostics.
+    db.persistOk = true;
+    const res = await post({
+      measurements: VALID_MEASUREMENTS,
+      profile: VALID_PROFILE,
+      scan: {
+        frameCount: 1,
+        quality: { lighting: 0.9 },
+        agreement: {},
+        measurementConfidence: 0.8,
+        band: "moderate",
+      },
+    });
+    expect(res.status).toBe(200);
+    const row = db.inserts.find((i) => i.table === "fit_sessions")!
+      .payload as Record<string, unknown>;
+    expect(row.measurement_frames).toBeNull();
+  });
+
   it("routes a withheld-but-not-rescannable outcome to awaiting_review", async () => {
     // `rescan_required` is for outcomes a better photo can fix. An
     // outside-range or contraindicated fitting needs a clinician, and

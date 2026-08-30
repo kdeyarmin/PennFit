@@ -133,6 +133,63 @@ const scanSchema = z
       .default({}),
     measurementConfidence: z.number().min(0).max(1),
     band: z.enum(["high", "moderate", "low"]),
+    // Per-frame numbers behind the aggregate. Scalars only — head
+    // angles, that frame's millimetre values, its own quality
+    // subscores. Same PHI posture as the aggregate: no images, no
+    // crops, no data URLs, and `looksLikeEncodedMedia` still guards the
+    // whole body.
+    //
+    // Recorded because the aggregate cannot say WHY a measurement came
+    // out where it did. `noseToChin` spans ~33 mm of depth (nose tip to
+    // chin), so its projected length moves with head PITCH about four
+    // times faster than the cos(pitch) model `poseCorrect` applies —
+    // which means "this population measures short" and "these patients
+    // were looking down at their phones" are indistinguishable without
+    // the pitch each frame was taken at.
+    frames: z
+      .array(
+        z
+          .object({
+            pose: z.enum(["front", "turn_left", "turn_right"]),
+            source: z.enum(["burst", "guided"]).optional(),
+            yawDeg: z.number().min(-90).max(90),
+            pitchDeg: z.number().min(-90).max(90),
+            acceptable: z.boolean(),
+            contributed: z.boolean(),
+            values: z
+              .object({
+                noseWidth: z.number().min(0).max(300).optional(),
+                noseHeight: z.number().min(0).max(300).optional(),
+                noseToChin: z.number().min(0).max(300).optional(),
+                mouthWidth: z.number().min(0).max(300).optional(),
+                faceWidthAtCheekbones: z.number().min(0).max(300).optional(),
+              })
+              .strict()
+              .default({}),
+            quality: z
+              .object({
+                lighting: z.number().min(0).max(1).optional(),
+                distance: z.number().min(0).max(1).optional(),
+                pose: z.number().min(0).max(1).optional(),
+                occlusion: z.number().min(0).max(1).optional(),
+                motion: z.number().min(0).max(1).optional(),
+                framing: z.number().min(0).max(1).optional(),
+              })
+              .strict()
+              .default({}),
+          })
+          .strict(),
+      )
+      // An empty array carries nothing the omitted field does not; the
+      // client never sends one. Deliberately NOT cross-checked against
+      // `frameCount`: the two always agree coming from this client, but
+      // making a mismatch a 400 would let a diagnostic-only field cost a
+      // patient their whole assessment — the exact trade this record is
+      // built to avoid. An inconsistent record is readable and can be
+      // discounted; a dead-ended fitting cannot be recovered.
+      .min(1)
+      .max(10)
+      .optional(),
   })
   .strict();
 
@@ -1037,6 +1094,15 @@ async function persistSession(input: PersistInput): Promise<string | null> {
         catalog_snapshot_version:
           input.assessment.provenance.catalogSnapshotVersion,
         degraded: input.assessment.provenance.degraded,
+        // Per-frame numbers behind the aggregate scan signals — head
+        // angles, that frame's millimetre values, its own quality
+        // subscores. The column has existed since 0483 and nothing ever
+        // wrote it, which is why a systematic-looking offset in
+        // `noseToChin` could not be attributed: the aggregate says what
+        // was measured, only the frames say at what head angle.
+        //
+        // Numbers only, exactly as 0483's column comment requires.
+        measurement_frames: input.scan.frames ?? null,
         // Every candidate's best size missed a gated dimension (0537).
         // No longer a gate — the engine recommends the closest size and
         // caps it at moderate — but still recorded, because one

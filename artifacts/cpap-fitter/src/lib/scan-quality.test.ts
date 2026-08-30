@@ -546,6 +546,39 @@ describe("pose correction", () => {
     expect(poseCorrect("noseToChin", 65, 0, 20)).toBeGreaterThan(65);
   });
 
+  it("does NOT model the depth lever that dominates noseToChin under pitch", () => {
+    // Documented so nobody reads a pitch-driven offset in production as
+    // a population fact and re-centres the catalog on it.
+    //
+    // `noseToChin` runs from the nose tip to the menton, and on the
+    // canonical face those endpoints are 89.40 mm apart in the frontal
+    // plane but ALSO 33.23 mm apart in DEPTH (z 75.87 -> 42.64). Pitch
+    // rotates that depth into the image plane, so the projected span is
+    //
+    //     89.40 * cos(t)  +  33.23 * sin(t)
+    //
+    // and `poseCorrect` models only the first term. At 10 degrees the
+    // term it ignores is 5.77 mm against the 1.36 mm it accounts for —
+    // roughly four times larger, and of the opposite sign.
+    const DY = 89.4;
+    const DZ = 33.23;
+    const rad = (10 * Math.PI) / 180;
+    const cosTerm = Math.abs(DY * Math.cos(rad) - DY);
+    const depthTerm = Math.abs(DZ * Math.sin(rad));
+    expect(depthTerm).toBeGreaterThan(3 * cosTerm);
+
+    // And because cos() is even, the correction always LENGTHENS: it
+    // moves the right way for a chin-up frame (which reads short) and
+    // the wrong way for chin-down (which reads long).
+    expect(poseCorrect("noseToChin", 80, 0, 12)).toBeGreaterThan(80);
+    expect(poseCorrect("noseToChin", 80, 0, -12)).toBeGreaterThan(80);
+
+    // Which is why the per-frame pitch is now recorded (scan-signals.ts
+    // -> fit_sessions.measurement_frames): the correction cannot be
+    // fixed, nor a catalog offset confirmed, without knowing the angle
+    // each real measurement was taken at.
+  });
+
   it("stops correcting past 30 degrees rather than amplifying error", () => {
     const at30 = poseCorrect("noseToChin", 65, 30, 0);
     const at60 = poseCorrect("noseToChin", 65, 60, 0);

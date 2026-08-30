@@ -233,6 +233,37 @@ export interface ScanSignals {
   agreement: Partial<Record<keyof FitMeasurements, number>>;
   measurementConfidence: number;
   band: "high" | "moderate" | "low";
+  /**
+   * Per-frame numbers behind the aggregate above. Scalars only — head
+   * angles, that frame's millimetre values, its own quality subscores.
+   *
+   * Carried for the CLINICAL RECORD, not for scoring: nothing in the
+   * engine reads it, and `resolveConfidence` is deliberately unchanged.
+   * It exists because the aggregate cannot say why a measurement came
+   * out where it did — `noseToChin` spans ~33 mm of depth, so its
+   * projected length moves with head pitch several times faster than
+   * the correction applied to it, and telling a population effect apart
+   * from a posture artifact needs the angle each frame was taken at.
+   */
+  frames?: ScanFrame[];
+}
+
+/** One captured frame, as numbers. See `ScanSignals.frames`. */
+export interface ScanFrame {
+  pose: "front" | "turn_left" | "turn_right";
+  source?: "burst" | "guided";
+  yawDeg: number;
+  pitchDeg: number;
+  acceptable: boolean;
+  /** Whether this frame contributed measurement samples to the aggregate. */
+  contributed: boolean;
+  values: Partial<Record<keyof FitMeasurements, number>>;
+  quality: Partial<
+    Record<
+      "lighting" | "distance" | "pose" | "occlusion" | "motion" | "framing",
+      number
+    >
+  >;
 }
 
 // ── Formulary ────────────────────────────────────────────────────────
