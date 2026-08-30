@@ -56,7 +56,7 @@ import {
 import {
   assessFrameQuality,
   centroidOf,
-  estimatePoseFromLandmarks,
+  resolveFramePose,
   POSE_PROMPT,
   turnCoachNudge,
   type CapturePose,
@@ -251,6 +251,10 @@ export function GuidedCapture({ onFallback }: { onFallback: () => void }) {
         const landmarker = await loadFaceLandmarker({
           runningMode: "VIDEO",
           timeoutMs: MODEL_LOAD_TIMEOUT_MS,
+          // See measure.tsx: the matrix is a rigid-body pose solve, and
+          // `resolveFramePose` only trusts it once it agrees with the
+          // geometric estimate about which way the head is facing.
+          outputFacialTransformationMatrixes: true,
         });
         if (!active) {
           landmarker.close?.();
@@ -486,10 +490,11 @@ export function GuidedCapture({ onFallback }: { onFallback: () => void }) {
             ? sampleFrame(sampleCanvas, landmarks)
             : sampleFrame(video as never, landmarks);
 
-          const angles = estimatePoseFromLandmarks(landmarks, {
-            width: w,
-            height: h,
-          });
+          const angles = resolveFramePose(
+            result.facialTransformationMatrixes?.[0],
+            landmarks,
+            { width: w, height: h },
+          );
           liveYawDeg = angles.yawDeg;
           const assessFor = (pose: CapturePose) =>
             assessFrameQuality({

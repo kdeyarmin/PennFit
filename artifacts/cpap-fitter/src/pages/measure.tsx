@@ -30,7 +30,7 @@ import {
   aggregateFrames,
   assessFrameQuality,
   centroidOf,
-  estimatePoseFromLandmarks,
+  resolveFramePose,
   type FrameMeasurement,
   type Point2D,
 } from "@/lib/scan-quality";
@@ -222,7 +222,14 @@ export function Measure() {
         // dance, and the late-arrival close is exactly the detail that
         // gets copied correctly twice and wrongly the third time.
         try {
-          faceLandmarker = await loadFaceLandmarker({ runningMode: "IMAGE" });
+          faceLandmarker = await loadFaceLandmarker({
+            runningMode: "IMAGE",
+            // The head-pose matrix: a rigid-body solve rather than the
+            // landmark-ratio proxy, whose pitch is confounded by
+            // anatomy. `resolveFramePose` still checks the two agree
+            // before trusting it.
+            outputFacialTransformationMatrixes: true,
+          });
         } catch (loadErr) {
           if (loadErr instanceof LandmarkerLoadTimeout) {
             throw new ExtractionError(
@@ -289,7 +296,11 @@ export function Measure() {
                 extractMeasurementValues(landmarks, frameImg);
               // Quality scalars for this frame. sampleFrame never throws
               // (neutral fallback) and the checks are pure math.
-              const angles = estimatePoseFromLandmarks(landmarks, frameImg);
+              const angles = resolveFramePose(
+                detection.facialTransformationMatrixes?.[0],
+                landmarks,
+                frameImg,
+              );
               const sample = sampleFrame(frameImg, landmarks);
               const quality = assessFrameQuality({
                 pose: frame.pose,
@@ -329,6 +340,7 @@ export function Measure() {
                 // span actually applied to THIS frame.
                 irisPx: irisPix,
                 depthCorrected,
+                poseSource: angles.poseSource,
               });
             } catch (err) {
               lastFailure =

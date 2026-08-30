@@ -270,6 +270,114 @@ function windowScore(value: number, min: number, max: number): number {
 }
 
 /**
+ * The largest disagreement between the matrix pitch and the geometric
+ * one that still reads as the same head.
+ *
+ * The geometric estimator is confounded by anatomy — a long chin or a
+ * high nose shifts its ratio by ~±5° with the head perfectly level,
+ * which is why PITCH_GRACE_DEG exists — so the two will never agree
+ * exactly. But a runtime whose matrix convention differs from the one
+ * assumed below (a transposed read, an inverted axis) disagrees by
+ * roughly TWICE the angle: ~20° at a real 10° nod. 12° sits cleanly
+ * between the two, so a wrong convention degrades to today's behaviour
+ * instead of silently correcting spans the wrong way.
+ */
+export const MATRIX_GEO_PITCH_AGREEMENT_DEG = 12;
+
+/** MediaPipe's 4x4 facial transformation matrix, as it arrives. */
+export interface FacialTransformationMatrixLike {
+  rows: number;
+  columns: number;
+  data: number[] | Float32Array;
+}
+
+/**
+ * Head pose from MediaPipe's own transformation matrix.
+ *
+ * Far better than inferring pitch from landmark ratios, because it is a
+ * rigid-body solve rather than a proxy: it does not care that this
+ * patient's chin is long. Returns null for anything malformed — the
+ * caller then keeps the geometric estimate rather than trusting a
+ * partially-read matrix.
+ *
+ * Column-major, matching the convention tasks-vision emits (the same
+ * layout THREE.js consumes directly), so element (i, j) is data[j*4+i].
+ * Tait-Bryan extraction in the same yaw/pitch/roll convention the
+ * geometric estimator reports, so every consumer downstream is
+ * unaffected by which one produced the numbers.
+ */
+export function poseFromFacialTransformationMatrix(
+  matrix: FacialTransformationMatrixLike | null | undefined,
+): { yawDeg: number; pitchDeg: number; rollDeg: number } | null {
+  if (!matrix) return null;
+  const { rows, columns, data } = matrix;
+  if (rows !== 4 || columns !== 4 || !data || data.length !== 16) return null;
+  const m = (i: number, j: number) => Number(data[j * 4 + i]);
+  const r00 = m(0, 0);
+  const r10 = m(1, 0);
+  const r20 = m(2, 0);
+  const r21 = m(2, 1);
+  const r22 = m(2, 2);
+  if (![r00, r10, r20, r21, r22].every((n) => Number.isFinite(n))) return null;
+  const deg = (rad: number) => (rad * 180) / Math.PI;
+  return {
+    yawDeg: deg(Math.atan2(-r20, Math.hypot(r00, r10))),
+    pitchDeg: deg(Math.atan2(r21, r22)),
+    rollDeg: deg(Math.atan2(r10, r00)),
+  };
+}
+
+/**
+ * The head pose to score and correct this frame with.
+ *
+ * Prefers the matrix, but only once it has agreed with the geometric
+ * estimate about what it is looking at. The runtime's exact convention
+ * is not something this codebase can verify from here, and a silently
+ * transposed or sign-flipped matrix would be worse than the estimator it
+ * replaces: the geometric pitch is merely noisy, while a wrong-signed
+ * one would drive the depth correction in exactly the wrong direction.
+ *
+ * Two gates, both failing toward today's behaviour:
+ *
+ *   * YAW SIGN. At a meaningful turn the two must at least agree which
+ *     way the head is facing. The turn steps are direction-locked off
+ *     this sign, so a disagreement would break the coaching as well as
+ *     the measurement.
+ *   * PITCH AGREEMENT. See MATRIX_GEO_PITCH_AGREEMENT_DEG.
+ *
+ * `poseSource` rides on the result so the record can say which produced
+ * a given frame's angles, and so the depth-aware pitch correction can
+ * refuse to run on the estimate it does not trust.
+ */
+export function resolveFramePose(
+  matrix: FacialTransformationMatrixLike | null | undefined,
+  landmarks: Point2D[],
+  frame?: { width: number; height: number },
+): {
+  yawDeg: number;
+  pitchDeg: number;
+  rollDeg: number;
+  poseSource: "matrix" | "geometric";
+} {
+  const geometric = estimatePoseFromLandmarks(landmarks, frame);
+  const fromMatrix = poseFromFacialTransformationMatrix(matrix);
+  if (!fromMatrix) return { ...geometric, poseSource: "geometric" };
+
+  const meaningfulYaw = Math.abs(geometric.yawDeg) > 8;
+  const signsDisagree = fromMatrix.yawDeg * geometric.yawDeg < 0;
+  if (meaningfulYaw && signsDisagree) {
+    return { ...geometric, poseSource: "geometric" };
+  }
+  if (
+    Math.abs(fromMatrix.pitchDeg - geometric.pitchDeg) >
+    MATRIX_GEO_PITCH_AGREEMENT_DEG
+  ) {
+    return { ...geometric, poseSource: "geometric" };
+  }
+  return { ...fromMatrix, poseSource: "matrix" };
+}
+
+/**
  * Derive head pose from landmark geometry.
  *
  * A fallback for runtimes where the facial transformation matrix is not

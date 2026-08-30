@@ -33,7 +33,7 @@ import {
   assessFrameQuality,
   centroidOf,
   coachMessage,
-  estimatePoseFromLandmarks,
+  resolveFramePose,
   type Point2D,
   type QualityResult,
 } from "@/lib/scan-quality";
@@ -143,6 +143,7 @@ export function useLiveFrameCoach(
         loadFaceLandmarker({
           runningMode: "VIDEO",
           timeoutMs: COACH_MODEL_TIMEOUT_MS,
+          outputFacialTransformationMatrixes: true,
         }) as unknown as Promise<LandmarkerLike>);
     void (async () => {
       try {
@@ -247,10 +248,14 @@ export function useLiveFrameCoach(
             ? sampleFrame(sampleCanvas, landmarks)
             : sampleFrame(video as never, landmarks);
 
-          const angles = estimatePoseFromLandmarks(landmarks, {
-            width: w,
-            height: h,
-          });
+          const angles = resolveFramePose(
+            (result as { facialTransformationMatrixes?: unknown[] })
+              .facialTransformationMatrixes?.[0] as
+              | Parameters<typeof resolveFramePose>[0]
+              | undefined,
+            landmarks,
+            { width: w, height: h },
+          );
           quality = assessFrameQuality({
             pose: "front",
             landmarks,

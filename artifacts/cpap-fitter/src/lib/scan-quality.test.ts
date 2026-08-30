@@ -23,6 +23,8 @@ import {
   type Point2D,
   type QualityInput,
   type QualityResult,
+  poseFromFacialTransformationMatrix,
+  resolveFramePose,
 } from "./scan-quality";
 import { ASSUMED_HFOV_DEG, IRIS_DIAMETER_MM } from "./face-measurements";
 
@@ -906,5 +908,136 @@ describe("multi-frame aggregation", () => {
     expect(result.frameCount).toBe(0);
     expect(result.band).toBe("low");
     expect(result.measurementConfidence).toBe(0);
+  });
+});
+
+/** A level, front-facing landmark set — the "no rotation" reference. */
+function frontFaceLandmarks(): Point2D[] {
+  const pts: Point2D[] = Array.from({ length: 478 }, () => ({
+    x: 0.5,
+    y: 0.5,
+  }));
+  const set = (i: number, x: number, y: number) => {
+    pts[i] = { x, y };
+  };
+  set(1, 0.5, 0.542); // nose tip at the neutral-head ratio
+  set(234, 0.35, 0.5);
+  set(454, 0.65, 0.5);
+  set(10, 0.5, 0.24);
+  set(152, 0.5, 0.78);
+  set(33, 0.41, 0.45);
+  set(263, 0.59, 0.45);
+  set(168, 0.5, 0.45);
+  return pts;
+}
+
+describe("head pose from MediaPipe's transformation matrix", () => {
+  /** Column-major 4x4 for a rotation about one axis, as tasks-vision emits. */
+  function matrixFor(axis: "x" | "y" | "z", deg: number) {
+    const t = (deg * Math.PI) / 180;
+    const c = Math.cos(t);
+    const s = Math.sin(t);
+    // Row-major rotation, then transposed into column-major storage.
+    const r =
+      axis === "x"
+        ? [
+            [1, 0, 0],
+            [0, c, -s],
+            [0, s, c],
+          ]
+        : axis === "y"
+          ? [
+              [c, 0, s],
+              [0, 1, 0],
+              [-s, 0, c],
+            ]
+          : [
+              [c, -s, 0],
+              [s, c, 0],
+              [0, 0, 1],
+            ];
+    const data = new Array(16).fill(0);
+    for (let i = 0; i < 3; i++) {
+      for (let j = 0; j < 3; j++) data[j * 4 + i] = r[i]![j]!;
+    }
+    data[15] = 1;
+    return { rows: 4, columns: 4, data };
+  }
+
+  it("reads pitch, yaw and roll back out of a known rotation", () => {
+    const pitch = poseFromFacialTransformationMatrix(matrixFor("x", 10));
+    expect(pitch!.pitchDeg).toBeCloseTo(10, 4);
+    expect(pitch!.yawDeg).toBeCloseTo(0, 4);
+
+    const yaw = poseFromFacialTransformationMatrix(matrixFor("y", -15));
+    expect(yaw!.yawDeg).toBeCloseTo(-15, 4);
+
+    const roll = poseFromFacialTransformationMatrix(matrixFor("z", 7));
+    expect(roll!.rollDeg).toBeCloseTo(7, 4);
+  });
+
+  it("returns null for anything malformed rather than half-reading it", () => {
+    expect(poseFromFacialTransformationMatrix(null)).toBeNull();
+    expect(
+      poseFromFacialTransformationMatrix({ rows: 3, columns: 3, data: [] }),
+    ).toBeNull();
+    expect(
+      poseFromFacialTransformationMatrix({
+        rows: 4,
+        columns: 4,
+        data: new Array(16).fill(Number.NaN),
+      }),
+    ).toBeNull();
+  });
+});
+
+describe("resolveFramePose — the matrix has to earn its trust", () => {
+  const level = frontFaceLandmarks();
+
+  it("falls back to the estimator when there is no matrix", () => {
+    const out = resolveFramePose(undefined, level, {
+      width: 1080,
+      height: 1440,
+    });
+    expect(out.poseSource).toBe("geometric");
+  });
+
+  it("takes the matrix when the two agree", () => {
+    // A level head: the matrix says ~0, the estimator says ~0.
+    const identity = {
+      rows: 4,
+      columns: 4,
+      data: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1],
+    };
+    const out = resolveFramePose(identity, level, {
+      width: 1080,
+      height: 1440,
+    });
+    expect(out.poseSource).toBe("matrix");
+  });
+
+  it("refuses a matrix that disagrees about pitch", () => {
+    // 40° of pitch against a level-looking face is not the same head —
+    // it is the signature of a convention this code has read wrong, and
+    // a wrong-signed pitch would drive the depth correction backwards.
+    const wrong = {
+      rows: 4,
+      columns: 4,
+      data: (() => {
+        const t = (40 * Math.PI) / 180;
+        const c = Math.cos(t);
+        const s = Math.sin(t);
+        const d = new Array(16).fill(0);
+        d[0] = 1;
+        d[5] = c;
+        d[6] = s;
+        d[9] = -s;
+        d[10] = c;
+        d[15] = 1;
+        return d;
+      })(),
+    };
+    const out = resolveFramePose(wrong, level, { width: 1080, height: 1440 });
+    expect(out.poseSource).toBe("geometric");
   });
 });
