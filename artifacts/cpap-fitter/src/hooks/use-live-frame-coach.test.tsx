@@ -18,6 +18,7 @@ import { renderHook, act } from "@testing-library/react";
 import {
   useLiveFrameCoach,
   STEADY_FRAMES_REQUIRED,
+  NO_ASSESSMENT_GRACE_MS,
   type LandmarkerLike,
 } from "./use-live-frame-coach";
 import { COACH_COPY } from "@/lib/scan-quality";
@@ -95,10 +96,11 @@ describe("useLiveFrameCoach — degradation", () => {
   });
 
   it("gives up rather than throwing forever when every tick fails", async () => {
-    const landmarker: LandmarkerLike = {
+    const landmarker: LandmarkerLike & { close: ReturnType<typeof vi.fn> } = {
       detectForVideo: () => {
         throw new Error("runtime gone");
       },
+      close: vi.fn(),
     };
     const { result } = renderHook(() =>
       useLiveFrameCoach(videoRef(), {
@@ -113,6 +115,33 @@ describe("useLiveFrameCoach — degradation", () => {
       vi.advanceTimersByTime(180 * 30);
     });
     expect(result.current.status).toBe("unavailable");
+    // And it hands the native memory back at that moment rather than
+    // holding it until the patient leaves the page. The devices that
+    // reach this path are the constrained ones, so an idle WASM/GPU
+    // landmarker is worst exactly here.
+    expect(landmarker.close).toHaveBeenCalled();
+  });
+
+  it("releases the landmarker when no assessment is ever possible", async () => {
+    // The other give-up path: nothing throws, but the video never
+    // produces a frame worth assessing, so the grace period expires.
+    const landmarker = fakeLandmarker();
+    const emptyVideo = {
+      current: document.createElement("video"),
+    } as React.RefObject<HTMLVideoElement | null>;
+    const { result } = renderHook(() =>
+      useLiveFrameCoach(emptyVideo, {
+        enabled: true,
+        loadLandmarker: () => Promise.resolve(landmarker),
+      }),
+    );
+    await flush();
+
+    await act(async () => {
+      vi.advanceTimersByTime(NO_ASSESSMENT_GRACE_MS + 180 * 2);
+    });
+    expect(result.current.status).toBe("unavailable");
+    expect(landmarker.close).toHaveBeenCalled();
   });
 
   it("closes the landmarker on unmount — it holds native memory", async () => {

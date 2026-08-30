@@ -71,7 +71,7 @@ const COACH_MODEL_TIMEOUT_MS = 15_000;
  * nothing.
  */
 const MAX_CONSECUTIVE_TICK_ERRORS = 20;
-const NO_ASSESSMENT_GRACE_MS = 8_000;
+export const NO_ASSESSMENT_GRACE_MS = 8_000;
 
 /** How long a coach line holds before another may replace it. */
 const COACH_LINE_MIN_GAP_MS = 1_500;
@@ -181,6 +181,22 @@ export function useLiveFrameCoach(
       setReady(false);
       setSteady(false);
       setMessage(null);
+      // Hand back the native memory NOW, not at unmount. Flipping the
+      // status clears the interval (this effect re-runs and returns
+      // early), but the loader's cleanup is mount-only, so without this
+      // the WASM/GPU-backed landmarker stays allocated for the rest of
+      // the page's life doing nothing at all. The devices that reach
+      // this path are the constrained ones — a runtime that throws every
+      // tick, or one too slow to produce an assessment in eight seconds
+      // — which is exactly where holding that allocation costs most.
+      // Nulling the ref also makes the unmount cleanup's `?.` a no-op,
+      // so nothing is closed twice.
+      try {
+        landmarkerRef.current?.close?.();
+      } catch {
+        /* best-effort */
+      }
+      landmarkerRef.current = null;
     };
 
     const tick = () => {
