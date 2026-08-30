@@ -49,6 +49,34 @@ landmark localisation noise, which multi-frame medians already attack.
 The one _systematic_ accuracy risk left is the mask-side data, which is
 what 0511/0512 addressed.
 
+> **Follow-up, 2026-08-30 — two of the above are now superseded.** This
+> review scored the pipeline on the assumption that head pitch could
+> only be estimated from landmark geometry. It can't be estimated well
+> that way — the geometric estimator reads **+5.4° on a perfectly level
+> canonical face** — and once MediaPipe's own transformation matrix is
+> read instead (`resolveFramePose`), two of the bullets above change:
+>
+> - **Pose correction** is no longer "cos(pitch)" for `noseToChin`. That
+>   span runs ~33 mm through the face's depth as well as ~89 mm down its
+>   front, so pitch swings the chin toward or away from the lens — an
+>   effect that is _asymmetric in the sign of the pitch_ and therefore
+>   inexpressible by an even function. cos() was correcting the wrong
+>   way on every chin-down capture. It now uses the measured ratio
+>   `cos t − K(D)·sin t`, matrix-backed frames only.
+> - **The confidence floors were over-counting.** A guided run's two
+>   turn frames contribute no measurement samples yet were being paid
+>   for as independent looks, and its two front frames — separated by a
+>   held-steady streak, not a re-pose — could claim uncapped agreement.
+>   Both are now priced honestly, which moves some guided fittings from
+>   high to moderate. No measurement changed; the evidence behind them
+>   is simply counted correctly.
+>
+> The `noseToChin` "deliberately uncorrected" note in the perspective
+> bullet still stands — that is the depth-PLANE correction, a different
+> thing from the pitch model, and it is still skipped for that span.
+> See [`scan-accuracy-verification-2026-08-20.md`](./scan-accuracy-verification-2026-08-20.md)
+> for the numbers and for what remains (`noseHeight` is still cos-only).
+
 ## 2. Clinical engine — one gap found and fixed
 
 Reviewed: tiers 1–6 (`tiers.ts`), `confidence.ts`, `formulary.ts`,

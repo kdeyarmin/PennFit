@@ -33,6 +33,10 @@
  * which is backwards for a population that includes 17-year-olds.
  */
 
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
 import { describe, expect, it } from "vitest";
 
 import {
@@ -43,6 +47,8 @@ import {
   measurementsOutOfBounds,
   type PlausibilityField,
 } from "./confidence.js";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 /**
  * Vertices of MediaPipe's `canonical_face_model.obj` (centimetres →
@@ -198,6 +204,76 @@ describe("the pediatric window is the adult window with a lower floor", () => {
     );
     expect(new Set(Object.keys(PEDIATRIC_PLAUSIBILITY_BOUNDS))).toEqual(
       new Set(PLAUSIBILITY_FIELDS),
+    );
+  });
+});
+
+describe("the browser's copy of the window matches this one", () => {
+  // There are TWO copies of this table, and they cannot import each
+  // other: `PLAUSIBILITY_BOUNDS` in cpap-fitter's `measure-flow.ts` runs
+  // in the browser bundle, in a different workspace, and gates the scan
+  // BEFORE anything is transmitted. The server's union window is the
+  // one it is supposed to be a copy of.
+  //
+  // A drift between them is silent in both directions and neither is
+  // benign. Tighten the client and a real patient is told at /measure
+  // that their face is out of range, never reaching the server that
+  // would have accepted them — the failure looks exactly like the
+  // feature working. Loosen it and the client forwards millimetres the
+  // server will reject, turning a fixable "hold the camera differently"
+  // into a round trip that ends in a hand-off.
+  //
+  // So the source is read and parsed rather than imported. Reading the
+  // text is the point: a `readFileSync` guard is the repo's existing
+  // pattern for an invariant that spans a bundle boundary (see
+  // `app.face-model-check.test.ts`), and it fails loudly if the table is
+  // renamed or restructured rather than quietly passing on nothing.
+  const CLIENT_SOURCE = readFileSync(
+    path.join(__dirname, "../../../../cpap-fitter/src/lib/measure-flow.ts"),
+    "utf8",
+  );
+
+  function clientBounds(): Record<string, [number, number]> {
+    const table =
+      /export const PLAUSIBILITY_BOUNDS = \{([\s\S]*?)\n\} as const;/.exec(
+        CLIENT_SOURCE,
+      );
+    expect(
+      table,
+      "cpap-fitter's PLAUSIBILITY_BOUNDS table was renamed or restructured — update this guard, do not delete it",
+    ).not.toBeNull();
+    const bounds: Record<string, [number, number]> = {};
+    for (const [, key, min, max] of table![1]!.matchAll(
+      /(\w+):\s*\[\s*(-?[\d.]+)\s*,\s*(-?[\d.]+)\s*\]/g,
+    )) {
+      bounds[key!] = [Number(min), Number(max)];
+    }
+    return bounds;
+  }
+
+  it("carries the same five windows, to the millimetre", () => {
+    const client = clientBounds();
+    expect(Object.keys(client).sort()).toEqual([...PLAUSIBILITY_FIELDS].sort());
+    for (const field of PLAUSIBILITY_FIELDS) {
+      expect(client[field], field).toEqual([
+        UNION_PLAUSIBILITY_BOUNDS[field][0],
+        UNION_PLAUSIBILITY_BOUNDS[field][1],
+      ]);
+    }
+  });
+
+  it("is the UNION window, not the adult one", () => {
+    // The specific regression this pins: an adult-only client window
+    // rejected every pediatric face at /measure, making the server's
+    // whole pediatric fitting path unreachable from the scanner. The
+    // client does not know the patient's population — the chart does —
+    // so its only job is rejecting things that are not faces.
+    const client = clientBounds();
+    expect(client.noseToChin![0]).toBeLessThan(
+      ADULT_PLAUSIBILITY_BOUNDS.noseToChin[0],
+    );
+    expect(client.noseWidth![0]).toBeLessThan(
+      ADULT_PLAUSIBILITY_BOUNDS.noseWidth[0],
     );
   });
 });
