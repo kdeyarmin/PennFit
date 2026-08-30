@@ -93,6 +93,52 @@ function build(
   });
 }
 
+describe("per-frame numbers reach the wire", () => {
+  // The column has existed since migration 0483 and nothing ever wrote
+  // it, which is why an apparent ~10 mm offset in `noseToChin` across
+  // real fittings could not be attributed. The aggregate says what was
+  // measured; only the frames say at what head angle.
+  it("carries head angles and per-frame values alongside the aggregate", () => {
+    const out = build({
+      faceLuma: 135,
+      faceLumaLeft: 133,
+      faceLumaRight: 137,
+      sharpness: 400,
+    });
+    expect(out.frames).toHaveLength(1);
+    const [frame] = out.frames!;
+    expect(frame!.pose).toBe("front");
+    expect(typeof frame!.pitchDeg).toBe("number");
+    expect(typeof frame!.yawDeg).toBe("number");
+    expect(frame!.values.noseToChin).toBeCloseTo(VALUES.noseToChin, 1);
+    expect(typeof frame!.acceptable).toBe("boolean");
+    expect(frame!.contributed).toBe(true);
+  });
+
+  it("sends scalars only — nothing image-derived", () => {
+    const out = build({
+      faceLuma: 135,
+      faceLumaLeft: 133,
+      faceLumaRight: 137,
+      sharpness: 400,
+    });
+    // The whole payload must survive JSON with no string that could
+    // carry pixels. The route independently rejects encoded media, but
+    // the client must not be the thing that tries.
+    const json = JSON.stringify(out);
+    expect(json).not.toMatch(/data:/i);
+    expect(json).not.toMatch(/base64/i);
+    for (const frame of out.frames ?? []) {
+      for (const v of Object.values(frame.values)) {
+        expect(typeof v).toBe("number");
+      }
+      for (const v of Object.values(frame.quality)) {
+        expect(typeof v).toBe("number");
+      }
+    }
+  });
+});
+
 describe("buildScanSignals", () => {
   it("emits only the keys the strict server schema accepts", () => {
     const out = build({
@@ -105,6 +151,7 @@ describe("buildScanSignals", () => {
       "agreement",
       "band",
       "frameCount",
+      "frames",
       "measurementConfidence",
       "quality",
     ]);

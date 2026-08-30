@@ -29,8 +29,10 @@ import {
   aggregateFrames,
   assessFrameQuality,
   estimatePoseFromLandmarks,
+  MEASUREMENT_YAW_LIMIT_DEG,
   type AggregateResult,
   type CapturePose,
+  type FrameMeasurement,
   type Point2D,
 } from "./scan-quality";
 import { sampleFrame } from "./frame-sampling";
@@ -96,17 +98,62 @@ export function buildScanSignals(
     rollDeg: angles.rollDeg,
   });
 
-  const aggregate = aggregateFrames([
-    {
-      pose,
-      quality,
-      values: input.values,
-      yawDeg: angles.yawDeg,
-      pitchDeg: angles.pitchDeg,
-    },
-  ]);
+  const frame: FrameMeasurement = {
+    pose,
+    quality,
+    values: input.values,
+    yawDeg: angles.yawDeg,
+    pitchDeg: angles.pitchDeg,
+  };
+  const aggregate = aggregateFrames([frame]);
 
-  return payloadFromAggregate(aggregate);
+  return payloadFromAggregate(aggregate, [frame]);
+}
+
+/**
+ * Project the per-frame numbers onto the wire shape.
+ *
+ * Scalars only — head angles, the millimetre values that frame
+ * produced, and its own quality subscores. Nothing image-derived beyond
+ * those numbers exists at this point to send.
+ *
+ * `contributed` mirrors `aggregateFrames`'s own near-frontal rule, so a
+ * reader can tell which frames the reported measurements actually rest
+ * on without re-deriving the yaw limit.
+ */
+export function framesFromMeasurements(
+  frames: readonly FrameMeasurement[],
+): ScanSignalsPayload["frames"] {
+  const anyNearFrontal = frames.some(
+    (f) => Math.abs(f.yawDeg) <= MEASUREMENT_YAW_LIMIT_DEG,
+  );
+  const round = (n: number) =>
+    Number.isFinite(n) ? Math.round(n * 10) / 10 : 0;
+  return frames.slice(0, 10).map((f) => ({
+    pose: f.pose,
+    ...(f.source ? { source: f.source } : {}),
+    yawDeg: round(f.yawDeg),
+    pitchDeg: round(f.pitchDeg),
+    acceptable: f.quality.acceptable,
+    // Matches the all-turned fallback: when nothing is near-frontal,
+    // every frame contributes.
+    contributed:
+      !anyNearFrontal || Math.abs(f.yawDeg) <= MEASUREMENT_YAW_LIMIT_DEG,
+    values: Object.fromEntries(
+      AGREEMENT_KEYS.filter((k) => typeof f.values[k] === "number").map((k) => [
+        k,
+        round(f.values[k]!),
+      ]),
+    ),
+    quality: {
+      lighting: unit(f.quality.scores.lighting),
+      distance: unit(f.quality.scores.distance),
+      pose: unit(f.quality.scores.pose),
+      occlusion: unit(f.quality.scores.occlusion),
+      motion: unit(f.quality.scores.motion),
+      framing: unit(f.quality.scores.framing),
+    },
+  }));
 }
 
 /**
@@ -117,9 +164,14 @@ export function buildScanSignals(
  * projection). Clamps every scalar into [0, 1] and keeps only the keys
  * the route's `.strict()` schema knows about — an unexpected key would
  * 400 the whole assessment.
+ *
+ * `frames` is optional: pass the per-frame set to have it projected
+ * alongside the aggregate (see `framesFromMeasurements`), omit it and
+ * the payload is exactly what it was before.
  */
 export function payloadFromAggregate(
   aggregate: AggregateResult,
+  frames?: readonly FrameMeasurement[],
 ): ScanSignalsPayload {
   const agreement: ScanSignalsPayload["agreement"] = {};
   for (const key of AGREEMENT_KEYS) {
@@ -140,5 +192,8 @@ export function payloadFromAggregate(
     agreement,
     measurementConfidence: unit(aggregate.measurementConfidence),
     band: aggregate.band,
+    ...(frames && frames.length > 0
+      ? { frames: framesFromMeasurements(frames) }
+      : {}),
   };
 }
