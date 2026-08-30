@@ -86,7 +86,8 @@ function build(
       height: number;
     },
     landmarks: frontFaceLandmarks(),
-    // ~2.4 px/mm at this frame size — inside PX_PER_MM_BOUNDS.
+    // ~45 cm from the camera on this 1080x1440 frame — mid-window for
+    // CAPTURE_DISTANCE_MM_BOUNDS, and comfortably resolved.
     irisWidthPx: 28,
     values: VALUES,
   });

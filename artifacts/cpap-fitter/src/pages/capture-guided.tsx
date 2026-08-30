@@ -493,7 +493,10 @@ export function GuidedCapture({ onFallback }: { onFallback: () => void }) {
             ? sampleFrame(sampleCanvas, landmarks)
             : sampleFrame(video as never, landmarks);
 
-          const angles = estimatePoseFromLandmarks(landmarks);
+          const angles = estimatePoseFromLandmarks(landmarks, {
+            width: w,
+            height: h,
+          });
           liveYawDeg = angles.yawDeg;
           const assessFor = (pose: CapturePose) =>
             assessFrameQuality({

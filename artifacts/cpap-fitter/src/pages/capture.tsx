@@ -457,7 +457,8 @@ function SingleFrameCapture() {
           adult.
         </p>
         <p className="md:hidden text-sm text-muted-foreground leading-snug">
-          Center your face in the oval.
+          Center your face in the oval — arm&apos;s length away, even light,
+          glasses off.
         </p>
       </div>
 
@@ -489,8 +490,9 @@ function SingleFrameCapture() {
         {/* Overlay Guides — purely decorative scan-frame chrome.
             aria-hidden because screen readers should not announce the
             empty face oval / corner-bracket divs; the actual guidance
-            lives in the visible "Quick reminders" list below + the
-            countdown live region further down. */}
+            lives in the "Before you shoot" list below (and the heading
+            copy above, which carries the same three points on mobile)
+            plus the capture live region further down. */}
         <div
           className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center"
           aria-hidden="true"
@@ -555,6 +557,30 @@ function SingleFrameCapture() {
           </Button>
         </div>
       )}
+
+      {/* Before you shoot.
+          The default capture is ONE tap with no live coaching (the guided
+          multi-angle scan is a per-tenant opt-in), so everything the
+          patient could get wrong is only discovered afterwards — on the
+          extraction error screen, or as a quietly capped confidence
+          score. These three are not general photography advice: they are
+          the pipeline's own failure reasons, in the order it reports them
+          (`iris_too_small`, `lighting`, `implausible_measurements` — see
+          FAIL_HINTS in measure.tsx). Saying them BEFORE the shutter is
+          the cheapest accuracy win available here.
+
+          Desktop only by layout: on a phone the frame is capped at 50vh
+          precisely so the oval and the shutter share one screen, and a
+          list here would push the button under the fold. The mobile
+          heading carries the same three points in one line instead. */}
+      <ul
+        className="hidden md:block mb-5 text-sm text-muted-foreground space-y-1.5 list-disc pl-5 max-w-md"
+        data-testid="capture-reminders"
+      >
+        <li>Hold the phone about an arm&apos;s length from your face.</li>
+        <li>Face a window or a lamp — even light, nothing behind you.</li>
+        <li>Take off glasses and clear hair from your eyes and cheeks.</li>
+      </ul>
 
       <Button
         size="lg"

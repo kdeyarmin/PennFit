@@ -76,7 +76,10 @@ export function buildScanSignals(
 ): ScanSignalsPayload {
   const pose: CapturePose = input.pose ?? "front";
   const sample = sampleFrame(input.image, input.landmarks);
-  const angles = estimatePoseFromLandmarks(input.landmarks as Point2D[]);
+  const angles = estimatePoseFromLandmarks(input.landmarks as Point2D[], {
+    width: input.image.width,
+    height: input.image.height,
+  });
 
   const quality = assessFrameQuality({
     pose,
