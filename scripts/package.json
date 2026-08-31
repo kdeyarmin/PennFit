@@ -18,7 +18,8 @@
     "check:schema-drift": "tsx ./src/check-schema-drift.ts",
     "test": "vitest run --passWithNoTests",
     "test:coverage": "vitest run --passWithNoTests --coverage",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "resupply:backfill-due-at": "tsx ./src/resupply-backfill-episode-due-at.ts"
   },
   "devDependencies": {
     "@types/node": "catalog:",

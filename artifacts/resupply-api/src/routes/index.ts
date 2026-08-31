@@ -201,6 +201,8 @@ import payerFeeSchedulesImportRouter from "./admin/payer-fee-schedules-import.js
 import cmsFeeScheduleImportRouter from "./admin/cms-fee-schedule-import.js";
 import systemIntegrationsStatusRouter from "./admin/system-integrations-status.js";
 import pacwareRouter from "./admin/pacware.js";
+import pacwareShipmentsRouter from "./admin/pacware-shipments.js";
+import fulfillmentShipmentsRouter from "./admin/fulfillment-shipments.js";
 import resupplyBootstrapRouter from "./admin/resupply-bootstrap.js";
 import platformConnectionTestsRouter from "./platform/connection-tests.js";
 import proxyChainRouter from "./admin/proxy-chain.js";
@@ -713,6 +715,17 @@ router.use(systemIntegrationsStatusRouter);
 // patient-roster import (sync), and CSV exports (roster + resupply-due).
 // PacWare has no API; this is the documented CSV bridge.
 router.use(pacwareRouter);
+
+// /admin/pacware/import/shipments — the RETURN leg of the file exchange.
+// resupply-due.csv tells PacWare what to ship; this brings back what
+// actually shipped, which is the only thing that writes
+// `fulfillments.shipped_at` in bulk.
+router.use(pacwareShipmentsRouter);
+
+// /admin/fulfillments/:id/{mark-shipped,cancel} — per-order shipment
+// evidence for a tenant with no PacWare feed, and one-row corrections for
+// a tenant that has one.
+router.use(fulfillmentShipmentsRouter);
 router.use(resupplyBootstrapRouter);
 // /admin/diagnostics/proxy-chain — echoes the forwarding-header chain
 // (socket peer, XFF, CF-Connecting-IP) plus Express's req.ip resolution

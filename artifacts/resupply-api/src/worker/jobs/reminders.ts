@@ -90,6 +90,7 @@ import { hasLinkHmacKey } from "@workspace/resupply-secrets";
 
 import { getCompanyInfo } from "../../lib/company-info.js";
 import { markEpisodeAwaitingResponse } from "../../lib/episodes/mark-awaiting-response.js";
+import { isFeatureEnabled } from "../../lib/feature-flags.js";
 import { logger } from "../../lib/logger.js";
 import {
   applyTenantEmailSender,
@@ -735,6 +736,45 @@ export async function scanForDueReminders(
   candidates.sort((a, b) => (a.episodeDueAt < b.episodeDueAt ? 1 : -1));
   const candidateRows = candidates;
 
+  // The legacy (flag-off) due predicate, extracted so the two paths read
+  // side by side above. Returns "skip" for a row whose baseline is
+  // missing or unparseable — distinct from "not due yet", which is the
+  // common case for most active patients on every scan.
+  const isDueByFulfillmentAge = (
+    row: Candidate,
+    cadenceDays: number,
+    at: Date,
+  ): boolean | "skip" => {
+    const baselineRaw = row.lastFulfilledAt ?? row.prescriptionCreatedAt;
+    if (!baselineRaw) {
+      logger.warn(
+        { patient_id: row.patientId, episode_id: row.episodeId },
+        "reminders.scan: missing baseline date — skipping",
+      );
+      return "skip";
+    }
+    const baseline = new Date(baselineRaw);
+    if (isNaN(baseline.getTime())) {
+      logger.warn(
+        {
+          patient_id: row.patientId,
+          episode_id: row.episodeId,
+          baseline_raw: String(baselineRaw),
+        },
+        "reminders.scan: unparseable baseline date — skipping",
+      );
+      return "skip";
+    }
+    return daysBetween(baseline, at) >= cadenceDays;
+  };
+
+  // Read once per scan, not per row: this is a hot loop over every active
+  // patient and the flag lookup is cached but not free.
+  const dueAtAuthoritative = await isFeatureEnabled(
+    "resupply.due_at_authoritative",
+    orgId,
+  );
+
   // Step 7: per-row eligibility + channel resolution.
   const seenPatient = new Set<string>();
   const out: ScanRow[] = [];
@@ -760,32 +800,43 @@ export async function scanForDueReminders(
       now: asOf,
     });
 
-    // Eligibility: due iff (lastFulfilledAt ?? prescription.createdAt)
-    // is at least `plan.cadenceDays` old.
-    const baselineRaw = row.lastFulfilledAt ?? row.prescriptionCreatedAt;
-    if (!baselineRaw) {
-      logger.warn(
-        { patient_id: row.patientId, episode_id: row.episodeId },
-        "reminders.scan: missing baseline date — skipping",
-      );
-      continue;
-    }
-    const baseline = new Date(baselineRaw);
-    if (isNaN(baseline.getTime())) {
-      logger.warn(
-        {
-          patient_id: row.patientId,
-          episode_id: row.episodeId,
-          baseline_raw: String(baselineRaw),
-        },
-        "reminders.scan: unparseable baseline date — skipping",
-      );
-      continue;
-    }
-    if (daysBetween(baseline, asOf) < plan.cadenceDays) {
-      // Not due yet — skip silently. Common case for the bulk of
-      // active patients on every scan.
-      continue;
+    // Eligibility. Two predicates, one per tenant, selected by the
+    // `resupply.due_at_authoritative` flag.
+    //
+    // OFF (default, and the historical behaviour): derive due-ness from
+    // fulfillment age vs. the RESOLVED cadence. `episodes.due_at` is
+    // ignored here and used only as a sort key below.
+    //
+    // ON: trust `episodes.due_at`, which shipment evidence re-anchors on
+    // every recorded ship. This is the honest predicate — it is the one
+    // /admin/episodes, the PacWare resupply-due export and the reorder
+    // funnel all already display — but it MUST NOT be flipped before the
+    // tenant's stored dates have been backfilled, because `due_at` is
+    // written by `openOutreachEpisode` from `prescriptions.cadence_days`
+    // while the scan resolves cadence through `resolveOutreachPlan`
+    // (patient override -> frequency_rules -> prescription default). For
+    // any patient with an override or a matching payer rule the two
+    // disagree, and flipping without the backfill would remind the
+    // already-overdue half of the book at once and silence the rest.
+    // `pnpm --filter @workspace/scripts resupply:backfill-due-at
+    // --dry-run` reports that drift per tenant.
+    //
+    // Plain `isFeatureEnabled` is right here: OFF is the old behaviour,
+    // so a failed lookup degrades to it.
+    if (dueAtAuthoritative) {
+      const dueAtMs = Date.parse(row.episodeDueAt);
+      if (!Number.isFinite(dueAtMs)) {
+        logger.warn(
+          { patient_id: row.patientId, episode_id: row.episodeId },
+          "reminders.scan: unparseable episode due_at — skipping",
+        );
+        continue;
+      }
+      if (dueAtMs > asOf.getTime()) continue;
+    } else {
+      const dueByAge = isDueByFulfillmentAge(row, plan.cadenceDays, asOf);
+      if (dueByAge === "skip") continue;
+      if (!dueByAge) continue;
     }
 
     // Quiet hours: defer sends outside the recipient's 9am–8pm local

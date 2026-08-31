@@ -99,6 +99,67 @@ export interface PacwareParseResult<T> {
  * ignored but reported in `unmappedHeaders` so the operator can sanity-
  * check their report export.
  */
+/**
+ * Validated shipment-confirmation record (post-parse, pre-match).
+ *
+ * Every key is optional at the field level except the two PacWare always
+ * has (`pacwareId`, `itemSku`) and the ship date, because the match key
+ * degrades: an operator whose report carries the episode id needs no
+ * order ref, and one whose report carries neither still matches on
+ * patient + SKU. The refinement below is what enforces "at least one
+ * usable key" — a row with none is unmatched by construction, so it is
+ * rejected at parse time with a PHI-free message rather than counted as
+ * a mystery later.
+ */
+export const pacwareShipmentRowSchema = z
+  .object({
+    pennfitEpisodeId: z.string().trim().uuid().optional(),
+    pacwareOrderRef: z.string().trim().min(1).max(64).optional(),
+    pacwareId: z.string().trim().min(1).max(64),
+    itemSku: z.string().trim().min(1).max(64),
+    quantity: z.coerce.number().int().min(1).max(999).optional(),
+    shippedDate: z.string().regex(ISO_DATE, "must be YYYY-MM-DD"),
+    deliveredDate: z.string().regex(ISO_DATE, "must be YYYY-MM-DD").optional(),
+    trackingNumber: z.string().trim().max(64).optional(),
+    carrier: z.string().trim().max(64).optional(),
+    rowStatus: z
+      .string()
+      .trim()
+      .toLowerCase()
+      .pipe(z.enum(["shipped", "delivered", "cancelled", "canceled", "voided"]))
+      .optional(),
+  })
+  .strict()
+  .superRefine((row, ctx) => {
+    if (row.deliveredDate && row.deliveredDate < row.shippedDate) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["deliveredDate"],
+        message: "delivered date is before the ship date",
+      });
+    }
+  });
+
+export type PacwareShipmentRow = z.infer<typeof pacwareShipmentRowSchema>;
+
+/**
+ * Parse a PacWare shipment-confirmation report.
+ *
+ * Value normalization is ON: PacWare exports dates as MM/DD/YYYY, and a
+ * ship date is not a field an operator should have to reformat by hand —
+ * it is the date of service on a claim.
+ */
+export function parsePacwareShipmentCsv(
+  csvText: string,
+): PacwareParseResult<PacwareShipmentRow> {
+  return parseWithSchema(
+    "shipment_confirmations",
+    csvText,
+    pacwareShipmentRowSchema,
+    true,
+  );
+}
+
 export function parsePacwarePatientCsv(
   csvText: string,
 ): PacwareParseResult<PacwarePatientRow> {
@@ -109,6 +170,11 @@ function parseWithSchema<T>(
   kind: PacwareReportKind,
   csvText: string,
   schema: z.ZodType<T>,
+  /** Coerce common foreign formats (dates, phones) into the canonical
+   *  shape before validation. Off for the patient roster's strict path,
+   *  on for the shipment report, whose ship dates arrive as MM/DD/YYYY
+   *  straight out of PacWare. */
+  normalizeValues = false,
 ): PacwareParseResult<T> {
   const spec = getPacwareReportSpec(kind);
   const headerMap = buildHeaderFieldMap(spec);
@@ -119,7 +185,7 @@ function parseWithSchema<T>(
   const colFields = headerCells.map(
     (cell) => headerMap.get(normalizeHeader(cell)) ?? null,
   );
-  return buildParseResult(matrix, colFields, schema, false);
+  return buildParseResult(matrix, colFields, schema, normalizeValues);
 }
 
 /**
@@ -166,9 +232,15 @@ function buildParseResult<T>(
         // Coerce common foreign formats into the canonical shape. If a value
         // can't be coerced, keep it as-is so the schema raises a precise,
         // PHI-free validation error rather than silently dropping the row.
-        if (field === "dateOfBirth") value = normalizeDateToIso(value) ?? value;
-        else if (field === "phoneE164")
+        if (
+          field === "dateOfBirth" ||
+          field === "shippedDate" ||
+          field === "deliveredDate"
+        ) {
+          value = normalizeDateToIso(value) ?? value;
+        } else if (field === "phoneE164") {
           value = normalizePhoneToE164(value) ?? value;
+        }
       }
       // Only set non-empty values so `.optional()` fields stay absent
       // (an empty cell means "not provided", not "empty string").

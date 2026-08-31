@@ -170,7 +170,7 @@ router.get(
       let query = db
         .from("episodes")
         .select(
-          "id, patient_id, prescription_id, status, due_at, expires_at, created_at",
+          "id, patient_id, prescription_id, status, due_at, expires_at, created_at, closed_at, closed_reason",
           { count: "exact" },
         );
       if (isOverdue) {
@@ -215,6 +215,34 @@ router.get(
           .filter((v): v is string => v !== null),
       ),
     );
+
+    // The un-shipped fulfillment behind each episode, so a CSR can record
+    // a shipment straight from this queue. Without it "Confirmed" is a
+    // list of orders nobody can close: PacWare ships out of band, and a
+    // tenant with no PacWare feed has no other way to say "this went out".
+    const episodeIds = rows.map((r) => r.id);
+    const shippableByEpisode = new Map<string, string>();
+    if (episodeIds.length > 0) {
+      const { data: fulfillments, error: fErr } = await db
+        .from("fulfillments")
+        .select("id, episode_id, status, shipped_at")
+        .in("episode_id", episodeIds)
+        .is("shipped_at", null);
+      if (fErr) throw fErr;
+      for (const f of (fulfillments ?? []) as Array<{
+        id: string;
+        episode_id: string | null;
+        status: string | null;
+      }>) {
+        // Only a queued line is shippable. `on_hold` is parked on an open
+        // address change; offering "mark shipped" there would let a CSR
+        // ship to an address the patient just told us was wrong.
+        if (!f.episode_id || f.status !== "queued") continue;
+        if (!shippableByEpisode.has(f.episode_id)) {
+          shippableByEpisode.set(f.episode_id, f.id);
+        }
+      }
+    }
 
     const [patientsRes, prescriptionsRes] = await Promise.all([
       patientIds.length > 0
@@ -266,6 +294,9 @@ router.get(
           daysOverdue,
           expiresAt: r.expires_at,
           createdAt: r.created_at,
+          closedAt: r.closed_at,
+          closedReason: r.closed_reason,
+          shippableFulfillmentId: shippableByEpisode.get(r.id) ?? null,
         };
       }),
       total: count ?? 0,

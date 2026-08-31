@@ -789,6 +789,7 @@ export type PatientEpisodeStatus =
 export const PatientEpisodeStatus = {
   outreach_pending: "outreach_pending",
   awaiting_response: "awaiting_response",
+  address_hold: "address_hold",
   confirmed: "confirmed",
   declined: "declined",
   expired: "expired",
@@ -1141,6 +1142,7 @@ export type EpisodeListItemStatus =
 export const EpisodeListItemStatus = {
   outreach_pending: "outreach_pending",
   awaiting_response: "awaiting_response",
+  address_hold: "address_hold",
   confirmed: "confirmed",
   declined: "declined",
   expired: "expired",
@@ -1192,6 +1194,10 @@ export interface EpisodeCounts {
   outreach_pending: number;
   /** @minimum 0 */
   awaiting_response: number;
+  /** Cycle parked while a CSR confirms a new shipping address. Alive, but
+   *  deliberately silent — the reminder ladder skips it.
+   *  @minimum 0 */
+  address_hold: number;
   /** @minimum 0 */
   confirmed: number;
   /** @minimum 0 */
@@ -2157,6 +2163,7 @@ export const ListEpisodesStatus = {
   overdue: "overdue",
   outreach_pending: "outreach_pending",
   awaiting_response: "awaiting_response",
+  address_hold: "address_hold",
   confirmed: "confirmed",
   declined: "declined",
   expired: "expired",

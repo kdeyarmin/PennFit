@@ -119,6 +119,11 @@ export function episodeStatusVariant(status: string): Variant {
   switch (status) {
     case "outreach_pending":
     case "awaiting_response":
+    // `address_hold` is alive, but the reminder ladder is silent on it
+    // while a CSR confirms the patient's new address. Warning rather than
+    // muted: it is waiting on US, not on the patient.
+    // eslint-disable-next-line no-fallthrough
+    case "address_hold":
       return "warning";
     case "confirmed":
       return "info";
@@ -139,9 +144,18 @@ export function fulfillmentStatusVariant(status: string): Variant {
     case "submitted_to_pacware":
     case "in_fulfillment":
       return "info";
+    // Held while a patient's address change is worked. Distinct from
+    // queued: nothing is going out until a CSR resolves it.
+    case "on_hold":
+      return "warning";
     case "shipped":
     case "delivered":
       return "success";
+    // BOTH spellings. The database and every cadence filter use the
+    // double-L "cancelled"; this switch only ever handled the single-L
+    // form, so a genuinely cancelled order rendered as an unlabelled
+    // neutral badge.
+    case "cancelled":
     case "canceled":
       return "muted";
     case "failed":

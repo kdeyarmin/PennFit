@@ -36,6 +36,9 @@ export {
   type PacwareRowError,
   type PacwareParseResult,
   parsePacwarePatientCsv,
+  pacwareShipmentRowSchema,
+  type PacwareShipmentRow,
+  parsePacwareShipmentCsv,
   type PatientColumnMapping,
   type PatientImportFieldInfo,
   type PatientCsvHeaderPreview,
@@ -45,6 +48,14 @@ export {
   normalizeDateToIso,
   normalizePhoneToE164,
 } from "./parse";
+
+export {
+  type ShipmentMatchStrategy,
+  type ShipmentCandidateFulfillment,
+  type ShipmentMatchResult,
+  type MatchShipmentRowsOptions,
+  matchShipmentRows,
+} from "./shipment-match";
 
 export {
   type PacwarePatientExportRecord,
