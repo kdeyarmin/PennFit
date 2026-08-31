@@ -82,13 +82,16 @@ export function NeedsAPersonPanel() {
                       ? "#991b1b"
                       : "hsl(var(--ink-3))",
                 }}
-                // A gate with no single countable queue, or one whose
-                // count failed, shows a dash. "Nothing waiting" and "we
-                // could not find out" must not render as the same zero.
+                // Both cases show a dash — "nothing waiting" and "we
+                // could not find out" must not render as the same zero —
+                // but they are not the same dash, and only the second one
+                // is a reason to come back later.
                 title={
-                  gate.waiting === null
-                    ? "No single queue to count for this step"
-                    : undefined
+                  gate.waiting !== null
+                    ? undefined
+                    : gate.countable
+                      ? "Could not read this queue just now — the number is unknown, not zero"
+                      : "No single queue to count for this step"
                 }
               >
                 {gate.waiting === null ? "—" : gate.waiting.toLocaleString()}

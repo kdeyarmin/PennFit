@@ -99,22 +99,35 @@ router.get(
       why: gate.why,
       href: gate.href,
       permission: gate.permission,
+      /**
+       * Whether this gate has a queue to count AT ALL — a static property
+       * of the registry, not of this request. Without it a `waiting: null`
+       * is ambiguous between "this step has no single queue" and "we could
+       * not read it just now", and an operator during a partial outage
+       * reads a permanent dash as the former.
+       */
+      countable: gate.queue != null,
       /** null = not countable, or the count failed. Never conflate with 0. */
       waiting: counts[i] ?? null,
     }));
 
-    const countable = gates.filter((g) => typeof g.waiting === "number");
+    const counted = gates.filter((g) => typeof g.waiting === "number");
 
     res.setHeader("Cache-Control", "no-store");
     res.status(200).json({
       gates,
       totals: {
         gateCount: gates.length,
-        // Sum of the queues we could actually read. Reported alongside
-        // `uncountedGates` so a partial failure is visible instead of
-        // looking like a quiet day.
-        waiting: countable.reduce((sum, g) => sum + (g.waiting ?? 0), 0),
-        uncountedGates: gates.length - countable.length,
+        // Sum of the queues we could actually read, reported alongside
+        // both reasons a gate is missing from it — separately, because
+        // they mean opposite things. `uncountableGates` is a constant of
+        // the registry; a non-zero `failedCounts` is an outage, and
+        // folding the two together hides it inside a number that always
+        // looks the same.
+        waiting: counted.reduce((sum, g) => sum + (g.waiting ?? 0), 0),
+        uncountableGates: gates.filter((g) => !g.countable).length,
+        failedCounts: gates.filter((g) => g.countable && g.waiting === null)
+          .length,
       },
     });
   },

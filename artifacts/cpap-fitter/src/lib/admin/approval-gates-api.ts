@@ -14,8 +14,11 @@ export interface ApprovalGateRow {
   why: string;
   href: string;
   permission: string;
+  /** Whether this gate has a queue to count at all — static, from the
+   *  registry. Distinguishes a permanent dash from a failed lookup. */
+  countable: boolean;
   /** `null` when there is no single countable queue, or the count failed.
-   *  Never render this as zero. */
+   *  Never render this as zero; read `countable` to tell the two apart. */
   waiting: number | null;
 }
 
@@ -24,8 +27,12 @@ export interface ApprovalGatesResponse {
   totals: {
     gateCount: number;
     waiting: number;
-    /** Gates excluded from `waiting` because they could not be counted. */
-    uncountedGates: number;
+    /** Gates with no single queue to count — a constant of the registry. */
+    uncountableGates: number;
+    /** Gates whose count failed on THIS request. Non-zero means the
+     *  totals are understated right now, which is an outage, not a
+     *  quiet day. */
+    failedCounts: number;
   };
 }
 

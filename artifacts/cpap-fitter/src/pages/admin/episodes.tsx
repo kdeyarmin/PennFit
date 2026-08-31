@@ -789,7 +789,13 @@ function readQueryParam(key: string): string | null {
  * is catching up on shipped when it shipped, not when they got round to
  * recording it.
  */
-function MarkShippedButton({ fulfillmentId }: { fulfillmentId: string }) {
+// Exported for its render test: the query-key contract below is only
+// observable by clicking Save against a live QueryClient.
+export function MarkShippedButton({
+  fulfillmentId,
+}: {
+  fulfillmentId: string;
+}) {
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [shippedAt, setShippedAt] = useState(() =>
@@ -837,7 +843,21 @@ function MarkShippedButton({ fulfillmentId }: { fulfillmentId: string }) {
           try {
             await markFulfillmentShipped(fulfillmentId, { shippedAt });
             setOpen(false);
-            await queryClient.invalidateQueries({ queryKey: ["episodes"] });
+            // Invalidate through the generated key builders, NOT a
+            // hand-written ["episodes"]: the hooks key on the request URL
+            // (`/resupply-api/episodes`), so a guessed key matches nothing
+            // and the row stays "Mark shipped" until a manual refresh.
+            // Called with no params so React Query's prefix match covers
+            // every filter/page variant, and the counts strip separately
+            // because its key is a different URL, not a child of the list.
+            await Promise.all([
+              queryClient.invalidateQueries({
+                queryKey: getListEpisodesQueryKey(),
+              }),
+              queryClient.invalidateQueries({
+                queryKey: getListEpisodeCountsQueryKey(),
+              }),
+            ]);
           } catch (err) {
             // Surface the server's reason verbatim — the ship-date clamp
             // explains itself ("would date this patient's claim that far
