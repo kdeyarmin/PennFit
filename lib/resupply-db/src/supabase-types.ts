@@ -1024,6 +1024,31 @@ export interface Database {
         Update: Partial<Database["resupply"]["Tables"]["episodes"]["Row"]>;
         Relationships: [];
       };
+      resupply_cutover_records: {
+        Row: {
+          id: string;
+          org_id: string;
+          flag_key: string;
+          action: string;
+          previous_value: boolean | null;
+          new_value: boolean | null;
+          readiness_status: string;
+          report: Json;
+          evidence_id: string | null;
+          rollback_reason: string | null;
+          actor_email: string | null;
+          actor_user_id: string | null;
+          evaluated_at: string;
+          created_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["resupply_cutover_records"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["resupply_cutover_records"]["Row"]
+        >;
+        Relationships: [];
+      };
       integration_reconciliation_runs: {
         Row: {
           id: string;

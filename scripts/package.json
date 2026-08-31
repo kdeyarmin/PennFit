@@ -19,7 +19,8 @@
     "test": "vitest run --passWithNoTests",
     "test:coverage": "vitest run --passWithNoTests --coverage",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "resupply:backfill-due-at": "tsx ./src/resupply-backfill-episode-due-at.ts"
+    "resupply:backfill-due-at": "tsx ./src/resupply-backfill-episode-due-at.ts",
+    "resupply:cutover": "tsx ./src/resupply-cutover.ts"
   },
   "devDependencies": {
     "@types/node": "catalog:",
@@ -28,6 +29,7 @@
   },
   "dependencies": {
     "@workspace/resupply-auth": "workspace:*",
+    "@workspace/resupply-cutover": "workspace:*",
     "@workspace/resupply-db": "workspace:*",
     "@workspace/resupply-domain": "workspace:*",
     "@workspace/resupply-email": "workspace:*",

@@ -9,6 +9,7 @@
   "references": [
     { "path": "../../lib/resupply-domain" },
     { "path": "../../lib/resupply-db" },
+    { "path": "../../lib/resupply-cutover" },
     { "path": "../../lib/resupply-audit" },
     { "path": "../../lib/resupply-auth" },
     { "path": "../../lib/resupply-telecom" },

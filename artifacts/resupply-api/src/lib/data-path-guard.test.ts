@@ -7,7 +7,6 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-// @ts-expect-error — plain .mjs module without type declarations.
 import { fingerprintDatabaseUrl } from "@workspace/resupply-db/deploy-environment";
 
 import { assertDataPathMatchesDeployment } from "./data-path-guard";

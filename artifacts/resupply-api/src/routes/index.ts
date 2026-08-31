@@ -112,6 +112,7 @@ import locationsRouter from "./admin/locations.js";
 import glAccountMappingsRouter from "./admin/gl-account-mappings.js";
 import reportPresetsRouter from "./admin/report-presets.js";
 import featureFlagsRouter from "./admin/feature-flags.js";
+import resupplyCutoverRouter from "./admin/resupply-cutover.js";
 import appConfigRouter from "./admin/app-config.js";
 import slackTestRouter from "./admin/slack-test.js";
 import slackOAuthRouter from "./admin/slack-oauth.js";
@@ -1099,6 +1100,12 @@ router.use(reportPresetsRouter);
 // /admin/feature-flags/* — Control Center on/off toggles that gate
 // dispatchers and route handlers in real time.
 router.use(featureFlagsRouter);
+// /admin/resupply-cutover/* — the per-tenant cutover workflow for the
+// two resupply lifecycle flags. They are reachable from the flags page
+// above like any other switch, but each changes WHEN a live patient is
+// contacted, so the supported path gates enabling on a fresh, clean,
+// recorded readiness assessment of that tenant's own data.
+router.use(resupplyCutoverRouter);
 // /admin/system/config/* — super-admin System Configuration store:
 // enter/rotate integration credentials + platform secrets (migration
 // 0211). super_admin-only (system.config.manage).
