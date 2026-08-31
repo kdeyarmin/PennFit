@@ -28,6 +28,7 @@ export {
   safeCsvCell,
   normalizeHeader,
   stripCsvFormulaGuard,
+  computeShipmentFileHash,
 } from "./csv";
 
 export {
@@ -56,6 +57,19 @@ export {
   type MatchShipmentRowsOptions,
   matchShipmentRows,
 } from "./shipment-match";
+
+export {
+  SHIPMENT_DISPOSITIONS,
+  COMMITTABLE_DISPOSITIONS,
+  DEFAULT_MAX_BACKDATE_DAYS,
+  type ShipmentDisposition,
+  type ClassifiedShipmentRow,
+  type ClassifyShipmentRowsInput,
+  type ShipmentDispositionCounts,
+  classifyShipmentRows,
+  countDispositions,
+  buildShipmentDispositionCsv,
+} from "./shipment-classify";
 
 export {
   type PacwarePatientExportRecord,

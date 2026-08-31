@@ -17,18 +17,50 @@
 // beside it, for the same reason: an operator should see what a file
 // will do before it does it.
 //
-// PHI: the preview returns COUNTS ONLY, never sample rows. The patient
-// import makes the same choice and says why — a sample would put PHI in
-// the response body, and if the caller passed an Idempotency-Key the
-// idempotency middleware would persist it. Row errors carry an index and
-// a field name, never the offending value.
+//   POST /admin/pacware/import/shipments            preview or commit
+//   POST /admin/pacware/import/shipments/report.csv sanitized dispositions
+//   GET  /admin/pacware/shipment-exceptions         ship-date conflicts
+//   POST /admin/pacware/shipment-exceptions/:id/resolve
 //
-// DATE OF SERVICE IS NOT A HYGIENE FIELD. A ship date imported here
-// becomes the date of service on an 837P. A bulk first import that
-// backfills months of history will therefore produce months-old claims,
-// which can cross a payer's timely-filing limit (CARC 29). Hence the
-// clamp below and the `shipDatesOlderThan60d` count in the preview: the
-// operator sees the backdating before they commit to it.
+// DATE OF SERVICE IS NOT A HYGIENE FIELD
+// --------------------------------------
+// A ship date imported here becomes the date of service on an 837P.
+// Three consequences run through the whole file:
+//
+//   * A bulk first import that backfills months of history produces
+//     months-old claims, which can cross a payer's timely-filing limit
+//     (CARC 29). Rows past `DEFAULT_MAX_BACKDATE_DAYS` are classified
+//     `too_old` and NOT applied; the operator sees the count and decides.
+//   * A future date cannot be a date of service at all — `future_dated`,
+//     never applied.
+//   * A date already recorded AND already billed cannot be corrected in
+//     place. The payer has been told something; overwriting it would make
+//     the claim and the record disagree with nobody knowing. Those rows
+//     become `date_conflict` and open a `shipment_date_exceptions` row
+//     for a person. Previously the new date was silently dropped —
+//     safe, but the correction the warehouse sent was lost.
+//
+// IDEMPOTENCY, TWICE
+// ------------------
+//   * Per ROW: `recordShipmentEvidence` claims the fulfillment with
+//     `.is("shipped_at", null)`, so a replay writes nothing.
+//   * Per FILE: a SHA-256 of the normalized report text is recorded on
+//     every commit. The `Idempotency-Key` header stops a double-submit
+//     of the same REQUEST; it does nothing about the same FILE uploaded
+//     from a fresh tab, by a colleague, or after a timeout that had
+//     actually succeeded. Those are different requests with identical
+//     content, and only the content can tell.
+//
+// PHI
+// ---
+// The preview returns COUNTS ONLY, never sample rows — a sample would
+// put PHI in the response body, and with an `Idempotency-Key` the
+// idempotency middleware would persist it. The downloadable disposition
+// report carries row NUMBERS, categories, reasons built from constants,
+// and internal UUIDs — never a name, account number, SKU, tracking
+// number or date drawn from the file. That is what makes it safe to
+// attach to a ticket. The operator finds the offending line by row
+// number in their own copy, which never left their machine.
 
 import { Router, type IRouter } from "express";
 import { z } from "zod";
@@ -36,11 +68,15 @@ import { z } from "zod";
 import { logAudit } from "@workspace/resupply-audit";
 import { getOrgScopedClient } from "@workspace/resupply-db";
 import {
+  buildShipmentDispositionCsv,
+  classifyShipmentRows,
+  computeShipmentFileHash,
+  countDispositions,
   matchShipmentRows,
   parsePacwareShipmentCsv,
+  type ClassifiedShipmentRow,
   type PacwareShipmentRow,
   type ShipmentCandidateFulfillment,
-  type ShipmentMatchResult,
 } from "@workspace/resupply-integrations-pacware";
 
 import { recordShipmentEvidence } from "../../lib/fulfillments/record-shipment-evidence";
@@ -56,12 +92,6 @@ const MAX_IMPORT_ROWS = 5000;
 const READ_CHUNK = 200;
 /** PostgREST caps a single read at ~1000 rows regardless of `.limit()`. */
 const PAGE_SIZE = 1000;
-/**
- * How far back a ship date may reach. Past this the operator is almost
- * certainly importing history, and every matched row would mint a claim
- * dated that far back.
- */
-const MAX_SHIP_BACKDATE_DAYS = 180;
 /** Ship dates older than this are counted in the preview as a warning. */
 const BACKDATE_WARN_DAYS = 60;
 
@@ -74,32 +104,21 @@ const bodySchema = z
       .min(1)
       .max(8 * 1024 * 1024),
     mode: z.enum(["preview", "commit"]),
+    /**
+     * Re-commit a file already on record. Off by default: a silent
+     * re-import reports the same counts as the first one with everything
+     * "unchanged", which is indistinguishable from a file that genuinely
+     * contained nothing new.
+     */
+    acknowledgeReimport: z.boolean().optional(),
+    /**
+     * Raise the timely-filing threshold for a deliberate history
+     * backfill. Bounded, and every row it admits is still counted and
+     * reported.
+     */
+    maxBackdateDays: z.number().int().min(1).max(730).optional(),
   })
   .strict();
-
-interface RowIssue {
-  rowIndex: number;
-  field?: string;
-  message: string;
-}
-
-/**
- * Reject a ship date that cannot be right, with a reason an operator can
- * act on. Returns null when the date is acceptable.
- */
-function shipDateIssue(row: PacwareShipmentRow, now: Date): string | null {
-  const shippedMs = Date.parse(`${row.shippedDate}T00:00:00.000Z`);
-  if (!Number.isFinite(shippedMs)) return "ship date is not a real date";
-  // Allow one day ahead: a warehouse in a later timezone, or a report run
-  // just after midnight, can legitimately look like tomorrow from UTC.
-  if (shippedMs - now.getTime() > DAY_MS) {
-    return "ship date is in the future";
-  }
-  if (now.getTime() - shippedMs > MAX_SHIP_BACKDATE_DAYS * DAY_MS) {
-    return `ship date is more than ${MAX_SHIP_BACKDATE_DAYS} days old; importing it would date a claim that far back`;
-  }
-  return null;
-}
 
 /**
  * Load every fulfillment that could plausibly be referenced by this file.
@@ -113,7 +132,10 @@ function shipDateIssue(row: PacwareShipmentRow, now: Date): string | null {
 async function loadCandidates(
   supabase: ReturnType<typeof getOrgScopedClient>,
   rows: readonly PacwareShipmentRow[],
-): Promise<ShipmentCandidateFulfillment[]> {
+): Promise<{
+  candidates: ShipmentCandidateFulfillment[];
+  recordedShipDates: Map<string, string>;
+}> {
   const episodeIds = [
     ...new Set(rows.map((r) => r.pennfitEpisodeId).filter(Boolean)),
   ] as string[];
@@ -146,6 +168,7 @@ async function loadCandidates(
   const SELECT =
     "id, episode_id, patient_id, item_sku, pacware_order_ref, created_at, shipped_at, status";
   const byId = new Map<string, ShipmentCandidateFulfillment>();
+  const recordedShipDates = new Map<string, string>();
 
   const absorb = (data: unknown[] | null): void => {
     for (const f of (data ?? []) as Array<{
@@ -170,6 +193,7 @@ async function loadCandidates(
         shippedAt: f.shipped_at,
         status: f.status ?? "queued",
       });
+      if (f.shipped_at) recordedShipDates.set(f.id, f.shipped_at);
     }
   };
 
@@ -198,52 +222,153 @@ async function loadCandidates(
   const patientIds = [...patientIdByPacwareId.values()];
   if (patientIds.length > 0) await pagedIn("patient_id", patientIds);
 
-  return [...byId.values()];
+  return { candidates: [...byId.values()], recordedShipDates };
 }
 
-interface MatchTally {
-  byEpisodeId: number;
-  byOrderRef: number;
-  byPatientSku: number;
-  unmatched: number;
-  ambiguous: number;
-  rowCancelled: number;
-  alreadyRecorded: number;
-}
-
-function tally(matches: readonly ShipmentMatchResult[]): MatchTally {
-  const t: MatchTally = {
-    byEpisodeId: 0,
-    byOrderRef: 0,
-    byPatientSku: 0,
-    unmatched: 0,
-    ambiguous: 0,
-    rowCancelled: 0,
-    alreadyRecorded: 0,
-  };
-  for (const m of matches) {
-    if (m.alreadyRecorded) t.alreadyRecorded += 1;
-    switch (m.strategy) {
-      case "episode_id":
-        t.byEpisodeId += 1;
-        break;
-      case "order_ref":
-        t.byOrderRef += 1;
-        break;
-      case "patient_sku_date":
-        t.byPatientSku += 1;
-        break;
-      case "ambiguous":
-        t.ambiguous += 1;
-        break;
-      case "row_cancelled":
-        t.rowCancelled += 1;
-        break;
-      default:
-        t.unmatched += 1;
+/**
+ * Which of these fulfillments already have a claim behind them.
+ *
+ * The distinction decides whether a changed ship date is a correction a
+ * person must work (billed) or merely a value to leave alone (not
+ * billed).
+ */
+async function loadBilledFulfillments(
+  supabase: ReturnType<typeof getOrgScopedClient>,
+  fulfillmentIds: readonly string[],
+): Promise<{ billed: Set<string>; claimIdByFulfillment: Map<string, string> }> {
+  const billed = new Set<string>();
+  const claimIdByFulfillment = new Map<string, string>();
+  for (let i = 0; i < fulfillmentIds.length; i += READ_CHUNK) {
+    const chunk = fulfillmentIds.slice(i, i + READ_CHUNK);
+    const { data, error } = await supabase
+      .from("insurance_claims")
+      .select("id, fulfillment_id")
+      .in("fulfillment_id", chunk);
+    if (error) throw error;
+    for (const c of (data ?? []) as Array<{
+      id: string;
+      fulfillment_id: string | null;
+    }>) {
+      if (!c.fulfillment_id) continue;
+      billed.add(c.fulfillment_id);
+      if (!claimIdByFulfillment.has(c.fulfillment_id)) {
+        claimIdByFulfillment.set(c.fulfillment_id, c.id);
+      }
     }
   }
-  return t;
+  return { billed, claimIdByFulfillment };
+}
+
+interface AnalyzedFile {
+  fileHash: string;
+  totalDataRows: number;
+  classified: ClassifiedShipmentRow[];
+  usable: PacwareShipmentRow[];
+  /** Aligned with `usable`: file row number per parsed row. */
+  usableIndex: number[];
+  unmappedHeaders: string[];
+  oldestShipDate: string | null;
+  newestShipDate: string | null;
+  shipDatesOlderThan60d: number;
+  claimIdByFulfillment: Map<string, string>;
+}
+
+/**
+ * Parse, match and classify a file. Read-only — this is exactly what a
+ * preview does, and exactly what a commit does before it writes, so the
+ * two can never disagree about what a file means.
+ */
+async function analyzeFile(
+  orgId: string,
+  csv: string,
+  now: Date,
+  maxBackdateDays: number | undefined,
+): Promise<AnalyzedFile> {
+  const supabase = getOrgScopedClient(orgId);
+  const parsed = parsePacwareShipmentCsv(csv);
+  const fileHash = await computeShipmentFileHash(csv);
+
+  const usable: PacwareShipmentRow[] = [];
+  const usableIndex: number[] = [];
+  parsed.rows.forEach((row, i) => {
+    usable.push(row);
+    usableIndex.push(i + 1);
+  });
+
+  const { candidates, recordedShipDates } = await loadCandidates(
+    supabase,
+    usable,
+  );
+  const matches = matchShipmentRows(usable, candidates);
+
+  // Which matched fulfillments are already billed. Only needed for rows
+  // whose ship date is already recorded — the rest cannot conflict.
+  const alreadyRecordedIds = matches
+    .map((m) => m.fulfillmentId)
+    .filter((id): id is string => id !== null && recordedShipDates.has(id));
+  const { billed, claimIdByFulfillment } = await loadBilledFulfillments(
+    supabase,
+    [...new Set(alreadyRecordedIds)],
+  );
+
+  const classified = classifyShipmentRows({
+    rows: usable,
+    rowIndexes: usableIndex,
+    matches,
+    parseErrors: parsed.errors,
+    recordedShipDates,
+    fulfillmentsWithClaims: billed,
+    now,
+    maxBackdateDays,
+  });
+
+  const shipDates = usable.map((r) => r.shippedDate).sort();
+  const shipDatesOlderThan60d = usable.filter(
+    (r) =>
+      now.getTime() - Date.parse(`${r.shippedDate}T00:00:00.000Z`) >
+      BACKDATE_WARN_DAYS * DAY_MS,
+  ).length;
+
+  return {
+    fileHash,
+    totalDataRows: parsed.totalDataRows,
+    classified,
+    usable,
+    usableIndex,
+    unmappedHeaders: parsed.unmappedHeaders ?? [],
+    oldestShipDate: shipDates[0] ?? null,
+    newestShipDate: shipDates[shipDates.length - 1] ?? null,
+    shipDatesOlderThan60d,
+    claimIdByFulfillment,
+  };
+}
+
+/** Look up a prior COMMIT of the same file for this tenant. */
+async function findPriorCommit(
+  orgId: string,
+  fileHash: string,
+): Promise<{ id: string; createdAt: string; appliedCount: number } | null> {
+  const supabase = getOrgScopedClient(orgId);
+  const { data, error } = await supabase
+    .from("pacware_shipment_imports")
+    .select("id, created_at, applied_count")
+    .eq("file_hash", fileHash)
+    .eq("mode", "commit")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+  const row = data as {
+    id: string;
+    created_at: string;
+    applied_count: number;
+  };
+  return {
+    id: row.id,
+    createdAt: row.created_at,
+    appliedCount: row.applied_count,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -255,11 +380,11 @@ router.post(
   requirePermission("admin.tools.manage"),
   withIdempotency("POST /admin/pacware/import/shipments"),
   async (req, res) => {
-    const parsed = bodySchema.safeParse(req.body);
-    if (!parsed.success) {
+    const parsedBody = bodySchema.safeParse(req.body);
+    if (!parsedBody.success) {
       res.status(400).json({
         error: "invalid_body",
-        issues: parsed.error.issues.map((i) => ({
+        issues: parsedBody.error.issues.map((i) => ({
           path: i.path.join("."),
           message: i.message,
         })),
@@ -273,45 +398,22 @@ router.post(
       return;
     }
 
-    const { csv, mode } = parsed.data;
-    const result = parsePacwareShipmentCsv(csv);
+    const { csv, mode, acknowledgeReimport, maxBackdateDays } = parsedBody.data;
 
-    if (result.totalDataRows > MAX_IMPORT_ROWS) {
+    // Cheap row-count guard before any DB work.
+    const rowCountProbe = parsePacwareShipmentCsv(csv);
+    if (rowCountProbe.totalDataRows > MAX_IMPORT_ROWS) {
       res.status(413).json({
         error: "too_many_rows",
-        message: `This file has ${result.totalDataRows} rows; the limit per upload is ${MAX_IMPORT_ROWS}. Split the report and upload in parts.`,
+        message: `This file has ${rowCountProbe.totalDataRows} rows; the limit per upload is ${MAX_IMPORT_ROWS}. Split the report and upload in parts.`,
       });
       return;
     }
 
     const now = new Date();
-    const issues: RowIssue[] = result.errors.map((e) => ({
-      rowIndex: e.rowIndex,
-      field: e.field,
-      message: e.message,
-    }));
-
-    // Clamp implausible ship dates before matching, so a typo cannot mint
-    // a claim dated two years back.
-    const usable: PacwareShipmentRow[] = [];
-    const usableIndex: number[] = [];
-    result.rows.forEach((row, i) => {
-      const problem = shipDateIssue(row, now);
-      if (problem) {
-        issues.push({
-          rowIndex: i + 1,
-          field: "shippedDate",
-          message: problem,
-        });
-        return;
-      }
-      usable.push(row);
-      usableIndex.push(i + 1);
-    });
-
-    let candidates: ShipmentCandidateFulfillment[];
+    let analysis: AnalyzedFile;
     try {
-      candidates = await loadCandidates(getOrgScopedClient(orgId), usable);
+      analysis = await analyzeFile(orgId, csv, now, maxBackdateDays);
     } catch (err) {
       logger.error(
         {
@@ -324,77 +426,117 @@ router.post(
       return;
     }
 
-    const matches = matchShipmentRows(usable, candidates).map((m, i) => ({
-      ...m,
-      // Re-map onto the ORIGINAL file row numbers so an operator reading
-      // the preview can find the line in their spreadsheet.
-      rowIndex: usableIndex[i] ?? m.rowIndex,
-    }));
-    const counts = tally(matches);
-
-    const oldestShipDate = usable.reduce<string | null>(
-      (min, r) => (min === null || r.shippedDate < min ? r.shippedDate : min),
-      null,
+    const counts = countDispositions(analysis.classified);
+    const priorCommit = await findPriorCommit(orgId, analysis.fileHash).catch(
+      () => null,
     );
-    const shipDatesOlderThan60d = usable.filter(
-      (r) =>
-        now.getTime() - Date.parse(`${r.shippedDate}T00:00:00.000Z`) >
-        BACKDATE_WARN_DAYS * DAY_MS,
-    ).length;
 
     if (mode === "preview") {
+      // A preview is a question, not an event. It records nothing and
+      // claims no hash, so previewing the same file five times while an
+      // operator works out what it will do is free.
       res.setHeader("Cache-Control", "no-store");
       res.status(200).json({
         mode: "preview",
-        totalDataRows: result.totalDataRows,
-        validCount: usable.length,
-        errorCount: issues.length,
-        matched: {
-          byEpisodeId: counts.byEpisodeId,
-          byOrderRef: counts.byOrderRef,
-          byPatientSku: counts.byPatientSku,
-        },
-        unmatched: counts.unmatched,
-        ambiguous: counts.ambiguous,
-        rowCancelled: counts.rowCancelled,
-        alreadyRecorded: counts.alreadyRecorded,
-        oldestShipDate,
-        shipDatesOlderThan60d,
-        unmappedHeaders: result.unmappedHeaders ?? [],
-        errors: issues.slice(0, 200),
+        fileHash: analysis.fileHash,
+        totalDataRows: analysis.totalDataRows,
+        dispositions: counts,
+        willApply: counts.matched,
+        needsAPerson:
+          counts.ambiguous +
+          counts.unmatched +
+          counts.date_conflict +
+          counts.invalid,
+        alreadyImported: priorCommit
+          ? { at: priorCommit.createdAt, applied: priorCommit.appliedCount }
+          : null,
+        oldestShipDate: analysis.oldestShipDate,
+        newestShipDate: analysis.newestShipDate,
+        shipDatesOlderThan60d: analysis.shipDatesOlderThan60d,
+        unmappedHeaders: analysis.unmappedHeaders,
       });
       return;
     }
 
     // ── commit ──────────────────────────────────────────────────────
+    if (priorCommit && !acknowledgeReimport) {
+      res.status(409).json({
+        error: "already_imported",
+        message:
+          `This exact file was already imported on ${priorCommit.createdAt} ` +
+          `(${priorCommit.appliedCount} shipment(s) recorded). Re-importing it ` +
+          "writes nothing new — every row is already claimed. Send " +
+          "`acknowledgeReimport: true` if you meant to run it again.",
+        importedAt: priorCommit.createdAt,
+        appliedCount: priorCommit.appliedCount,
+      });
+      return;
+    }
+
     let applied = 0;
     let unchanged = 0;
     let failed = 0;
     let nextCyclesOpened = 0;
+    let exceptionsOpened = 0;
+    const rowIssues: Array<{ rowIndex: number; message: string }> = [];
 
-    for (let i = 0; i < matches.length; i++) {
-      const match = matches[i];
-      if (!match.fulfillmentId) continue;
-      const row = usable[i];
-      if (!row) continue;
+    // Rows whose ship date conflicts with one already billed. Raised as
+    // exceptions BEFORE the writes, so a failure part-way through the
+    // apply loop still leaves the corrections queued for a person.
+    for (const row of analysis.classified) {
+      if (!row.requiresException || !row.fulfillmentId) continue;
+      const parsedRow = analysis.usable[
+        analysis.usableIndex.indexOf(row.rowIndex)
+      ] as PacwareShipmentRow | undefined;
+      if (!parsedRow) continue;
+      try {
+        const opened = await openShipDateException({
+          orgId,
+          fulfillmentId: row.fulfillmentId,
+          proposedShippedAt: new Date(`${parsedRow.shippedDate}T12:00:00.000Z`),
+          claimId: analysis.claimIdByFulfillment.get(row.fulfillmentId) ?? null,
+          raisedByEmail: req.adminEmail ?? null,
+        });
+        if (opened) exceptionsOpened += 1;
+      } catch (err) {
+        logger.warn(
+          {
+            event: "pacware.ship_date_exception_failed",
+            fulfillmentId: row.fulfillmentId,
+            errName: err instanceof Error ? err.name : "unknown",
+          },
+          "pacware/shipments: could not raise a ship-date exception",
+        );
+      }
+    }
 
-      if (match.alreadyRecorded) {
+    for (const row of analysis.classified) {
+      if (row.disposition === "already_recorded") {
         unchanged += 1;
         continue;
       }
+      // ONLY `matched` is written. Everything else — ambiguous,
+      // unmatched, duplicate, cancelled, invalid, too_old, future_dated,
+      // date_conflict — is reported and skipped.
+      if (row.disposition !== "matched" || !row.fulfillmentId) continue;
+
+      const parsedRow = analysis.usable[
+        analysis.usableIndex.indexOf(row.rowIndex)
+      ] as PacwareShipmentRow | undefined;
+      if (!parsedRow) continue;
 
       try {
         const outcome = await recordShipmentEvidence({
           orgId,
-          fulfillmentId: match.fulfillmentId,
-          shippedAt: new Date(`${row.shippedDate}T12:00:00.000Z`),
-          deliveredAt: row.deliveredDate
-            ? new Date(`${row.deliveredDate}T12:00:00.000Z`)
+          fulfillmentId: row.fulfillmentId,
+          shippedAt: new Date(`${parsedRow.shippedDate}T12:00:00.000Z`),
+          deliveredAt: parsedRow.deliveredDate
+            ? new Date(`${parsedRow.deliveredDate}T12:00:00.000Z`)
             : null,
           source: "pacware_import",
-          pacwareOrderRef: row.pacwareOrderRef ?? null,
-          trackingNumber: row.trackingNumber ?? null,
-          carrier: row.carrier ?? null,
+          pacwareOrderRef: parsedRow.pacwareOrderRef ?? null,
+          trackingNumber: parsedRow.trackingNumber ?? null,
+          carrier: parsedRow.carrier ?? null,
         });
         if (outcome.status === "applied") {
           applied += 1;
@@ -403,8 +545,8 @@ router.post(
           unchanged += 1;
         } else {
           failed += 1;
-          issues.push({
-            rowIndex: match.rowIndex,
+          rowIssues.push({
+            rowIndex: row.rowIndex,
             message:
               outcome.status === "not_shippable"
                 ? "that order was cancelled, so no shipment was recorded"
@@ -417,16 +559,44 @@ router.post(
         logger.warn(
           {
             event: "pacware.shipments_import_row_failed",
-            fulfillmentId: match.fulfillmentId,
+            fulfillmentId: row.fulfillmentId,
             errName: err instanceof Error ? err.name : "unknown",
           },
           "pacware/shipments: row failed to apply",
         );
-        issues.push({
-          rowIndex: match.rowIndex,
+        rowIssues.push({
+          rowIndex: row.rowIndex,
           message: "failed to write (database error)",
         });
       }
+    }
+
+    // Record the file. Fail-soft: the shipments are already written, and
+    // losing the ledger row must not turn a successful import into an
+    // error the operator retries.
+    try {
+      const supabase = getOrgScopedClient(orgId);
+      const { error } = await supabase.from("pacware_shipment_imports").insert({
+        org_id: orgId,
+        file_hash: analysis.fileHash,
+        mode: "commit",
+        total_data_rows: analysis.totalDataRows,
+        applied_count: applied,
+        dispositions: counts,
+        oldest_ship_date: analysis.oldestShipDate,
+        newest_ship_date: analysis.newestShipDate,
+        reimport_acknowledged: Boolean(acknowledgeReimport),
+        imported_by_email: req.adminEmail ?? null,
+      });
+      if (error) throw error;
+    } catch (err) {
+      logger.warn(
+        {
+          event: "pacware.shipment_import_ledger_failed",
+          errName: err instanceof Error ? err.name : "unknown",
+        },
+        "pacware/shipments: import succeeded but the ledger row was not written",
+      );
     }
 
     await logAudit({
@@ -436,32 +606,264 @@ router.post(
       targetTable: "fulfillments",
       targetId: null,
       metadata: {
-        total_data_rows: result.totalDataRows,
-        valid_rows: usable.length,
+        file_hash: analysis.fileHash,
+        total_data_rows: analysis.totalDataRows,
         applied,
         unchanged,
         failed,
-        unmatched: counts.unmatched,
-        ambiguous: counts.ambiguous,
-        row_cancelled: counts.rowCancelled,
+        exceptions_opened: exceptionsOpened,
         next_cycles_opened: nextCyclesOpened,
-        oldest_ship_date: oldestShipDate,
+        oldest_ship_date: analysis.oldestShipDate,
+        ...counts,
       },
     });
 
     res.setHeader("Cache-Control", "no-store");
     res.status(200).json({
       mode: "commit",
-      totalDataRows: result.totalDataRows,
+      fileHash: analysis.fileHash,
+      totalDataRows: analysis.totalDataRows,
       applied,
       unchanged,
       failed,
-      unmatched: counts.unmatched,
-      ambiguous: counts.ambiguous,
-      rowCancelled: counts.rowCancelled,
+      exceptionsOpened,
       nextCyclesOpened,
-      errors: issues.slice(0, 200),
+      dispositions: counts,
+      errors: rowIssues.slice(0, 200),
     });
+  },
+);
+
+// ---------------------------------------------------------------------------
+// POST /admin/pacware/import/shipments/report.csv — sanitized dispositions
+// ---------------------------------------------------------------------------
+//
+// Separate endpoint rather than a field on the preview response, because
+// the two have different audiences and different sizes: the preview is a
+// summary a person reads on screen, and this is a file they work through
+// line by line, filter in a spreadsheet, and attach to a ticket.
+router.post(
+  "/admin/pacware/import/shipments/report.csv",
+  adminWriteRateLimiter,
+  requirePermission("admin.tools.manage"),
+  async (req, res) => {
+    const parsedBody = bodySchema
+      .omit({ mode: true, acknowledgeReimport: true })
+      .safeParse(req.body);
+    if (!parsedBody.success) {
+      res.status(400).json({ error: "invalid_body" });
+      return;
+    }
+    const orgId = req.orgId;
+    if (!orgId || !orgId.trim()) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+
+    let analysis: AnalyzedFile;
+    try {
+      analysis = await analyzeFile(
+        orgId,
+        parsedBody.data.csv,
+        new Date(),
+        parsedBody.data.maxBackdateDays,
+      );
+    } catch {
+      res.status(503).json({ error: "lookup_failed" });
+      return;
+    }
+
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Cache-Control", "no-store");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="pacware-shipment-dispositions-${analysis.fileHash.slice(0, 12)}.csv"`,
+    );
+    res.status(200).send(buildShipmentDispositionCsv(analysis.classified));
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Ship-date correction exceptions
+// ---------------------------------------------------------------------------
+
+/**
+ * Raise a ship-date conflict for a person.
+ *
+ * Returns false when one is already open for this fulfillment — the
+ * partial unique index is the arbiter, so a repeated import of the same
+ * conflicting file cannot queue the same decision ten times.
+ */
+async function openShipDateException(args: {
+  orgId: string;
+  fulfillmentId: string;
+  proposedShippedAt: Date;
+  claimId: string | null;
+  raisedByEmail: string | null;
+}): Promise<boolean> {
+  const supabase = getOrgScopedClient(args.orgId);
+  const { data: current, error: readErr } = await supabase
+    .from("fulfillments")
+    .select("shipped_at")
+    .eq("id", args.fulfillmentId)
+    .limit(1)
+    .maybeSingle();
+  if (readErr) throw readErr;
+  const recorded = (current as { shipped_at: string | null } | null)
+    ?.shipped_at;
+  if (!recorded) return false;
+
+  const { error } = await supabase.from("shipment_date_exceptions").insert({
+    org_id: args.orgId,
+    fulfillment_id: args.fulfillmentId,
+    recorded_shipped_at: recorded,
+    proposed_shipped_at: args.proposedShippedAt.toISOString(),
+    claim_id: args.claimId,
+    source: "pacware_import",
+    status: "open",
+    raised_by_email: args.raisedByEmail,
+  });
+  if (error) {
+    // 23505 — an exception is already open for this fulfillment. That is
+    // the index doing its job, not a failure.
+    if ((error as { code?: string }).code === "23505") return false;
+    throw error;
+  }
+  return true;
+}
+
+router.get(
+  "/admin/pacware/shipment-exceptions",
+  requirePermission("reports.read"),
+  async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId || !orgId.trim()) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const status = req.query.status === "resolved" ? "resolved" : "open";
+    const supabase = getOrgScopedClient(orgId);
+    const { data, error } = await supabase
+      .from("shipment_date_exceptions")
+      .select(
+        "id, fulfillment_id, recorded_shipped_at, proposed_shipped_at, claim_id, source, status, resolution, resolution_note, raised_by_email, resolved_by_email, resolved_at, created_at",
+      )
+      .eq("status", status)
+      .order("created_at", { ascending: false })
+      .limit(500);
+    if (error) throw error;
+    res.json({ status, exceptions: data ?? [] });
+  },
+);
+
+const resolveBody = z
+  .object({
+    resolution: z.enum([
+      "kept_recorded",
+      "corrected",
+      "duplicate_report",
+      "invalid_report",
+    ]),
+    note: z.string().trim().max(2000).optional(),
+  })
+  .strict();
+
+router.post(
+  "/admin/pacware/shipment-exceptions/:id/resolve",
+  adminWriteRateLimiter,
+  requirePermission("admin.tools.manage"),
+  async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId || !orgId.trim()) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const id = z.string().uuid().safeParse(req.params.id);
+    if (!id.success) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    const body = resolveBody.safeParse(req.body ?? {});
+    if (!body.success) {
+      res.status(400).json({ error: "invalid_body" });
+      return;
+    }
+
+    const supabase = getOrgScopedClient(orgId);
+    const { data: existing, error: readErr } = await supabase
+      .from("shipment_date_exceptions")
+      .select("id, fulfillment_id, proposed_shipped_at, status")
+      .eq("id", id.data)
+      .limit(1)
+      .maybeSingle();
+    if (readErr) throw readErr;
+    const row = existing as {
+      id: string;
+      fulfillment_id: string;
+      proposed_shipped_at: string;
+      status: string;
+    } | null;
+    if (!row) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    if (row.status !== "open") {
+      res.status(409).json({ error: "already_resolved" });
+      return;
+    }
+
+    // `corrected` is the ONE resolution that rewrites the ship date, and
+    // it is a deliberate, attributed act — never something an import
+    // does on its own. The claim it affects must be corrected separately;
+    // this route does not touch it, because re-submitting a claim is a
+    // billing decision with its own approval gate.
+    if (body.data.resolution === "corrected") {
+      const { error: updateErr } = await supabase
+        .from("fulfillments")
+        .update({
+          shipped_at: row.proposed_shipped_at,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", row.fulfillment_id);
+      if (updateErr) throw updateErr;
+    }
+
+    const { error } = await supabase
+      .from("shipment_date_exceptions")
+      .update({
+        status: "resolved",
+        resolution: body.data.resolution,
+        resolution_note: body.data.note ?? null,
+        resolved_by_email: req.adminEmail ?? null,
+        resolved_at: new Date().toISOString(),
+      })
+      .eq("id", id.data)
+      .eq("status", "open");
+    if (error) throw error;
+
+    await logAudit({
+      action: "fulfillment.ship_date_exception_resolved",
+      adminEmail: req.adminEmail ?? null,
+      adminUserId: req.adminUserId ?? null,
+      targetTable: "fulfillments",
+      targetId: row.fulfillment_id,
+      metadata: {
+        exception_id: row.id,
+        resolution: body.data.resolution,
+      },
+    });
+
+    logger.info(
+      {
+        event: "resupply.ship_date_exception_resolved",
+        orgId,
+        exceptionId: row.id,
+        resolution: body.data.resolution,
+      },
+      "pacware/shipments: ship-date exception resolved",
+    );
+
+    res.json({ resolved: true, resolution: body.data.resolution });
   },
 );
 

@@ -1,0 +1,5 @@
+pennfit_episode_id,pacware_order_ref,pacware_id,item_sku,quantity,shipped_date,delivered_date,tracking_number,carrier,status
+3f7c1e2a-9d4b-4f0e-8a11-6c2b5d7e9014,SO-100234,PW-000123,A7034,1,2026-08-14,2026-08-16,1Z999AA10123456784,UPS,shipped
+,SO-100235,PW-000456,A7035,2,2026-08-14,,9400111899223197428490,USPS,shipped
+,,PW-000789,A7038,1,2026-08-15,,,,shipped
+,SO-100240,PW-000123,A7046,1,2026-08-15,,,,cancelled

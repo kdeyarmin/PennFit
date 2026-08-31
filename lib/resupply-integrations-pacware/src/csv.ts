@@ -164,3 +164,44 @@ export function stripCsvFormulaGuard(value: string): string {
   if (/^'+[=+\-@\t\r]/.test(value)) return value.slice(1);
   return value;
 }
+
+/**
+ * Content hash of an uploaded report, for idempotency.
+ *
+ * WHY A HASH AND NOT AN IDEMPOTENCY KEY
+ * -------------------------------------
+ * The route already accepts an `Idempotency-Key` header, which stops a
+ * double-submit of the same REQUEST. It does nothing about the far more
+ * common accident: an operator uploading the same exported file twice —
+ * a fresh browser tab, a colleague repeating the step, a retry after a
+ * timeout that actually succeeded. Those are different requests carrying
+ * identical content, and only the content can tell.
+ *
+ * Normalization before hashing so that a file re-saved from Excel — CRLF
+ * flipped, a trailing newline added or dropped, a BOM introduced — is
+ * recognised as the same file. Those edits change every byte and none of
+ * the meaning.
+ *
+ * PHI: the digest is one-way and is the only thing persisted. The report
+ * body is never stored.
+ *
+ * Implemented with the Web Crypto API (`globalThis.crypto.subtle`) so
+ * this package stays free of `node:` imports and keeps importing cleanly
+ * into the admin SPA's bundler.
+ *
+ * @param csvText - Raw report text as uploaded.
+ * @returns Lowercase hex SHA-256 of the normalized content.
+ */
+export async function computeShipmentFileHash(
+  csvText: string,
+): Promise<string> {
+  const normalized = csvText
+    .replace(/^\uFEFF/, "")
+    .replace(/\r\n?/g, "\n")
+    .replace(/\n+$/, "");
+  const bytes = new TextEncoder().encode(normalized);
+  const digest = await globalThis.crypto.subtle.digest("SHA-256", bytes);
+  return [...new Uint8Array(digest)]
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}

@@ -1024,6 +1024,54 @@ export interface Database {
         Update: Partial<Database["resupply"]["Tables"]["episodes"]["Row"]>;
         Relationships: [];
       };
+      pacware_shipment_imports: {
+        Row: {
+          id: string;
+          org_id: string;
+          file_hash: string;
+          mode: string;
+          total_data_rows: number;
+          applied_count: number;
+          dispositions: Json;
+          oldest_ship_date: string | null;
+          newest_ship_date: string | null;
+          reimport_acknowledged: boolean;
+          imported_by_email: string | null;
+          created_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["pacware_shipment_imports"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["pacware_shipment_imports"]["Row"]
+        >;
+        Relationships: [];
+      };
+      shipment_date_exceptions: {
+        Row: {
+          id: string;
+          org_id: string;
+          fulfillment_id: string;
+          recorded_shipped_at: string;
+          proposed_shipped_at: string;
+          claim_id: string | null;
+          source: string;
+          status: string;
+          resolution: string | null;
+          resolution_note: string | null;
+          raised_by_email: string | null;
+          resolved_by_email: string | null;
+          resolved_at: string | null;
+          created_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["shipment_date_exceptions"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["shipment_date_exceptions"]["Row"]
+        >;
+        Relationships: [];
+      };
       resupply_cutover_records: {
         Row: {
           id: string;
