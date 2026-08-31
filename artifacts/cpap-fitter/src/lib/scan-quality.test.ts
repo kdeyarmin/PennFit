@@ -1221,6 +1221,141 @@ describe("resolveFramePose — the matrix has to earn its trust", () => {
     expect(out.poseSource).toBe("matrix");
   });
 
+  /** Column-major 4x4 for a rotation about one axis. */
+  function poseMatrix(axis: "x" | "y" | "z", deg: number) {
+    const t = (deg * Math.PI) / 180;
+    const c = Math.cos(t);
+    const s = Math.sin(t);
+    const r =
+      axis === "x"
+        ? [
+            [1, 0, 0],
+            [0, c, -s],
+            [0, s, c],
+          ]
+        : axis === "y"
+          ? [
+              [c, 0, s],
+              [0, 1, 0],
+              [-s, 0, c],
+            ]
+          : [
+              [c, -s, 0],
+              [s, c, 0],
+              [0, 0, 1],
+            ];
+    const data = new Array(16).fill(0);
+    for (let i = 0; i < 3; i++) {
+      for (let j = 0; j < 3; j++) data[j * 4 + i] = r[i]![j]!;
+    }
+    data[15] = 1;
+    return { rows: 4, columns: 4, data };
+  }
+
+  it("accepts a small ZERO pitch — the level baseline every capture starts from", () => {
+    const out = resolveFramePose(poseMatrix("x", 0), level, {
+      width: 1080,
+      height: 1440,
+    });
+    expect(out.poseSource).toBe("matrix");
+    expect(Math.abs(out.pitchDeg)).toBeLessThan(1);
+  });
+
+  it("accepts a POSITIVE pitch the estimator corroborates", () => {
+    // Small enough to stay inside MATRIX_GEO_PITCH_AGREEMENT_DEG of the
+    // estimator's own reading on a level face.
+    const out = resolveFramePose(poseMatrix("x", 8), level, {
+      width: 1080,
+      height: 1440,
+    });
+    expect(out.poseSource).toBe("matrix");
+    expect(out.pitchDeg).toBeGreaterThan(0);
+  });
+
+  it("accepts a NEGATIVE pitch the estimator corroborates", () => {
+    // The asymmetric direction: chin-down SHORTENS nose-to-chin, and the
+    // depth-aware correction is the only model that expresses that. A
+    // sign lost here is a correction applied backwards.
+    const out = resolveFramePose(poseMatrix("x", -4), level, {
+      width: 1080,
+      height: 1440,
+    });
+    expect(out.poseSource).toBe("matrix");
+    expect(out.pitchDeg).toBeLessThan(0);
+  });
+
+  it("refuses a REVERSED pitch convention rather than correcting backwards", () => {
+    // If the runtime's sign convention is inverted, a genuinely level
+    // head reads as strongly pitched. The gate catches the magnitude
+    // disagreement and keeps the geometric estimate — which is noisy but
+    // never wrong-signed. Degrading is the whole design.
+    const reversed = poseMatrix("x", -40);
+    const out = resolveFramePose(reversed, level, {
+      width: 1080,
+      height: 1440,
+    });
+    expect(out.poseSource).toBe("geometric");
+  });
+
+  it("refuses a matrix that disagrees about which way the head is TURNED", () => {
+    // Direction-locked coaching reads this sign. A disagreement would
+    // tell the patient to turn the wrong way as well as mis-measure.
+    const turned = frontFaceLandmarks();
+    // Swing the nose toward the left cheek — the same construction the
+    // estimator's own sign test uses.
+    turned[1] = { x: 0.38, y: 0.55 };
+    const geo = estimatePoseFromLandmarks(turned, {
+      width: 1080,
+      height: 1440,
+    });
+    expect(Math.abs(geo.yawDeg)).toBeGreaterThan(8);
+    const out = resolveFramePose(
+      poseMatrix("y", -Math.sign(geo.yawDeg) * 20),
+      turned,
+      { width: 1080, height: 1440 },
+    );
+    expect(out.poseSource).toBe("geometric");
+  });
+
+  it("refuses a SATURATED matrix — 90 degrees against a level face", () => {
+    const out = resolveFramePose(poseMatrix("x", 89), level, {
+      width: 1080,
+      height: 1440,
+    });
+    expect(out.poseSource).toBe("geometric");
+  });
+
+  it("refuses a matrix of the wrong SHAPE rather than half-reading it", () => {
+    for (const malformed of [
+      { rows: 3, columns: 3, data: new Array(9).fill(0) },
+      { rows: 4, columns: 4, data: new Array(15).fill(0) },
+      { rows: 4, columns: 4, data: new Array(16).fill(Number.NaN) },
+      { rows: 4, columns: 4, data: [] },
+    ]) {
+      const out = resolveFramePose(malformed, level, {
+        width: 1080,
+        height: 1440,
+      });
+      expect(out.poseSource).toBe("geometric");
+    }
+  });
+
+  it("never throws, whatever the runtime hands it", () => {
+    // A validator or a capture loop that can throw on a malformed matrix
+    // takes the fitter down for a patient who did nothing wrong.
+    for (const junk of [
+      undefined,
+      null,
+      {} as never,
+      { rows: 4, columns: 4 } as never,
+      { rows: 4, columns: 4, data: "not-an-array" } as never,
+    ]) {
+      expect(() =>
+        resolveFramePose(junk, level, { width: 1080, height: 1440 }),
+      ).not.toThrow();
+    }
+  });
+
   it("refuses a matrix that disagrees about pitch", () => {
     // 40° of pitch against a level-looking face is not the same head —
     // it is the signature of a convention this code has read wrong, and
