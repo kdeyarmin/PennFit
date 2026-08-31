@@ -21,7 +21,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "resupply:backfill-due-at": "tsx ./src/resupply-backfill-episode-due-at.ts",
     "resupply:cutover": "tsx ./src/resupply-cutover.ts",
-    "pacware:validate-shipments": "tsx ./src/pacware-validate-shipments.ts"
+    "pacware:validate-shipments": "tsx ./src/pacware-validate-shipments.ts",
+    "voice:simulate-inbound": "tsx ./src/voice-simulate-inbound.ts"
   },
   "devDependencies": {
     "@types/node": "catalog:",
