@@ -61,6 +61,7 @@ import reorderRemindersRouter from "./admin/reorder-reminders.js";
 import analyticsOutreachAttributionRouter from "./admin/analytics-outreach-attribution.js";
 import analyticsOrderOutcomesRouter from "./admin/analytics-order-outcomes.js";
 import approvalGatesRouter from "./admin/approval-gates.js";
+import integrationsValidateRouter from "./admin/integrations-validate.js";
 import analyticsMarginRouter from "./admin/analytics-margin.js";
 import analyticsRevenueBySourceRouter from "./admin/analytics-revenue-by-source.js";
 import analyticsChannelEngagementRouter from "./admin/analytics-channel-engagement.js";
@@ -932,6 +933,12 @@ router.use(analyticsOrderOutcomesRouter);
 // live counts. Read-only and changes no gate: the posture was already
 // deliberate, it was just stated in a dozen places and nowhere as a set.
 router.use(approvalGatesRouter);
+
+// /admin/integrations/:source/{validate,reconcile} — prove a therapy-cloud
+// connection works before a nightly sync silently depends on it, and diff
+// what we hold against the manufacturer's own portal export. Every check
+// we had before this was a check against ourselves.
+router.use(integrationsValidateRouter);
 // /admin/analytics/margin — gross-margin / COGS dashboard (Owner #1).
 // Folds the F1 cost snapshots on shop_order_items through the shared
 // margin core; keeps the costed/uncosted revenue split explicit.

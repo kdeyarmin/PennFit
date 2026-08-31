@@ -6,7 +6,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { ReactHealthConfig } from "./config";
-import { fetchReactHealthSnapshot } from "./client";
+import { fetchReactHealthSnapshot, patientResourceBase } from "./client";
 
 const CONFIG: ReactHealthConfig = {
   apiBaseUrl: "https://rh.example.com",
@@ -14,6 +14,7 @@ const CONFIG: ReactHealthConfig = {
   clientId: "rh-client",
   clientSecret: "rh-secret",
   accountId: "acct-77",
+  resourcePathStyle: "nested",
 };
 
 function makeTokenResponse() {
@@ -232,5 +233,29 @@ describe("fetchWithTimeout → successful request (ReactHealth)", () => {
       expect(result.snapshot.source).toBe("react_health");
       expect(result.snapshot.settings?.deviceModel).toBe("Luna G3");
     }
+  });
+});
+
+describe("patientResourceBase — which shape we call", () => {
+  it("defaults to the documented nested shape", () => {
+    // This client used to hard-code the FLAT shape while its own header
+    // warned that flat paths "WILL 404 against an API that implements
+    // the nested shape". Nothing had ever exercised either one against
+    // the real service, so the default is now the documented one.
+    expect(patientResourceBase(CONFIG, "p-1")).toBe(
+      "/v1/account/acct-77/patients/p-1",
+    );
+  });
+
+  it("serves the flat shape when a partner instance needs it", () => {
+    expect(
+      patientResourceBase({ ...CONFIG, resourcePathStyle: "flat" }, "p-1"),
+    ).toBe("/v1/patients/p-1");
+  });
+
+  it("escapes an account id with URL-significant characters", () => {
+    expect(
+      patientResourceBase({ ...CONFIG, accountId: "acct/77?x" }, "p-1"),
+    ).toBe("/v1/account/acct%2F77%3Fx/patients/p-1");
   });
 });

@@ -284,22 +284,42 @@ function summariseCompliance(
   };
 }
 
+/**
+ * The patient-resource prefix for this config's path style.
+ *
+ * `nested` is the documented iCode Connect shape and the default;
+ * `flat` is the shape this client originally hard-coded, retained as an
+ * env override in case a partner instance actually serves it. The
+ * `X-Account-Id` header is sent either way — harmless when the account
+ * is already in the path, and required when it is not.
+ */
+export function patientResourceBase(
+  config: ReactHealthConfig,
+  encodedPatientId: string,
+): string {
+  if (config.resourcePathStyle === "flat") {
+    return `/v1/patients/${encodedPatientId}`;
+  }
+  return `/v1/account/${encodeURIComponent(config.accountId)}/patients/${encodedPatientId}`;
+}
+
 export async function fetchReactHealthSnapshot(
   config: ReactHealthConfig,
   input: FetchSnapshotInput,
 ): Promise<FetchSnapshotResult> {
   const windowDays = input.windowDays ?? 30;
   const pid = encodeURIComponent(input.partnerPatientId);
+  const base = patientResourceBase(config, pid);
   try {
     const [device, therapy, supplies] = await Promise.all([
-      request<ReactHealthDeviceResponse>(config, `/v1/patients/${pid}/device`),
+      request<ReactHealthDeviceResponse>(config, `${base}/device`),
       request<{ nights: ReactHealthNightResponse[] }>(
         config,
-        `/v1/patients/${pid}/therapy?windowDays=${windowDays}`,
+        `${base}/therapy?windowDays=${windowDays}`,
       ),
       request<{ items: ReactHealthSupplyResponse[] }>(
         config,
-        `/v1/patients/${pid}/supplies`,
+        `${base}/supplies`,
       ),
     ]);
     const recentNights = (therapy.nights ?? []).map(mapNight);

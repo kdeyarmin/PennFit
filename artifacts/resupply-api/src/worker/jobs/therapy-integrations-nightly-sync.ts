@@ -1,10 +1,18 @@
 // pg-boss job: nightly bulk-sync of therapy-integration snapshots.
 //
 // Walks every patient_therapy_links row with status='active' across
-// all sources whose adapter is `configured` (or `stub` — stub still
-// produces deterministic snapshots in dev/preview), refreshes each
+// all sources whose adapter reports `configured`, refreshes each
 // patient's snapshot, and persists the recentNights into the
 // canonical patient_therapy_nights table.
+//
+// (This used to say "or `stub` — stub still produces deterministic
+// snapshots in dev/preview". None of the three THERAPY adapters has ever
+// returned `stub`; they report `configured` or `unavailable`, and an
+// unavailable one returns an error rather than fabricating a snapshot.
+// Stub mode belongs to the Office Ally and XPS adapters. The comment
+// described a dev convenience that does not exist, which is worse than
+// no comment: it suggests a preview environment is exercising this path
+// when nothing is.)
 //
 // Throttling: 200ms sleep between calls so a partner with rate
 // limits doesn't 429 us. Each run processes at most MAX_LINKS_PER_RUN
@@ -419,7 +427,20 @@ export async function runTherapyNightlySyncForOrg(
             source,
             partner_patient_id: link.partner_patient_id,
             payload: parsed.data as unknown as Json,
-            fetch_status: "ok",
+            // `partial` when the vendor answered but left a sub-resource
+            // empty — no device settings, or no nights in the window.
+            // The column has allowed this value since migration 0219 and
+            // nothing ever wrote it, so a patient whose therapy feed had
+            // gone quiet was recorded identically to one syncing
+            // perfectly, and the integrations dashboard counted both as
+            // healthy. Distinguishing them is the difference between
+            // "this connection is fine" and "this connection is up and
+            // returning nothing".
+            fetch_status:
+              parsed.data.settings == null ||
+              (parsed.data.recentNights?.length ?? 0) === 0
+                ? "partial"
+                : "ok",
             fetch_error: null,
             fetched_at: fetchedAtIso,
           },

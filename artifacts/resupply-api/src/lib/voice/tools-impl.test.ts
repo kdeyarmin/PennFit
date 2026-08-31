@@ -1159,5 +1159,4 @@ describe("VoiceToolDispatcher — end_call patient_declined", () => {
     });
     expect(closes).toEqual([]);
   });
-
 });

@@ -715,7 +715,7 @@ export const APP_CONFIG_CATALOG: readonly AppConfigSetting[] = [
     applyMode: "live",
     scope: "tenant",
     description:
-      "If no shipment confirmation arrives for a queued order within this many days, advance the patient's resupply cycle anyway, timed from the day the order was queued, so a practice with no shipment feed never falls out of the reminder ladder. The episode is recorded as \"assumed shipped\" — deliberately distinct from a confirmed shipment, and never written back as a real ship date, because that date becomes the date of service on the claim. Default 14. Clamped to 3-90.",
+      'If no shipment confirmation arrives for a queued order within this many days, advance the patient\'s resupply cycle anyway, timed from the day the order was queued, so a practice with no shipment feed never falls out of the reminder ladder. The episode is recorded as "assumed shipped" — deliberately distinct from a confirmed shipment, and never written back as a real ship date, because that date becomes the date of service on the claim. Default 14. Clamped to 3-90.',
     placeholder: "14",
   },
   {
