@@ -59,6 +59,9 @@ import assetRecoveryRouter from "./admin/asset-recovery.js";
 import analyticsRouter from "./admin/analytics.js";
 import reorderRemindersRouter from "./admin/reorder-reminders.js";
 import analyticsOutreachAttributionRouter from "./admin/analytics-outreach-attribution.js";
+import analyticsOrderOutcomesRouter from "./admin/analytics-order-outcomes.js";
+import approvalGatesRouter from "./admin/approval-gates.js";
+import integrationsValidateRouter from "./admin/integrations-validate.js";
 import analyticsMarginRouter from "./admin/analytics-margin.js";
 import analyticsRevenueBySourceRouter from "./admin/analytics-revenue-by-source.js";
 import analyticsChannelEngagementRouter from "./admin/analytics-channel-engagement.js";
@@ -201,6 +204,8 @@ import payerFeeSchedulesImportRouter from "./admin/payer-fee-schedules-import.js
 import cmsFeeScheduleImportRouter from "./admin/cms-fee-schedule-import.js";
 import systemIntegrationsStatusRouter from "./admin/system-integrations-status.js";
 import pacwareRouter from "./admin/pacware.js";
+import pacwareShipmentsRouter from "./admin/pacware-shipments.js";
+import fulfillmentShipmentsRouter from "./admin/fulfillment-shipments.js";
 import resupplyBootstrapRouter from "./admin/resupply-bootstrap.js";
 import platformConnectionTestsRouter from "./platform/connection-tests.js";
 import proxyChainRouter from "./admin/proxy-chain.js";
@@ -713,6 +718,17 @@ router.use(systemIntegrationsStatusRouter);
 // patient-roster import (sync), and CSV exports (roster + resupply-due).
 // PacWare has no API; this is the documented CSV bridge.
 router.use(pacwareRouter);
+
+// /admin/pacware/import/shipments — the RETURN leg of the file exchange.
+// resupply-due.csv tells PacWare what to ship; this brings back what
+// actually shipped, which is the only thing that writes
+// `fulfillments.shipped_at` in bulk.
+router.use(pacwareShipmentsRouter);
+
+// /admin/fulfillments/:id/{mark-shipped,cancel} — per-order shipment
+// evidence for a tenant with no PacWare feed, and one-row corrections for
+// a tenant that has one.
+router.use(fulfillmentShipmentsRouter);
 router.use(resupplyBootstrapRouter);
 // /admin/diagnostics/proxy-chain — echoes the forwarding-header chain
 // (socket peer, XFF, CF-Connecting-IP) plus Express's req.ip resolution
@@ -906,6 +922,23 @@ router.use(analyticsChannelEngagementRouter);
 // reminders / clinical outreach, the share who placed a fulfillment
 // within N days (closed-loop conversion by channel).
 router.use(analyticsOutreachAttributionRouter);
+
+// /admin/analytics/order-outcomes — eligible -> confirmed -> fulfilled ->
+// claimed -> accepted -> paid, with the drop-out reason at each step. The
+// first surface joining the resupply funnel to the claim funnel; the join
+// key has existed since migration 0118 and nothing used it.
+router.use(analyticsOrderOutcomesRouter);
+
+// /admin/approval-gates — every transition that requires a person, with
+// live counts. Read-only and changes no gate: the posture was already
+// deliberate, it was just stated in a dozen places and nowhere as a set.
+router.use(approvalGatesRouter);
+
+// /admin/integrations/:source/{validate,reconcile} — prove a therapy-cloud
+// connection works before a nightly sync silently depends on it, and diff
+// what we hold against the manufacturer's own portal export. Every check
+// we had before this was a check against ourselves.
+router.use(integrationsValidateRouter);
 // /admin/analytics/margin — gross-margin / COGS dashboard (Owner #1).
 // Folds the F1 cost snapshots on shop_order_items through the shared
 // margin core; keeps the costed/uncosted revenue split explicit.

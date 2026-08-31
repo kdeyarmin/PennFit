@@ -20,6 +20,13 @@ export const PACWARE_REPORT_KINDS = [
   // Resupply episodes that are due / ready to action. CareMetric Breathe -> PacWare
   // order-entry & billing. Export only.
   "resupply_due",
+  // What PacWare actually shipped. PacWare report -> CareMetric Breathe.
+  // Import only. This is the return leg of `resupply_due`: without it
+  // nothing in the app ever learns that an order left the warehouse, so
+  // `fulfillments.shipped_at` stays NULL, refill cadence anchors on when
+  // we queued the order instead of when the patient received it, and
+  // every claim carries the wrong date of service.
+  "shipment_confirmations",
 ] as const;
 
 export type PacwareReportKind = (typeof PACWARE_REPORT_KINDS)[number];
@@ -257,9 +264,127 @@ const RESUPPLY_DUE: PacwareReportSpec = {
   ],
 };
 
+// ---------------------------------------------------------------------------
+// shipment_confirmations — what actually shipped (import only).
+//
+// The return leg of `resupply_due`. PacWare picks, ships, and bills from
+// its own system of record and tells nobody; this report brings the ship
+// event back so the resupply engine can (a) close the episode, (b) time
+// the NEXT refill from the real ship date rather than from when we queued
+// the order, and (c) give the claim a truthful date of service.
+//
+// THREE KEYS, IN PRECEDENCE ORDER. A hand-run PacWare report rarely
+// carries all of them, so the matcher degrades:
+//   1. `pennfit_episode_id` — round-trips from the resupply_due export,
+//      which already tells the operator to store it in PacWare notes.
+//   2. `pacware_order_ref` — PacWare's own order/invoice number. Unknown
+//      to us on the first import; stamped on match, so every later
+//      import is an exact key.
+//   3. `pacware_id` + `item_sku` — the fallback, resolved against the
+//      most recent unshipped queued line for that patient and SKU.
+// ---------------------------------------------------------------------------
+const SHIPMENT_CONFIRMATIONS: PacwareReportSpec = {
+  kind: "shipment_confirmations",
+  direction: "import",
+  label: "Shipment confirmations",
+  description:
+    "What PacWare actually shipped. Import to close resupply episodes, " +
+    "time the next refill from the real ship date, and date claims " +
+    "correctly. One line per shipped item.",
+  columns: [
+    {
+      field: "pennfitEpisodeId",
+      header: "pennfit_episode_id",
+      aliases: ["pennfitepisode", "breatheepisodeid", "episodeid"],
+      required: false,
+      description:
+        "CareMetric Breathe episode id from the resupply-due export. The " +
+        "strongest match key when PacWare notes carried it through.",
+    },
+    {
+      field: "pacwareOrderRef",
+      header: "pacware_order_ref",
+      aliases: [
+        "orderno",
+        "ordernumber",
+        "orderid",
+        "invoiceno",
+        "invoicenumber",
+        "ticketno",
+      ],
+      required: false,
+      description:
+        "PacWare order / invoice number. Stored on first match so later " +
+        "imports match exactly.",
+    },
+    {
+      field: "pacwareId",
+      header: "pacware_id",
+      aliases: ["accountnumber", "acctno", "patientid", "patientnumber"],
+      required: true,
+      description: "PacWare patient account number.",
+    },
+    {
+      field: "itemSku",
+      header: "item_sku",
+      aliases: ["sku", "itemno", "itemnumber", "hcpcs"],
+      required: true,
+      description: "Item SKU that shipped.",
+    },
+    {
+      field: "quantity",
+      header: "quantity",
+      aliases: ["qty", "qtyshipped"],
+      required: false,
+      description: "Quantity shipped. Defaults to 1.",
+    },
+    {
+      field: "shippedDate",
+      header: "ship_date",
+      aliases: ["shippeddate", "dateshipped", "shipdate"],
+      required: true,
+      description:
+        "Date the item shipped (YYYY-MM-DD or MM/DD/YYYY). This becomes " +
+        "the claim's date of service, so it must be the real ship date.",
+    },
+    {
+      field: "deliveredDate",
+      header: "delivered_date",
+      aliases: ["datedelivered", "deliverydate"],
+      required: false,
+      description: "Date delivered, if PacWare tracks it.",
+    },
+    {
+      field: "trackingNumber",
+      header: "tracking_number",
+      aliases: ["tracking", "trackingno", "pro"],
+      required: false,
+      description: "Carrier tracking number.",
+    },
+    {
+      field: "carrier",
+      header: "carrier",
+      aliases: ["shipvia", "shipmethod"],
+      required: false,
+      description: "Shipping carrier.",
+    },
+    {
+      field: "rowStatus",
+      header: "status",
+      aliases: ["orderstatus", "shipstatus"],
+      required: false,
+      description:
+        "shipped | delivered | cancelled | voided. Defaults to shipped. " +
+        "A cancelled or voided line is reported and skipped, never " +
+        "recorded as a dispense.",
+    },
+  ],
+};
+
 const REGISTRY: Record<PacwareReportKind, PacwareReportSpec> = {
   patient_roster: PATIENT_ROSTER,
   resupply_due: RESUPPLY_DUE,
+  shipment_confirmations: SHIPMENT_CONFIRMATIONS,
 };
 
 export function getPacwareReportSpec(

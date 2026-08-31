@@ -48,6 +48,9 @@ import {
   type OrgScopedClient,
 } from "@workspace/resupply-db";
 import {
+  FULFILLMENT_CANCELLED,
+  FULFILLMENT_QUEUED,
+  IN_PROGRESS_EPISODE_STATUSES,
   REFILL_AFFIRMATION_STATEMENT,
   REFILL_SHIP_LEAD_DAYS,
   resolveRefillWindow,
@@ -64,7 +67,9 @@ import {
 } from "../entitlement/resolve-sku-entitlement";
 import { isFeatureEnabled } from "../feature-flags";
 import { recordDispense } from "../catalog/dispense";
+import { closeOpenEpisodesForPatient } from "../episodes/close-episode";
 import { openOutreachEpisode } from "../episodes/open-outreach-episode";
+import { shouldOpenNextCycleAtConfirm } from "../episodes/ship-evidence-gate";
 import { logger } from "../logger";
 
 export interface NotEligibleEntitlement {
@@ -569,19 +574,39 @@ export async function placeResupplyOrderForConversation(
     });
   }
 
-  // Open the NEXT cycle so the ladder continues after this confirm.
+  // Open the NEXT cycle so the ladder continues after this confirm —
+  // unless this tenant has asked to wait for proof of shipment.
+  //
+  // OFF (the default, and what every tenant does today): open now, dated
+  // from the confirm. `recordShipmentEvidence` later re-anchors it to the
+  // real ship date, so the confirm-time date is a provisional estimate
+  // that gets corrected.
+  //
+  // ON: leave it to the two producers that KNOW when the order left —
+  // `recordShipmentEvidence` (dated from the ship) and, if evidence never
+  // arrives, the grace sweep. Nobody stops being reminded either way;
+  // this only decides whether the first estimate is made at all, which
+  // matters for a tenant whose orders sit for weeks before shipping.
+  //
+  // See `shouldOpenNextCycleAtConfirm` for why a failed flag read lands on
+  // "open now": that mistake corrects itself when evidence arrives, and
+  // the other one is silent.
+  const openNow = await shouldOpenNextCycleAtConfirm(orgId);
+
   // Best-effort: the ship already happened; a failed next-episode write
   // is logged for ops, never turns a successful confirm into a failure.
   try {
-    await openOutreachEpisode({
-      orgId,
-      patientId: episode.patient_id,
-      prescriptionId: episode.prescription_id,
-      cadenceDays:
-        typeof rx.cadence_days === "number" && rx.cadence_days > 0
-          ? rx.cadence_days
-          : 90,
-    });
+    if (openNow) {
+      await openOutreachEpisode({
+        orgId,
+        patientId: episode.patient_id,
+        prescriptionId: episode.prescription_id,
+        cadenceDays:
+          typeof rx.cadence_days === "number" && rx.cadence_days > 0
+            ? rx.cadence_days
+            : 90,
+      });
+    }
   } catch (err) {
     logger.warn(
       {
@@ -951,12 +976,47 @@ export async function requestAddressChangeHold(args: {
     );
   }
 
+  // Silence the reminder ladder for this patient's open cycles.
+  //
+  // Holding the shipment and opening the CSR alert was only two thirds of
+  // the job: the episodes stayed `outreach_pending` / `awaiting_response`,
+  // so the ladder kept escalating — texting, emailing, and eventually
+  // phoning a patient about an order we had JUST told them was on hold
+  // pending their new address.
+  //
+  // `address_hold` is not terminal. The cycle is alive and a CSR owns it;
+  // it is excluded from IN_PROGRESS_EPISODE_STATUSES (so no outreach) and
+  // included in OUTREACH_OPEN_EPISODE_STATUSES (so nothing opens a
+  // duplicate). `releaseAddressChangeHold` puts it back.
+  //
+  // The CONTROL stays the alert: `placeResupplyOrderForConversation`
+  // still blocks a confirm while one is open. This status is the
+  // silencer, not the guard.
+  try {
+    const { error: epErr } = await supabase
+      .from("episodes")
+      .update({ status: "address_hold", updated_at: new Date().toISOString() })
+      .eq("patient_id", args.patientId)
+      .in("status", [...IN_PROGRESS_EPISODE_STATUSES]);
+    if (epErr) throw epErr;
+  } catch (err) {
+    logger.warn(
+      {
+        event: "resupply.address_change.episode_hold_failed",
+        errName: err instanceof Error ? err.name : "unknown",
+        patientId: args.patientId,
+      },
+      "resupply: could not pause the reminder ladder for address change",
+    );
+  }
+
   return { heldCount, alertOpen };
 }
 
 /**
- * Release the holds placed by `requestAddressChangeHold`, returning the
- * patient's fulfillments to `queued`.
+ * Release the holds placed by `requestAddressChangeHold`: returns the
+ * patient's fulfillments to `queued` AND their episodes from
+ * `address_hold` back into the reminder ladder.
  *
  * Called when a CSR resolves the address-change alert. Without this the
  * hold would be a one-way door and the order would sit forever — worse
@@ -971,11 +1031,28 @@ export async function releaseAddressChangeHold(args: {
     const supabase = getOrgScopedClient(args.orgId);
     const { data: released, error } = await supabase
       .from("fulfillments")
-      .update({ status: "queued", updated_at: new Date().toISOString() })
+      .update({
+        status: FULFILLMENT_QUEUED,
+        updated_at: new Date().toISOString(),
+      })
       .eq("patient_id", args.patientId)
       .eq("status", FULFILLMENT_ON_HOLD)
       .select("id");
     if (error) throw error;
+
+    // Un-silence the ladder. `due_at` is left alone on purpose: the cycle
+    // was already due when the patient asked to move it, so the next scan
+    // should pick it straight back up rather than restart the clock.
+    const { error: epErr } = await supabase
+      .from("episodes")
+      .update({
+        status: "outreach_pending",
+        updated_at: new Date().toISOString(),
+      })
+      .eq("patient_id", args.patientId)
+      .eq("status", "address_hold");
+    if (epErr) throw epErr;
+
     return (released ?? []).length;
   } catch (err) {
     logger.warn(
@@ -1427,6 +1504,42 @@ export async function pausePatient(
     .select("id, email")
     .maybeSingle();
   if (error) throw error;
+
+  // Close the ladder. Until now a STOP flipped the patient to `paused`
+  // and left every open episode `outreach_pending` FOREVER. The
+  // escalation sweep only escalates active patients, so no message went
+  // out — but the rows stayed in the due list and the funnel, and
+  // `openOutreachEpisode`'s idempotency check would hand back the stale
+  // row instead of opening a fresh cycle if the patient ever came back.
+  //
+  // `canceled` / `patient_opted_out`, NOT `declined`: an opt-out is a
+  // withdrawal from contact, not a refusal of this order. Folding the two
+  // together would make the decline rate meaningless.
+  //
+  // Deliberately fail-soft, unlike the shop_customers mirror below: a
+  // STOP is carrier-mandated and must be acknowledged even if the
+  // bookkeeping fails.
+  try {
+    await closeOpenEpisodesForPatient({
+      orgId,
+      patientId,
+      status: "canceled",
+      reason: "patient_opted_out",
+    });
+  } catch (err) {
+    logger.warn(
+      {
+        event: "resupply.opt_out_episode_close_failed",
+        patient_id: patientId,
+        errName: err instanceof Error ? err.name : "unknown",
+      },
+      "opt-out: could not close the patient's open episodes",
+    );
+  }
+
+  // Queued orders are deliberately LEFT ALONE. A STOP is about messaging;
+  // supplies the patient already confirmed should still reach them.
+
   if (!patient?.email) return;
   // Look up the matching shop_customers row by lowercased email and
   // flip both sms-mode flags off. Marketing emails stay on (the
@@ -1491,6 +1604,36 @@ export async function reactivatePatient(
     .select("id, email")
     .maybeSingle();
   if (error) throw error;
+
+  // Re-open the ladder.
+  //
+  // This is load-bearing, and it is easy to miss. Once `pausePatient`
+  // started closing episodes, the ONLY producer left is
+  // `openOutreachEpisode` — called from prescription create, the import
+  // bootstrap, and shipment evidence. None of those fire on a START. So
+  // without this, a patient who texts STOP and then START is permanently
+  // invisible to resupply: active, enrolled, and never contacted again.
+  //
+  // The `.eq("status","paused")` guard above means `patient` is only
+  // non-null when this call actually flipped a paused row, so a repeat
+  // START is a no-op rather than a second cycle.
+  //
+  // Best-effort: the CTIA opt-in acknowledgement must go out regardless.
+  if (patient) {
+    try {
+      await reopenLadderAfterOptIn(orgId, patientId);
+    } catch (err) {
+      logger.warn(
+        {
+          event: "resupply.opt_in_ladder_reopen_failed",
+          patient_id: patientId,
+          errName: err instanceof Error ? err.name : "unknown",
+        },
+        "opt-in: could not re-open the patient's resupply cycles",
+      );
+    }
+  }
+
   if (!patient?.email) return;
   const emailLower = patient.email.toLowerCase();
   const { data: cust, error: custErr } = await supabase
@@ -1518,4 +1661,71 @@ export async function reactivatePatient(
     })
     .eq("customer_id", cust.customer_id);
   if (prefsUpdateErr) throw prefsUpdateErr;
+}
+
+/**
+ * Open one outreach cycle per active prescription for a patient who has
+ * just opted back in.
+ *
+ * Anchored on the patient's LAST DISPENSE, not on now. Someone who
+ * STOPped four months into a 90-day cycle must come back already due —
+ * anchoring on the opt-in would give them another 90 days of silence
+ * while their supplies run out. This is the same expression the reminder
+ * scan uses for its baseline: MAX(COALESCE(shipped_at, created_at)) per
+ * (patient, item_sku) over non-cancelled fulfillments.
+ *
+ * Idempotent by construction: `openOutreachEpisode` reuses any
+ * outreach-open cycle for the prescription.
+ */
+async function reopenLadderAfterOptIn(
+  orgId: string,
+  patientId: string,
+): Promise<void> {
+  const supabase = getOrgScopedClient(orgId);
+
+  const { data: rxRows, error: rxErr } = await supabase
+    .from("prescriptions")
+    .select("id, item_sku, cadence_days, created_at")
+    .eq("patient_id", patientId)
+    .eq("status", "active");
+  if (rxErr) throw rxErr;
+  const prescriptions = (rxRows ?? []) as Array<{
+    id: string;
+    item_sku: string;
+    cadence_days: number | null;
+    created_at: string;
+  }>;
+  if (prescriptions.length === 0) return;
+
+  const { data: fRows, error: fErr } = await supabase
+    .from("fulfillments")
+    .select("item_sku, shipped_at, created_at")
+    .eq("patient_id", patientId)
+    .neq("status", FULFILLMENT_CANCELLED);
+  if (fErr) throw fErr;
+  const lastBySku = new Map<string, string>();
+  for (const f of (fRows ?? []) as Array<{
+    item_sku: string;
+    shipped_at: string | null;
+    created_at: string;
+  }>) {
+    const at = f.shipped_at ?? f.created_at;
+    const prev = lastBySku.get(f.item_sku);
+    if (!prev || at > prev) lastBySku.set(f.item_sku, at);
+  }
+
+  for (const rx of prescriptions) {
+    const anchorRaw = lastBySku.get(rx.item_sku) ?? rx.created_at;
+    const anchor = new Date(anchorRaw);
+    await openOutreachEpisode({
+      orgId,
+      patientId,
+      prescriptionId: rx.id,
+      cadenceDays:
+        typeof rx.cadence_days === "number" && rx.cadence_days > 0
+          ? rx.cadence_days
+          : 90,
+      from: Number.isFinite(anchor.getTime()) ? anchor : new Date(),
+    });
+  }
 }

@@ -184,9 +184,17 @@ const INSURANCE: Cap[] = [
   {
     icon: <Send size={20} />,
     title: "Claims & submission",
-    summary: "AI-scrubbed 837P, out the door automatically.",
+    // Was "out the door automatically", which is not what the product
+    // does by default: unattended submission needs BOTH a cron and a
+    // per-tenant switch, and even then it only takes claims that pass
+    // preflight on fresh, active eligibility. Everything else waits for a
+    // biller — deliberately. Describing that as no-touch sets an
+    // expectation the software will not meet on day one.
+    summary: "AI-scrubbed 837P, built for you and out the door on your say-so.",
     points: [
       "Auto-built from the order — no manual claim keying",
+      "Scrubbed before it goes, so your biller reviews exceptions, not every claim",
+      "Turn on unattended submission for clean claims once you trust it",
       "Submit via the built-in Office Ally connection or any clearinghouse",
       "835/ERA auto-posting reconciles payments back to the order",
     ],

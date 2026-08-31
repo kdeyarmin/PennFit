@@ -163,3 +163,90 @@ describe("recordVoiceCallEvent", () => {
     ).resolves.toBeUndefined();
   });
 });
+
+describe("recordVoiceCallEvent — tenant attribution", () => {
+  const ORG = "00000000-0000-4000-8000-000000000001";
+  const CONVERSATION = "00000000-0000-4000-8000-000000000022";
+
+  const event = {
+    callSid: SID,
+    conversationId: CONVERSATION,
+    callStatus: "completed",
+    direction: "outbound-api",
+    durationSeconds: 42,
+    answeredBy: "human",
+    nowIso: NOW,
+  };
+
+  const supabaseMock = installSupabaseMock();
+  beforeEach(() => supabaseMock.reset());
+
+  it("stamps the call's org on insert", () => {
+    // This is the whole point. `voice_calls.org_id` existed from migration
+    // 0341 and was written by NOTHING, while /admin/voice/metrics and the
+    // channel-engagement analytics read through the org-scoped client
+    // (which appends `.eq("org_id", …)`). Every row NULL meant both
+    // surfaces returned zero for EVERY tenant — a dashboard that had never
+    // shown a number and read as "no calls yet".
+    stageSupabaseResponse("voice_calls", "select", { data: null, error: null });
+    stageSupabaseResponse("voice_calls", "insert", { data: null, error: null });
+
+    return recordVoiceCallEvent(
+      getSupabaseServiceRoleClient(),
+      event,
+      ORG,
+    ).then(() => {
+      const [row] = getSupabaseWritePayloads("voice_calls", "insert") as [
+        Record<string, unknown>,
+      ];
+      expect(row.org_id).toBe(ORG);
+      expect(row.call_sid).toBe(SID);
+    });
+  });
+
+  it("backfills the org on a later lifecycle event for an existing row", async () => {
+    // Twilio posts several events per call. A row inserted before this fix
+    // (or before its tenant could be resolved) is repaired by the next one
+    // rather than staying invisible for the life of the call.
+    stageSupabaseResponse("voice_calls", "select", {
+      data: { id: "vc1" },
+      error: null,
+    });
+    stageSupabaseResponse("voice_calls", "update", { data: null, error: null });
+
+    await recordVoiceCallEvent(getSupabaseServiceRoleClient(), event, ORG);
+
+    const [patch] = getSupabaseWritePayloads("voice_calls", "update") as [
+      Record<string, unknown>,
+    ];
+    expect(patch.org_id).toBe(ORG);
+  });
+
+  it("writes an unattributed row rather than inventing a tenant", async () => {
+    // A status callback for a conversation that no longer exists has no
+    // resolvable tenant. Defaulting to the seed org would file another
+    // practice's call under it; leaving org_id absent keeps the gap
+    // visible.
+    stageSupabaseResponse("voice_calls", "select", { data: null, error: null });
+    stageSupabaseResponse("voice_calls", "insert", { data: null, error: null });
+
+    await recordVoiceCallEvent(getSupabaseServiceRoleClient(), event, null);
+
+    const [row] = getSupabaseWritePayloads("voice_calls", "insert") as [
+      Record<string, unknown>,
+    ];
+    expect(row).not.toHaveProperty("org_id");
+  });
+
+  it("ignores a blank org rather than writing an empty string", async () => {
+    stageSupabaseResponse("voice_calls", "select", { data: null, error: null });
+    stageSupabaseResponse("voice_calls", "insert", { data: null, error: null });
+
+    await recordVoiceCallEvent(getSupabaseServiceRoleClient(), event, "   ");
+
+    const [row] = getSupabaseWritePayloads("voice_calls", "insert") as [
+      Record<string, unknown>,
+    ];
+    expect(row).not.toHaveProperty("org_id");
+  });
+});

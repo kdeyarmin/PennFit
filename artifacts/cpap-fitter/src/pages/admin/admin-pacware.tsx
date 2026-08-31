@@ -39,6 +39,9 @@ import {
   getPacwareSettings,
   getPacwareSyncPreview,
   importPacwarePatients,
+  importPacwareShipments,
+  type PacwareShipmentPreview,
+  type PacwareShipmentCommit,
   previewPacwarePatientHeaders,
   setPacwareAutoSync,
   bootstrapResupplyPrescriptions,
@@ -83,6 +86,7 @@ export function AdminPacwarePage() {
 
       <HowToCard />
       <ImportCard />
+      <ShipmentImportCard />
       <SyncCard />
 
       <Card>
@@ -1125,5 +1129,245 @@ function Stat({
       </span>{" "}
       <span style={{ color: "hsl(var(--ink-3))" }}>{label}</span>
     </span>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Shipment confirmations — the return leg.
+//
+// The resupply-due export tells PacWare what to ship. Until this existed
+// nothing came back, so the app never learned an order had left: refill
+// cadence timed itself from when we queued the order rather than when the
+// patient received it, the reorder funnel's "shipped" stage was
+// permanently zero, and every claim carried today's date as its date of
+// service.
+//
+// Preview then commit, like the roster import beside it. The preview
+// deliberately shows the ship-date age: a first import that backfills
+// months of history mints claims dated that far back, which can miss a
+// payer's filing deadline.
+// ---------------------------------------------------------------------------
+function ShipmentImportCard() {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [fileName, setFileName] = useState<string | null>(null);
+  const [csv, setCsv] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [preview, setPreview] = useState<PacwareShipmentPreview | null>(null);
+  const [commit, setCommit] = useState<PacwareShipmentCommit | null>(null);
+
+  function reset() {
+    setFileName(null);
+    setCsv(null);
+    setPreview(null);
+    setCommit(null);
+    setErr(null);
+    if (fileRef.current) fileRef.current.value = "";
+  }
+
+  async function onPick(file: File) {
+    reset();
+    setFileName(file.name);
+    setBusy(true);
+    try {
+      const text = await file.text();
+      setCsv(text);
+      const res = (await importPacwareShipments(
+        text,
+        "preview",
+      )) as PacwareShipmentPreview;
+      setPreview(res);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Could not read or parse file.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onCommit() {
+    if (!csv) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      const res = (await importPacwareShipments(
+        csv,
+        "commit",
+      )) as PacwareShipmentCommit;
+      setCommit(res);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Import failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const matchedTotal = preview
+    ? preview.matched.byEpisodeId +
+      preview.matched.byOrderRef +
+      preview.matched.byPatientSku
+    : 0;
+
+  return (
+    <Card>
+      <h2 className="text-lg font-semibold flex items-center gap-2">
+        <Upload className="h-5 w-5" /> Import shipment confirmations
+      </h2>
+      <p className="text-sm mt-1 mb-3" style={{ color: "hsl(var(--ink-3))" }}>
+        In PacWare, run the shipped-orders / invoice report for the period you
+        want and export it to CSV. Uploading it here closes each resupply
+        episode, times that patient&rsquo;s <strong>next</strong> refill from
+        the real ship date, and gives their claim the correct date of service.
+        Without it we can only guess from when the order was entered.
+      </p>
+
+      <input
+        ref={fileRef}
+        type="file"
+        accept=".csv,text/csv"
+        disabled={busy}
+        className="text-sm"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) void onPick(f);
+        }}
+        data-testid="pacware-shipment-file"
+      />
+
+      {fileName && (
+        <p className="text-xs mt-2" style={{ color: "hsl(var(--ink-3))" }}>
+          {fileName}
+        </p>
+      )}
+      {busy && <Spinner />}
+      {err && <ErrorPanel error={err} />}
+
+      {preview && !commit && (
+        <div className="mt-4 space-y-3" data-testid="pacware-shipment-preview">
+          <div className="text-sm">
+            <strong>{preview.totalDataRows}</strong> rows read,{" "}
+            <strong>{matchedTotal}</strong> matched to an order.
+          </div>
+          <ul
+            className="text-xs space-y-1"
+            style={{ color: "hsl(var(--ink-2))" }}
+          >
+            <li>
+              Matched by episode id: {preview.matched.byEpisodeId} &middot; by
+              PacWare order number: {preview.matched.byOrderRef} &middot; by
+              patient + item: {preview.matched.byPatientSku}
+            </li>
+            <li>Already recorded (nothing to do): {preview.alreadyRecorded}</li>
+            {preview.unmatched > 0 && (
+              <li>
+                <strong>{preview.unmatched} unmatched</strong> — no order in
+                CareMetric Breathe matches these lines. They will be skipped.
+              </li>
+            )}
+            {preview.ambiguous > 0 && (
+              <li style={{ color: "#92400e" }}>
+                <strong>{preview.ambiguous} ambiguous</strong> — more than one
+                order could be the match, so these are left for a person.
+                Recording the wrong one would date the wrong patient&rsquo;s
+                claim and re-time their next refill.
+              </li>
+            )}
+            {preview.rowCancelled > 0 && (
+              <li>
+                Cancelled or voided in PacWare: {preview.rowCancelled} — never
+                recorded as shipped.
+              </li>
+            )}
+            {preview.errorCount > 0 && (
+              <li style={{ color: "#991b1b" }}>
+                {preview.errorCount} row(s) could not be read.
+              </li>
+            )}
+          </ul>
+
+          {preview.shipDatesOlderThan60d > 0 && (
+            <div
+              className="text-xs px-3 py-2 rounded border"
+              style={{
+                backgroundColor: "#fffbeb",
+                borderColor: "#fcd34d",
+                color: "#92400e",
+              }}
+              role="status"
+            >
+              <strong>
+                {preview.shipDatesOlderThan60d} of these shipped more than 60
+                days ago
+              </strong>{" "}
+              (oldest {preview.oldestShipDate}). Each one will date that
+              patient&rsquo;s claim to its real ship date, which may be past the
+              payer&rsquo;s filing deadline. If you are catching up on history,
+              import the most recent period first and check with billing before
+              going further back.
+            </div>
+          )}
+
+          {preview.errors.length > 0 && (
+            <details className="text-xs">
+              <summary className="cursor-pointer">
+                Row problems ({preview.errors.length})
+              </summary>
+              <ul className="mt-2 space-y-1">
+                {preview.errors.slice(0, 50).map((e, i) => (
+                  <li key={i}>
+                    Row {e.rowIndex}
+                    {e.field ? ` (${e.field})` : ""}: {e.message}
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
+
+          <div className="flex gap-2">
+            <Button
+              intent="primary"
+              isLoading={busy}
+              disabled={matchedTotal === 0}
+              onClick={() => void onCommit()}
+              data-testid="pacware-shipment-commit"
+            >
+              Record {matchedTotal} shipment{matchedTotal === 1 ? "" : "s"}
+            </Button>
+            <Button intent="secondary" onClick={reset}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {commit && (
+        <div className="mt-4 space-y-2" data-testid="pacware-shipment-result">
+          <div className="text-sm">
+            Recorded <strong>{commit.applied}</strong> shipment
+            {commit.applied === 1 ? "" : "s"}.{" "}
+            {commit.nextCyclesOpened > 0 && (
+              <>
+                {commit.nextCyclesOpened} next refill cycle
+                {commit.nextCyclesOpened === 1 ? "" : "s"} scheduled from the
+                real ship date.
+              </>
+            )}
+          </div>
+          <ul
+            className="text-xs space-y-1"
+            style={{ color: "hsl(var(--ink-2))" }}
+          >
+            <li>Already recorded, left alone: {commit.unchanged}</li>
+            <li>Unmatched: {commit.unmatched}</li>
+            <li>Ambiguous (needs a person): {commit.ambiguous}</li>
+            {commit.failed > 0 && (
+              <li style={{ color: "#991b1b" }}>Failed: {commit.failed}</li>
+            )}
+          </ul>
+          <Button intent="secondary" onClick={reset}>
+            Import another file
+          </Button>
+        </div>
+      )}
+    </Card>
   );
 }

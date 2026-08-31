@@ -290,7 +290,11 @@ BILLING (the claims + revenue-cycle hub):
 ANALYTICS & REPORTS:
   - Reports (/admin/reports) — the report catalog.
   - Audit Trail (/admin/analytics/audit-trail, permission: audit.read) — who did what.
-  - Financial: Margin & COGS (/admin/analytics/margin, cost.read), Outreach Attribution
+  - Financial: Margin & COGS (/admin/analytics/margin, cost.read), Order outcomes
+    (/admin/analytics/order-outcomes) — every refill that came due followed all the
+    way to payment (due, confirmed, shipped, billed, accepted, paid) with the reason
+    for each drop-off, including the two nothing else shows: confirmed-but-never-shipped
+    (orders not reaching the warehouse) and shipped-but-never-billed, Outreach Attribution
     (/admin/analytics/outreach-attribution), Acquisition funnel
     (/admin/analytics/acquisition-funnel), Revenue by source
     (/admin/analytics/revenue-by-source), Fitter outcomes

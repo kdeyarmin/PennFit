@@ -115,9 +115,15 @@ export async function processOutboundFaxEvent(
   const faxId = event.faxId;
   const failureReason = event.failureReason;
 
-  // Public webhook (no req): this runs post-ACK, fire-and-forget. Resolve
-  // the seed org (single-tenant posture) and degrade — drop the event
-  // without throwing — if it can't be resolved. Telnyx already got its 200.
+  // Public webhook (no req): this runs post-ACK, fire-and-forget.
+  //
+  // The seed org is resolved ONLY to obtain a client handle. Every write
+  // below is keyed on the globally-unique Telnyx `vendor_ref` through
+  // `.raw()`, precisely so a non-seed tenant's fax status is not silently
+  // dropped by an org filter — so nothing here is scoped to, attributed
+  // to, or metered against the seed tenant. If it cannot be resolved at
+  // all we have no client, so the event is dropped rather than thrown;
+  // Telnyx already got its 200.
   const orgId = await resolveSeedOrgId();
   if (!orgId) {
     logger.warn(

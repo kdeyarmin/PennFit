@@ -1007,6 +1007,14 @@ export const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             hint: "Gross margin and % by product and overall, from captured cost",
           },
           {
+            href: "/admin/analytics/order-outcomes",
+            label: "Order outcomes",
+            icon: TrendingDown,
+            matchPrefix: "/admin/analytics/order-outcomes",
+            requiredPermission: "reports.read",
+            hint: "Due to paid, end to end, with the reason for every drop-off",
+          },
+          {
             href: "/admin/analytics/outreach-attribution",
             label: "Outreach Attribution",
             icon: Target,

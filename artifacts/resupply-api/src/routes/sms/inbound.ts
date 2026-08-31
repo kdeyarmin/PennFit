@@ -78,6 +78,8 @@ import {
   readMessagingConfigOrNull,
   readSmsConfigOrNull,
 } from "../../lib/messaging/messaging-config";
+import { closeEpisode } from "../../lib/episodes/close-episode";
+import { reopenCycleAfterDecline } from "../../lib/episodes/reopen-after-decline";
 import {
   pausePatient,
   reactivatePatient,
@@ -256,7 +258,7 @@ router.post(
         // patient texting tenant-B's number was told the seed tenant would
         // stop contacting them. Falls back to the platform name on the
         // shared number, where no single tenant owns the conversation.
-        const earlyOrgId = await resolveOrgIdByCalledNumber(parsed.To);
+        const earlyOrgId = await resolveOrgIdByCalledNumber(parsed.To, "sms");
         const earlyPracticeName = earlyOrgId
           ? (await getCompanyInfo(earlyOrgId)).name
           : PLATFORM_NAME;
@@ -298,7 +300,7 @@ router.post(
     //   * Never invent the seed org for an unknown phone: that would park
     //     STOP/HELP audits and unknown-number PHI under Penn. CTIA STOP/HELP
     //     still get a platform-branded reply with no DB write.
-    const calledOrgId = await resolveOrgIdByCalledNumber(parsed.To);
+    const calledOrgId = await resolveOrgIdByCalledNumber(parsed.To, "sms");
     const orgId = calledOrgId
       ? calledOrgId
       : await resolveOrgIdByPatientPhone(normalizedFrom);
@@ -1257,13 +1259,23 @@ async function dispatchIntent(input: DispatchInput): Promise<string> {
       const episodeId =
         typeof convRow?.episode_id === "string" ? convRow.episode_id : null;
       if (episodeId) {
-        const { error: epErr } = await supabase
-          .from("episodes")
-          .update({ status: "declined", updated_at: nowIso })
-          .eq("id", episodeId)
-          .eq("patient_id", input.patientId)
-          .in("status", ["outreach_pending", "awaiting_response"]);
-        if (epErr) throw epErr;
+        await closeEpisode({
+          orgId: input.orgId,
+          episodeId,
+          patientId: input.patientId,
+          status: "declined",
+          reason: "patient_declined",
+        });
+        // "We will not ship anything right now" — the reply below promises
+        // we will be back. Nothing else opens a cycle after a decline, so
+        // without this the promise is false and the patient silently
+        // leaves resupply. Anchored on now: they have just told us this
+        // cycle is not wanted, so the next ask is a cadence from today.
+        await reopenCycleAfterDecline({
+          orgId: input.orgId,
+          episodeId,
+          at: new Date(),
+        });
       }
 
       return (

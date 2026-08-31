@@ -321,22 +321,20 @@ const byPatientPhone = new Map<string, CacheEntry<string | null>>();
 /**
  * Disambiguate an inbound reply that arrived on a SHARED platform number —
  * one not bound to any single tenant — by the PATIENT's number: route it to
- * the tenant that this patient belongs to (and, if more than one does, the
- * one that most recently messaged them).
+ * the tenant that patient belongs to.
  *
  * This is the middle step between `resolveOrgIdByCalledNumber` (number owned
- * by a specific tenant → route straight there) and the seed-org fallback.
- * Without it, every tenant sharing one number would have its patients' replies
- * collapse into the single org that owns the number (the seed org). With it, a
- * shared number works for two-way texting across tenants until each provisions
- * its own number.
+ * by a specific tenant → route straight there) and the caller's fail-closed
+ * path. Without it, every tenant sharing one number would have its patients'
+ * replies collapse into the single org that owns the number. With it, a
+ * shared number works for two-way texting across tenants until each
+ * provisions its own.
  *
- * Resolution: find every patient row across all tenants with this phone. One
- * owning tenant → route there. More than one (the same phone exists in two
- * tenants — uncommon) → tie-break by the most recent conversation activity
- * (`conversations.last_message_at`). Cross-tenant read via `.raw()`; returns
- * ONLY an org_id, never PHI. Fails soft to null so the caller drops to the
- * seed-org fallback (today's behavior).
+ * Resolution: find every patient row across all tenants with this phone.
+ * EXACTLY ONE owning tenant → route there. More than one → return null and
+ * let the caller fail closed. There is no tie-break, deliberately: see the
+ * ambiguity branch below. Cross-tenant read via `.raw()`; returns ONLY an
+ * org_id, never PHI. Fails soft to null on any error.
  */
 export async function resolveOrgIdByPatientPhone(
   fromNumber: string | undefined,
@@ -370,20 +368,29 @@ export async function resolveOrgIdByPatientPhone(
       if (orgs.length === 1) {
         value = orgs[0] ?? null;
       } else if (orgs.length > 1) {
-        // Same phone across multiple tenants — route to whichever has the
-        // most recent conversation activity for one of those patient rows.
-        const ids = rows.map((r) => r.id);
-        const { data: conv, error: convErr } = await raw
-          .schema("resupply")
-          .from("conversations")
-          .select("org_id, last_message_at")
-          .in("patient_id", ids)
-          .order("last_message_at", { ascending: false, nullsFirst: false })
-          .limit(1)
-          .maybeSingle();
-        if (convErr) throw convErr;
-        value =
-          (conv as { org_id: string | null } | null)?.org_id ?? orgs[0] ?? null;
+        // AMBIGUOUS — fail closed.
+        //
+        // This used to tie-break on the most recent `conversations.
+        // last_message_at`, which is a coin flip dressed up as a
+        // heuristic: recency of contact is not evidence of ownership, and
+        // whichever tenant happened to message the number last would
+        // receive this patient's inbound reply, their conversation
+        // thread, and any PHI in it.
+        //
+        // A shared platform number is exactly where this happens, and it
+        // is exactly where getting it wrong is worst. Returning null hands
+        // the caller its own fail-closed path (the inbound routes hang up
+        // / drop rather than guess), which loses a message the tenant can
+        // recover by provisioning their own DID — a cost measured in
+        // configuration, not in a disclosure.
+        value = null;
+        logger.warn(
+          {
+            event: "tenant_telecom_patient_phone_ambiguous",
+            orgCount: orgs.length,
+          },
+          "tenant-telecom: patient phone exists in multiple tenants — refusing to guess",
+        );
       }
     }
   } catch (err) {
@@ -397,8 +404,26 @@ export async function resolveOrgIdByPatientPhone(
   byPatientPhone.set(number, { value, expiresAt: now + CACHE_TTL_MS });
   return value;
 }
+export type InboundChannelKind = "sms" | "voice";
+
 export async function resolveOrgIdByCalledNumber(
   toNumber: string | undefined,
+  /**
+   * WHICH channel the number was dialled on.
+   *
+   * This is not cosmetic. The lookup used to try `sms_from_number` and
+   * then `voice_from_number` as two INDEPENDENT probes, and the two
+   * partial unique indexes are per-column — nothing stops tenant A from
+   * registering a DID as its SMS number while tenant B registers the same
+   * DID for voice. An inbound CALL to that number then resolved to
+   * tenant A, silently, and every downstream read was scoped to the wrong
+   * practice.
+   *
+   * Asking for the owner of the channel the event actually arrived on
+   * removes the ambiguity entirely. Defaults to trying both, in the old
+   * order, only for callers that genuinely do not know (none today).
+   */
+  kind?: InboundChannelKind,
 ): Promise<string | null> {
   // Normalize to strict E.164 BEFORE the lookup. The inbound webhook schema
   // validates `To` only as `min(1)` (NOT E.164), and stored sender numbers
@@ -412,36 +437,39 @@ export async function resolveOrgIdByCalledNumber(
   const number = normalizeE164(toNumber);
   if (!number) return null;
   const now = Date.now();
-  const cached = byNumber.get(number);
+  // Cache per (kind, number): the same DID can legitimately answer to a
+  // different tenant on SMS than on voice, so a kind-blind cache key
+  // would let the first channel's answer serve the second.
+  const cacheKey = `${kind ?? "any"}:${number}`;
+  const cached = byNumber.get(cacheKey);
   if (cached && cached.expiresAt > now) return cached.value;
+
+  // Columns to probe, in order. The value is always BOUND as an equality
+  // argument, never interpolated into a filter expression, so a number
+  // carrying filter metacharacters cannot alter the query against the
+  // GLOBAL organizations directory.
+  const columns: string[] =
+    kind === "sms"
+      ? ["sms_from_number"]
+      : kind === "voice"
+        ? ["voice_from_number"]
+        : ["sms_from_number", "voice_from_number"];
 
   let value: string | null = null;
   try {
     const raw = await rawOrgClient();
     if (raw) {
-      // A number is registered as either an SMS or a voice sender. Match each
-      // column with a scoped equality lookup (the value is BOUND as an
-      // equality argument, never embedded in a filter expression) rather than
-      // an interpolated `.or()` string.
-      const { data: smsData, error: smsError } = await raw
-        .schema("resupply")
-        .from("organizations")
-        .select("id")
-        .eq("sms_from_number", number)
-        .limit(1)
-        .maybeSingle();
-      if (smsError) throw smsError;
-      value = (smsData as { id: string } | null)?.id ?? null;
-      if (!value) {
-        const { data: voiceData, error: voiceError } = await raw
+      for (const column of columns) {
+        const { data, error } = await raw
           .schema("resupply")
           .from("organizations")
           .select("id")
-          .eq("voice_from_number", number)
+          .eq(column, number)
           .limit(1)
           .maybeSingle();
-        if (voiceError) throw voiceError;
-        value = (voiceData as { id: string } | null)?.id ?? null;
+        if (error) throw error;
+        value = (data as { id: string } | null)?.id ?? null;
+        if (value) break;
       }
     }
   } catch (err) {
@@ -452,6 +480,6 @@ export async function resolveOrgIdByCalledNumber(
     value = null;
   }
 
-  byNumber.set(number, { value, expiresAt: now + CACHE_TTL_MS });
+  byNumber.set(cacheKey, { value, expiresAt: now + CACHE_TTL_MS });
   return value;
 }

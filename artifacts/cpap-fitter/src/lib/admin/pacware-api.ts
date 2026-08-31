@@ -184,3 +184,54 @@ export const bootstrapResupplyPrescriptions = (
       body: JSON.stringify({ mode, onlyPacwarePatients }),
     },
   );
+
+// ---------------------------------------------------------------------------
+// Shipment confirmations — the RETURN leg of the file exchange.
+//
+// `resupply-due.csv` tells PacWare what to ship. Nothing ever came back,
+// so `fulfillments.shipped_at` was never written: refill cadence timed
+// itself from when we QUEUED an order rather than when the patient got
+// it, and every claim carried today's date as its date of service. This
+// import closes that loop.
+// ---------------------------------------------------------------------------
+
+export interface PacwareShipmentPreview {
+  mode: "preview";
+  totalDataRows: number;
+  validCount: number;
+  errorCount: number;
+  matched: { byEpisodeId: number; byOrderRef: number; byPatientSku: number };
+  unmatched: number;
+  ambiguous: number;
+  rowCancelled: number;
+  alreadyRecorded: number;
+  oldestShipDate: string | null;
+  /** Rows whose ship date is over 60 days old. Surfaced because each one
+   *  mints a claim dated that far back, which can miss a payer's
+   *  timely-filing deadline. */
+  shipDatesOlderThan60d: number;
+  unmappedHeaders: string[];
+  errors: Array<{ rowIndex: number; field?: string; message: string }>;
+}
+
+export interface PacwareShipmentCommit {
+  mode: "commit";
+  totalDataRows: number;
+  applied: number;
+  unchanged: number;
+  failed: number;
+  unmatched: number;
+  ambiguous: number;
+  rowCancelled: number;
+  nextCyclesOpened: number;
+  errors: Array<{ rowIndex: number; field?: string; message: string }>;
+}
+
+export const importPacwareShipments = (
+  csv: string,
+  mode: "preview" | "commit",
+) =>
+  jsonFetch<PacwareShipmentPreview | PacwareShipmentCommit>(
+    "/admin/pacware/import/shipments",
+    { method: "POST", body: JSON.stringify({ csv, mode }) },
+  );

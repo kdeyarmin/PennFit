@@ -104,6 +104,7 @@ import { registerPaMcoSlaSweepJob } from "./jobs/pa-mco-sla-sweep.js";
 import { registerPecosSyncJob } from "./jobs/pecos-sync.js";
 import { registerCappedRentalAdvanceJob } from "./jobs/capped-rental-advance.js";
 import { registerDwoExpirySweepJob } from "./jobs/dwo-expiry-sweep.js";
+import { registerResupplyCycleSweepJob } from "./jobs/resupply-cycle-sweep.js";
 import { registerWebhookDispatcherJob } from "./jobs/webhook-dispatcher.js";
 import { registerAutoWorkflowJob } from "./jobs/auto-workflow.js";
 import { registerLowStockAlertsJob } from "./jobs/low-stock-alerts.js";
@@ -1142,6 +1143,21 @@ async function doStartWorker(): Promise<void> {
       "dwo.expiry-sweep",
       ["dwo_documents"],
       registerDwoExpirySweepJob,
+    ),
+  );
+
+  // Daily — the resupply cycle safety net (mig 0538). Advances a ladder
+  // whose shipment confirmation never arrived (closing the episode
+  // `assumed_shipped`, never inventing a ship date on the fulfillment)
+  // and expires one that went unanswered. Both REOPEN the next cycle:
+  // closing without reopening would drop the patient out of resupply
+  // permanently and silently.
+  await safeRegister("resupply.cycle-sweep", registrationFailures, () =>
+    registerIfProvisioned(
+      boss,
+      "resupply.cycle-sweep",
+      ["episodes", "fulfillments"],
+      registerResupplyCycleSweepJob,
     ),
   );
 

@@ -15,6 +15,11 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { getOrgScopedClient } from "@workspace/resupply-db";
+import {
+  EPISODE_STATUSES,
+  IN_PROGRESS_EPISODE_STATUSES,
+  type EpisodeStatus,
+} from "@workspace/resupply-domain";
 
 import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
@@ -24,14 +29,7 @@ import { resolveEpisodesSearch } from "./list";
 // `result` record below is exhaustively-typed without a runtime
 // constant array (the array form trips no-unused-vars; the union
 // form documents intent and lets TS catch a missing key).
-type Status =
-  | "outreach_pending"
-  | "awaiting_response"
-  | "confirmed"
-  | "declined"
-  | "expired"
-  | "fulfilled"
-  | "canceled";
+type Status = EpisodeStatus;
 
 const countsQuery = z
   .object({
@@ -99,15 +97,10 @@ router.get(
     // PostgREST has no GROUP BY, so we fan the per-status counts out
     // into N parallel head:true counts. The `episodes_status_idx`
     // index makes each one cheap.
-    const STATUSES: readonly Status[] = [
-      "outreach_pending",
-      "awaiting_response",
-      "confirmed",
-      "declined",
-      "expired",
-      "fulfilled",
-      "canceled",
-    ] as const;
+    // Every status, from the canonical list — so a status added to the
+    // vocabulary cannot silently go uncounted (which is how `address_hold`
+    // would have been invisible in the queue that exists to chase it).
+    const STATUSES: readonly Status[] = EPISODE_STATUSES;
 
     const countQuery = (status: Status) => {
       let q = db
@@ -121,7 +114,7 @@ router.get(
       let q = db
         .from("episodes")
         .select("*", { count: "exact", head: true })
-        .in("status", ["outreach_pending", "awaiting_response"])
+        .in("status", [...IN_PROGRESS_EPISODE_STATUSES])
         .lte("due_at", nowIso);
       if (qEpisodeIds) q = q.in("id", qEpisodeIds);
       return q;
@@ -135,14 +128,11 @@ router.get(
     if (overdueRes.error) throw overdueRes.error;
 
     const result: Record<Status | "overdue" | "all", number> = {
+      ...(Object.fromEntries(EPISODE_STATUSES.map((s) => [s, 0])) as Record<
+        Status,
+        number
+      >),
       overdue: overdueRes.count ?? 0,
-      outreach_pending: 0,
-      awaiting_response: 0,
-      confirmed: 0,
-      declined: 0,
-      expired: 0,
-      fulfilled: 0,
-      canceled: 0,
       all: 0,
     };
     for (let i = 0; i < STATUSES.length; i++) {

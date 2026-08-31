@@ -45,6 +45,12 @@ export interface RenderResupplyReminderInput {
   confirmUrl: string;
   /** Signed link the "Change address" CTA points at. */
   editUrl: string;
+  /** "Not this time." OPTIONAL so existing callers and their specs keep
+   *  compiling; when absent the email renders the three original actions.
+   *  Email had no negative action short of a permanent opt-out, so a
+   *  patient who just wanted to skip one cycle either ignored us (and got
+   *  escalated to a phone call) or unsubscribed from resupply entirely. */
+  declineUrl?: string;
   /** Signed link the "Stop reminders" CTA points at. */
   stopUrl: string;
   /**
@@ -209,9 +215,21 @@ export function renderResupplyReminder(
     "   Use this if you have moved. A team member will call or email you to confirm the new address.",
     `   ${input.editUrl}`,
     "",
-    "3. Stop these reminders",
-    "   Use this if you don't want refill reminders. You can turn them back on any time by replying to one of our emails.",
-    `   ${input.stopUrl}`,
+    ...(input.declineUrl
+      ? [
+          "3. Skip this refill",
+          "   Use this if you don't need supplies right now. We'll check back at your next refill. You stay enrolled.",
+          `   ${input.declineUrl}`,
+          "",
+          "4. Stop these reminders",
+          "   Use this if you don't want refill reminders at all. You can turn them back on any time by replying to one of our emails.",
+          `   ${input.stopUrl}`,
+        ]
+      : [
+          "3. Stop these reminders",
+          "   Use this if you don't want refill reminders. You can turn them back on any time by replying to one of our emails.",
+          `   ${input.stopUrl}`,
+        ]),
     "",
     "If a link doesn't work, just reply to this email. A real person reads it.",
     "",
@@ -258,7 +276,18 @@ export function renderResupplyReminder(
       `<p style="margin:0 0 12px;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.6;color:${BREATHE_COLORS.body};"><strong>2. Change my shipping address.</strong> Use this if you have moved. A team member will call or email you to confirm the new address.<br /><a href="${safeHref(
         input.editUrl,
       )}" style="color:${BREATHE_COLORS.blue};text-decoration:underline;">Change my shipping address</a></p>` +
-      `<p style="margin:0 0 12px;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.6;color:${BREATHE_COLORS.body};"><strong>3. Stop these reminders.</strong> Use this if you don't want refill reminders. You can turn them back on any time by replying to one of our emails.<br /><a href="${safeHref(
+      // "Skip this refill" sits directly under the address action and
+      // ABOVE the opt-out, and is worded so the two cannot be confused.
+      // Reading them as the same thing is how someone unsubscribes from
+      // resupply when they only meant "not right now".
+      (input.declineUrl
+        ? `<p style="margin:0 0 12px;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.6;color:${BREATHE_COLORS.body};"><strong>3. Skip this refill.</strong> Use this if you don't need supplies right now. We'll check back at your next refill — you stay enrolled.<br /><a href="${safeHref(
+            input.declineUrl,
+          )}" style="color:${BREATHE_COLORS.blue};text-decoration:underline;">Skip this refill</a></p>`
+        : "") +
+      `<p style="margin:0 0 12px;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.6;color:${BREATHE_COLORS.body};"><strong>${
+        input.declineUrl ? "4" : "3"
+      }. Stop these reminders.</strong> Use this if you don't want refill reminders at all. You can turn them back on any time by replying to one of our emails.<br /><a href="${safeHref(
         input.stopUrl,
       )}" style="color:${BREATHE_COLORS.blue};text-decoration:underline;">Stop these reminders</a></p>`,
     footerLines: [
@@ -325,7 +354,7 @@ export interface RenderClickLandingInput {
   /** Practice display name. Already admin-vetted. */
   practiceName: string;
   /** The action the token encodes — shown to the patient before they commit. */
-  action: "confirm" | "edit" | "stop";
+  action: "confirm" | "edit" | "stop" | "decline";
   /**
    * The full POST action URL, including the signed `?t=…` query parameter.
    * This is what the HTML form's `action` attribute is set to.
@@ -411,7 +440,9 @@ export function renderClickLanding(input: RenderClickLandingInput): string {
       ? "Confirm your CPAP supply order"
       : input.action === "edit"
         ? "Change your shipping address"
-        : "Stop CPAP refill reminders";
+        : input.action === "decline"
+          ? "Skip this refill"
+          : "Stop CPAP refill reminders";
 
   // One step per page, stated plainly, plus what happens after the tap so
   // nobody has to guess. "Use the button" reads correctly on a phone and a
@@ -430,14 +461,20 @@ export function renderClickLanding(input: RenderClickLandingInput): string {
         : "Use the button below to confirm. We will check your plan, then ship your supplies to the address we have on file. If anything needs a closer look, a team member will contact you first."
       : input.action === "edit"
         ? "Use the button below to ask for an address change. We'll hold any order that hasn't shipped yet, so nothing goes to your old address, and a team member will call or email you to confirm the new one."
-        : "Use the button below to stop CPAP refill reminders. You can turn them back on any time by replying to one of our emails.";
+        : input.action === "decline"
+          ? // Skipping and unsubscribing must not read alike, or people
+            // opt out of resupply when they only meant "not right now".
+            "Use the button below if you don't need supplies this time. We'll skip this refill and check back at your next one. You stay enrolled — this doesn't stop your reminders."
+          : "Use the button below to stop CPAP refill reminders. You can turn them back on any time by replying to one of our emails.";
 
   const buttonLabel =
     input.action === "confirm"
       ? "Confirm my order"
       : input.action === "edit"
         ? "Request an address change"
-        : "Stop reminders";
+        : input.action === "decline"
+          ? "Skip this refill"
+          : "Stop reminders";
 
   const buttonColor = input.action === "stop" ? "#dc2626" : "#0f766e";
 
@@ -498,7 +535,13 @@ export interface RenderClickConfirmationInput {
    *  replacement schedule, so a CSR will follow up before it ships.
    *  `address_pending` is the address-change hold: they asked us to move
    *  their address, so nothing ships until a team member confirms it. */
-  action: "confirm" | "edit" | "stop" | "review" | "address_pending";
+  action:
+    | "confirm"
+    | "edit"
+    | "stop"
+    | "decline"
+    | "review"
+    | "address_pending";
 }
 
 /**
@@ -518,6 +561,8 @@ export function renderClickConfirmation(
       "You're all set. Your supplies are on the way to the address we have on file. We'll text or email you tracking as soon as they ship. You don't need to do anything else.",
     edit: "Thanks. We have your address change request. We've put any order that hasn't shipped on hold, so nothing goes to your old address. A team member will call or email you within one business day to confirm the new one.",
     stop: "Done. We've stopped CPAP refill reminders, so you won't get any more of these emails. If you change your mind, reply to any of our past emails and we'll turn them back on.",
+    decline:
+      "Got it. We won't send anything this time. You're still enrolled, and we'll check back when your next refill comes around. If you change your mind before then, just reply to this email.",
     review:
       "Thanks. It looks like it's a little early to resend this item under your plan, so a team member will check it and follow up with you before anything ships. You don't need to do anything right now.",
     address_pending:
@@ -527,6 +572,7 @@ export function renderClickConfirmation(
     confirm: "Order confirmed",
     edit: "We'll be in touch",
     stop: "Reminders stopped",
+    decline: "Refill skipped",
     review: "We'll be in touch",
     address_pending: "Order held",
   };

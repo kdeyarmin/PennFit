@@ -29,7 +29,10 @@ import {
   type Json,
   type OrgScopedClient,
 } from "@workspace/resupply-db";
-import { normalizeE164 } from "@workspace/resupply-domain";
+import {
+  IN_PROGRESS_EPISODE_STATUSES,
+  normalizeE164,
+} from "@workspace/resupply-domain";
 import {
   buildConnectStreamTwiml,
   buildHangupTwiml,
@@ -54,14 +57,12 @@ import {
 } from "../../lib/voice/voice-config";
 
 // Episode statuses a caller can still act on by phone (pre-confirm).
-// Match the reminder ladder's in-progress set — a declined episode is
+// This IS the reminder ladder's in-progress set — a declined episode is
 // done for this cycle (patient said no); rebinding it to the AI agent
 // would restart outreach they already refused. Confirmed / fulfilled /
-// cancelled likewise have nothing left to reorder.
-const ACTIONABLE_EPISODE_STATUSES = [
-  "outreach_pending",
-  "awaiting_response",
-] as const;
+// cancelled likewise have nothing left to reorder. Aliased rather than
+// redeclared so it cannot drift from the ladder it is meant to match.
+const ACTIONABLE_EPISODE_STATUSES = IN_PROGRESS_EPISODE_STATUSES;
 
 const INBOUND_CALL_CONTEXT =
   "Inbound call: the patient phoned our CPAP resupply line to reorder. " +
@@ -123,7 +124,10 @@ router.post("/voice/inbound-reorder", signatureMiddleware, async (req, res) => {
   // unknown caller — Hangup so we don't open a voice session under Penn.
   const calledNumber = parsed.data.Called ?? parsed.data.To;
   const callerRaw = parsed.data.From ?? parsed.data.Caller;
-  const calledOrgId = await resolveOrgIdByCalledNumber(calledNumber);
+  // "voice": this is an inbound CALL, so ask who owns the number for
+  // VOICE. A kind-blind lookup checked the SMS column first, so a DID
+  // another tenant had registered for texting would have won.
+  const calledOrgId = await resolveOrgIdByCalledNumber(calledNumber, "voice");
   const normalizedCaller = normalizeE164(callerRaw);
   const orgId = calledOrgId
     ? calledOrgId

@@ -708,6 +708,17 @@ export const APP_CONFIG_CATALOG: readonly AppConfigSetting[] = [
     placeholder: "3",
   },
   {
+    key: "RESUPPLY_SHIP_EVIDENCE_GRACE_DAYS",
+    label: "Assume-shipped grace window (days)",
+    category: CATEGORY_REMINDERS,
+    secret: false,
+    applyMode: "live",
+    scope: "tenant",
+    description:
+      'If no shipment confirmation arrives for a queued order within this many days, advance the patient\'s resupply cycle anyway, timed from the day the order was queued, so a practice with no shipment feed never falls out of the reminder ladder. The episode is recorded as "assumed shipped" — deliberately distinct from a confirmed shipment, and never written back as a real ship date, because that date becomes the date of service on the claim. Default 14. Clamped to 3-90.',
+    placeholder: "14",
+  },
+  {
     key: "RESUPPLY_ESCALATION_MAX_DAYS",
     label: "Stop-nagging age (days)",
     category: CATEGORY_REMINDERS,

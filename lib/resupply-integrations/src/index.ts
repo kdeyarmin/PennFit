@@ -36,3 +36,13 @@ export {
   type FetchSnapshotResult,
   type AdapterError,
 } from "./adapter";
+
+export {
+  reconcileIntegrationSource,
+  type PortalPatientRow,
+  type LocalPatientRow,
+  type DiscrepancyKind,
+  type Discrepancy,
+  type ReconcileOptions,
+  type ReconcileResult,
+} from "./reconcile";

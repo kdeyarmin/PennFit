@@ -1,0 +1,365 @@
+#!/usr/bin/env tsx
+//
+// resupply-backfill-episode-due-at — make `episodes.due_at` match what the
+// reminder scan actually decides, so it can be made authoritative.
+//
+// WHY THIS EXISTS
+// ---------------
+// `due_at` is written once, by `openOutreachEpisode`, from the caller's
+// `prescriptions.cadence_days`. The reminder scan resolves cadence
+// differently — through `resolveOutreachPlan`, which prefers
+// `patients.cadence_override_days`, then the first matching
+// `frequency_rules` row, and only then the prescription default.
+//
+// For every patient with a per-patient override or a matching payer /
+// SKU rule, the stored date therefore encodes the WRONG cadence. That has
+// been harmless while the scan ignored `due_at` and used it only as a
+// sort key. It stops being harmless the moment
+// `resupply.due_at_authoritative` is switched on: on the first tick,
+// every episode whose stale date has already passed becomes due at once
+// (a reminder burst across the whole book) and every episode whose stale
+// date is far in the future goes silent. Both immediately, both invisible
+// until patients call.
+//
+// So: run this, read the drift, then flip the flag for that tenant.
+//
+//   pnpm --filter @workspace/scripts resupply:backfill-due-at -- \
+//     --org=<uuid> --dry-run
+//   pnpm --filter @workspace/scripts resupply:backfill-due-at -- --org=<uuid>
+//
+// Idempotent: re-running after a successful pass reports zero changes.
+// A row is only rewritten when the resolved date differs from the stored
+// one by more than the tolerance below, so clock jitter does not churn
+// the table.
+//
+// PHI: reads patient cadence/payer fields to resolve the plan and prints
+// COUNTS and date deltas only. No names, no contact details, no ids
+// beyond the org.
+
+import {
+  getOrgScopedClient,
+  getSupabaseServiceRoleClient,
+} from "@workspace/resupply-db";
+import {
+  EPISODE_EXPIRY_DAYS,
+  OUTREACH_OPEN_EPISODE_STATUSES,
+  resolveOutreachPlan,
+  type OutreachChannel,
+  type OutreachRule,
+} from "@workspace/resupply-domain";
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+const PAGE_SIZE = 1000;
+const READ_CHUNK = 200;
+/** Rewrites below this are noise, not drift. */
+const TOLERANCE_HOURS = 12;
+
+interface Args {
+  orgId: string | null;
+  dryRun: boolean;
+  allOrgs: boolean;
+}
+
+function parseArgs(argv: readonly string[]): Args {
+  const args: Args = { orgId: null, dryRun: false, allOrgs: false };
+  for (const raw of argv) {
+    if (raw === "--dry-run") args.dryRun = true;
+    else if (raw === "--all-orgs") args.allOrgs = true;
+    else if (raw.startsWith("--org=")) args.orgId = raw.slice("--org=".length);
+  }
+  return args;
+}
+
+interface DriftBucket {
+  unchanged: number;
+  moved: number;
+  movedEarlier: number;
+  movedLater: number;
+  maxShiftDays: number;
+  skipped: number;
+  failed: number;
+}
+
+function emptyBucket(): DriftBucket {
+  return {
+    unchanged: 0,
+    moved: 0,
+    movedEarlier: 0,
+    movedLater: 0,
+    maxShiftDays: 0,
+    skipped: 0,
+    failed: 0,
+  };
+}
+
+async function listOrgIds(): Promise<string[]> {
+  const raw = getSupabaseServiceRoleClient();
+  const { data, error } = await raw
+    .schema("resupply")
+    .from("organizations")
+    .select("id")
+    .order("id", { ascending: true });
+  if (error) throw error;
+  return ((data ?? []) as Array<{ id: string }>).map((o) => o.id);
+}
+
+async function backfillOrg(
+  orgId: string,
+  dryRun: boolean,
+): Promise<DriftBucket> {
+  const bucket = emptyBucket();
+  const supabase = getOrgScopedClient(orgId);
+
+  // Cadence rules, once per tenant.
+  const { data: ruleRows, error: ruleErr } = await supabase
+    .from("frequency_rules")
+    .select(
+      "id, priority, created_at, active, match_item_sku_prefix, match_insurance_payer, min_tenure_days, max_tenure_days, cadence_days, default_channel",
+    )
+    .eq("active", true);
+  if (ruleErr) throw ruleErr;
+  const rules: OutreachRule[] = (
+    (ruleRows ?? []) as Array<Record<string, unknown>>
+  ).map((r) => ({
+    id: String(r.id),
+    priority: Number(r.priority ?? 100),
+    createdAt: new Date(String(r.created_at)),
+    active: true,
+    matchItemSkuPrefix: (r.match_item_sku_prefix as string | null) ?? null,
+    matchInsurancePayer: (r.match_insurance_payer as string | null) ?? null,
+    minTenureDays: (r.min_tenure_days as number | null) ?? null,
+    maxTenureDays: (r.max_tenure_days as number | null) ?? null,
+    cadenceDays: Number(r.cadence_days),
+    defaultChannel: (r.default_channel as OutreachChannel | null) ?? null,
+  }));
+
+  // Every episode still in the ladder — INCLUDING `address_hold`, which
+  // is parked rather than finished. Omitting it would let a dry-run
+  // report a tenant safe to flip while a held episode still carries a
+  // stale cadence-derived date, and the hold's release would then hand
+  // the authoritative scan that stale date.
+  const episodes: Array<{
+    id: string;
+    patient_id: string;
+    prescription_id: string;
+    due_at: string;
+  }> = [];
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const { data, error } = await supabase
+      .from("episodes")
+      .select("id, patient_id, prescription_id, due_at")
+      .in("status", [...OUTREACH_OPEN_EPISODE_STATUSES])
+      .order("id", { ascending: true })
+      .range(from, from + PAGE_SIZE - 1);
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+    episodes.push(...(data as typeof episodes));
+    if (data.length < PAGE_SIZE) break;
+  }
+
+  if (episodes.length === 0) return bucket;
+
+  // Prescriptions + patients for those episodes.
+  const rxById = new Map<
+    string,
+    { item_sku: string; cadence_days: number; created_at: string }
+  >();
+  const rxIds = [...new Set(episodes.map((e) => e.prescription_id))];
+  for (let i = 0; i < rxIds.length; i += READ_CHUNK) {
+    const { data, error } = await supabase
+      .from("prescriptions")
+      .select("id, item_sku, cadence_days, created_at")
+      .in("id", rxIds.slice(i, i + READ_CHUNK));
+    if (error) throw error;
+    for (const r of (data ?? []) as Array<Record<string, unknown>>) {
+      rxById.set(String(r.id), {
+        item_sku: String(r.item_sku),
+        cadence_days: Number(r.cadence_days),
+        created_at: String(r.created_at),
+      });
+    }
+  }
+
+  const patientById = new Map<
+    string,
+    {
+      created_at: string;
+      insurance_payer: string | null;
+      cadence_override_days: number | null;
+      channel_preference: string | null;
+      phone_e164: string | null;
+    }
+  >();
+  const patientIds = [...new Set(episodes.map((e) => e.patient_id))];
+  for (let i = 0; i < patientIds.length; i += READ_CHUNK) {
+    const { data, error } = await supabase
+      .from("patients")
+      .select(
+        "id, created_at, insurance_payer, cadence_override_days, channel_preference, phone_e164",
+      )
+      .in("id", patientIds.slice(i, i + READ_CHUNK));
+    if (error) throw error;
+    for (const p of (data ?? []) as Array<Record<string, unknown>>) {
+      patientById.set(String(p.id), {
+        created_at: String(p.created_at),
+        insurance_payer: (p.insurance_payer as string | null) ?? null,
+        cadence_override_days:
+          (p.cadence_override_days as number | null) ?? null,
+        channel_preference: (p.channel_preference as string | null) ?? null,
+        phone_e164: (p.phone_e164 as string | null) ?? null,
+      });
+    }
+  }
+
+  // Last dispense per (patient, sku) — the same anchor the scan uses:
+  // MAX(COALESCE(shipped_at, created_at)) over non-cancelled fulfillments.
+  const lastFulfilled = new Map<string, string>();
+  for (let i = 0; i < patientIds.length; i += READ_CHUNK) {
+    const chunk = patientIds.slice(i, i + READ_CHUNK);
+    for (let from = 0; ; from += PAGE_SIZE) {
+      const { data, error } = await supabase
+        .from("fulfillments")
+        .select("patient_id, item_sku, shipped_at, created_at")
+        .in("patient_id", chunk)
+        .neq("status", "cancelled")
+        .order("id", { ascending: true })
+        .range(from, from + PAGE_SIZE - 1);
+      if (error) throw error;
+      if (!data || data.length === 0) break;
+      for (const f of data as Array<Record<string, unknown>>) {
+        const at = (f.shipped_at as string | null) ?? String(f.created_at);
+        const key = `${String(f.patient_id)}\u0000${String(f.item_sku)}`;
+        const prev = lastFulfilled.get(key);
+        if (!prev || at > prev) lastFulfilled.set(key, at);
+      }
+      if (data.length < PAGE_SIZE) break;
+    }
+  }
+
+  const now = new Date();
+
+  for (const ep of episodes) {
+    const rx = rxById.get(ep.prescription_id);
+    const patient = patientById.get(ep.patient_id);
+    if (!rx || !patient) {
+      bucket.skipped += 1;
+      continue;
+    }
+
+    const plan = resolveOutreachPlan({
+      patient: {
+        id: ep.patient_id,
+        createdAt: new Date(patient.created_at),
+        insurancePayer: patient.insurance_payer,
+        cadenceOverrideDays: patient.cadence_override_days,
+        channelPreference:
+          (patient.channel_preference as OutreachChannel | null) ?? null,
+        hasPhone: !!patient.phone_e164,
+      },
+      prescription: { itemSku: rx.item_sku, cadenceDays: rx.cadence_days },
+      rules,
+      now,
+    });
+
+    const baselineRaw =
+      lastFulfilled.get(`${ep.patient_id}\u0000${rx.item_sku}`) ??
+      rx.created_at;
+    const baseline = Date.parse(baselineRaw);
+    if (!Number.isFinite(baseline)) {
+      bucket.skipped += 1;
+      continue;
+    }
+
+    const resolvedDue = baseline + plan.cadenceDays * DAY_MS;
+    const storedDue = Date.parse(ep.due_at);
+    const shiftMs = resolvedDue - storedDue;
+
+    if (Math.abs(shiftMs) <= TOLERANCE_HOURS * 60 * 60 * 1000) {
+      bucket.unchanged += 1;
+      continue;
+    }
+
+    bucket.moved += 1;
+    if (shiftMs < 0) bucket.movedEarlier += 1;
+    else bucket.movedLater += 1;
+    bucket.maxShiftDays = Math.max(
+      bucket.maxShiftDays,
+      Math.round(Math.abs(shiftMs) / DAY_MS),
+    );
+
+    if (dryRun) continue;
+
+    const dueAt = new Date(resolvedDue);
+    const { error } = await supabase
+      .from("episodes")
+      .update({
+        due_at: dueAt.toISOString(),
+        expires_at: new Date(
+          dueAt.getTime() + EPISODE_EXPIRY_DAYS * DAY_MS,
+        ).toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", ep.id)
+      .in("status", [...OUTREACH_OPEN_EPISODE_STATUSES]);
+    if (error) {
+      bucket.failed += 1;
+      bucket.moved -= 1;
+    }
+  }
+
+  return bucket;
+}
+
+async function main(): Promise<void> {
+  const args = parseArgs(process.argv.slice(2));
+  if (!args.orgId && !args.allOrgs) {
+    console.error(
+      "Usage: resupply:backfill-due-at -- --org=<uuid> [--dry-run]\n" +
+        "       resupply:backfill-due-at -- --all-orgs [--dry-run]\n\n" +
+        "Run with --dry-run first and read the drift before flipping\n" +
+        "`resupply.due_at_authoritative` for a tenant.",
+    );
+    process.exit(2);
+  }
+
+  const orgIds = args.allOrgs ? await listOrgIds() : [args.orgId as string];
+
+  console.log(
+    args.dryRun
+      ? "DRY RUN — reporting drift, writing nothing.\n"
+      : "Backfilling episodes.due_at from the resolved outreach plan.\n",
+  );
+
+  let anyFailures = false;
+  for (const orgId of orgIds) {
+    try {
+      const b = await backfillOrg(orgId, args.dryRun);
+      const verdict =
+        b.moved === 0
+          ? "no drift — safe to enable resupply.due_at_authoritative"
+          : `${b.moved} episode(s) would move (${b.movedEarlier} earlier, ${b.movedLater} later, max ${b.maxShiftDays}d)`;
+      console.log(
+        `org ${orgId}\n` +
+          `  unchanged: ${b.unchanged}  moved: ${b.moved}  skipped: ${b.skipped}  failed: ${b.failed}\n` +
+          `  ${verdict}\n`,
+      );
+      if (b.failed > 0) anyFailures = true;
+    } catch (err) {
+      anyFailures = true;
+      console.error(
+        `org ${orgId}: FAILED — ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
+  if (args.dryRun) {
+    console.log(
+      "Nothing was written. Re-run without --dry-run to apply, then enable\n" +
+        "`resupply.due_at_authoritative` for the tenant from Control Center.",
+    );
+  }
+
+  process.exit(anyFailures ? 1 : 0);
+}
+
+void main();

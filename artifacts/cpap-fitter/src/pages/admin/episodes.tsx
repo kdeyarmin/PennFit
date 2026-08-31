@@ -14,7 +14,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useLocation } from "wouter";
-import { keepPreviousData } from "@tanstack/react-query";
+import { keepPreviousData, useQueryClient } from "@tanstack/react-query";
 import {
   EpisodesBulkSendRequestChannel,
   getListEpisodeCountsQueryKey,
@@ -48,6 +48,7 @@ import { Pagination } from "@/components/admin/Pagination";
 import { Label, Select } from "@/components/admin/Input";
 import { Button } from "@/components/admin/Button";
 import { useConfirmDialog } from "@/hooks/use-confirm-dialog";
+import { markFulfillmentShipped } from "@/lib/admin/fulfillments-api";
 import { fullName, formatDate } from "@/lib/admin/format";
 
 const PAGE_SIZE = 25;
@@ -83,6 +84,16 @@ const COUNT_CHIPS: ReadonlyArray<{
     tone: "warn",
   },
   {
+    // The patient asked us to fix their address. The cycle is alive but
+    // the reminder ladder is silent on it, so without a tab of its own it
+    // is invisible: it shows in neither "Awaiting reply" nor any terminal
+    // bucket, and nothing would ever chase it.
+    key: "address_hold",
+    status: "address_hold",
+    label: "Address hold",
+    tone: "warn",
+  },
+  {
     key: "confirmed",
     status: "confirmed",
     label: "Confirmed",
@@ -105,6 +116,15 @@ type Row = {
   status: string;
   dueAt: string;
   daysOverdue: number;
+  /** Why the cycle ended, for a terminal row. Null on anything still
+   *  open, and null on rows that closed before the close-out record
+   *  existed (migration 0538) — those are genuinely unknown and are not
+   *  back-filled with a guess. */
+  closedReason?: string | null;
+  /** The queued fulfillment behind this episode, when there is one to
+   *  ship. Null once it has shipped, or while it is held for an address
+   *  change. */
+  shippableFulfillmentId?: string | null;
 };
 
 export function EpisodesPage() {
@@ -300,9 +320,20 @@ export function EpisodesPage() {
       key: "status",
       header: "Status",
       render: (r) => (
-        <Badge variant={episodeStatusVariant(r.status)}>
-          {humanizeStatus(r.status)}
-        </Badge>
+        <div className="space-y-0.5">
+          <Badge variant={episodeStatusVariant(r.status)}>
+            {humanizeStatus(r.status)}
+          </Badge>
+          {r.closedReason && (
+            <div
+              className="text-[10px]"
+              style={{ color: "hsl(var(--ink-3))" }}
+              title="Why this cycle ended"
+            >
+              {humanizeStatus(r.closedReason)}
+            </div>
+          )}
+        </div>
       ),
     },
     {
@@ -697,6 +728,9 @@ function InlineActions({ row }: { row: Row }) {
   const data = { patientId: row.patientId, episodeId: row.id };
   return (
     <div className="flex flex-wrap gap-2">
+      {row.shippableFulfillmentId && (
+        <MarkShippedButton fulfillmentId={row.shippableFulfillmentId} />
+      )}
       <Button
         size="sm"
         intent="primary"
@@ -743,4 +777,114 @@ function InlineActions({ row }: { row: Row }) {
 function readQueryParam(key: string): string | null {
   if (typeof window === "undefined") return null;
   return new URLSearchParams(window.location.search).get(key);
+}
+
+/**
+ * Record that an order actually shipped.
+ *
+ * This is the only manual writer of shipment evidence. It matters more
+ * than it looks: the ship date closes the episode, times the patient's
+ * NEXT refill, and becomes the date of service on their claim. Which is
+ * also why it asks for a date rather than assuming today — an order a CSR
+ * is catching up on shipped when it shipped, not when they got round to
+ * recording it.
+ */
+// Exported for its render test: the query-key contract below is only
+// observable by clicking Save against a live QueryClient.
+export function MarkShippedButton({
+  fulfillmentId,
+}: {
+  fulfillmentId: string;
+}) {
+  const queryClient = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [shippedAt, setShippedAt] = useState(() =>
+    new Date().toISOString().slice(0, 10),
+  );
+  const [error, setError] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+
+  if (!open) {
+    return (
+      <Button
+        size="sm"
+        intent="secondary"
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen(true);
+        }}
+      >
+        Mark shipped
+      </Button>
+    );
+  }
+
+  return (
+    <div
+      className="flex flex-wrap items-center gap-2"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <input
+        type="date"
+        value={shippedAt}
+        max={new Date().toISOString().slice(0, 10)}
+        onChange={(e) => setShippedAt(e.target.value)}
+        className="text-xs px-2 py-1 rounded border"
+        style={{ borderColor: "hsl(var(--line-1))" }}
+        aria-label="Ship date"
+      />
+      <Button
+        size="sm"
+        intent="primary"
+        isLoading={pending}
+        onClick={async () => {
+          setPending(true);
+          setError(null);
+          try {
+            await markFulfillmentShipped(fulfillmentId, { shippedAt });
+            setOpen(false);
+            // Invalidate through the generated key builders, NOT a
+            // hand-written ["episodes"]: the hooks key on the request URL
+            // (`/resupply-api/episodes`), so a guessed key matches nothing
+            // and the row stays "Mark shipped" until a manual refresh.
+            // Called with no params so React Query's prefix match covers
+            // every filter/page variant, and the counts strip separately
+            // because its key is a different URL, not a child of the list.
+            await Promise.all([
+              queryClient.invalidateQueries({
+                queryKey: getListEpisodesQueryKey(),
+              }),
+              queryClient.invalidateQueries({
+                queryKey: getListEpisodeCountsQueryKey(),
+              }),
+            ]);
+          } catch (err) {
+            // Surface the server's reason verbatim — the ship-date clamp
+            // explains itself ("would date this patient's claim that far
+            // back"), and paraphrasing it would lose that.
+            setError(err instanceof Error ? err.message : "Could not save.");
+          } finally {
+            setPending(false);
+          }
+        }}
+      >
+        Save
+      </Button>
+      <Button
+        size="sm"
+        intent="secondary"
+        onClick={() => {
+          setOpen(false);
+          setError(null);
+        }}
+      >
+        Cancel
+      </Button>
+      {error && (
+        <span className="text-xs" style={{ color: "#991b1b" }} role="alert">
+          {error}
+        </span>
+      )}
+    </div>
+  );
 }

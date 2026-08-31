@@ -37,6 +37,8 @@ import {
   verifyLinkToken,
 } from "@workspace/resupply-messaging";
 
+import { closeEpisode } from "../../lib/episodes/close-episode";
+import { reopenCycleAfterDecline } from "../../lib/episodes/reopen-after-decline";
 import { logger } from "../../lib/logger";
 import { resolveOrgIdForSignedRecord } from "../../lib/storefront/signed-link-org";
 import { readMessagingConfigOrNull } from "../../lib/messaging/messaging-config";
@@ -674,6 +676,73 @@ router.post("/email/click", emailClickLimiter, async (req, res) => {
             renderClickError({
               practiceName: practiceName,
               reason: "malformed",
+            }),
+          );
+        return;
+      }
+      case "decline": {
+        // "Not this time." Mirrors the SMS NO path exactly: close the
+        // conversation, close the bound episode `declined`, and stop the
+        // ladder. Before this, email offered no negative action short of
+        // STOP — a permanent opt-out — so a patient who wanted to skip one
+        // cycle either ignored us (and got escalated to a phone call) or
+        // unsubscribed from resupply entirely.
+        //
+        // Re-confirming a declined episode stays allowed by order-flow: a
+        // patient who clicks skip and then changes their mind is honoured.
+        const { error: declineErr } = await supabase
+          .from("conversations")
+          .update({
+            status: "closed",
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", conversationId);
+        if (declineErr) throw declineErr;
+
+        if (conv.episode_id) {
+          await closeEpisode({
+            orgId,
+            episodeId: conv.episode_id,
+            patientId: conv.patient_id,
+            status: "declined",
+            reason: "patient_declined",
+          });
+          // The confirmation page tells the patient we will check back
+          // next cycle. Nothing else opens a cycle after a decline, so
+          // this is what makes that true. Anchored on now, not on their
+          // last dispense: they have just declined THIS cycle, and
+          // reopening one that is already overdue would remind them
+          // tomorrow.
+          await reopenCycleAfterDecline({
+            orgId,
+            episodeId: conv.episode_id,
+            at: new Date(),
+          });
+        }
+
+        await safeAudit({
+          action: "messaging.order.declined",
+          adminEmail: null,
+          adminUserId: null,
+          targetTable: "conversations",
+          targetId: conversationId,
+          metadata: {
+            channel: "email",
+            conversation_id: conversationId,
+            patient_id: conv.patient_id,
+            reason: "click_decline",
+          },
+          ip: req.ip ?? null,
+          userAgent: req.get("user-agent") ?? null,
+        });
+
+        res
+          .status(200)
+          .type("text/html")
+          .send(
+            renderClickConfirmation({
+              practiceName: practiceName,
+              action: "decline",
             }),
           );
         return;

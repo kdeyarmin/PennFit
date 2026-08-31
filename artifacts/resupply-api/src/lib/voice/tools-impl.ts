@@ -47,6 +47,8 @@ import {
 
 import { logger } from "../logger";
 import { resolveSuperAdminRecipients } from "../admin-assistant/adminAssistantTools";
+import { closeEpisode } from "../episodes/close-episode";
+import { reopenCycleAfterDecline } from "../episodes/reopen-after-decline";
 import { placeResupplyOrderForConversation } from "../messaging/order-flow";
 import { resolvePatientIdForCustomer } from "../shop-customer/resolve-patient";
 import { describeHcpcsPlain } from "../swo-pdf";
@@ -233,6 +235,15 @@ export interface VoiceToolDispatcherDeps {
    * callers leave it unset and get the real implementation.
    */
   placeOrderForConversation?: typeof placeResupplyOrderForConversation;
+  /**
+   * Seam for the shared episode close-out (the SAME helper the SMS and
+   * email decline paths use: guarded status transition + closed_reason +
+   * closed_at). Tests inject a stub; production callers leave it unset
+   * and get the real implementation, which resolves its own org-scoped
+   * client rather than riding `deps.supabase`.
+   */
+  closeEpisodeImpl?: typeof closeEpisode;
+  reopenCycleAfterDeclineImpl?: typeof reopenCycleAfterDecline;
   /**
    * Seam for sending a platform email (sales-line tools). Tests inject a
    * stub; production callers leave it unset and get the SendGrid-backed
@@ -1001,15 +1012,25 @@ class Impl implements VoiceToolDispatcher {
       this.deps.episodeId &&
       this.deps.patientId
     ) {
-      const nowIso = new Date().toISOString();
-      const supabase = await this.db();
-      const { error: epErr } = await supabase
-        .from("episodes")
-        .update({ status: "declined", updated_at: nowIso })
-        .eq("id", this.deps.episodeId)
-        .eq("patient_id", this.deps.patientId)
-        .in("status", ["outreach_pending", "awaiting_response"]);
-      if (epErr) throw epErr;
+      const close = this.deps.closeEpisodeImpl ?? closeEpisode;
+      await close({
+        orgId: this.deps.orgId,
+        episodeId: this.deps.episodeId,
+        patientId: this.deps.patientId,
+        status: "declined",
+        reason: "patient_declined",
+      });
+      // …and open the next one, or "not this time" would end resupply
+      // for good — nothing else opens a cycle after a decline. Anchored
+      // on now, so we ask again a cadence from today rather than
+      // reopening something already overdue. Never throws.
+      const reopen =
+        this.deps.reopenCycleAfterDeclineImpl ?? reopenCycleAfterDecline;
+      await reopen({
+        orgId: this.deps.orgId,
+        episodeId: this.deps.episodeId,
+        at: new Date(),
+      });
     }
     return {
       callId: call.callId,

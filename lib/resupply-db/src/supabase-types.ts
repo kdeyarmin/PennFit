@@ -1011,11 +1011,44 @@ export interface Database {
           due_at: string;
           expires_at: string | null;
           metadata: Json;
+          // Close-out record (migration 0538). Before it, a dropped cycle
+          // recorded only THAT it dropped, never why.
+          closed_at: string | null;
+          closed_reason: string | null;
+          closing_fulfillment_id: string | null;
+          cycle_number: number;
           created_at: string;
           updated_at: string;
         };
         Insert: Partial<Database["resupply"]["Tables"]["episodes"]["Row"]>;
         Update: Partial<Database["resupply"]["Tables"]["episodes"]["Row"]>;
+        Relationships: [];
+      };
+      integration_reconciliation_runs: {
+        Row: {
+          id: string;
+          org_id: string;
+          source: string;
+          status: string;
+          portal_rows: number;
+          local_rows: number;
+          matched_count: number;
+          missing_locally_count: number;
+          missing_in_portal_count: number;
+          mismatched_count: number;
+          discrepancies: Json;
+          window_start: string | null;
+          window_end: string | null;
+          error_message: string | null;
+          run_by_email: string | null;
+          created_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["integration_reconciliation_runs"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["integration_reconciliation_runs"]["Row"]
+        >;
         Relationships: [];
       };
       fulfillments: {

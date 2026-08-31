@@ -192,6 +192,11 @@ const AdminAnalyticsOutreachAttributionPage = lazyWithRetry(() =>
     default: m.AdminAnalyticsOutreachAttributionPage,
   })),
 );
+const AdminAnalyticsOrderOutcomesPage = lazyWithRetry(() =>
+  import("@/pages/admin/admin-analytics-order-outcomes").then((m) => ({
+    default: m.AdminAnalyticsOrderOutcomesPage,
+  })),
+);
 const AdminAuditTrailPage = lazyWithRetry(() =>
   import("@/pages/admin/admin-audit-trail").then((m) => ({
     default: m.AdminAuditTrailPage,
@@ -1153,6 +1158,10 @@ function AdminConsole() {
             <Route
               path="/admin/analytics/outreach-attribution"
               component={AdminAnalyticsOutreachAttributionPage}
+            />
+            <Route
+              path="/admin/analytics/order-outcomes"
+              component={AdminAnalyticsOrderOutcomesPage}
             />
             <Route
               path="/admin/analytics/acquisition-funnel"

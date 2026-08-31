@@ -555,12 +555,16 @@ async function escalationScanForOrg(
   // telemetry shows the call reached a LIVE person (status `completed` and not
   // an AMD machine/fax verdict). Unanswered / busy / failed / voicemail leave
   // it false → the planner retries the call up to the attempt cap before the
-  // CSR hand-off. Read via `.raw()` keyed by conversation_id (the tenant's own
-  // ids) because voice_calls rows are written webhook-side without an org_id,
-  // so the org-scoped filter would miss them. We still SELECT `org_id` and skip
-  // any row whose non-null org_id belongs to a different tenant — defense in
-  // depth so a future webhook that does stamp org_id can never cross tenants
-  // (the conversation_ids themselves are already tenant-private uuids).
+  // CSR hand-off.
+  //
+  // raw-org-scope-exempt: read by conversation_id, which is a
+  // tenant-private uuid. This used to be a WORKAROUND — the status-callback
+  // webhook wrote voice_calls with no org_id at all, so the org-scoped
+  // filter matched nothing. It now stamps the call's real tenant, but the
+  // `.raw()` read stays: rows written before that fix still carry a NULL
+  // org_id, and an org-scoped filter would silently stop resolving voice
+  // dispositions for them, quietly re-dialling patients an agent had
+  // already spoken to. The conflicting-org skip below is the guard.
   if (ladder.includes("voice") && voiceRowById.size > 0) {
     const voiceConvIds = [...voiceRowById.keys()];
     for (let i = 0; i < voiceConvIds.length; i += 200) {
@@ -580,9 +584,9 @@ async function escalationScanForOrg(
           const cid = (vc as { conversation_id: string | null })
             .conversation_id;
           if (!cid) continue;
-          // Skip a row only when it carries a CONFLICTING org_id; null/absent
-          // (the current webhook shape) falls through to the conversation-id
-          // match, which is already tenant-scoped.
+          // Skip a row only when it carries a CONFLICTING org_id. A null
+          // one is a pre-fix historical row and falls through to the
+          // conversation-id match, which is already tenant-scoped.
           const rowOrg = (vc as { org_id?: string | null }).org_id;
           if (rowOrg != null && rowOrg !== orgId) continue;
           const row = voiceRowById.get(cid);

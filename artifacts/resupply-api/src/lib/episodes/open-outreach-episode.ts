@@ -8,9 +8,12 @@
 //
 // Contract:
 //   * Opens one `outreach_pending` episode for (org, patient, prescription).
-//   * Idempotent against in-progress rows (`outreach_pending` /
-//     `awaiting_response`) for the same prescription — a double-submit or
-//     a confirm that already opened the next cycle returns the existing id.
+//   * Idempotent against OUTREACH-OPEN rows for the same prescription —
+//     a double-submit, or a confirm that already opened the next cycle,
+//     returns the existing id. That set deliberately EXCLUDES `confirmed`:
+//     the confirm path opens the next cycle while the current row is still
+//     `confirmed`, and including it would make that a silent no-op — the
+//     "automation is one-shot" bug this helper exists to fix.
 //   * `due_at` = `from + cadenceDays` (default `from = now`). Matches the
 //     reminder algorithm's "daysSince(lastShipped ?? rxCreated) ≥ cadence"
 //     when there is no ship history yet.
@@ -18,10 +21,12 @@
 //     whether to fail the parent write or log-and-continue.
 
 import { getOrgScopedClient } from "@workspace/resupply-db";
+import {
+  EPISODE_EXPIRY_DAYS,
+  OUTREACH_OPEN_EPISODE_STATUSES,
+} from "@workspace/resupply-domain";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-
-const IN_PROGRESS = ["outreach_pending", "awaiting_response"] as const;
 
 export interface OpenOutreachEpisodeInput {
   orgId: string;
@@ -53,7 +58,7 @@ export async function openOutreachEpisode(
     .select("id")
     .eq("prescription_id", input.prescriptionId)
     .eq("patient_id", input.patientId)
-    .in("status", [...IN_PROGRESS])
+    .in("status", [...OUTREACH_OPEN_EPISODE_STATUSES])
     .limit(1)
     .maybeSingle();
   if (existingErr) throw existingErr;
@@ -71,6 +76,13 @@ export async function openOutreachEpisode(
       prescription_id: input.prescriptionId,
       status: "outreach_pending",
       due_at: dueAt.toISOString(),
+      // Give the expiry sweep something to read. Before this, expires_at
+      // had existed since migration 0000 with no writer at all, so the
+      // `expired` status and the /admin/episodes?status=expired filter
+      // could never match anything.
+      expires_at: new Date(
+        dueAt.getTime() + EPISODE_EXPIRY_DAYS * DAY_MS,
+      ).toISOString(),
     })
     .select("id")
     .single();

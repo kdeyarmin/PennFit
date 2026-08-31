@@ -20,6 +20,7 @@ import {
   escapePostgRESTContainsPattern,
   getOrgScopedClient,
 } from "@workspace/resupply-db";
+import { EPISODE_STATUSES } from "@workspace/resupply-domain";
 
 import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
@@ -41,18 +42,13 @@ const UUID_RE =
 
 const listQuery = z
   .object({
-    status: z
-      .enum([
-        "overdue",
-        "outreach_pending",
-        "awaiting_response",
-        "confirmed",
-        "declined",
-        "expired",
-        "fulfilled",
-        "canceled",
-      ])
-      .optional(),
+    // "overdue" is a synthetic view (in-progress AND past due), not a
+    // stored status. The rest come from the canonical vocabulary in
+    // @workspace/resupply-domain so this filter cannot list a status the
+    // database has no writer for — which is exactly what it did before
+    // the lifecycle close-out landed: `expired`, `fulfilled` and
+    // `canceled` were selectable and always returned nothing.
+    status: z.enum(["overdue", ...EPISODE_STATUSES]).optional(),
     limit: z.coerce.number().int().min(1).max(100).default(25),
     offset: z.coerce.number().int().min(0).default(0),
     // Free-text filter (A8). Substring match against patient legal
@@ -174,7 +170,7 @@ router.get(
       let query = db
         .from("episodes")
         .select(
-          "id, patient_id, prescription_id, status, due_at, expires_at, created_at",
+          "id, patient_id, prescription_id, status, due_at, expires_at, created_at, closed_at, closed_reason",
           { count: "exact" },
         );
       if (isOverdue) {
@@ -219,6 +215,34 @@ router.get(
           .filter((v): v is string => v !== null),
       ),
     );
+
+    // The un-shipped fulfillment behind each episode, so a CSR can record
+    // a shipment straight from this queue. Without it "Confirmed" is a
+    // list of orders nobody can close: PacWare ships out of band, and a
+    // tenant with no PacWare feed has no other way to say "this went out".
+    const episodeIds = rows.map((r) => r.id);
+    const shippableByEpisode = new Map<string, string>();
+    if (episodeIds.length > 0) {
+      const { data: fulfillments, error: fErr } = await db
+        .from("fulfillments")
+        .select("id, episode_id, status, shipped_at")
+        .in("episode_id", episodeIds)
+        .is("shipped_at", null);
+      if (fErr) throw fErr;
+      for (const f of (fulfillments ?? []) as Array<{
+        id: string;
+        episode_id: string | null;
+        status: string | null;
+      }>) {
+        // Only a queued line is shippable. `on_hold` is parked on an open
+        // address change; offering "mark shipped" there would let a CSR
+        // ship to an address the patient just told us was wrong.
+        if (!f.episode_id || f.status !== "queued") continue;
+        if (!shippableByEpisode.has(f.episode_id)) {
+          shippableByEpisode.set(f.episode_id, f.id);
+        }
+      }
+    }
 
     const [patientsRes, prescriptionsRes] = await Promise.all([
       patientIds.length > 0
@@ -270,6 +294,9 @@ router.get(
           daysOverdue,
           expiresAt: r.expires_at,
           createdAt: r.created_at,
+          closedAt: r.closed_at,
+          closedReason: r.closed_reason,
+          shippableFulfillmentId: shippableByEpisode.get(r.id) ?? null,
         };
       }),
       total: count ?? 0,

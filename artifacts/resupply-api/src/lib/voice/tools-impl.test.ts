@@ -1113,36 +1113,18 @@ describe("VoiceToolDispatcher — shop_customer flow", () => {
 });
 
 describe("VoiceToolDispatcher — end_call patient_declined", () => {
-  it("marks the bound in-progress episode declined", async () => {
-    const updates: Array<{ table: string; patch: Record<string, unknown> }> =
-      [];
-    const makeBuilder = (table: string): Record<string, unknown> => {
-      const b: Record<string, unknown> = {
-        select: () => b,
-        update: (patch: Record<string, unknown>) => {
-          updates.push({ table, patch });
-          return b;
-        },
-        eq: () => b,
-        in: () => b,
-        limit: () => b,
-        maybeSingle: () => Promise.resolve({ data: null, error: null }),
-        then: (
-          onfulfilled: (v: unknown) => unknown,
-          onrejected?: (e: unknown) => unknown,
-        ) =>
-          Promise.resolve({ data: null, error: null }).then(
-            onfulfilled,
-            onrejected,
-          ),
-      };
-      return b;
-    };
+  it("closes the bound episode as declined, with a reason", async () => {
+    // Behavioural: assert the arguments handed to the shared close-out
+    // helper, not the shape of a hand-rolled query builder. The helper is
+    // what applies the in-progress status guard and stamps closed_reason
+    // / closed_at, and it is shared with the SMS and email decline paths.
+    const closes: unknown[] = [];
     const dispatcher = createVoiceToolDispatcher({
       ...baseDeps,
-      supabase: {
-        schema: () => ({ from: (table: string) => makeBuilder(table) }),
-      } as unknown as never,
+      closeEpisodeImpl: async (input) => {
+        closes.push(input);
+        return { closed: true };
+      },
     });
     const r = await dispatcher.dispatch({
       callId: "e",
@@ -1150,48 +1132,31 @@ describe("VoiceToolDispatcher — end_call patient_declined", () => {
       args: { outcome: "patient_declined" },
     });
     expect(r.result).toEqual({ ok: true });
-    expect(updates).toEqual([
-      {
-        table: "episodes",
-        patch: expect.objectContaining({ status: "declined" }),
-      },
+    expect(closes).toEqual([
+      expect.objectContaining({
+        orgId: baseDeps.orgId,
+        episodeId: baseDeps.episodeId,
+        patientId: baseDeps.patientId,
+        status: "declined",
+        reason: "patient_declined",
+      }),
     ]);
   });
 
-  it("does not touch episodes on a non-decline hangup", async () => {
-    const updates: Array<{ table: string }> = [];
-    const makeBuilder = (table: string): Record<string, unknown> => {
-      const b: Record<string, unknown> = {
-        select: () => b,
-        update: () => {
-          updates.push({ table });
-          return b;
-        },
-        eq: () => b,
-        in: () => b,
-        limit: () => b,
-        then: (
-          onfulfilled: (v: unknown) => unknown,
-          onrejected?: (e: unknown) => unknown,
-        ) =>
-          Promise.resolve({ data: null, error: null }).then(
-            onfulfilled,
-            onrejected,
-          ),
-      };
-      return b;
-    };
+  it("does not close the episode on a non-decline hangup", async () => {
+    const closes: unknown[] = [];
     const dispatcher = createVoiceToolDispatcher({
       ...baseDeps,
-      supabase: {
-        schema: () => ({ from: (table: string) => makeBuilder(table) }),
-      } as unknown as never,
+      closeEpisodeImpl: async (input) => {
+        closes.push(input);
+        return { closed: true };
+      },
     });
     await dispatcher.dispatch({
       callId: "e",
       name: "end_call",
-      args: { outcome: "completed" },
+      args: { outcome: "order_placed" },
     });
-    expect(updates).toEqual([]);
+    expect(closes).toEqual([]);
   });
 });
