@@ -77,6 +77,11 @@ export const FEATURE_FLAG_KEYS = [
   "resupply.refill_affirmation_capture",
   "resupply.refill_window_enforcement",
   "resupply.auto_order_drafts",
+  // Lifecycle close-out (migration 0538). Both seed OFF: each changes
+  // when a live patient is next contacted, so they are flipped per
+  // tenant after that tenant's backfill dry-run comes back clean.
+  "resupply.due_at_authoritative",
+  "resupply.ship_evidence_required",
   "reminder_escalation.dispatcher",
   "reminder_escalation.voice",
   "voice.breathe_sales",

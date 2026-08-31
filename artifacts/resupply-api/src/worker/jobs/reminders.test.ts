@@ -21,6 +21,11 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
+import {
+  IN_PROGRESS_EPISODE_STATUSES,
+  TERMINAL_EPISODE_STATUSES,
+} from "@workspace/resupply-domain";
+
 import { __testing } from "./reminders.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -526,10 +531,30 @@ describe("scanForDueReminders — episodes read is filtered to in-progress statu
 
   it("uses the shared in-progress episode status set (single source of truth)", () => {
     expect(episodesBlock).toContain("IN_PROGRESS_EPISODE_STATUSES");
-    // The set itself is the funnel statuses, nothing terminal.
+  });
+
+  it("takes that set from the domain package, not a local copy", () => {
+    // The set used to be declared here AND in three other modules, which
+    // is how a status could be added in one place and silently re-enter
+    // the ladder in another. It now lives in @workspace/resupply-domain
+    // and this module re-exports it for its existing importers.
     expect(SRC).toMatch(
-      /IN_PROGRESS_EPISODE_STATUSES\s*=\s*\[\s*"outreach_pending",\s*"awaiting_response",?\s*\]/,
+      /import\s*\{[^}]*IN_PROGRESS_EPISODE_STATUSES[^}]*\}\s*from\s*"@workspace\/resupply-domain"/s,
     );
+    expect(SRC).not.toMatch(/const\s+IN_PROGRESS_EPISODE_STATUSES\s*=/);
+  });
+
+  it("scans exactly the two funnel statuses, nothing terminal or held", () => {
+    // Behavioural, not textual: assert the actual value the scan filters
+    // on. `address_hold` must NOT be here — a patient who asked us to fix
+    // their address has already been told nothing is shipping.
+    expect([...IN_PROGRESS_EPISODE_STATUSES]).toEqual([
+      "outreach_pending",
+      "awaiting_response",
+    ]);
+    for (const terminal of TERMINAL_EPISODE_STATUSES) {
+      expect(IN_PROGRESS_EPISODE_STATUSES).not.toContain(terminal);
+    }
   });
 });
 

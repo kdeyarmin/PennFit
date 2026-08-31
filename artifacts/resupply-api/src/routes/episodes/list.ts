@@ -20,6 +20,7 @@ import {
   escapePostgRESTContainsPattern,
   getOrgScopedClient,
 } from "@workspace/resupply-db";
+import { EPISODE_STATUSES } from "@workspace/resupply-domain";
 
 import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
@@ -41,18 +42,13 @@ const UUID_RE =
 
 const listQuery = z
   .object({
-    status: z
-      .enum([
-        "overdue",
-        "outreach_pending",
-        "awaiting_response",
-        "confirmed",
-        "declined",
-        "expired",
-        "fulfilled",
-        "canceled",
-      ])
-      .optional(),
+    // "overdue" is a synthetic view (in-progress AND past due), not a
+    // stored status. The rest come from the canonical vocabulary in
+    // @workspace/resupply-domain so this filter cannot list a status the
+    // database has no writer for — which is exactly what it did before
+    // the lifecycle close-out landed: `expired`, `fulfilled` and
+    // `canceled` were selectable and always returned nothing.
+    status: z.enum(["overdue", ...EPISODE_STATUSES]).optional(),
     limit: z.coerce.number().int().min(1).max(100).default(25),
     offset: z.coerce.number().int().min(0).default(0),
     // Free-text filter (A8). Substring match against patient legal

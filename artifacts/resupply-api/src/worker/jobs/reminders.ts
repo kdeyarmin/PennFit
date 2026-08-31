@@ -67,6 +67,7 @@
 import type PgBoss from "pg-boss";
 
 import {
+  IN_PROGRESS_EPISODE_STATUSES,
   resolveOutreachPlan,
   type OutreachChannel,
   type OutreachPatient,
@@ -108,13 +109,11 @@ export const SEND_SMS_JOB = "reminders.send-sms";
 export const SEND_EMAIL_JOB = "reminders.send-email";
 
 // Episode statuses that are still in the reminder funnel — awaiting the first
-// outreach or a patient response. An episode that has left this set
-// (confirmed / fulfilled / cancelled / completed / resolved / …) must NOT be
-// re-pinged. Single source of truth, shared with the escalation scan.
-export const IN_PROGRESS_EPISODE_STATUSES = [
-  "outreach_pending",
-  "awaiting_response",
-] as const;
+// outreach or a patient response. An episode that has left this set must NOT
+// be re-pinged. The list itself now lives in @workspace/resupply-domain
+// (episode-status.ts) because four copies of it had drifted across the API;
+// re-exported here so the escalation scan's existing import keeps working.
+export { IN_PROGRESS_EPISODE_STATUSES };
 
 /**
  * Pre-vendor idempotency guard. Returns true if this is the first

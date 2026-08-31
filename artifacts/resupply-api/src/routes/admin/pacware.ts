@@ -32,7 +32,10 @@ import {
   type Json,
   type OrgScopedClient,
 } from "@workspace/resupply-db";
-import { timezoneForUsState } from "@workspace/resupply-domain";
+import {
+  timezoneForUsState,
+  type EpisodeStatus,
+} from "@workspace/resupply-domain";
 import {
   buildPacwarePatientCsv,
   buildPacwareResupplyDueCsv,
@@ -491,12 +494,17 @@ router.get(
 // GET /admin/pacware/export/resupply-due.csv — resupply worklist for
 // PacWare order entry & billing. One line per due item.
 // ---------------------------------------------------------------------------
+// Episode statuses this worklist can be filtered to. "approved" and
+// "pending" used to be listed here and NO writer has ever produced
+// either — selecting one silently exported an empty CSV. The set is now
+// the real vocabulary from @workspace/resupply-domain, narrowed to the
+// statuses a PacWare order-entry worklist actually wants: what the
+// patient has agreed to ship, and what is still being asked.
 const RESUPPLY_STATUSES = [
   "confirmed",
-  "approved",
-  "pending",
   "outreach_pending",
-] as const;
+  "awaiting_response",
+] as const satisfies readonly EpisodeStatus[];
 const exportResupplyQuerySchema = z
   .object({
     status: z.enum(RESUPPLY_STATUSES).default("confirmed"),

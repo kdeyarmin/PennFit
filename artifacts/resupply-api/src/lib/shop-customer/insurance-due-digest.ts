@@ -5,10 +5,11 @@
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-export const IN_PROGRESS_EPISODE_STATUSES = [
-  "outreach_pending",
-  "awaiting_response",
-] as const;
+// Re-exported from @workspace/resupply-domain rather than redeclared: this
+// module used to carry its own copy of the in-progress set, which is how the
+// dashboard's "next shipment" and the reminder ladder could disagree about
+// whether a patient was still in outreach.
+export { IN_PROGRESS_EPISODE_STATUSES } from "@workspace/resupply-domain";
 
 export interface EpisodeDueRow {
   id: string;

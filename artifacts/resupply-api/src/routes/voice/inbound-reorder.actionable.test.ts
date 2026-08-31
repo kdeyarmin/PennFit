@@ -8,17 +8,41 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
+import {
+  IN_PROGRESS_EPISODE_STATUSES,
+  TERMINAL_EPISODE_STATUSES,
+} from "@workspace/resupply-domain";
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SRC = readFileSync(path.join(__dirname, "inbound-reorder.ts"), "utf8");
 
 describe("inbound-reorder actionable episode filter", () => {
   it("only binds in-progress episodes (not declined)", () => {
+    // The allowlist is no longer a local literal — it is aliased to the
+    // canonical set in @workspace/resupply-domain, so this is now a real
+    // value assertion rather than a regex over source text. Rebinding a
+    // declined episode to the AI agent would restart outreach the patient
+    // has already refused.
+    expect([...IN_PROGRESS_EPISODE_STATUSES]).toEqual([
+      "outreach_pending",
+      "awaiting_response",
+    ]);
+    for (const terminal of TERMINAL_EPISODE_STATUSES) {
+      expect(IN_PROGRESS_EPISODE_STATUSES).not.toContain(terminal);
+    }
+  });
+
+  it("aliases the shared set instead of redeclaring it", () => {
     expect(SRC).toMatch(
-      /ACTIONABLE_EPISODE_STATUSES\s*=\s*\[\s*"outreach_pending",\s*"awaiting_response",?\s*\]/,
+      /ACTIONABLE_EPISODE_STATUSES\s*=\s*IN_PROGRESS_EPISODE_STATUSES/,
     );
-    expect(SRC).not.toMatch(
-      /ACTIONABLE_EPISODE_STATUSES\s*=\s*\[[^\]]*"declined"/,
-    );
+  });
+
+  it("does not act on an episode parked on an address change", () => {
+    // `address_hold` means we have already told the patient nothing is
+    // shipping while a CSR fixes their address. A call must not quietly
+    // reopen ordering on it.
+    expect(IN_PROGRESS_EPISODE_STATUSES).not.toContain("address_hold");
   });
 
   it("does not hard-code the seed Penn support dial target", () => {

@@ -54,6 +54,38 @@ export {
 } from "./default-resupply-lines";
 
 export {
+  EPISODE_STATUSES,
+  IN_PROGRESS_EPISODE_STATUSES,
+  OUTREACH_OPEN_EPISODE_STATUSES,
+  OPEN_EPISODE_STATUSES,
+  TERMINAL_EPISODE_STATUSES,
+  EPISODE_CLOSED_REASONS,
+  CLOSED_REASONS_BY_STATUS,
+  EPISODE_STATUS_LABEL,
+  EPISODE_CLOSED_REASON_LABEL,
+  EPISODE_EXPIRY_DAYS,
+  FULFILLMENT_STATUSES,
+  FULFILLMENT_CANCELLED,
+  FULFILLMENT_QUEUED,
+  FULFILLMENT_ON_HOLD,
+  FULFILLMENT_SHIPPED,
+  FULFILLMENT_DELIVERED,
+  buildEpisodeClosure,
+  isInProgressEpisodeStatus,
+  isOutreachOpenEpisodeStatus,
+  isTerminalEpisodeStatus,
+  isEpisodeStatus,
+  isEpisodeClosedReason,
+  type EpisodeStatus,
+  type InProgressEpisodeStatus,
+  type TerminalEpisodeStatus,
+  type EpisodeClosedReason,
+  type EpisodeClosure,
+  type FulfillmentStatus,
+} from "./episode-status";
+
+
+export {
   resolveResupplyEntitlement,
   ENTITLEMENT_STATUSES,
   type EntitlementStatus,

@@ -208,6 +208,15 @@ export const DELIBERATELY_OFF_FLAGS = [
   // Post-delivery "leave a review" emails still target historical shop_orders
   // and deep-link to /contact (no review form). Migration 0530 forces OFF.
   "storefront.reviews_collection",
+  // Episode lifecycle close-out rollout switches (migration 0538). These
+  // are per-tenant CUTOVER flags, not product capabilities: turning either
+  // on changes when a live patient is next contacted, and is only safe
+  // once `resupply:backfill-due-at --dry-run` reports no drift for THAT
+  // tenant. A plan preset must never flip them on an onboard or on
+  // "apply recommended preset" — that would move a real person's reminder
+  // date as a side effect of a bundle change.
+  "resupply.due_at_authoritative",
+  "resupply.ship_evidence_required",
 ] as const;
 
 const uniq = (keys: readonly string[]): readonly string[] => [...new Set(keys)];

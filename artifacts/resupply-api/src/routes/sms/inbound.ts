@@ -78,6 +78,7 @@ import {
   readMessagingConfigOrNull,
   readSmsConfigOrNull,
 } from "../../lib/messaging/messaging-config";
+import { closeEpisode } from "../../lib/episodes/close-episode";
 import {
   pausePatient,
   reactivatePatient,
@@ -1257,13 +1258,13 @@ async function dispatchIntent(input: DispatchInput): Promise<string> {
       const episodeId =
         typeof convRow?.episode_id === "string" ? convRow.episode_id : null;
       if (episodeId) {
-        const { error: epErr } = await supabase
-          .from("episodes")
-          .update({ status: "declined", updated_at: nowIso })
-          .eq("id", episodeId)
-          .eq("patient_id", input.patientId)
-          .in("status", ["outreach_pending", "awaiting_response"]);
-        if (epErr) throw epErr;
+        await closeEpisode({
+          orgId: input.orgId,
+          episodeId,
+          patientId: input.patientId,
+          status: "declined",
+          reason: "patient_declined",
+        });
       }
 
       return (
