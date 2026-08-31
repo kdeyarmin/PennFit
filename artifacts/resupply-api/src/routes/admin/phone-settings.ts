@@ -352,6 +352,52 @@ router.patch(
     if (messagingServiceSid !== undefined)
       update.twilio_messaging_service_sid = messagingServiceSid;
 
+    // CROSS-COLUMN collision check, before the write.
+    //
+    // The unique partial indexes are PER COLUMN, so they stop two tenants
+    // claiming a DID for the same channel and allow tenant A to hold it
+    // for SMS while tenant B holds it for voice. That is not a harmless
+    // overlap: it is one number with two owners, and an inbound event on
+    // it belongs to whichever tenant the resolver happens to probe first.
+    // (The resolver is now channel-aware, so it answers correctly — but a
+    // number with two owners is a configuration nobody should be able to
+    // create in the first place.)
+    const claimed = [voiceNumber, smsNumber].filter(
+      (n): n is string => typeof n === "string" && n.trim() !== "",
+    );
+    if (claimed.length > 0) {
+      const { data: conflicts, error: conflictErr } = await getOrgScopedClient(
+        orgId,
+      )
+        .raw()
+        .schema("resupply")
+        .from("organizations")
+        .select("id")
+        .neq("id", orgId)
+        // Safe to interpolate: Zod has already pinned each value to
+        // /^\+[1-9]\d{6,14}$/, so it carries no comma, paren, or dot —
+        // the metacharacters that could otherwise reshape this filter
+        // against the GLOBAL organizations directory.
+        .or(
+          claimed
+            .map(
+              (n) =>
+                `voice_from_number.eq.${n},sms_from_number.eq.${n},fax_from_number.eq.${n}`,
+            )
+            .join(","),
+        )
+        .limit(1);
+      if (conflictErr) throw conflictErr;
+      if ((conflicts ?? []).length > 0) {
+        res.status(409).json({
+          error: "phone_number_in_use",
+          message:
+            "Another practice on this platform already uses that number. A number can only belong to one practice, on any channel.",
+        });
+        return;
+      }
+    }
+
     const { error: updErr } = await getOrgScopedClient(orgId)
       .raw()
       .schema("resupply")

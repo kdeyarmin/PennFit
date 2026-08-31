@@ -91,12 +91,45 @@ export function parseCallDuration(raw: unknown): number | null {
  * caller wraps this so a telemetry failure never breaks the 200 ack to
  * Twilio. Uses a read-then-write (not a blind upsert) so we update only
  * the columns this event owns and leave earlier timestamps intact.
+ *
+ * ORG ATTRIBUTION. This helper used to insert with no `org_id` at all,
+ * because a Twilio webhook has no request tenant and the row is reached
+ * by the globally-unique CallSid. But `voice_calls.org_id` EXISTS and two
+ * admin surfaces read through the org-scoped client, which appends
+ * `.eq("org_id", …)`:
+ *
+ *   * routes/admin/voice-metrics.ts  (GET /admin/voice/metrics)
+ *   * routes/admin/analytics-channel-engagement.ts (the `voice` channel)
+ *
+ * With every row's `org_id` NULL, both returned zero for EVERY tenant,
+ * including the seed one — a dashboard that had never shown a number and
+ * looked like "no calls yet". A third reader,
+ * worker/jobs/reminder-escalation.ts, already carried a `.raw()`
+ * workaround with a comment naming this exact bug.
+ *
+ * The lookup below deliberately stays keyed on `call_sid` alone. A Twilio
+ * CallSid comes from one shared vendor account and can only ever belong
+ * to one call, so the unique index on it is correct as a GLOBAL key; the
+ * `org_id` we write is attribution, not a scoping filter.
  */
 export async function recordVoiceCallEvent(
   supabase: ResupplySupabaseClient,
   event: VoiceCallEvent,
+  /**
+   * The call's OWNING TENANT, resolved by the caller off the conversation
+   * row. Optional only because it may genuinely be unknown (a status
+   * callback for a conversation that has been deleted); a row written
+   * without it stays unattributed rather than being misfiled under the
+   * seed tenant.
+   *
+   * Passing this is what makes /admin/voice/metrics and the
+   * channel-engagement analytics work at all — see the header.
+   */
+  orgId?: string | null,
 ): Promise<void> {
   const patch = buildVoiceCallPatch(event);
+  const tenantOrgId =
+    typeof orgId === "string" && orgId.trim() !== "" ? orgId.trim() : null;
 
   const { data: existing, error: selErr } = await supabase
     .schema("resupply")
@@ -111,7 +144,7 @@ export async function recordVoiceCallEvent(
     const { error } = await supabase
       .schema("resupply")
       .from("voice_calls")
-      .update(patch)
+      .update(tenantOrgId ? { ...patch, org_id: tenantOrgId } : patch)
       .eq("call_sid", event.callSid);
     if (error) throw error;
     return;
@@ -124,6 +157,7 @@ export async function recordVoiceCallEvent(
       call_sid: event.callSid,
       conversation_id: event.conversationId,
       direction: event.direction,
+      ...(tenantOrgId ? { org_id: tenantOrgId } : {}),
       ...patch,
     });
   // A concurrent first-event insert can race us to the unique call_sid;

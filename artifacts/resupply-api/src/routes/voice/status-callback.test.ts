@@ -104,6 +104,14 @@ describe("POST /voice/status-callback", () => {
     // Twilio retry on an already-closed row doesn't double-audit.
     // Stage a one-element data payload so the row counts as the
     // first close + the audit fires.
+    //
+    // The route also reads the conversation's org up front, so the call's
+    // real tenant is known to BOTH the metering and the voice_calls
+    // telemetry row (whose org_id is what /admin/voice/metrics filters on).
+    stageSupabaseResponse("conversations", "select", {
+      data: { org_id: "44444444-4444-4444-8444-444444444444" },
+      error: null,
+    });
     stageSupabaseResponse("conversations", "update", {
       data: [{ id: "11111111-1111-4111-8111-111111111111" }],
       error: null,
@@ -134,10 +142,39 @@ describe("POST /voice/status-callback", () => {
       twilio_status: "completed",
       source: "status_callback",
     });
-    // First close → one aiVoiceEvents metered (G12).
+    // First close → one aiVoiceEvents metered (G12), against the call's
+    // own tenant.
     expect(vi.mocked(recordTenantUsage)).toHaveBeenCalledWith(
-      expect.objectContaining({ metricKey: "aiVoiceEvents" }),
+      expect.objectContaining({
+        metricKey: "aiVoiceEvents",
+        orgId: "44444444-4444-4444-8444-444444444444",
+      }),
     );
+  });
+
+  it("does not meter a completed call whose tenant cannot be resolved", async () => {
+    // This used to read `callOrgId ?? orgId`, billing an un-attributable
+    // call to the SEED tenant — a practice that did not place it, on a
+    // metered metric. An unknown tenant means nobody can be billed: log it
+    // and skip, so the gap is visible rather than charged to a stranger.
+    stageSupabaseResponse("conversations", "select", {
+      data: null,
+      error: null,
+    });
+    stageSupabaseResponse("conversations", "update", {
+      data: [{ id: "11111111-1111-4111-8111-111111111111" }],
+      error: null,
+    });
+
+    const res = await request(makeApp())
+      .post(
+        "/resupply-api/voice/status-callback?conversationId=11111111-1111-4111-8111-111111111111",
+      )
+      .type("form")
+      .send({ CallSid: "CA_untenanted", CallStatus: "completed" });
+
+    expect(res.status).toBe(200);
+    expect(vi.mocked(recordTenantUsage)).not.toHaveBeenCalled();
   });
 
   it("meters aiVoiceEvents against the call's REAL tenant (org_id off the flipped row), not the seed org", async () => {

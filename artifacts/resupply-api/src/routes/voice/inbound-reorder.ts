@@ -124,7 +124,10 @@ router.post("/voice/inbound-reorder", signatureMiddleware, async (req, res) => {
   // unknown caller — Hangup so we don't open a voice session under Penn.
   const calledNumber = parsed.data.Called ?? parsed.data.To;
   const callerRaw = parsed.data.From ?? parsed.data.Caller;
-  const calledOrgId = await resolveOrgIdByCalledNumber(calledNumber);
+  // "voice": this is an inbound CALL, so ask who owns the number for
+  // VOICE. A kind-blind lookup checked the SMS column first, so a DID
+  // another tenant had registered for texting would have won.
+  const calledOrgId = await resolveOrgIdByCalledNumber(calledNumber, "voice");
   const normalizedCaller = normalizeE164(callerRaw);
   const orgId = calledOrgId
     ? calledOrgId

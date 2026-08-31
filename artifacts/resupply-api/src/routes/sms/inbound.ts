@@ -257,7 +257,7 @@ router.post(
         // patient texting tenant-B's number was told the seed tenant would
         // stop contacting them. Falls back to the platform name on the
         // shared number, where no single tenant owns the conversation.
-        const earlyOrgId = await resolveOrgIdByCalledNumber(parsed.To);
+        const earlyOrgId = await resolveOrgIdByCalledNumber(parsed.To, "sms");
         const earlyPracticeName = earlyOrgId
           ? (await getCompanyInfo(earlyOrgId)).name
           : PLATFORM_NAME;
@@ -299,7 +299,7 @@ router.post(
     //   * Never invent the seed org for an unknown phone: that would park
     //     STOP/HELP audits and unknown-number PHI under Penn. CTIA STOP/HELP
     //     still get a platform-branded reply with no DB write.
-    const calledOrgId = await resolveOrgIdByCalledNumber(parsed.To);
+    const calledOrgId = await resolveOrgIdByCalledNumber(parsed.To, "sms");
     const orgId = calledOrgId
       ? calledOrgId
       : await resolveOrgIdByPatientPhone(normalizedFrom);

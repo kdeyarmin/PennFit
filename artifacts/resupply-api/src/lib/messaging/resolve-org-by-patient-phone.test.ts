@@ -65,28 +65,33 @@ describe("resolveOrgIdByPatientPhone", () => {
     expect(await resolveOrgIdByPatientPhone("+12155559999")).toBeNull();
   });
 
-  it("tie-breaks to the most-recently-active tenant when the phone is in two", async () => {
+  it("refuses to guess when the phone is in two tenants", async () => {
+    // This used to tie-break on the most recent `conversations.
+    // last_message_at`. That is a coin flip dressed up as a heuristic:
+    // recency of contact is not evidence of ownership, so whichever
+    // tenant happened to message the number last would receive this
+    // patient's inbound reply, their thread, and any PHI in it.
+    //
+    // Failing closed loses a message the tenant recovers by provisioning
+    // their own DID — a cost measured in configuration, not disclosure.
     stageSupabaseResponse("patients", "select", {
       data: [
         { id: "pa", org_id: ORG_A },
         { id: "pb", org_id: ORG_B },
       ],
     });
-    stageSupabaseResponse("conversations", "select", {
-      data: { org_id: ORG_B, last_message_at: "2026-06-10T00:00:00.000Z" },
-    });
-    expect(await resolveOrgIdByPatientPhone("+12155557654")).toBe(ORG_B);
+    expect(await resolveOrgIdByPatientPhone("+12155557654")).toBeNull();
   });
 
-  it("falls back to the first owning tenant if the tie-break query finds nothing", async () => {
+  it("does not reach for conversations to break a tie", async () => {
     stageSupabaseResponse("patients", "select", {
       data: [
         { id: "pa", org_id: ORG_A },
         { id: "pb", org_id: ORG_B },
       ],
     });
-    stageSupabaseResponse("conversations", "select", { data: null });
-    expect(await resolveOrgIdByPatientPhone("+12155557654")).toBe(ORG_A);
+    await resolveOrgIdByPatientPhone("+12155557654");
+    expect(supabaseMock.callCount("conversations", "select")).toBe(0);
   });
 
   it("fails soft to null on a lookup error", async () => {

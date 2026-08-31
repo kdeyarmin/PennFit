@@ -113,13 +113,42 @@ router.post("/voice/status-callback", signatureMiddleware, async (req, res) => {
   }
   const supabase = getOrgScopedClient(orgId);
 
+  // The call's TRUE tenant, read off the conversation row. Resolved here
+  // (not only inside the terminal branch) because the telemetry write at
+  // the bottom needs it on EVERY lifecycle event: `voice_calls.org_id` is
+  // what /admin/voice/metrics and the channel-engagement analytics filter
+  // on, and a row written without it is invisible to both.
+  let callOrgId: string | null = null;
+  try {
+    // raw-org-scope-exempt: keyed on the globally-unique conversation
+    // uuid from a tenant-agnostic Twilio webhook. Scoping this to the
+    // seed org is precisely the bug — it would resolve every non-seed
+    // tenant's call to null and then attribute it to the seed.
+    const { data: convRow } = await supabase
+      .raw()
+      .schema("resupply")
+      .from("conversations")
+      .select("org_id")
+      .eq("id", conversationId)
+      .limit(1)
+      .maybeSingle();
+    const rowOrgId = (convRow as { org_id?: unknown } | null)?.org_id;
+    if (typeof rowOrgId === "string" && rowOrgId.trim()) {
+      callOrgId = rowOrgId.trim();
+    }
+  } catch (err) {
+    logger.warn(
+      {
+        event: "voice_status_org_lookup_failed",
+        err: serializeErr(err),
+        conversationId,
+      },
+      "status-callback: could not resolve the call's tenant",
+    );
+  }
+
   if (TERMINAL_STATUSES.has(callStatus)) {
     let firstTerminalClose = false;
-    // The TRUE tenant of this call, read off the conversation row we flip —
-    // not the seed org. The competing close path (ws-handler) meters against
-    // the call's real tenant, so this path must too or a non-seed tenant's
-    // voice usage is misattributed to the seed whenever this race wins.
-    let callOrgId: string | null = null;
     try {
       // Twilio can re-deliver `completed/failed/busy/...` (retry on
       // 5xx, or duplicate after our 200 took >response timeout to
@@ -141,9 +170,11 @@ router.post("/voice/status-callback", signatureMiddleware, async (req, res) => {
         .select("id, org_id");
       if (error) throw error;
       firstTerminalClose = !!flipped && flipped.length > 0;
+      // Prefer the org read off the row we actually flipped; it is the
+      // same value as the lookup above, and confirms it against the write.
       const flippedOrgId = flipped?.[0]?.org_id;
       if (typeof flippedOrgId === "string" && flippedOrgId.trim()) {
-        callOrgId = flippedOrgId;
+        callOrgId = flippedOrgId.trim();
       }
     } catch (err) {
       logger.warn(
@@ -184,13 +215,24 @@ router.post("/voice/status-callback", signatureMiddleware, async (req, res) => {
       // finalizeConversation). The firstTerminalClose guard makes that
       // exactly-once across both paths (G12 aiVoiceEvents). Fire-and-forget
       // + fail-soft.
-      void recordTenantUsage({
-        // Meter against the call's real tenant (read off the flipped row),
-        // falling back to the seed org only when the row carried no org_id.
-        orgId: callOrgId ?? orgId,
-        metricKey: "aiVoiceEvents",
-        source: "voice.call.completed",
-      });
+      //
+      // NEVER falls back to the seed org. This used to read
+      // `callOrgId ?? orgId`, which billed an un-attributed call to the
+      // seed tenant — a tenant that did not place it, on a metered
+      // metric. An unknown tenant means we cannot bill anyone: log it and
+      // skip, so the gap is visible rather than charged to a stranger.
+      if (callOrgId) {
+        void recordTenantUsage({
+          orgId: callOrgId,
+          metricKey: "aiVoiceEvents",
+          source: "voice.call.completed",
+        });
+      } else {
+        logger.warn(
+          { event: "voice_call_unmetered_no_tenant", conversationId },
+          "status-callback: completed call has no resolvable tenant — not metered",
+        );
+      }
     }
   }
 
@@ -199,18 +241,23 @@ router.post("/voice/status-callback", signatureMiddleware, async (req, res) => {
   // initiated/answered/ended. Never affects the 200 ack — a telemetry
   // failure must not make Twilio retry the lifecycle.
   try {
-    await recordVoiceCallEvent(supabase.raw(), {
-      callSid,
-      conversationId,
-      callStatus,
-      // Direction is structural (inbound vs outbound), not PHI.
-      direction: typeof body.Direction === "string" ? body.Direction : null,
-      durationSeconds: parseCallDuration(body.CallDuration),
-      // AMD verdict (human / machine_* / fax / unknown) — structural, not PHI.
-      // Lets the escalation distinguish a live answer from voicemail.
-      answeredBy: typeof body.AnsweredBy === "string" ? body.AnsweredBy : null,
-      nowIso: new Date().toISOString(),
-    });
+    await recordVoiceCallEvent(
+      supabase.raw(),
+      {
+        callSid,
+        conversationId,
+        callStatus,
+        // Direction is structural (inbound vs outbound), not PHI.
+        direction: typeof body.Direction === "string" ? body.Direction : null,
+        durationSeconds: parseCallDuration(body.CallDuration),
+        // AMD verdict (human / machine_* / fax / unknown) — structural, not PHI.
+        // Lets the escalation distinguish a live answer from voicemail.
+        answeredBy:
+          typeof body.AnsweredBy === "string" ? body.AnsweredBy : null,
+        nowIso: new Date().toISOString(),
+      },
+      callOrgId,
+    );
   } catch (err) {
     logger.warn(
       {

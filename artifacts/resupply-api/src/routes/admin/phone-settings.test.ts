@@ -24,6 +24,9 @@ const { mockAdmin, state, TwilioConfigError, TwilioApiError } = vi.hoisted(
         },
         updateError: null as { code?: string } | null,
         lastUpdate: null as Record<string, unknown> | null,
+        // Rows returned by the cross-column number-collision probe. Empty
+        // means "no other tenant owns this number".
+        numberConflicts: [] as Array<{ id: string }>,
         provisioned: { sid: "PN1", phoneNumber: "+12155550111" },
         provisionThrow: null as unknown,
       },
@@ -59,6 +62,18 @@ vi.mock("@workspace/resupply-db", () => ({
             eq: () => ({
               limit: () => ({
                 maybeSingle: async () => ({ data: state.orgRow, error: null }),
+              }),
+            }),
+            // The cross-column collision probe: `.neq(id) .or(...) .limit(1)`,
+            // awaited directly. Returns whatever `state.numberConflicts`
+            // holds so a test can simulate another tenant already owning
+            // the number on ANY channel.
+            neq: () => ({
+              or: () => ({
+                limit: async () => ({
+                  data: state.numberConflicts,
+                  error: null,
+                }),
               }),
             }),
           }),
@@ -120,6 +135,7 @@ beforeEach(() => {
   };
   state.updateError = null;
   state.lastUpdate = null;
+  state.numberConflicts = [];
   state.provisioned = { sid: "PN1", phoneNumber: "+12155550111" };
   state.provisionThrow = null;
   process.env.TWILIO_ACCOUNT_SID = "ACtest";
@@ -259,5 +275,31 @@ describe("PATCH /admin/organization/phone-settings", () => {
       .send({ smsNumber: "+12155551234" });
     expect(res.status).toBe(409);
     expect(res.body.error).toBe("phone_number_in_use");
+  });
+
+  it("409s when another tenant owns the number on a DIFFERENT channel", async () => {
+    // The unique partial indexes are PER COLUMN, so they happily allow
+    // tenant A to hold a DID for SMS while tenant B holds the same DID for
+    // voice. That is one number with two owners: an inbound event on it
+    // belongs to whichever tenant the resolver probes first. The pre-write
+    // check refuses to create that configuration at all.
+    state.numberConflicts = [{ id: "other-org" }];
+    const res = await request(makeApp())
+      .patch("/admin/organization/phone-settings")
+      .send({ smsNumber: "+12155551234" });
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe("phone_number_in_use");
+    // And nothing was written.
+    expect(state.lastUpdate).toBeNull();
+  });
+
+  it("does not run the collision probe when only clearing a number", async () => {
+    // Handing a number BACK cannot collide with anything.
+    state.orgRow.voice_from_number = "+12155550000";
+    const res = await request(makeApp())
+      .patch("/admin/organization/phone-settings")
+      .send({ voiceNumber: null });
+    expect(res.status).toBe(200);
+    expect(state.lastUpdate).toEqual({ voice_from_number: null });
   });
 });

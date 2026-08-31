@@ -77,6 +77,16 @@ GUARDED_TABLES=(
   "fitter_campaign_touch_metrics"           # resupply VIEW (mig 0382)
   "fitter_campaign_touch_variant_metrics"   # resupply VIEW (mig 0464)
 )
+#
+# Deliberately NOT guarded: resupply.voice_calls. Its org_id went unwritten
+# for the whole of its life (see lib/voice/voice-call-record.ts), which
+# emptied /admin/voice/metrics and the channel-engagement analytics for
+# every tenant — but that was a missing WRITE, which this guard does not
+# check, and both READS were already correct. Unlike the three entries
+# above, voice_calls is in the typed facade, so listing it here would flag
+# those correct org-scoped reads and push contributors toward blanket
+# exemption markers, which is how a guard stops meaning anything. The
+# write is pinned by a test instead (voice-call-record.test.ts).
 
 # The org_id filter must appear somewhere in the SAME statement as the
 # `.from("<table>")`. We scan from the `.from` line forward to the statement
