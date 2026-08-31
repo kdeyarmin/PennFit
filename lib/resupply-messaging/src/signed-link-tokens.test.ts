@@ -166,8 +166,24 @@ describe("signLinkToken / verifyLinkToken", () => {
     ).toThrow(/unknown action/);
   });
 
-  it("LINK_ACTIONS exhaustively covers confirm/edit/stop", () => {
-    expect(LINK_ACTIONS).toEqual(["confirm", "edit", "stop"]);
+  it("LINK_ACTIONS covers every action a reminder email offers", () => {
+    // `decline` is the "not this time" action. Email used to have no
+    // negative action short of `stop` — a permanent opt-out — so a patient
+    // who wanted to skip one cycle either ignored us or unsubscribed.
+    expect(LINK_ACTIONS).toEqual(["confirm", "edit", "stop", "decline"]);
+  });
+
+  it("keeps tokens minted before `decline` existed verifiable", () => {
+    // Widening the action union must not invalidate links already in
+    // flight — a patient holding a week-old reminder email would
+    // otherwise get an error page instead of their order.
+    for (const action of ["confirm", "edit", "stop"] as const) {
+      const token = signLinkToken({ conversationId: "conv-123", action });
+      const verified = verifyLinkToken(token);
+      expect(verified.valid).toBe(true);
+      if (!verified.valid) return;
+      expect(verified.action).toBe(action);
+    }
   });
 
   it("requires a conversationId", () => {

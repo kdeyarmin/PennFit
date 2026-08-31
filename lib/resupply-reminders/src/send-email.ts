@@ -239,12 +239,18 @@ export async function sendReminderEmail(
     const editUrl = `${baseClick}?t=${encodeURIComponent(
       signLinkToken({ conversationId, action: "edit", expiresAt }),
     )}`;
+    // Same expiry as the other CTAs: all four actions live and die with
+    // the reminder they were sent on.
+    const declineUrl = `${baseClick}?t=${encodeURIComponent(
+      signLinkToken({ conversationId, action: "decline", expiresAt }),
+    )}`;
     rendered = renderResupplyReminder({
       practiceName: cfg.practiceName,
       firstName: patient.legal_first_name ?? "there",
       items,
       confirmUrl,
       editUrl,
+      declineUrl,
       stopUrl,
       variant: input.variant ?? "initial",
     });

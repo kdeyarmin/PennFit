@@ -38,7 +38,16 @@ import { getLinkHmacKey } from "@workspace/resupply-secrets";
 
 const DEFAULT_TTL_SECONDS = 7 * 24 * 60 * 60; // 7 days
 
-export const LINK_ACTIONS = ["confirm", "edit", "stop"] as const;
+// Widening this union is backward-compatible: tokens already in flight
+// still verify, and nothing is invalidated.
+//
+// `decline` exists because email had no way to say "not this time". SMS
+// has NO and voice has a decline outcome, both of which close the episode
+// and stop the ladder. By email the only negative action was STOP — a
+// PERMANENT opt-out from all reminders. A patient who just wanted to skip
+// one cycle had to either ignore us (and get escalated to a phone call)
+// or unsubscribe from resupply entirely.
+export const LINK_ACTIONS = ["confirm", "edit", "stop", "decline"] as const;
 export type LinkAction = (typeof LINK_ACTIONS)[number];
 
 interface LinkPayload {
