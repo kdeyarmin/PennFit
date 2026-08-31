@@ -17,9 +17,17 @@
  * worker, so it does not affect the HTTP-before-worker decoupling.
  */
 
+import { assertDataPathMatchesDeployment } from "./data-path-guard";
 import { assertRequiredEnv } from "./env-check";
 
 // Fail fast on a misconfigured deploy. Surfaces a single clear startup error
 // listing every missing required variable, rather than a confusing
 // mid-request throw deep in a route handler.
 assertRequiredEnv();
+
+// Then: is this deployment allowed to be pointed at the data it is
+// pointed at? A preview that inherited production's Supabase credentials
+// passes every check above — every variable is present and well-shaped —
+// and would serve live patient records. See ./data-path-guard.ts for why
+// this refuses only on a positive cross-tier match and warns on ambiguity.
+assertDataPathMatchesDeployment();

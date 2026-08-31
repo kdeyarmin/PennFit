@@ -167,6 +167,30 @@ _unledgered_ database (`migrate.mjs` adoption guard) — that now only
 applies to a brand-new environment adopting an existing DB, via
 `migrate.mjs --baseline-through=<prefix>`.
 
+**A preview deployment must never migrate production.** A Railway
+PR-preview environment inherited the production service's shared
+`DATABASE_URL` and its `preDeployCommand` applied an unmerged migration
+to the **production** database. Both `deploy-migrate.mjs` and
+`migrate.mjs` now evaluate
+`lib/resupply-db/scripts/deploy-environment.mjs` first and **exit 3
+without opening a connection** when a non-production deployment is
+pointed at the production database, or when the deployment identity is
+ambiguous. The deployment identity is `DEPLOY_ENV` **cross-checked
+against** `RAILWAY_ENVIRONMENT_NAME` / `RAILWAY_GIT_BRANCH` — Railway
+sets those per environment, so a shared `DEPLOY_ENV=production` leaking
+into a preview is caught rather than believed. The database identity is a
+salted digest of `host:port/dbname` pinned in
+`PRODUCTION_DATABASE_FINGERPRINT` (share this one — a preview needs it to
+recognise production). The same module backs a boot-time guard
+(`artifacts/resupply-api/src/lib/data-path-guard.ts`) covering
+`SUPABASE_URL`, the real runtime data path; that one refuses only on a
+positive cross-tier match and warns on ambiguity, because a refused
+migration keeps the old release serving while a refused boot would not.
+Break-glass exists, needs two variables, and `preflight:prod` fails while
+it is armed. Never widen this by relying on `NODE_ENV` — Railway does not
+inject it. See
+[`docs/runbooks/migration-environment-guard.md`](./docs/runbooks/migration-environment-guard.md).
+
 Post-mortem of the historical Git-drift event:
 [`docs/git-state-2026-05-01.md`](./docs/git-state-2026-05-01.md).
 

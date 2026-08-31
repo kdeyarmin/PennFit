@@ -239,6 +239,28 @@ existing database) is preserved in
 [`docs/runbooks/adopt-migration-ledger.md`](./runbooks/adopt-migration-ledger.md)
 and the `pennfit-migrations` skill.
 
+### The environment guard (a preview must not migrate production)
+
+Before the migrator opens a connection, `deploy-migrate.mjs` resolves **two
+independent identities** — which deployment this is, and which database it
+is pointed at — and refuses when a non-production deployment is holding the
+production database. This exists because a PR-preview environment inherited
+the production service's shared `DATABASE_URL` and applied an unmerged
+migration to production.
+
+A refusal exits **3** (distinct from `1` "a migration failed" and `2`
+"`DATABASE_URL` unset"), executes nothing, and opens no connection. Because
+`preDeployCommand` gates the deploy, the **previous release keeps serving**.
+
+The deployment identity is `DEPLOY_ENV` **cross-checked against**
+`RAILWAY_ENVIRONMENT_NAME` and `RAILWAY_GIT_BRANCH` — which Railway sets per
+environment and a shared variable cannot forge. A `DEPLOY_ENV=production`
+those markers deny is treated as ambiguous and blocked.
+
+Variables to configure (and, crucially, **which of them to share**) are in
+[`docs/runbooks/migration-environment-guard.md`](./runbooks/migration-environment-guard.md).
+`preflight:prod` fails when they are missing.
+
 ## What is intentionally absent
 
 - **No `Dockerfile` / `nixpacks.toml` / `railway.toml`.** Railpack is the
