@@ -44,6 +44,11 @@ export interface OrderOutcomesResponse {
     addressHold: number;
     claimOpen: number;
   };
+  /** Cycles the grace sweep advanced with no shipment evidence — neither
+   *  shipped nor lost, because nobody knows which. */
+  unverified: {
+    assumedShipped: number;
+  };
   deniedByCarc: Array<{ code: string; count: number; description: string }>;
 }
 

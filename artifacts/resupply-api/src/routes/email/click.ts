@@ -38,6 +38,7 @@ import {
 } from "@workspace/resupply-messaging";
 
 import { closeEpisode } from "../../lib/episodes/close-episode";
+import { reopenCycleAfterDecline } from "../../lib/episodes/reopen-after-decline";
 import { logger } from "../../lib/logger";
 import { resolveOrgIdForSignedRecord } from "../../lib/storefront/signed-link-org";
 import { readMessagingConfigOrNull } from "../../lib/messaging/messaging-config";
@@ -705,6 +706,17 @@ router.post("/email/click", emailClickLimiter, async (req, res) => {
             patientId: conv.patient_id,
             status: "declined",
             reason: "patient_declined",
+          });
+          // The confirmation page tells the patient we will check back
+          // next cycle. Nothing else opens a cycle after a decline, so
+          // this is what makes that true. Anchored on now, not on their
+          // last dispense: they have just declined THIS cycle, and
+          // reopening one that is already overdue would remind them
+          // tomorrow.
+          await reopenCycleAfterDecline({
+            orgId,
+            episodeId: conv.episode_id,
+            at: new Date(),
           });
         }
 

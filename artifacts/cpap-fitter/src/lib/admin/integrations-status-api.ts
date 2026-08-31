@@ -98,8 +98,18 @@ export type DiscrepancyKind =
   | "night_count_mismatch"
   | "usage_mismatch";
 
+/** Whether the night-count / usage comparison actually ran. A report that
+ *  skipped it and one that ran it and found nothing look identical
+ *  otherwise, and the first is what this route used to always do. */
+export type TherapyComparison =
+  | "not_requested"
+  | "skipped_no_window"
+  | "unavailable"
+  | "compared";
+
 export interface ReconcileResult {
   runId: string | null;
+  therapyComparison: TherapyComparison;
   source: IntegrationSource;
   portalRows: number;
   localRows: number;
@@ -124,10 +134,17 @@ export interface ReconcileResult {
 export const reconcileIntegration = (
   source: IntegrationSource,
   rows: PortalRow[],
+  /** The dates the export covers. Required for the night/usage
+   *  comparison: our rolling history and the portal's export only mean
+   *  the same thing over the same window. */
+  window?: { start: string; end: string },
 ) =>
   jsonFetch<ReconcileResult>(`/admin/integrations/${source}/reconcile`, {
     method: "POST",
-    body: JSON.stringify({ rows }),
+    body: JSON.stringify({
+      rows,
+      ...(window ? { windowStart: window.start, windowEnd: window.end } : {}),
+    }),
   });
 
 export interface ReconciliationRun {

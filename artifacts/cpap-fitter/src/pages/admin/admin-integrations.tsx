@@ -283,6 +283,12 @@ function ReconcileCard() {
   const [result, setResult] = useState<ReconcileResult | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // Left empty on purpose rather than defaulting to "the last 30 days":
+  // guessing the window silently compares our nights against a period the
+  // export may not cover, which is the failure this whole card exists to
+  // catch. Empty means the comparison is skipped and says so.
+  const [windowStart, setWindowStart] = useState("");
+  const [windowEnd, setWindowEnd] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
 
   async function onPick(file: File) {
@@ -297,7 +303,15 @@ function ReconcileCard() {
         );
         return;
       }
-      setResult(await reconcileIntegration(source, rows));
+      setResult(
+        await reconcileIntegration(
+          source,
+          rows,
+          windowStart && windowEnd
+            ? { start: windowStart, end: windowEnd }
+            : undefined,
+        ),
+      );
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Could not read that file.");
     } finally {
@@ -345,11 +359,62 @@ function ReconcileCard() {
         />
       </div>
 
+      {/* The window the export covers. Without it the night and usage
+          columns cannot be compared at all — our rolling history against
+          their unstated period would flag the whole practice. */}
+      <div className="flex flex-wrap items-center gap-2 mb-3 text-sm">
+        <label className="flex items-center gap-1">
+          <span style={{ color: "hsl(var(--ink-3))" }}>Export covers</span>
+          <input
+            type="date"
+            value={windowStart}
+            onChange={(e) => setWindowStart(e.target.value)}
+            className="px-2 py-1 rounded border text-sm"
+            style={{ borderColor: "hsl(var(--line-1))" }}
+            aria-label="Export window start"
+          />
+        </label>
+        <label className="flex items-center gap-1">
+          <span style={{ color: "hsl(var(--ink-3))" }}>to</span>
+          <input
+            type="date"
+            value={windowEnd}
+            onChange={(e) => setWindowEnd(e.target.value)}
+            className="px-2 py-1 rounded border text-sm"
+            style={{ borderColor: "hsl(var(--line-1))" }}
+            aria-label="Export window end"
+          />
+        </label>
+        <span className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
+          Needed only to compare night counts and usage.
+        </span>
+      </div>
+
       {busy && <Spinner />}
       {err && <ErrorPanel error={err} />}
 
       {result && (
         <div data-testid="integrations-reconcile-result" className="space-y-2">
+          {result.therapyComparison === "skipped_no_window" && (
+            <p
+              className="text-sm"
+              role="status"
+              style={{ color: "#92400e" }}
+              data-testid="reconcile-therapy-skipped"
+            >
+              Night counts and usage were <strong>not</strong> compared: the
+              export carries them but no date range was given. Set the window
+              above and run it again — until then the zero below is only about
+              patients and devices.
+            </p>
+          )}
+          {result.therapyComparison === "unavailable" && (
+            <p className="text-sm" role="status" style={{ color: "#92400e" }}>
+              Night counts and usage were <strong>not</strong> compared: our own
+              therapy data could not be read. Everything else below still
+              stands.
+            </p>
+          )}
           <p className="text-sm">
             <strong>{result.portalRows}</strong> in the portal,{" "}
             <strong>{result.localRows}</strong> here,{" "}

@@ -211,6 +211,31 @@ export function AdminAnalyticsOrderOutcomesPage() {
             </ul>
           </Card>
 
+          {data.unverified.assumedShipped > 0 && (
+            <Card>
+              <h2 className="text-lg font-semibold mb-1">
+                Advanced without a shipment record
+              </h2>
+              <p
+                className="text-sm mb-3"
+                style={{ color: "hsl(var(--ink-3))" }}
+              >
+                <strong>{num(data.unverified.assumedShipped)}</strong> cycles
+                moved on because the grace window ran out, not because anything
+                was recorded as shipped. They are counted here rather than under
+                &ldquo;Shipped&rdquo; because nobody knows whether the product
+                left the warehouse — calling them shipped would also report them
+                as unbilled product loss below.
+              </p>
+              <p className="text-sm" style={{ color: "hsl(var(--ink-3))" }}>
+                This number is the case for connecting a shipment feed: it is
+                exactly the population this page cannot account for. Import
+                PacWare shipment confirmations, or mark orders shipped as they
+                go out, and it falls to zero.
+              </p>
+            </Card>
+          )}
+
           <Card>
             <h2 className="text-lg font-semibold mb-1">
               Stopped before anything shipped

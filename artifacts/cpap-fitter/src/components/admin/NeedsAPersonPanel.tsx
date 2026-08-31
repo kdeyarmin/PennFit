@@ -46,7 +46,7 @@ export function NeedsAPersonPanel() {
     >
       <p className="text-xs mb-3" style={{ color: "hsl(var(--ink-3))" }}>
         These steps do not happen on their own — by design. Nothing below moves
-        until someone decides.
+        until someone decides, except where a row says otherwise.
       </p>
 
       {query.isPending && <Spinner />}
@@ -73,6 +73,19 @@ export function NeedsAPersonPanel() {
                 >
                   {gate.actorLabel} — {gate.why}
                 </p>
+                {gate.partlyAutomated && (
+                  // Without this the count reads as a backlog when part of
+                  // it will clear on its own, and an operator who opens the
+                  // queue and finds it already handled stops believing the
+                  // rest of the panel.
+                  <p
+                    className="text-xs mt-0.5 italic"
+                    style={{ color: "hsl(var(--ink-3))" }}
+                  >
+                    Automated submission is on for this practice, so some of
+                    these will clear without you. This count is an upper bound.
+                  </p>
+                )}
               </div>
               <span
                 className="text-sm font-semibold whitespace-nowrap"

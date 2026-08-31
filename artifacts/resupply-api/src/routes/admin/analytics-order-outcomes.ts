@@ -235,6 +235,7 @@ router.get(
       preShipLoss: funnel.preShipLoss,
       postShipLoss: funnel.postShipLoss,
       inFlight: funnel.inFlight,
+      unverified: funnel.unverified,
       deniedByCarc: funnel.deniedByCarc.map((d) => ({
         ...d,
         // Empty when the code is not in the catalog (or is `uncoded`) —

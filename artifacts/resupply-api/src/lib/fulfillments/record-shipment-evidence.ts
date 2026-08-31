@@ -166,8 +166,28 @@ export async function recordShipmentEvidence(
     .select("id");
   if (claimErr) throw claimErr;
 
-  if ((claimed ?? []).length === 0) {
-    return { ...base, status: "already_recorded" };
+  // A lost claim means the shipment is already recorded — but NOT that
+  // the lifecycle work below ever ran. Steps 2 and 3 are fail-soft, so a
+  // transient error on the first pass leaves a confirmed episode open or
+  // the next cycle anchored to the wrong date, and returning here would
+  // make every later replay a no-op: an operator re-importing the file
+  // gets "already recorded" forever while the damage stays.
+  //
+  // Both steps are idempotent, so re-running them repairs or does
+  // nothing. They must run against the STORED ship date, not this
+  // caller's: the recorded date is the one a claim was built on, and a
+  // re-import carrying a different date must not silently re-anchor the
+  // patient's ladder to it.
+  const alreadyRecorded = (claimed ?? []).length === 0;
+  let effectiveShippedAt = input.shippedAt;
+  if (alreadyRecorded) {
+    const stored = await readStoredShipDate(supabase, input.fulfillmentId);
+    if (!stored) {
+      // Cannot establish what was recorded; repairing blind could anchor
+      // a ladder to a date nobody chose.
+      return { ...base, status: "already_recorded" };
+    }
+    effectiveShippedAt = stored;
   }
 
   // 2. Close the episode. Fail-soft from here down.
@@ -179,7 +199,7 @@ export async function recordShipmentEvidence(
         status: "fulfilled",
         reason: "shipped",
         fulfillmentId: input.fulfillmentId,
-        at: input.shippedAt,
+        at: effectiveShippedAt,
         // The order is normally `confirmed` by the time it ships.
         allowFromConfirmed: true,
       });
@@ -202,7 +222,7 @@ export async function recordShipmentEvidence(
     const next = await openNextCycle({
       orgId: input.orgId,
       episodeId: fulfillment.episode_id,
-      shippedAt: input.shippedAt,
+      shippedAt: effectiveShippedAt,
     });
     base.nextEpisodeId = next.episodeId;
     base.nextEpisodeCreated = next.created;
@@ -219,7 +239,33 @@ export async function recordShipmentEvidence(
     );
   }
 
-  return { ...base, status: "applied" };
+  return { ...base, status: alreadyRecorded ? "already_recorded" : "applied" };
+}
+
+/**
+ * The ship date already on the row, for a replay that lost the atomic
+ * claim. Returns null if it cannot be read — the caller then leaves the
+ * lifecycle alone rather than repairing against a guess.
+ */
+async function readStoredShipDate(
+  supabase: ReturnType<typeof getOrgScopedClient>,
+  fulfillmentId: string,
+): Promise<Date | null> {
+  try {
+    const { data, error } = await supabase
+      .from("fulfillments")
+      .select("shipped_at")
+      .eq("id", fulfillmentId)
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
+    const raw = (data as { shipped_at: string | null } | null)?.shipped_at;
+    if (!raw) return null;
+    const parsed = new Date(raw);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  } catch {
+    return null;
+  }
 }
 
 /**

@@ -24,6 +24,7 @@ import {
   APPROVAL_GATES,
   type ApprovalGate,
 } from "../../lib/approval-gates/registry";
+import { isFeatureEnabled, type FeatureFlagKey } from "../../lib/feature-flags";
 import { logger } from "../../lib/logger";
 import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
@@ -91,6 +92,23 @@ router.get(
       APPROVAL_GATES.map((gate) => countGate(supabase, gate)),
     );
 
+    // A gate can be conditionally automated for this tenant. Resolving it
+    // fails toward "fully manual", which is the safe reading: over-
+    // promising automation is what would leave a queue unworked.
+    const partlyAutomated = new Set<string>();
+    await Promise.all(
+      APPROVAL_GATES.filter((g) => g.conditionalOn).map(async (gate) => {
+        try {
+          if (
+            await isFeatureEnabled(gate.conditionalOn as FeatureFlagKey, orgId)
+          )
+            partlyAutomated.add(gate.key);
+        } catch {
+          // Leave it out: the gate reads as fully manual.
+        }
+      }),
+    );
+
     const gates = APPROVAL_GATES.map((gate, i) => ({
       key: gate.key,
       label: gate.label,
@@ -109,6 +127,15 @@ router.get(
       countable: gate.queue != null,
       /** null = not countable, or the count failed. Never conflate with 0. */
       waiting: counts[i] ?? null,
+      /**
+       * True when a worker moves part of this queue for this tenant, so
+       * `waiting` is a ceiling rather than a backlog. The exact subset
+       * cannot be counted here — the auto-submit predicate spans tables
+       * PostgREST cannot join — and an inflated "needs a person" number
+       * that the operator then finds already handled is how a panel
+       * loses their trust.
+       */
+      partlyAutomated: partlyAutomated.has(gate.key),
     }));
 
     const counted = gates.filter((g) => typeof g.waiting === "number");

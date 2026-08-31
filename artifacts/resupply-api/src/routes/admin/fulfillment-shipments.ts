@@ -273,13 +273,31 @@ router.post(
       return;
     }
 
-    const { error: updErr } = await supabase
+    // `.is("shipped_at", null)` makes the cancel and a concurrent shipment
+    // mutually exclusive — Postgres serialises them and one matches zero
+    // rows. Reading the affected rows back is what makes that guard
+    // MEAN anything: a shipment landing between the check above and this
+    // update leaves the fulfillment shipped, and without this the route
+    // would go on to close the episode `canceled` and answer 200, leaving
+    // a shipped order attached to a cancelled cycle and a claim dated
+    // against product the ladder believes was never sent.
+    const { data: cancelled, error: updErr } = await supabase
       .from("fulfillments")
       .update({ status: FULFILLMENT_CANCELLED, updated_at: nowIso })
       .eq("id", id.data)
-      .is("shipped_at", null);
+      .is("shipped_at", null)
+      .select("id");
     if (updErr) {
       res.status(503).json({ error: "write_failed" });
+      return;
+    }
+    if ((cancelled ?? []).length === 0) {
+      // Same answer as the pre-check above, for the same reason.
+      res.status(409).json({
+        error: "already_shipped",
+        message:
+          "that order shipped while you were cancelling it. Cancel it in PacWare and process a return instead.",
+      });
       return;
     }
 

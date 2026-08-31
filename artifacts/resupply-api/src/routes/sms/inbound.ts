@@ -79,6 +79,7 @@ import {
   readSmsConfigOrNull,
 } from "../../lib/messaging/messaging-config";
 import { closeEpisode } from "../../lib/episodes/close-episode";
+import { reopenCycleAfterDecline } from "../../lib/episodes/reopen-after-decline";
 import {
   pausePatient,
   reactivatePatient,
@@ -1264,6 +1265,16 @@ async function dispatchIntent(input: DispatchInput): Promise<string> {
           patientId: input.patientId,
           status: "declined",
           reason: "patient_declined",
+        });
+        // "We will not ship anything right now" — the reply below promises
+        // we will be back. Nothing else opens a cycle after a decline, so
+        // without this the promise is false and the patient silently
+        // leaves resupply. Anchored on now: they have just told us this
+        // cycle is not wanted, so the next ask is a cadence from today.
+        await reopenCycleAfterDecline({
+          orgId: input.orgId,
+          episodeId,
+          at: new Date(),
         });
       }
 

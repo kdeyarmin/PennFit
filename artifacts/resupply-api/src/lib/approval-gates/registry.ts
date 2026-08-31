@@ -60,6 +60,18 @@ export interface ApprovalGate {
     /** Optional `.is(column, null)` on top of `match`. */
     isNull?: string;
   } | null;
+  /**
+   * A feature flag that, when ON for a tenant, moves PART of this queue
+   * without a person.
+   *
+   * The panel's premise is "nothing below moves until someone decides",
+   * and for every other gate that is unconditionally true. This one
+   * cannot be counted exactly — the auto-submit worker's predicate is
+   * preflight-clean plus fresh active eligibility, which lives in tables
+   * PostgREST cannot join here — so the count is a ceiling rather than a
+   * backlog, and saying so is better than quietly overstating it.
+   */
+  conditionalOn?: string;
 }
 
 /**
@@ -184,6 +196,11 @@ export const APPROVAL_GATES: readonly ApprovalGate[] = [
       table: "insurance_claims",
       match: { status: "draft" },
     },
+    // With this on, the worker takes the preflight-clean, freshly
+    // eligible subset without anyone clicking. The count below cannot
+    // exclude them, so it is reported as an upper bound instead of
+    // claiming every draft is waiting on a biller.
+    conditionalOn: "billing.auto_submit_claims",
   },
   {
     key: "secondary_cob_submit",

@@ -63,6 +63,24 @@ export const SHIP_GRACE_DAYS = 14;
 export const SHIP_GRACE_DAYS_KEY = "RESUPPLY_SHIP_EVIDENCE_GRACE_DAYS";
 const GRACE_MIN = 3;
 const GRACE_MAX = 90;
+/**
+ * How far back of the grace cutoff the grace pass looks.
+ *
+ * The pass advances the EPISODE and deliberately leaves the fulfillment
+ * alone — no `shipped_at` (that date would become a claim's date of
+ * service) and no status change. So every row it handles keeps matching
+ * its own query forever, and without a lower bound a tenant with no
+ * shipment feed — precisely the tenant this pass exists for — reloads its
+ * entire historical queued population every night, plus one episode read
+ * per row. That grows without bound while doing nothing.
+ *
+ * A row only ever needs to be seen once, so a window is enough. Anything
+ * older than this was advanced on a previous run, or its episode was
+ * closed by the expiry pass below. The cost of the bound is that a run of
+ * outages longer than the window would strand rows — at half a year, that
+ * is a bigger problem than a stale ladder.
+ */
+const GRACE_LOOKBACK_DAYS = 180;
 
 /**
  * Parse + clamp the tenant's grace window. Pure, so the clamping is
@@ -164,6 +182,11 @@ export async function runResupplyCycleSweepForOrg(
   const graceCutoff = new Date(
     now.getTime() - graceDays * DAY_MS,
   ).toISOString();
+  // Lower bound: see GRACE_LOOKBACK_DAYS. Without it this pass rescans
+  // every order it has ever advanced, every night, forever.
+  const graceFloor = new Date(
+    now.getTime() - (graceDays + GRACE_LOOKBACK_DAYS) * DAY_MS,
+  ).toISOString();
 
   const stale: Array<{
     id: string;
@@ -177,6 +200,7 @@ export async function runResupplyCycleSweepForOrg(
       .eq("status", "queued")
       .is("shipped_at", null)
       .lte("created_at", graceCutoff)
+      .gte("created_at", graceFloor)
       .order("id", { ascending: true })
       .range(from, from + PAGE_SIZE - 1);
     if (error) throw error;

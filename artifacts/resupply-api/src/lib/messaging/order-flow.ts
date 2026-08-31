@@ -69,6 +69,7 @@ import { isFeatureEnabled } from "../feature-flags";
 import { recordDispense } from "../catalog/dispense";
 import { closeOpenEpisodesForPatient } from "../episodes/close-episode";
 import { openOutreachEpisode } from "../episodes/open-outreach-episode";
+import { shouldOpenNextCycleAtConfirm } from "../episodes/ship-evidence-gate";
 import { logger } from "../logger";
 
 export interface NotEligibleEntitlement {
@@ -573,19 +574,39 @@ export async function placeResupplyOrderForConversation(
     });
   }
 
-  // Open the NEXT cycle so the ladder continues after this confirm.
+  // Open the NEXT cycle so the ladder continues after this confirm —
+  // unless this tenant has asked to wait for proof of shipment.
+  //
+  // OFF (the default, and what every tenant does today): open now, dated
+  // from the confirm. `recordShipmentEvidence` later re-anchors it to the
+  // real ship date, so the confirm-time date is a provisional estimate
+  // that gets corrected.
+  //
+  // ON: leave it to the two producers that KNOW when the order left —
+  // `recordShipmentEvidence` (dated from the ship) and, if evidence never
+  // arrives, the grace sweep. Nobody stops being reminded either way;
+  // this only decides whether the first estimate is made at all, which
+  // matters for a tenant whose orders sit for weeks before shipping.
+  //
+  // See `shouldOpenNextCycleAtConfirm` for why a failed flag read lands on
+  // "open now": that mistake corrects itself when evidence arrives, and
+  // the other one is silent.
+  const openNow = await shouldOpenNextCycleAtConfirm(orgId);
+
   // Best-effort: the ship already happened; a failed next-episode write
   // is logged for ops, never turns a successful confirm into a failure.
   try {
-    await openOutreachEpisode({
-      orgId,
-      patientId: episode.patient_id,
-      prescriptionId: episode.prescription_id,
-      cadenceDays:
-        typeof rx.cadence_days === "number" && rx.cadence_days > 0
-          ? rx.cadence_days
-          : 90,
-    });
+    if (openNow) {
+      await openOutreachEpisode({
+        orgId,
+        patientId: episode.patient_id,
+        prescriptionId: episode.prescription_id,
+        cadenceDays:
+          typeof rx.cadence_days === "number" && rx.cadence_days > 0
+            ? rx.cadence_days
+            : 90,
+      });
+    }
   } catch (err) {
     logger.warn(
       {

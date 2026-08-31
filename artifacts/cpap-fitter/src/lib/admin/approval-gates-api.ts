@@ -20,6 +20,9 @@ export interface ApprovalGateRow {
   /** `null` when there is no single countable queue, or the count failed.
    *  Never render this as zero; read `countable` to tell the two apart. */
   waiting: number | null;
+  /** A worker moves part of this queue for this tenant, so `waiting` is a
+   *  ceiling rather than a backlog. */
+  partlyAutomated: boolean;
 }
 
 export interface ApprovalGatesResponse {

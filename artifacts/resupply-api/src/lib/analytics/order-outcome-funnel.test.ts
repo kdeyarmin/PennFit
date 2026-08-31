@@ -94,27 +94,65 @@ describe("aggregateOrderOutcomeFunnel — stage nesting", () => {
   });
 });
 
-describe("aggregateOrderOutcomeFunnel — fulfilled has two arms", () => {
-  it("counts a cycle the grace sweep assumed shipped", () => {
+describe("aggregateOrderOutcomeFunnel — shipped means shipped", () => {
+  it("does not call a grace-sweep advance a shipment", () => {
     // The sweep closes `fulfilled` / `assumed_shipped` and NEVER stamps
-    // shipped_at (that date becomes a claim's date of service). Requiring
-    // ship evidence would make every no-ship-feed tenant look like a
-    // total conversion failure.
+    // shipped_at, because that date becomes a claim's date of service.
+    // Reading the status alone would launder "we gave up waiting" into
+    // "it shipped" — and then, with no claim against it, report it as
+    // shipped-but-unbilled product loss. Two expensive numbers, both
+    // about product that may not exist.
     const r = run({
       episodes: [episode({ closedReason: "assumed_shipped" })],
       fulfillments: [fulfillment({ shippedAt: null, status: "queued" })],
     });
-    expect(r.stages.fulfilled).toBe(1);
+    expect(r.stages.fulfilled).toBe(0);
+    expect(r.postShipLoss.unbilled).toBe(0);
+    expect(r.unverified.assumedShipped).toBe(1);
+  });
+
+  it("still counts the patient's agreement as confirmed", () => {
+    // The other half of the trade. A tenant with no ship feed must not
+    // read as a total conversion failure — the patient really did say
+    // yes, and only what happened AFTER that is unknown.
+    const r = run({
+      episodes: [episode({ closedReason: "assumed_shipped" })],
+      fulfillments: [fulfillment({ shippedAt: null, status: "queued" })],
+    });
+    expect(r.stages.eligible).toBe(1);
+    expect(r.stages.confirmed).toBe(1);
   });
 
   it("counts a real ship whose episode close-out failed", () => {
     // recordShipmentEvidence closes the episode fail-soft; the box still
-    // left the building.
+    // left the building, so evidence alone is enough.
     const r = run({
       episodes: [episode({ status: "confirmed", closedReason: null })],
       fulfillments: [fulfillment()],
     });
     expect(r.stages.fulfilled).toBe(1);
+    expect(r.unverified.assumedShipped).toBe(0);
+  });
+
+  it("trusts evidence over an assumed close-out", () => {
+    // Late-arriving ship evidence on a cycle the sweep already advanced.
+    // The evidence is the stronger fact and must win, or a tenant that
+    // connects a feed keeps a permanent unverified tail.
+    const r = run({
+      episodes: [episode({ closedReason: "assumed_shipped" })],
+      fulfillments: [fulfillment()],
+    });
+    expect(r.stages.fulfilled).toBe(1);
+    expect(r.unverified.assumedShipped).toBe(0);
+  });
+
+  it("keeps an ordinary shipped close-out in the shipped stage", () => {
+    const r = run({
+      episodes: [episode()],
+      fulfillments: [fulfillment()],
+    });
+    expect(r.stages.fulfilled).toBe(1);
+    expect(r.unverified.assumedShipped).toBe(0);
   });
 });
 

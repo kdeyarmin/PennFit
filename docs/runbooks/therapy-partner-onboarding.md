@@ -114,6 +114,14 @@ window (30 days is a reasonable first pass), then run it through
 `/admin/integrations` → **Reconcile against portal**. The UI maps the
 export's columns; the server diffs.
 
+**Set the date range to the window your export actually covers.** Patient
+presence and device serials are compared without it, but night counts and
+average usage are not: our therapy nights are a rolling history and the
+portal's export is a fixed period, and comparing the two over different
+spans would flag every patient in the practice. With no range given, those
+two comparisons are skipped and the result says so in as many words —
+rather than reporting zero discrepancies it never looked for.
+
 What it reports:
 
 | Finding                | What it usually means                                                                                                |
@@ -123,6 +131,12 @@ What it reports:
 | Device serial mismatch | The machine changed and nobody told us. Affects which supplies are right for them.                                   |
 | Night count mismatch   | We are behind. Compliance decisions and resupply eligibility are made from this number.                              |
 | Usage mismatch         | Same, on the average.                                                                                                |
+
+Night counts and usage are read from `patient_therapy_nights` — the same
+rollup the compliance rules read — so this compares the portal against the
+number the practice actually acts on, not a second copy of it. A night the
+device never reported is a gap, not a zero, and counts toward neither the
+tally nor the average.
 
 Tolerances are deliberate: one night and fifteen minutes. The portal and
 the sync run at different times in different timezones, so the most

@@ -99,6 +99,21 @@ export interface OrderOutcomeFunnelResult {
     addressHold: number;
     claimOpen: number;
   };
+  /**
+   * Cycles the grace sweep advanced with NO shipment evidence.
+   *
+   * Neither shipped nor lost: the sweep deliberately never invents a ship
+   * date, so nobody knows whether anything left the warehouse. Counted
+   * apart from `stages.fulfilled` because calling it shipped would then
+   * count it as shipped-but-unbilled product loss — an expensive number
+   * reported against product that may not exist.
+   *
+   * The size of this bucket IS the argument for connecting a ship feed:
+   * it is exactly the population the platform cannot account for.
+   */
+  unverified: {
+    assumedShipped: number;
+  };
 }
 
 /** Claim statuses that mean the payer accepted it (or better). */
@@ -179,6 +194,7 @@ export function aggregateOrderOutcomeFunnel(input: {
     rejected: 0,
     closedUnpaid: 0,
   };
+  const unverified = { assumedShipped: 0 };
   const inFlight = {
     awaitingResponse: 0,
     confirmedUnshipped: 0,
@@ -200,12 +216,21 @@ export function aggregateOrderOutcomeFunnel(input: {
       ep.status === "fulfilled" ||
       fulfillments.length > 0;
 
-    // FULFILLED: the supplies went out. Both arms matter. A cycle the
-    // grace sweep closed `assumed_shipped` has no `shipped_at` (the sweep
-    // must never invent one), and a real ship whose episode close-out
-    // failed has no `fulfilled` status.
+    // FULFILLED: the supplies went out, and we KNOW they did.
+    //
+    // Two arms, and one deliberate exclusion. A real ship whose episode
+    // close-out lost a race has evidence but no `fulfilled` status, so
+    // evidence alone is enough. A `fulfilled` status is enough on its own
+    // too — EXCEPT when the grace sweep put it there, because that close
+    // means "we gave up waiting", not "it shipped". The sweep must never
+    // invent a ship date, and this must not invent one on its behalf.
     const hasShipEvidence = fulfillments.some((f) => f.shippedAt !== null);
-    const isFulfilled = ep.status === "fulfilled" || hasShipEvidence;
+    const isAssumed =
+      !hasShipEvidence &&
+      ep.status === "fulfilled" &&
+      ep.closedReason === "assumed_shipped";
+    const isFulfilled =
+      hasShipEvidence || (ep.status === "fulfilled" && !isAssumed);
 
     if (!isConfirmed) {
       // Ended, or still moving, before the patient ever agreed.
@@ -224,6 +249,13 @@ export function aggregateOrderOutcomeFunnel(input: {
     }
 
     stages.confirmed += 1;
+
+    if (isAssumed) {
+      // The patient agreed — that much is real, so it counts as
+      // confirmed. Everything after this stage is unknown for them.
+      unverified.assumedShipped += 1;
+      continue;
+    }
 
     if (!isFulfilled) {
       // Confirmed and sitting there. Not a loss yet — but this is the
@@ -292,5 +324,6 @@ export function aggregateOrderOutcomeFunnel(input: {
       .map(([code, count]) => ({ code, count }))
       .sort((a, b) => b.count - a.count || a.code.localeCompare(b.code)),
     inFlight,
+    unverified,
   };
 }
