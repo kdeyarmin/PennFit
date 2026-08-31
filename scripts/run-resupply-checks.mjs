@@ -15,6 +15,14 @@ const CHECKS = [
   // (public.orders, the fitter metrics views) that omits its org_id filter —
   // the exact class of leak that shipped twice. See check-raw-org-scope.sh.
   "scripts/check-raw-org-scope.sh",
+  // Every gate in the human-approval registry must lead to a real page.
+  // The registry lives in the API package and the routes are JSX in the
+  // SPA; neither can import the other, and there is no runtime behaviour
+  // to assert without booting the router. The failure is quiet and real:
+  // the "Needs a person" panel shows a number, an operator who is
+  // already behind clicks it, and lands on a 404. See
+  // check-approval-gate-links.sh.
+  "scripts/check-approval-gate-links.sh",
 ];
 
 function commandWorks(command) {
