@@ -60,6 +60,7 @@ import analyticsRouter from "./admin/analytics.js";
 import reorderRemindersRouter from "./admin/reorder-reminders.js";
 import analyticsOutreachAttributionRouter from "./admin/analytics-outreach-attribution.js";
 import analyticsOrderOutcomesRouter from "./admin/analytics-order-outcomes.js";
+import approvalGatesRouter from "./admin/approval-gates.js";
 import analyticsMarginRouter from "./admin/analytics-margin.js";
 import analyticsRevenueBySourceRouter from "./admin/analytics-revenue-by-source.js";
 import analyticsChannelEngagementRouter from "./admin/analytics-channel-engagement.js";
@@ -926,6 +927,11 @@ router.use(analyticsOutreachAttributionRouter);
 // first surface joining the resupply funnel to the claim funnel; the join
 // key has existed since migration 0118 and nothing used it.
 router.use(analyticsOrderOutcomesRouter);
+
+// /admin/approval-gates — every transition that requires a person, with
+// live counts. Read-only and changes no gate: the posture was already
+// deliberate, it was just stated in a dozen places and nowhere as a set.
+router.use(approvalGatesRouter);
 // /admin/analytics/margin — gross-margin / COGS dashboard (Owner #1).
 // Folds the F1 cost snapshots on shop_order_items through the shared
 // margin core; keeps the costed/uncosted revenue split explicit.
