@@ -59,6 +59,7 @@ import assetRecoveryRouter from "./admin/asset-recovery.js";
 import analyticsRouter from "./admin/analytics.js";
 import reorderRemindersRouter from "./admin/reorder-reminders.js";
 import analyticsOutreachAttributionRouter from "./admin/analytics-outreach-attribution.js";
+import analyticsOrderOutcomesRouter from "./admin/analytics-order-outcomes.js";
 import analyticsMarginRouter from "./admin/analytics-margin.js";
 import analyticsRevenueBySourceRouter from "./admin/analytics-revenue-by-source.js";
 import analyticsChannelEngagementRouter from "./admin/analytics-channel-engagement.js";
@@ -919,6 +920,12 @@ router.use(analyticsChannelEngagementRouter);
 // reminders / clinical outreach, the share who placed a fulfillment
 // within N days (closed-loop conversion by channel).
 router.use(analyticsOutreachAttributionRouter);
+
+// /admin/analytics/order-outcomes — eligible -> confirmed -> fulfilled ->
+// claimed -> accepted -> paid, with the drop-out reason at each step. The
+// first surface joining the resupply funnel to the claim funnel; the join
+// key has existed since migration 0118 and nothing used it.
+router.use(analyticsOrderOutcomesRouter);
 // /admin/analytics/margin — gross-margin / COGS dashboard (Owner #1).
 // Folds the F1 cost snapshots on shop_order_items through the shared
 // margin core; keeps the costed/uncosted revenue split explicit.
