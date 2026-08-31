@@ -80,19 +80,58 @@ POST /resupply-api/admin/integrations/<source>/validate
 
 (`<source>` is `resmed_airview`, `philips_care`, or `react_health`.)
 
-Four named steps come back, and the first failure tells you which half of
-the problem you have:
+Nine named steps come back, and the first failure tells you exactly which
+half of the problem you have. Each step reports **pass / fail / skipped /
+no_data**, and the difference between the last two matters: a vendor that
+answered and had nothing is not a broken endpoint.
 
-| Step            | Failing means                                                                                                                                           |
-| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `configured`    | Credentials are not set for this practice.                                                                                                              |
-| `authenticated` | The vendor rejected the credentials. Rotate or re-issue; the paths are not the problem.                                                                 |
-| `fetched`       | Credentials are fine and the request failed. `not_found` usually means the **path shape** is wrong for this instance — not that the patient is missing. |
-| `schema`        | The vendor answered with something we cannot map. The response has changed shape; the named fields say where.                                           |
+| Step              | Failing means                                                                                                                                                                                          |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `configured`      | Credentials are not set for this practice.                                                                                                                                                             |
+| `authenticated`   | **401.** The vendor rejected the credentials. Rotate or re-issue; the paths are not the problem.                                                                                                       |
+| `authorized`      | **403.** The credentials are _fine_ and this account is not entitled to the resource. Almost always a missing partnership agreement or an un-provisioned scope. **Do not rotate the secret.**          |
+| `patient_lookup`  | The patient endpoint failed. `endpoint_not_found` means the **path shape** is wrong for this instance; `no_data` on this step means the vendor has no such patient — check the id, not the connection. |
+| `usage_data`      | Therapy nights came back broken. `no_data` here is normal for a new patient.                                                                                                                           |
+| `compliance_data` | The compliance summary came back broken. Several vendors gate this separately from the patient record.                                                                                                 |
+| `device_settings` | Device settings came back broken.                                                                                                                                                                      |
+| `pagination`      | The night count landed on a suspiciously round number for the window — what a truncated page looks like. Confirm the vendor is not capping the response.                                               |
+| `schema`          | The vendor answered with something we cannot map. The response has changed shape; the named fields say where.                                                                                          |
+
+Every failed step carries a **remedy** sentence saying what to do about
+it, drawn from the classified error category — so the report distinguishes
+"rotate the secret", "call the vendor about the agreement", "the URL is
+wrong", and "they changed their schema", which used to all read the same.
 
 On success it also reports what came back — settings, compliance, night
 count, supply count — so you can see a connection that is technically up
-and returning nothing.
+and returning nothing. A `partial` list names any sub-resource the vendor
+refused while the patient record itself succeeded; a snapshot missing its
+compliance summary because that ONE endpoint 403'd is not a patient with
+no compliance data.
+
+### The outcome is recorded
+
+Every run writes `resupply.integration_connector_status` (migration
+0542), which is what `/admin/integrations` reads. It keeps **attempted**
+and **succeeded** timestamps separate, because "last tried at 04:30, last
+succeeded three weeks ago" is the shape of a connector that has been
+broken for three weeks and a single `last_run_at` cannot say it.
+
+| Connector status | Meaning                                                                                                   |
+| ---------------- | --------------------------------------------------------------------------------------------------------- |
+| `unvalidated`    | Credentials may be present; **nothing has proved they work**. The default, and the honest starting state. |
+| `not_configured` | No credentials for this practice.                                                                         |
+| `live_validated` | A real vendor call succeeded here. **The only value that supports a "Production Validated" claim.**       |
+| `degraded`       | It worked before and is failing now, or returns partial data.                                             |
+| `failing`        | Consecutive failures.                                                                                     |
+
+The database refuses a `live_validated` row with no success timestamp, so
+"we marked it validated but nothing ever succeeded" is not expressible.
+
+A nightly sync that happens to succeed **cannot** promote a connector to
+`live_validated` — that is reserved for the deliberate, attributed probe
+an operator ran and kept evidence for. A sync can only refresh a
+validated connector or demote one.
 
 The response carries step outcomes and vendor error codes only. No
 patient payload is stored: proving the pipe should not put real therapy
@@ -150,10 +189,45 @@ vendor-side change.
 
 ---
 
+## Step 3b — automated live tests (optional, opt-in)
+
+Once non-production credentials exist, the validator can be run as a test:
+
+```bash
+INTEGRATION_LIVE_TESTS=1 \
+INTEGRATION_LIVE_SOURCE=resmed_airview \
+INTEGRATION_LIVE_ORG_ID=<tenant uuid in a NON-PRODUCTION database> \
+INTEGRATION_LIVE_PATIENT_ID=<the vendor's designated test patient> \
+pnpm --filter @workspace/resupply-api exec vitest run \
+  src/lib/integrations/live-connection.live.test.ts
+```
+
+It is **off by default** and **skips visibly** without those variables.
+That is deliberate: a live test that quietly passes without credentials
+is worse than no live test, because it makes a connector look validated
+when nothing was contacted. Every call is a GET; the suite refuses to run
+with `DEPLOY_ENV=production`.
+
+---
+
 ## Step 4 — watch it stay working
 
-- `/admin/integrations` shows per-adapter availability and 7-day ok/error
-  counts.
+- `/admin/integrations` shows per-adapter **availability** and **connector
+  status** side by side, and the pair is the point. `availability()` reads
+  environment variables — a revoked secret, a missing entitlement and a
+  wrong endpoint path all pass it. Connector status is what happened when
+  we actually called.
+- Failures are **classified**, and the classification decides what
+  happens next: a configuration failure (bad credential, missing
+  entitlement, wrong path, schema drift) is **never retried**, because
+  retrying a wrong client secret across a thousand links is how an
+  account gets locked out by the vendor. Transient failures retry with
+  full jitter, and a per-`(source, tenant)` circuit breaker opens after
+  five consecutive unhealthy results so one broken credential cannot
+  hammer a vendor for an entire run.
+- A vendor that legitimately has no data for a patient **never** trips the
+  breaker or marks the connector unhealthy.
+- 7-day ok/error counts remain, per adapter.
 - A snapshot now records `partial` when the vendor answered but left a
   sub-resource empty (no settings, or no nights in the window). Before
   this, a patient whose therapy feed had gone quiet was recorded
@@ -175,3 +249,24 @@ Do **not** loosen the snapshot schema to make an error go away. It is
 what stops a half-mapped response being persisted as though it were
 complete, and a partially-mapped therapy feed is worse than a missing
 one: it looks like data.
+
+---
+
+## Evidence to retain per vendor
+
+Nothing in this repository has been validated against a live vendor
+instance. Record these in
+[`../reviews/external-validation-checklist.md`](../reviews/external-validation-checklist.md);
+a connector is not "Production Validated" until all five exist.
+
+| #   | Evidence                                                                          | Where it comes from                                          |
+| --- | --------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| 1   | The signed agreement + BAA reference                                              | The vendor, out of band                                      |
+| 2   | The vendor's sample response for each resource                                    | Ask during Step 1 — a doc URL is not a sample                |
+| 3   | A validation run whose ladder is green to `schema`                                | `POST /admin/integrations/<source>/validate`; keep the JSON  |
+| 4   | `integration_connector_status.status = 'live_validated'` with a success timestamp | `/admin/integrations`                                        |
+| 5   | One reconciliation run against a portal export, with the discrepancies explained  | `/admin/integrations` → Reconcile; keep the sanitized report |
+
+Until (3) and (4) exist for a vendor, the honest label is **fixture
+validated only** — the adapters are exercised by contract tests against
+sanitized fixtures, and nothing more.

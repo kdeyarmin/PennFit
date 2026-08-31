@@ -34,6 +34,7 @@ import {
   type PortalPatientRow,
 } from "@workspace/resupply-integrations";
 
+import { recordReconciliationOutcome } from "../../lib/integrations/connector-status";
 import { logger } from "../../lib/logger";
 import { validateIntegrationConnection } from "../../lib/integrations/validate-connection";
 import {
@@ -219,11 +220,16 @@ router.post(
       return;
     }
 
+    // The validator records its own outcome to
+    // `integration_connector_status` (migration 0542), so the answer to
+    // "has this connector ever actually worked here, and when?" survives
+    // the response being closed.
     const result = await validateIntegrationConnection({
       orgId,
       source: source.data,
       partnerPatientId: parsed.data.partnerPatientId,
       windowDays: parsed.data.windowDays,
+      actorEmail: req.adminEmail ?? null,
     });
 
     await logAudit({
@@ -432,6 +438,15 @@ router.post(
         "reconcile: could not record the run",
       );
     }
+
+    // Stamp the connector's own status row too, so the integrations
+    // health page can say when this source was last reconciled without
+    // joining the runs table. Fail-soft for the same reason as above.
+    await recordReconciliationOutcome({
+      orgId,
+      source: source.data,
+      status: runId ? "completed" : "failed",
+    });
 
     await logAudit({
       action: "integration.reconciled",

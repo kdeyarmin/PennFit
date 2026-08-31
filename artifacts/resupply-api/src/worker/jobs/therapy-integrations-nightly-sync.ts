@@ -31,8 +31,10 @@ import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 import {
   type IntegrationSource,
   integrationSnapshotSchema,
+  type AdapterError,
 } from "@workspace/resupply-integrations";
 
+import { recordSyncOutcome } from "../../lib/integrations/connector-status.js";
 import { getIntegrationAdaptersForOrg } from "../../lib/integrations/registry.js";
 import { persistTherapyNights } from "../../lib/integrations/persist-nights.js";
 import { logger } from "../../lib/logger.js";
@@ -280,6 +282,33 @@ export async function runTherapyNightlySyncForOrg(
     .limit(MAX_LINKS_PER_RUN);
   if (error) throw error;
 
+  // Per-source outcome, so the connector status row can say which VENDOR
+  // is broken rather than only that the run failed. `lastError` keeps the
+  // classified category — the distinction between a 401 (rotate the
+  // secret) and a 403 (the account lacks an entitlement) is the whole
+  // reason the vocabulary was widened.
+  const bySource = new Map<
+    IntegrationSource,
+    { ok: number; failed: number; lastError: AdapterError | null }
+  >();
+  const tally = (
+    source: IntegrationSource,
+    outcome: "ok" | "failed",
+    error?: AdapterError,
+  ): void => {
+    const entry = bySource.get(source) ?? {
+      ok: 0,
+      failed: 0,
+      lastError: null,
+    };
+    if (outcome === "ok") entry.ok += 1;
+    else {
+      entry.failed += 1;
+      if (error) entry.lastError = error;
+    }
+    bySource.set(source, entry);
+  };
+
   for (const link of links ?? []) {
     result.scanned += 1;
     const source = link.source as IntegrationSource;
@@ -344,6 +373,7 @@ export async function runTherapyNightlySyncForOrg(
             { onConflict: "patient_id,source" },
           );
         if (errSnapErr) throw errSnapErr;
+        tally(source, "failed", fetched.error);
         const { error: errStampErr } = await supabase
           .from("patient_therapy_links")
           .update({
@@ -403,6 +433,7 @@ export async function runTherapyNightlySyncForOrg(
             { onConflict: "patient_id,source" },
           );
         if (invalidSnapErr) throw invalidSnapErr;
+        tally(source, "failed", "mapping_failed");
         const { error: invalidStampErr } = await supabase
           .from("patient_therapy_links")
           .update({
@@ -472,14 +503,29 @@ export async function runTherapyNightlySyncForOrg(
         );
       }
       result.refreshed += 1;
+      tally(source, "ok");
     } catch (err) {
       logger.warn(
         { err, link_id: link.id, source },
         "nightly-sync: link sync failed (adapter fetch or persistence write threw)",
       );
       result.failed += 1;
+      tally(source, "failed");
     }
     await sleep(THROTTLE_MS);
+  }
+
+  // Stamp each source's connector status. Deliberately cannot promote a
+  // connector to `live_validated`: a sync that happens to succeed is not
+  // the deliberate, attributed validation an operator ran and kept
+  // evidence for. It can only refresh a validated one, or demote it.
+  for (const [source, counts] of bySource) {
+    await recordSyncOutcome({
+      orgId,
+      source,
+      ok: counts.ok > 0 && counts.failed === 0,
+      errorCategory: counts.lastError,
+    });
   }
 
   await logAudit({

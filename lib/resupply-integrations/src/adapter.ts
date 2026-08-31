@@ -2,6 +2,7 @@
 // unified package so the API layer can import a single interface
 // type and switch on `source`.
 
+import type { AdapterError } from "./errors";
 import type {
   AdapterAvailability,
   IntegrationSnapshot,
@@ -16,15 +17,31 @@ export interface FetchSnapshotInput {
 }
 
 export type FetchSnapshotResult =
-  | { ok: true; snapshot: IntegrationSnapshot }
+  | {
+      ok: true;
+      snapshot: IntegrationSnapshot;
+      /**
+       * Sub-resources the vendor did not return, when the primary
+       * patient fetch succeeded but a secondary call did not.
+       *
+       * A snapshot missing its compliance summary because that one
+       * endpoint 403'd is NOT the same as a patient with no compliance
+       * data, and reporting them identically is how a half-working
+       * connector looks healthy for months. Absent or empty means the
+       * fetch was complete.
+       */
+      partial?: Array<{
+        resource: "settings" | "compliance" | "nights" | "supplies";
+        error: AdapterError;
+      }>;
+    }
   | { ok: false; error: AdapterError };
 
-export type AdapterError =
-  | "auth_failed"
-  | "not_found"
-  | "rate_limited"
-  | "unavailable"
-  | "unknown_error";
+// The failure vocabulary lives in ./errors.ts, which also owns the
+// class each one belongs to (configuration / transient / no_data) and
+// the remedy an operator should read. Re-exported here so the historical
+// `import { AdapterError } from "./adapter"` keeps working.
+export type { AdapterError } from "./errors";
 
 export interface IntegrationAdapter {
   readonly source: IntegrationSource;

@@ -1024,6 +1024,35 @@ export interface Database {
         Update: Partial<Database["resupply"]["Tables"]["episodes"]["Row"]>;
         Relationships: [];
       };
+      integration_connector_status: {
+        Row: {
+          id: string;
+          org_id: string;
+          source: string;
+          status: string;
+          last_validation_attempt_at: string | null;
+          last_validation_success_at: string | null;
+          last_sync_attempt_at: string | null;
+          last_sync_success_at: string | null;
+          last_error_category: string | null;
+          last_error_step: string | null;
+          vendor_api_version: string | null;
+          partial_resources: Json;
+          consecutive_failures: number;
+          last_reconciliation_at: string | null;
+          last_reconciliation_status: string | null;
+          validated_by_email: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["integration_connector_status"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["integration_connector_status"]["Row"]
+        >;
+        Relationships: [];
+      };
       pacware_shipment_imports: {
         Row: {
           id: string;
