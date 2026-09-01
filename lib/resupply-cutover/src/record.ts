@@ -183,6 +183,42 @@ export async function readLatestCutoverRecord(
 }
 
 /**
+ * The most recent record that actually CHANGED the flag — an `enable` or
+ * a `rollback`, never an `evaluate`.
+ *
+ * `readLatestCutoverRecord` answers "what happened last", which is the
+ * right question for freshness but the wrong one for "was this flag
+ * turned on through the workflow". A perfectly-followed sequence of
+ * assess → enable → assess again leaves an `evaluate` newest, and reading
+ * that as "no enable record" accuses an operator of bypassing the gate
+ * they just used. Re-assessing an enabled flag is normal and encouraged;
+ * it must not look like a bypass.
+ *
+ * @param orgId - Tenant.
+ * @param flagKey - Cutover flag.
+ * @returns The newest `enable`/`rollback` record, or null if the flag has
+ *   never been moved through this workflow.
+ */
+export async function readLatestCutoverTransition(
+  orgId: string,
+  flagKey: CutoverFlagKey,
+): Promise<CutoverRecord | null> {
+  const supabase = getOrgScopedClient(orgId);
+  const { data, error } = await supabase
+    .from("resupply_cutover_records")
+    .select(
+      "id, org_id, flag_key, action, previous_value, new_value, readiness_status, report, evidence_id, rollback_reason, actor_email, evaluated_at, created_at",
+    )
+    .eq("flag_key", flagKey)
+    .in("action", ["enable", "rollback"])
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  return data ? rowToRecord(data as unknown as Row) : null;
+}
+
+/**
  * Cutover history for a tenant/flag, newest first.
  *
  * @param orgId - Tenant.

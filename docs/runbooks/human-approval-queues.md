@@ -104,6 +104,15 @@ remembering.
 | Chase outstanding paperwork before billing   | Biller    | 168h | `/admin/billing/bill-hold`        |
 | Work a denial                                | Biller    | 240h | `/admin/billing/denials-worklist` |
 
+**Work a denial** ages from `insurance_claims.decision_at` — when the
+payer denied it — not from when the claim was created. A claim is created,
+submitted, adjudicated and only then denied, often two months apart, so
+aging it from `created_at` reported every denial as already past its
+10-day SLA and made the gate permanently red no matter how quickly a
+biller worked it. If a denied claim carries no `decision_at`, it still
+counts toward the queue SIZE but is excluded from the age reading rather
+than being treated as the oldest item.
+
 ### Priority 3 — standing work
 
 | Gate                        | Owner     | SLA  | Where                      |

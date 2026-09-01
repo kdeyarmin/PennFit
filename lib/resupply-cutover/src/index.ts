@@ -32,6 +32,7 @@ export {
   hasFreshReadyAssessment,
   listCutoverRecords,
   readLatestCutoverRecord,
+  readLatestCutoverTransition,
   resolveReadinessState,
   writeCutoverRecord,
   type CutoverAction,

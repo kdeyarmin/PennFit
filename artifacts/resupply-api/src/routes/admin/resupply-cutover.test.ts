@@ -61,6 +61,9 @@ const flagStateMock = vi.hoisted(() => vi.fn<() => Promise<boolean>>());
 const latestRecordMock = vi.hoisted(() =>
   vi.fn<() => Promise<unknown | null>>(),
 );
+const latestTransitionMock = vi.hoisted(() =>
+  vi.fn<() => Promise<unknown | null>>(),
+);
 const writeRecordMock = vi.hoisted(() =>
   vi.fn<(input: Record<string, unknown>) => Promise<{ id: string }>>(),
 );
@@ -75,6 +78,7 @@ vi.mock("@workspace/resupply-cutover", async () => {
     assessReadiness: assessMock,
     readCutoverFlagState: flagStateMock,
     readLatestCutoverRecord: latestRecordMock,
+    readLatestCutoverTransition: latestTransitionMock,
     writeCutoverRecord: writeRecordMock,
     listCutoverRecords: listRecordsMock,
   };
@@ -133,6 +137,7 @@ beforeEach(() => {
   assessMock.mockReset();
   flagStateMock.mockReset().mockResolvedValue(false);
   latestRecordMock.mockReset().mockResolvedValue(null);
+  latestTransitionMock.mockReset().mockResolvedValue(null);
   writeRecordMock.mockReset().mockResolvedValue({ id: "rec_1" });
   listRecordsMock.mockReset().mockResolvedValue([]);
 });
@@ -169,7 +174,7 @@ describe("GET /admin/resupply-cutover", () => {
   it("does not flag a switch enabled through this workflow", async () => {
     stubAdmin();
     flagStateMock.mockResolvedValue(true);
-    latestRecordMock.mockResolvedValue({
+    const enableRecord = {
       id: "rec_1",
       action: "enable",
       readinessStatus: "ready",
@@ -177,10 +182,71 @@ describe("GET /admin/resupply-cutover", () => {
       actorEmail: "ops@example.com",
       evaluatedAt: new Date().toISOString(),
       rollbackReason: null,
-    });
+    };
+    latestRecordMock.mockResolvedValue(enableRecord);
+    latestTransitionMock.mockResolvedValue(enableRecord);
     const res = await request(makeApp()).get("/admin/resupply-cutover");
     expect(res.body.flags[0].enabledWithoutRecord).toBe(false);
     expect(res.body.flags[0].readinessState).toBe("ready");
+  });
+
+  it("does not accuse a bypass after a later standalone re-assessment", async () => {
+    // assess -> enable -> assess again is the sequence we WANT: an
+    // operator re-checking a flag that is already live. The newest record
+    // is then an `evaluate`, and judging the bypass warning by "what
+    // happened last" turned the recommended behaviour into an accusation
+    // of having skipped the gate.
+    stubAdmin();
+    flagStateMock.mockResolvedValue(true);
+    latestRecordMock.mockResolvedValue({
+      id: "rec_3",
+      action: "evaluate",
+      readinessStatus: "ready",
+      evidenceId: null,
+      actorEmail: "ops@example.com",
+      evaluatedAt: new Date().toISOString(),
+      rollbackReason: null,
+    });
+    latestTransitionMock.mockResolvedValue({
+      id: "rec_2",
+      action: "enable",
+      readinessStatus: "ready",
+      evidenceId: "OPS-1",
+      actorEmail: "ops@example.com",
+      evaluatedAt: new Date(Date.now() - 86_400_000).toISOString(),
+      rollbackReason: null,
+    });
+    const res = await request(makeApp()).get("/admin/resupply-cutover");
+    expect(res.body.flags[0].enabledWithoutRecord).toBe(false);
+  });
+
+  it("DOES accuse a bypass when the last transition was a rollback", async () => {
+    // Rolled back through the workflow, then switched back on from the
+    // generic flags page. The newest record is a clean `evaluate`, but
+    // nothing accounts for the flag being ON — which is exactly the state
+    // the warning exists for, so widening the lookup must not swallow it.
+    stubAdmin();
+    flagStateMock.mockResolvedValue(true);
+    latestRecordMock.mockResolvedValue({
+      id: "rec_4",
+      action: "evaluate",
+      readinessStatus: "ready",
+      evidenceId: null,
+      actorEmail: "ops@example.com",
+      evaluatedAt: new Date().toISOString(),
+      rollbackReason: null,
+    });
+    latestTransitionMock.mockResolvedValue({
+      id: "rec_3",
+      action: "rollback",
+      readinessStatus: "ready",
+      evidenceId: "OPS-2",
+      actorEmail: "ops@example.com",
+      evaluatedAt: new Date(Date.now() - 86_400_000).toISOString(),
+      rollbackReason: "patients reported wrong due dates",
+    });
+    const res = await request(makeApp()).get("/admin/resupply-cutover");
+    expect(res.body.flags[0].enabledWithoutRecord).toBe(true);
   });
 });
 

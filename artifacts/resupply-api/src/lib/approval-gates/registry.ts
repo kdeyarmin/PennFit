@@ -66,6 +66,19 @@ export interface ApprovalGate {
      * useful half: five items sitting for six weeks is a different
      * problem from fifty that arrived this morning, and only the first
      * one is failing anybody.
+     *
+     * It must be the moment the item ENTERED THIS QUEUE, which is not
+     * always the row's `created_at`. A row that lives through several
+     * states before it lands here — a claim that is created, submitted,
+     * adjudicated and only then denied — has a `created_at` that predates
+     * the work by the whole earlier lifecycle, and aging from it reports
+     * every item as instantly breached. A gate that is always red tells a
+     * biller nothing and gets ignored, which is worse than not measuring.
+     *
+     * The column may be NULL on some rows (a status stamped without its
+     * timestamp). The read orders NULLS LAST so an unstamped row can
+     * never masquerade as the oldest item; it is still counted in
+     * `waiting`, so the size stays honest.
      */
     ageColumn?: string;
   } | null;
@@ -321,8 +334,14 @@ export const APPROVAL_GATES: readonly ApprovalGate[] = [
     permission: "billing.manage",
     queue: {
       table: "insurance_claims",
+      // Aged from the DENIAL, not from the claim. A claim is created,
+      // submitted, adjudicated and only then denied — often two months
+      // after `created_at`. Aging this queue from the row's creation made
+      // every denial arrive already past its 10-day SLA, so the gate was
+      // permanently breached no matter how fast a biller worked it and
+      // measured the payer's turnaround rather than ours.
       match: { status: "denied" },
-      ageColumn: "created_at",
+      ageColumn: "decision_at",
     },
   },
   {

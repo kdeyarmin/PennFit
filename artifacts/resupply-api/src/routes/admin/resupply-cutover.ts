@@ -46,6 +46,7 @@ import {
   listCutoverRecords,
   readCutoverFlagState,
   readLatestCutoverRecord,
+  readLatestCutoverTransition,
   resolveReadinessState,
   writeCutoverRecord,
   type CutoverFlagKey,
@@ -148,9 +149,10 @@ router.get(
     const now = new Date();
     const flags = [];
     for (const key of CUTOVER_FLAG_KEYS) {
-      const [enabled, latest] = await Promise.all([
+      const [enabled, latest, transition] = await Promise.all([
         readCutoverFlagState(orgId, key),
         readLatestCutoverRecord(orgId, key),
+        readLatestCutoverTransition(orgId, key),
       ]);
       const { state, ageDays } = resolveReadinessState(latest, now);
       flags.push({
@@ -173,8 +175,15 @@ router.get(
         // A flag that is ON with no `enable` record was flipped from the
         // generic feature-flags page, bypassing the assessment. Saying so
         // is more useful than pretending the workflow was followed.
+        //
+        // Judged against the last record that MOVED the flag, not the last
+        // record of any kind. Re-assessing an already-enabled flag writes
+        // an `evaluate` row, and reading that as "no enable record" told an
+        // operator who had followed the workflow exactly that they had
+        // bypassed it — which is both wrong and the kind of wrong that
+        // teaches people to ignore the warning.
         enabledWithoutRecord:
-          enabled && (latest === null || latest.action !== "enable"),
+          enabled && (transition === null || transition.action !== "enable"),
       });
     }
     res.json({ flags });

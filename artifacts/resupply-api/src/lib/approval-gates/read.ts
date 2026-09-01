@@ -116,10 +116,22 @@ export async function readGate(
           unknown
         >,
       ) as unknown as {
-        order: (c: string, o: { ascending: boolean }) => unknown;
+        order: (
+          c: string,
+          o: { ascending: boolean; nullsFirst: boolean },
+        ) => unknown;
       };
+      // NULLS LAST, explicitly. Some age columns are stamped alongside a
+      // status change and can be missing on a row that predates the
+      // stamp; ordering NULLS FIRST would make such a row the "oldest
+      // item" and then read its null timestamp as no age at all — the
+      // queue would report `unknown` while a genuinely old item sat
+      // behind it. The unstamped row still counts toward `waiting`.
       const { data, error } = (await (
-        q.order(ageColumn, { ascending: true }) as unknown as {
+        q.order(ageColumn, {
+          ascending: true,
+          nullsFirst: false,
+        }) as unknown as {
           limit: (n: number) => { maybeSingle: () => Promise<unknown> };
         }
       )
