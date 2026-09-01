@@ -480,6 +480,69 @@ describe("integrations distinguish absent from healthy", () => {
     expect(obs.therapy_data_staleness.value).toBeCloseTo(2, 0);
   });
 
+  it("does not count a `not_configured` ROW as a configured connector", async () => {
+    // The table keeps a row per source the tenant has ever touched, and
+    // `not_configured` is a positive statement that this tenant has no
+    // credentials for that vendor. Counting the row made the emptiness
+    // check unreachable for any tenant that had opened the integrations
+    // page once — so three unconfigured connectors reported a MEASURED
+    // failure count of zero, which reads as a healthy fleet.
+    store.tables.integration_connector_status = [
+      {
+        source: "resmed_airview",
+        status: "not_configured",
+        consecutive_failures: 0,
+        last_sync_success_at: null,
+        partial_resources: [],
+      },
+      {
+        source: "philips_care",
+        status: "disabled",
+        consecutive_failures: 0,
+        last_sync_success_at: null,
+        partial_resources: [],
+      },
+    ];
+    const obs = await collect();
+    expect(obs.connector_failures.state).toBe("not_configured");
+    expect(obs.connector_partial_responses.state).toBe("not_configured");
+    expect(obs.therapy_data_staleness.state).toBe("not_configured");
+    // …and it says WHY, rather than reusing the no-rows wording. A tenant
+    // with three switched-off connectors is in a different state from a
+    // tenant that has never had one.
+    expect(obs.connector_failures.reason).toMatch(
+      /unconfigured or switched off/i,
+    );
+  });
+
+  it("measures the live connectors and reports how many it set aside", async () => {
+    store.tables.integration_connector_status = [
+      {
+        source: "resmed_airview",
+        status: "not_configured",
+        consecutive_failures: 0,
+        last_sync_success_at: null,
+        partial_resources: [],
+      },
+      {
+        source: "philips_care",
+        status: "live_validated",
+        consecutive_failures: 3,
+        last_sync_success_at: isoAgo(4 * HOUR),
+        partial_resources: [],
+      },
+    ];
+    const obs = await collect();
+    expect(obs.connector_failures.state).toBe("measured");
+    expect(obs.connector_failures.value).toBe(3);
+    // The sample is the LIVE population, not the row count.
+    expect(obs.connector_failures.sample).toBe(1);
+    expect(obs.connector_failures.detail).toMatchObject({
+      connectors: 1,
+      inactive: 1,
+    });
+  });
+
   it("reports staleness as not-configured when no sync ever succeeded", async () => {
     store.tables.integration_connector_status = [
       {

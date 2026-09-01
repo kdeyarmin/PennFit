@@ -54,6 +54,14 @@ rather than silently ignored.
 The quiet window between repeat notifications for an unchanged problem is
 `LIFECYCLE_HEALTH_RENOTIFY_HOURS` (default 24).
 
+**The quiet window is earned by a delivered digest, not by an attempt to
+send one.** `last_notified_at` — the column that suppresses the next 24
+hours — is stamped only after a send is confirmed. If email is
+unconfigured, the recipient list is empty, or SendGrid rejects the
+message, the alert stays unstamped and the very next scan reports it
+again. So a mail outage costs one scan interval of delay, never a silent
+day.
+
 ### How often you hear from it
 
 At most **one message per tenant per scan**, plus at most one for the
@@ -72,7 +80,9 @@ is.
    and the real one is larger.
 3. Check `lastScanAgeHours`. If the background scan has not reported for
    hours, treat the whole panel as suspect and start at
-   **[Dead-lettered worker jobs](#dead-lettered-worker-jobs)**.
+   **[Dead-lettered worker jobs](#dead-lettered-worker-jobs)** — which is
+   platform-scoped, so read it from the operator digest rather than from a
+   tenant's panel.
 4. Check whether the same signal is firing for other tenants. One tenant
    is a tenant problem; every tenant is a platform problem.
 
@@ -555,11 +565,20 @@ Full procedure: [`human-approval-queues.md`](./human-approval-queues.md).
 
 ### Dead-lettered worker jobs
 
-**Severity:** critical · **Unit:** count of jobs
+**Severity:** critical · **Unit:** count of jobs · **Platform scope**
 
 Nearly every signal on this panel depends on a worker: the sweeps that
 close cycles, the sends that contact patients, the batches that file
 claims. A dead-lettered job is a silent halt to one of them.
+
+**Platform scope, not per tenant.** pg-boss queues are process-wide:
+`getQueues()` reports one number for the whole deployment, and no dead job
+can be attributed back to the tenant whose row it was working on. It is
+reported once, to the platform operator on `RESUPPLY_ADMIN_EMAILS` — it
+does **not** appear in a tenant's `/admin/operations` panel, which names it
+under `scope.platformSignalsElsewhere` instead. If it were tenant-scoped,
+one stuck job would email every practice about a queue none of them can
+see or drain.
 
 1. The daily DLQ digest names the queues. `/admin/operations` shows worker
    readiness.

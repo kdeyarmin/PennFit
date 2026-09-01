@@ -15,6 +15,8 @@ interface Written {
   table: string;
   op: "insert" | "update" | "upsert";
   payload: Record<string, unknown>;
+  /** Which client the write went through — scoped (tenant) or raw (platform). */
+  via: "scoped" | "raw";
 }
 
 const { db } = vi.hoisted(() => ({
@@ -23,40 +25,59 @@ const { db } = vi.hoisted(() => ({
     openRows: [] as Array<Record<string, unknown>>,
     writes: [] as Written[],
     failReads: false,
+    /** Simulate the partial unique index rejecting a concurrent open. */
+    insertConflicts: false,
   },
 }));
 
+function makeBuilder(table: string, via: "scoped" | "raw") {
+  const self: Record<string, unknown> = {
+    select: () => self,
+    eq: () => self,
+    is: () => self,
+    insert: (payload: Record<string, unknown>) => {
+      db.writes.push({ table, op: "insert", payload, via });
+      return Promise.resolve({
+        error: db.insertConflicts ? { message: "duplicate key" } : null,
+      });
+    },
+    update: (payload: Record<string, unknown>) => {
+      db.writes.push({ table, op: "update", payload, via });
+      const chain: Record<string, unknown> = {
+        eq: () => chain,
+        is: () => chain,
+        then: (resolve: (v: unknown) => unknown) => resolve({ error: null }),
+      };
+      return chain;
+    },
+    upsert: (payload: Record<string, unknown>) => {
+      db.writes.push({ table, op: "upsert", payload, via });
+      return Promise.resolve({ error: null });
+    },
+    then: (resolve: (v: unknown) => unknown) =>
+      resolve(
+        db.failReads
+          ? { data: null, error: { message: "down" } }
+          : {
+              data: table === "lifecycle_health_alerts" ? db.openRows : [],
+              error: null,
+            },
+      ),
+  };
+  return self;
+}
+
 vi.mock("@workspace/resupply-db", () => ({
   getOrgScopedClient: () => ({
-    from: (table: string) => {
-      const self: Record<string, unknown> = {
-        select: () => self,
-        eq: () => self,
-        is: () => self,
-        insert: (payload: Record<string, unknown>) => {
-          db.writes.push({ table, op: "insert", payload });
-          return Promise.resolve({ error: null });
-        },
-        update: (payload: Record<string, unknown>) => {
-          db.writes.push({ table, op: "update", payload });
-          return { eq: () => Promise.resolve({ error: null }) };
-        },
-        upsert: (payload: Record<string, unknown>) => {
-          db.writes.push({ table, op: "upsert", payload });
-          return Promise.resolve({ error: null });
-        },
-        then: (resolve: (v: unknown) => unknown) =>
-          resolve(
-            db.failReads
-              ? { data: null, error: { message: "down" } }
-              : {
-                  data: table === "lifecycle_health_alerts" ? db.openRows : [],
-                  error: null,
-                },
-          ),
-      };
-      return self;
-    },
+    from: (table: string) => makeBuilder(table, "scoped"),
+    // The platform pass must NOT go through the org-scoped builder: those
+    // rows carry `org_id IS NULL` by CHECK constraint and the scoped
+    // client force-tags every write with a tenant id.
+    raw: () => ({
+      schema: () => ({
+        from: (table: string) => makeBuilder(table, "raw"),
+      }),
+    }),
   }),
   resolveSeedOrgId: async () => ORG,
   listActiveOrgIds: async () => [ORG],
@@ -90,6 +111,7 @@ beforeEach(() => {
   db.openRows = [];
   db.writes = [];
   db.failReads = false;
+  db.insertConflicts = false;
 });
 
 describe("counting", () => {
@@ -131,8 +153,11 @@ describe("what one scan produces", () => {
       signal_key: "shipped_unbilled",
       status: "failure",
       peak_status: "failure",
-      notify_count: 1,
     });
+    // Opened UNNOTIFIED. Nothing has been sent yet at this point, and
+    // `last_notified_at` is the field that buys 24 hours of silence.
+    expect(insert?.payload.notify_count).toBe(0);
+    expect(insert?.payload.last_notified_at).toBeNull();
   });
 
   it("says NOTHING on the second scan of the same unchanged failure", async () => {
@@ -189,8 +214,10 @@ describe("what one scan produces", () => {
     expect(update?.payload).toMatchObject({
       status: "failure",
       peak_status: "failure",
-      notify_count: 2,
     });
+    // The transition write does not touch the notification bookkeeping.
+    expect(update?.payload).not.toHaveProperty("notify_count");
+    expect(update?.payload).not.toHaveProperty("last_notified_at");
   });
 
   it("keeps the PEAK when a failure improves to a warning, and stays quiet", async () => {
@@ -307,6 +334,111 @@ describe("the snapshot is written for EVERY signal", () => {
       scope_id: "platform",
       org_id: null,
     });
+  });
+
+  it("writes platform rows through the RAW client, never the org-scoped one", async () => {
+    // `getOrgScopedClient` force-tags every write with its tenant id — it
+    // overwrites an explicit `org_id: null` rather than deferring to it.
+    // A platform write through it produces a row the CHECK constraint
+    // rejects, and the rejection is indistinguishable from the benign
+    // duplicate-open race the insert path tolerates. So it would fail
+    // silently, forever.
+    await scan(
+      { shipped_unbilled: { state: "measured", value: 100 } },
+      [shippedUnbilled],
+      PLATFORM_SCOPE,
+    );
+    expect(db.writes.length).toBeGreaterThan(0);
+    expect(db.writes.every((w) => w.via === "raw")).toBe(true);
+  });
+
+  it("writes tenant rows through the ORG-SCOPED client", async () => {
+    await scan({ shipped_unbilled: { state: "measured", value: 100 } });
+    expect(db.writes.length).toBeGreaterThan(0);
+    expect(db.writes.every((w) => w.via === "scoped")).toBe(true);
+  });
+});
+
+describe("notification is earned, not assumed", () => {
+  it("stamps last_notified_at only when confirmNotified is called", async () => {
+    const { items, confirmNotified } = await scan({
+      shipped_unbilled: { state: "measured", value: 100 },
+    });
+    expect(items).toHaveLength(1);
+    // Before the send: nothing suppresses the next scan.
+    expect(
+      db.writes.some(
+        (w) => "last_notified_at" in w.payload && w.op === "update",
+      ),
+    ).toBe(false);
+
+    const stamped = await confirmNotified();
+    expect(stamped).toBe(1);
+    const stamp = db.writes.find(
+      (w) => w.op === "update" && "last_notified_at" in w.payload,
+    );
+    expect(stamp?.payload).toMatchObject({
+      last_notified_status: "failure",
+      notify_count: 1,
+    });
+  });
+
+  it("leaves the alert unstamped when the digest is never delivered", async () => {
+    // A failed send must cost ONE scan interval, not a full quiet window.
+    // An unstamped open alert reads as "nobody was ever told", which
+    // `decideAlertAction` turns into a renotify on the next tick.
+    await scan({ shipped_unbilled: { state: "measured", value: 100 } });
+    expect(
+      db.writes.some(
+        (w) => "last_notified_at" in w.payload && w.op === "update",
+      ),
+    ).toBe(false);
+  });
+
+  it("carries the escalated count forward when it does stamp", async () => {
+    db.openRows = [
+      {
+        id: "a1",
+        signal_key: "shipped_unbilled",
+        status: "warning",
+        peak_status: "warning",
+        first_observed_at: new Date(NOW - 3_600_000).toISOString(),
+        last_observed_at: new Date(NOW - 60_000).toISOString(),
+        last_notified_at: new Date(NOW - 60_000).toISOString(),
+        last_notified_status: "warning",
+        notify_count: 4,
+        observed_value: 12,
+      },
+    ];
+    const { confirmNotified } = await scan({
+      shipped_unbilled: { state: "measured", value: 100 },
+    });
+    await confirmNotified();
+    const stamp = db.writes.find(
+      (w) => w.op === "update" && "last_notified_at" in w.payload,
+    );
+    expect(stamp?.payload.notify_count).toBe(5);
+  });
+
+  it("says nothing about an alert a concurrent scan opened first", async () => {
+    // The partial unique index is the arbiter. If this insert lost the
+    // race, the other worker is already reporting it — notifying anyway
+    // sends the duplicate the index exists to prevent.
+    db.insertConflicts = true;
+    const { result, items } = await scan({
+      shipped_unbilled: { state: "measured", value: 100 },
+    });
+    expect(items).toHaveLength(0);
+    expect(result.opened).toBe(0);
+    expect(result.conflicted).toBe(1);
+  });
+
+  it("does not stamp a notification for a conflicted open", async () => {
+    db.insertConflicts = true;
+    const { confirmNotified } = await scan({
+      shipped_unbilled: { state: "measured", value: 100 },
+    });
+    expect(await confirmNotified()).toBe(0);
   });
 });
 

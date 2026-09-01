@@ -43,6 +43,7 @@ import { PLATFORM_NAME } from "../../lib/company-info";
 import {
   applyAlertDecision,
   decideAlertAction,
+  markAlertsNotified,
   PLATFORM_SCOPE,
   readOpenAlerts,
   recordObservation,
@@ -100,7 +101,15 @@ export interface ScanScopeResult {
   renotified: number;
   suppressed: number;
   resolved: number;
+  /**
+   * Alerts a concurrent scan opened first. Counted, not silent: a
+   * persistent nonzero here means two workers are scanning the same scope
+   * on the same schedule, which is worth knowing.
+   */
+  conflicted: number;
   notified: boolean;
+  /** Alerts whose `last_notified_at` was stamped after a confirmed send. */
+  notifyStamped: number;
 }
 
 export interface LifecycleHealthScanStats {
@@ -171,7 +180,16 @@ export async function scanScope(input: {
   db: ReturnType<typeof getOrgScopedClient>;
   nowMs: number;
   env?: NodeJS.ProcessEnv;
-}): Promise<{ result: ScanScopeResult; items: DigestItem[] }> {
+}): Promise<{
+  result: ScanScopeResult;
+  items: DigestItem[];
+  /**
+   * Stamp `last_notified_at` on the alerts this scan reported. Call it
+   * ONLY after the digest was actually delivered — that is what the
+   * 24-hour suppression window is meant to be earned by.
+   */
+  confirmNotified: () => Promise<number>;
+}> {
   const { scopeId, orgId, signals, observations, db, nowMs } = input;
   const env = input.env ?? process.env;
   const nowIso = new Date(nowMs).toISOString();
@@ -206,9 +224,17 @@ export async function scanScope(input: {
     renotified: 0,
     suppressed: 0,
     resolved: 0,
+    conflicted: 0,
     notified: false,
+    notifyStamped: 0,
   };
   const items: DigestItem[] = [];
+  /**
+   * Stamps to write only once the digest has actually been delivered.
+   * Held here rather than written inline — see `markAlertsNotified`.
+   */
+  const pendingNotify: Array<{ signalKey: string; notifyCount: number }> = [];
+  const notifiedStatus = new Map<string, "warning" | "failure">();
   const quietHours = renotifyHours(env);
 
   for (const signal of signals) {
@@ -263,8 +289,18 @@ export async function scanScope(input: {
         break;
     }
 
+    // `applied: false` means a concurrent scan owned this transition (the
+    // partial unique index arbitrated and this insert lost). Notifying
+    // anyway would defeat the index: both workers would send. A write
+    // that THREW is treated the same way — an alert we could not record
+    // is one we must not claim to have reported, because nothing would
+    // then suppress the next scan's duplicate.
+    let applied: Awaited<ReturnType<typeof applyAlertDecision>> = {
+      applied: false,
+      pendingNotify: null,
+    };
     try {
-      await applyAlertDecision({
+      applied = await applyAlertDecision({
         db,
         scopeId,
         orgId,
@@ -283,6 +319,10 @@ export async function scanScope(input: {
         "lifecycle-health: could not persist an alert transition",
       );
     }
+    if (!applied.applied && decision.action === "open") {
+      result.opened -= 1;
+      result.conflicted += 1;
+    }
 
     try {
       await recordObservation({ db, scopeId, orgId, evaluation, nowIso });
@@ -297,19 +337,29 @@ export async function scanScope(input: {
       );
     }
 
-    if (decision.notify) {
+    if (decision.notify && applied.applied) {
       items.push({
         signal,
         evaluation,
         decision,
         openForHours: openForHours(existing, nowMs),
       });
+      if (applied.pendingNotify) {
+        pendingNotify.push(applied.pendingNotify);
+        notifiedStatus.set(
+          signal.key,
+          evaluation.status === "failure" ? "failure" : "warning",
+        );
+      }
     }
 
     // One structured event per STATE CHANGE, not one per signal per
     // scan: 27 signals × 12 scans × N tenants of "still fine" is a log
     // bill and a haystack. A change is the thing worth finding later.
-    if (decision.notify || decision.action === "deescalate") {
+    if (
+      (decision.notify && applied.applied) ||
+      decision.action === "deescalate"
+    ) {
       logger.info(
         {
           event: `lifecycle_health.alert_${decision.action}`,
@@ -330,7 +380,25 @@ export async function scanScope(input: {
     }
   }
 
-  return { result, items };
+  /**
+   * Called by the scan ONLY after `notifyScope` reports a delivery.
+   *
+   * A closure rather than a returned list because the caller must not be
+   * able to stamp without having sent: the only way to reach these rows
+   * is through the function that follows a successful notify.
+   */
+  const confirmNotified = async (): Promise<number> =>
+    pendingNotify.length === 0
+      ? 0
+      : markAlertsNotified({
+          db,
+          scopeId,
+          pending: pendingNotify,
+          status: notifiedStatus,
+          nowIso,
+        });
+
+  return { result, items, confirmNotified };
 }
 
 async function notifyScope(input: {
@@ -419,11 +487,13 @@ export async function runLifecycleHealthScan(
 
   const fanOut = await forEachActiveOrg(
     async (orgId) => {
-      const observations = await collectTenantObservations(orgId, {
-        nowMs,
-        extra: workerObservations,
-      });
-      const { result, items } = await scanScope({
+      // NO worker observations here. Dead-letter depth is process-wide —
+      // see the `worker_failures` signal — and injecting one shared number
+      // into every tenant's scan opened an identical alert in each of them
+      // for a queue no tenant can see or drain. It is evaluated once, in
+      // the platform pass below.
+      const observations = await collectTenantObservations(orgId, { nowMs });
+      const { result, items, confirmNotified } = await scanScope({
         scopeId: orgId,
         orgId,
         signals: TENANT_SIGNALS,
@@ -436,6 +506,9 @@ export async function runLifecycleHealthScan(
         orgId,
         items,
       });
+      // Suppression is earned by a DELIVERED digest, never by the
+      // intention to send one.
+      if (result.notified) result.notifyStamped = await confirmNotified();
       stats.scopes.push(result);
     },
     { jobName: LIFECYCLE_HEALTH_SCAN_JOB },
@@ -447,15 +520,19 @@ export async function runLifecycleHealthScan(
   try {
     const seedOrgId = await resolveSeedOrgId();
     if (seedOrgId) {
-      const observations = await collectPlatformObservations({
-        nowMs,
-        seedOrgId,
-      });
-      const { result, items } = await scanScope({
+      const observations = {
+        ...(await collectPlatformObservations({ nowMs, seedOrgId })),
+        // The process-wide dead-letter depth belongs to exactly one
+        // scope, and this is it.
+        ...workerObservations,
+      };
+      const { result, items, confirmNotified } = await scanScope({
         scopeId: PLATFORM_SCOPE,
         orgId: null,
         signals: PLATFORM_SIGNALS,
         observations,
+        // Only used to reach `.raw()`: platform rows carry `org_id IS
+        // NULL` and are addressed by `scope_id`, never by this tenant.
         db: getOrgScopedClient(seedOrgId),
         nowMs,
       });
@@ -464,6 +541,7 @@ export async function runLifecycleHealthScan(
         orgId: null,
         items,
       });
+      if (result.notified) result.notifyStamped = await confirmNotified();
       stats.scopes.push(result);
     }
   } catch (err) {
@@ -501,6 +579,7 @@ export async function registerLifecycleHealthScanJob(
           escalated: stats.scopes.reduce((n, s) => n + s.escalated, 0),
           resolved: stats.scopes.reduce((n, s) => n + s.resolved, 0),
           suppressed: stats.scopes.reduce((n, s) => n + s.suppressed, 0),
+          conflicted: stats.scopes.reduce((n, s) => n + s.conflicted, 0),
           notified: stats.scopes.filter((s) => s.notified).length,
         },
         "lifecycle-health: scan completed",

@@ -123,13 +123,25 @@ describe("coverage", () => {
     expect(TENANT_SIGNALS.length + PLATFORM_SIGNALS.length).toBe(
       LIFECYCLE_SIGNALS.length,
     );
-    // The two platform ones are about rows that belong to NO tenant.
-    // Repeating them inside every practice's panel would have each
-    // operator chasing another's problem.
+    // The platform ones are about rows or resources that belong to NO
+    // tenant. Repeating them inside every practice's panel would have
+    // each operator chasing another's problem.
     expect(PLATFORM_SIGNALS.map((s) => s.key).sort()).toEqual([
       "inbound_attribution_failures",
       "voice_calls_unattributed",
+      "worker_failures",
     ]);
+  });
+
+  it("keeps dead-letter depth OUT of tenant scope", () => {
+    // pg-boss queues are process-wide: `getQueues()` reports one number
+    // for the whole deployment and no dead job can be attributed back to
+    // the tenant whose row it was working on. Evaluated per tenant, that
+    // single number opened an identical alert in every practice's scope,
+    // so one stuck job emailed N tenants about a queue none of them can
+    // see or drain.
+    expect(TENANT_SIGNALS.some((s) => s.key === "worker_failures")).toBe(false);
+    expect(findSignal("worker_failures")?.scope).toBe("platform");
   });
 });
 
@@ -237,6 +249,21 @@ describe("worker-only signals are declared", () => {
     expect(WORKER_ONLY_SIGNAL_KEYS).toEqual(["worker_failures"]);
     expect(isWorkerOnly("worker_failures")).toBe(true);
     expect(isWorkerOnly("shipped_unbilled")).toBe(false);
+  });
+
+  it("is a SEPARATE question from scope, even where the answers coincide", () => {
+    // "who can take the reading" and "whose problem is it" are different
+    // questions. They happen to give the same answer for the one signal
+    // in this list today; collapsing them would silently present a stored
+    // number as a live one the first time a worker-only TENANT signal is
+    // added.
+    for (const key of WORKER_ONLY_SIGNAL_KEYS) {
+      expect(findSignal(key), key).toBeDefined();
+    }
+    expect(
+      PLATFORM_SIGNALS.some((s) => !isWorkerOnly(s.key)),
+      "a platform signal that is not worker-only must exist, or the two concepts have silently merged",
+    ).toBe(true);
   });
 
   it("only names signals that exist in the catalog", () => {

@@ -807,7 +807,24 @@ async function readConnectorObservations(
       "source,status,last_sync_success_at,consecutive_failures,partial_resources",
     )) as unknown as { data: ConnectorRow[] | null; error: unknown };
   if (error) throw error;
-  const connectors = data ?? [];
+  const allRows = data ?? [];
+
+  // A ROW IS NOT A CONNECTOR.
+  //
+  // `integration_connector_status` keeps a row per source the tenant has
+  // ever touched, and two of its statuses are positive statements that
+  // there is nothing to measure: `not_configured` (this tenant has no
+  // credentials for that vendor) and `disabled` (somebody switched it
+  // off deliberately). Counting them made the emptiness check below
+  // unreachable for any tenant that had ever opened the integrations
+  // page — so a tenant with three unconfigured connectors reported
+  // `connector_failures: 0` as a MEASURED healthy number, and
+  // `therapy_data_staleness` announced that "a connector is configured
+  // but no sync has ever succeeded", which was not true of any of them.
+  const connectors = allRows.filter(
+    (c) => c.status !== "not_configured" && c.status !== "disabled",
+  );
+  const inactive = allRows.length - connectors.length;
 
   const notConfigured = (what: string): SignalObservation => ({
     state: "not_configured",
@@ -819,14 +836,19 @@ async function readConnectorObservations(
 
   if (connectors.length === 0) {
     const reason =
-      "No therapy connector is configured for this tenant. A tenant with no connector has no failures and no device data either, and those must not render the same.";
+      allRows.length === 0
+        ? "No therapy connector is configured for this tenant. A tenant with no connector has no failures and no device data either, and those must not render the same."
+        : `This tenant has ${allRows.length} connector row(s), and every one of them is unconfigured or switched off. That is not a healthy zero — there is nothing running to be healthy.`;
     out.connector_failures = notConfigured(reason);
     out.connector_partial_responses = notConfigured(reason);
     out.therapy_data_staleness = notConfigured(reason);
   } else {
     out.connector_failures = measured(
       Math.max(...connectors.map((c) => Number(c.consecutive_failures) || 0)),
-      { sample: connectors.length, detail: { connectors: connectors.length } },
+      {
+        sample: connectors.length,
+        detail: { connectors: connectors.length, inactive },
+      },
     );
 
     const partial = connectors.filter((c) => {

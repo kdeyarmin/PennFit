@@ -197,12 +197,57 @@ export function decideAlertAction(input: {
 //
 // `scope_id` is an org uuid as text, or the literal 'platform'. Tenant
 // rows also carry `org_id`, so the org-scoped client's automatic filter
-// reaches them; platform rows carry NULL and are read through `.raw()`
-// with an explicit `scope_id` filter.
+// reaches them; platform rows carry `org_id IS NULL` by CHECK constraint
+// and must therefore NOT go through it.
+//
+// That distinction is load-bearing, not stylistic. `getOrgScopedClient`
+// appends `org_id = <tenant>` to every select and FORCES `org_id:
+// <tenant>` onto every insert/upsert payload — it overwrites an explicit
+// `org_id: null` rather than deferring to it. Pointing the platform pass
+// at it would write rows the database rejects outright (the scope/org
+// agreement CHECK in migration 0543) and read back an empty set forever,
+// with the rejected insert looking exactly like the benign
+// duplicate-open race the insert path is written to tolerate. So the
+// platform pass reaches the same two tables through `.raw()` with an
+// explicit `scope_id` filter, and the tenant pass keeps the automatic
+// scoping that makes its isolation structural.
 
 export const PLATFORM_SCOPE = "platform";
 
 type Db = ReturnType<typeof getOrgScopedClient>;
+
+/** The two tables this module owns. */
+type AlertTable = "lifecycle_health_alerts" | "lifecycle_health_observations";
+
+/**
+ * Table access for one scope.
+ *
+ * @param db - The org-scoped client (the platform pass still needs one to
+ *   reach `.raw()`; the tenant it is bound to is irrelevant there).
+ * @param scopeId - A tenant uuid, or `PLATFORM_SCOPE`.
+ * @param table - Which of this module's two tables.
+ */
+/* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+function scoped(db: Db, scopeId: string, table: AlertTable): any {
+  // raw-org-scope-exempt: platform-scope rows carry `org_id IS NULL` by
+  // CHECK constraint, so the org-scoped filter/tag cannot address them.
+  // Every query below pins `scope_id` explicitly instead, and the only
+  // rows matching `scope_id = 'platform'` are the ones that belong to no
+  // tenant — so this widens nothing.
+  return scopeId === PLATFORM_SCOPE
+    ? db.raw().schema("resupply").from(table)
+    : db.from(table);
+}
+
+/** Rows a platform write must carry that the org-scoped tag would supply. */
+function scopeColumns(
+  scopeId: string,
+  orgId: string | null,
+): Record<string, unknown> {
+  return scopeId === PLATFORM_SCOPE
+    ? { scope_id: scopeId, org_id: null }
+    : { scope_id: scopeId, org_id: orgId };
+}
 
 interface AlertRow {
   id: string;
@@ -244,8 +289,7 @@ export async function readOpenAlerts(
   db: Db,
   scopeId: string,
 ): Promise<Map<string, OpenAlert>> {
-  const { data, error } = await db
-    .from("lifecycle_health_alerts")
+  const { data, error } = await scoped(db, scopeId, "lifecycle_health_alerts")
     .select(
       "id,signal_key,status,peak_status,first_observed_at,last_observed_at,last_notified_at,last_notified_status,notify_count,observed_value",
     )
@@ -263,15 +307,38 @@ function worse(a: string, b: string): "warning" | "failure" {
   return a === "failure" || b === "failure" ? "failure" : "warning";
 }
 
+/** What applying one decision actually did. */
+export interface AlertApplyResult {
+  /**
+   * Did THIS call own the transition?
+   *
+   * False when a concurrent scan opened the same alert first (the unique
+   * index arbitrates) or when there was nothing to write. A caller that
+   * ignores this and notifies anyway defeats the index: two workers race,
+   * one loses the insert, and both still send — which is the duplicate the
+   * index exists to prevent.
+   */
+  applied: boolean;
+  /**
+   * The notification stamp to write ONCE DELIVERY IS CONFIRMED, or null
+   * when this transition tells nobody anything.
+   *
+   * See `markAlertNotified` for why the stamp is not written here.
+   */
+  pendingNotify: { signalKey: string; notifyCount: number } | null;
+}
+
 /**
- * Apply one decision. Returns whether a row was written.
+ * Apply one decision.
  *
  * The insert relies on the partial unique index to arbitrate: if a
  * concurrent tick opened the same alert first, this insert fails and the
  * failure is treated as "somebody else already reported it" rather than
  * as an error. That is the whole reason the index exists — two
  * overlapping scans both pass any read-then-write check the application
- * could make.
+ * could make. The caller must honour `applied: false` by staying quiet.
+ *
+ * NOTHING HERE STAMPS A NOTIFICATION. See `markAlertNotified`.
  */
 export async function applyAlertDecision(input: {
   db: Db;
@@ -281,15 +348,16 @@ export async function applyAlertDecision(input: {
   decision: AlertDecision;
   open: OpenAlert | null;
   nowIso: string;
-}): Promise<boolean> {
+}): Promise<AlertApplyResult> {
   const { db, scopeId, orgId, evaluation, decision, open, nowIso } = input;
   const status = evaluation.status === "failure" ? "failure" : "warning";
+  const table = scoped(db, scopeId, "lifecycle_health_alerts");
+  const nothing: AlertApplyResult = { applied: false, pendingNotify: null };
 
   switch (decision.action) {
     case "open": {
-      const { error } = await db.from("lifecycle_health_alerts").insert({
-        scope_id: scopeId,
-        org_id: orgId,
+      const { error } = await table.insert({
+        ...scopeColumns(scopeId, orgId),
         signal_key: evaluation.key,
         status,
         peak_status: status,
@@ -302,9 +370,13 @@ export async function applyAlertDecision(input: {
         detail: evaluation.detail,
         first_observed_at: nowIso,
         last_observed_at: nowIso,
-        last_notified_at: nowIso,
-        last_notified_status: status,
-        notify_count: 1,
+        // Opened UNNOTIFIED. If the digest never goes out, the next scan
+        // sees a null `last_notified_at` and `decideAlertAction` returns
+        // `renotify` — so a failed send costs one scan interval, not a
+        // full day of silence about a problem nobody was told about.
+        last_notified_at: null,
+        last_notified_status: null,
+        notify_count: 0,
       } as never);
       if (error) {
         // Almost certainly the unique index doing its job. Log and move
@@ -317,18 +389,19 @@ export async function applyAlertDecision(input: {
           },
           "lifecycle-health: an alert for this signal was already open",
         );
-        return false;
+        return nothing;
       }
-      return true;
+      return {
+        applied: true,
+        pendingNotify: { signalKey: evaluation.key, notifyCount: 1 },
+      };
     }
     case "escalate":
     case "renotify":
     case "deescalate":
     case "suppress": {
-      if (!open) return false;
-      const notified = decision.notify;
-      const { error } = await db
-        .from("lifecycle_health_alerts")
+      if (!open) return nothing;
+      const { error } = await table
         .update({
           status,
           peak_status: worse(open.peakStatus, status),
@@ -341,22 +414,19 @@ export async function applyAlertDecision(input: {
           detail: evaluation.detail,
           last_observed_at: nowIso,
           updated_at: nowIso,
-          ...(notified
-            ? {
-                last_notified_at: nowIso,
-                last_notified_status: status,
-                notify_count: open.notifyCount + 1,
-              }
-            : {}),
         } as never)
         .eq("id", open.id);
       if (error) throw error;
-      return true;
+      return {
+        applied: true,
+        pendingNotify: decision.notify
+          ? { signalKey: evaluation.key, notifyCount: open.notifyCount + 1 }
+          : null,
+      };
     }
     case "resolve": {
-      if (!open) return false;
-      const { error } = await db
-        .from("lifecycle_health_alerts")
+      if (!open) return nothing;
+      const { error } = await table
         .update({
           resolved_at: nowIso,
           resolved_reason: "recovered",
@@ -365,11 +435,70 @@ export async function applyAlertDecision(input: {
         } as never)
         .eq("id", open.id);
       if (error) throw error;
-      return true;
+      // A resolved row is closed; there is no open alert left to suppress,
+      // so there is nothing to stamp even though the digest mentions it.
+      return { applied: true, pendingNotify: null };
     }
     case "none":
-      return false;
+      return nothing;
   }
+}
+
+/**
+ * Record that somebody was actually told about an open alert.
+ *
+ * SEPARATE FROM THE TRANSITION, AND DELIBERATELY AFTER IT
+ * ------------------------------------------------------
+ * `last_notified_at` is what suppresses the next 24 hours of scans. Written
+ * at transition time — before the digest is composed, before SendGrid is
+ * reached, before a single recipient accepts it — it suppressed on the
+ * strength of an INTENTION to notify. A mail failure, an unconfigured
+ * sender, an empty recipient list: each silently bought a full quiet
+ * window for a problem nobody had heard about, and the alert sat open and
+ * unmentioned until it either resolved itself or a day elapsed.
+ *
+ * So the stamp waits for a confirmed delivery. Nothing is lost if this
+ * write itself fails: the row simply stays unstamped and the next scan
+ * re-notifies, which is the correct side to fail on.
+ *
+ * @param signalKeys - Signals whose open alert was successfully reported,
+ *   with the notify count each should now carry.
+ * @returns How many rows were stamped.
+ */
+export async function markAlertsNotified(input: {
+  db: Db;
+  scopeId: string;
+  pending: ReadonlyArray<{ signalKey: string; notifyCount: number }>;
+  status: ReadonlyMap<string, "warning" | "failure">;
+  nowIso: string;
+}): Promise<number> {
+  const { db, scopeId, pending, status, nowIso } = input;
+  let stamped = 0;
+  for (const item of pending) {
+    const { error } = await scoped(db, scopeId, "lifecycle_health_alerts")
+      .update({
+        last_notified_at: nowIso,
+        last_notified_status: status.get(item.signalKey) ?? null,
+        notify_count: item.notifyCount,
+        updated_at: nowIso,
+      } as never)
+      .eq("scope_id", scopeId)
+      .eq("signal_key", item.signalKey)
+      .is("resolved_at", null);
+    if (error) {
+      logger.warn(
+        {
+          event: "lifecycle_health.notify_stamp_failed",
+          signal: item.signalKey,
+          scope: scopeId === PLATFORM_SCOPE ? "platform" : "tenant",
+        },
+        "lifecycle-health: reported an alert but could not record that it was reported; the next scan will report it again",
+      );
+      continue;
+    }
+    stamped += 1;
+  }
+  return stamped;
 }
 
 /**
@@ -387,10 +516,13 @@ export async function recordObservation(input: {
   nowIso: string;
 }): Promise<void> {
   const { db, scopeId, orgId, evaluation, nowIso } = input;
-  const { error } = await db.from("lifecycle_health_observations").upsert(
+  const { error } = await scoped(
+    db,
+    scopeId,
+    "lifecycle_health_observations",
+  ).upsert(
     {
-      scope_id: scopeId,
-      org_id: orgId,
+      ...scopeColumns(scopeId, orgId),
       signal_key: evaluation.key,
       status: evaluation.status,
       observed_value: evaluation.value,

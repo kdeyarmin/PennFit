@@ -17,10 +17,14 @@
 // so is how an operator acts on a problem that was already fixed, or
 // misses one that started twenty minutes ago.
 //
-// The one exception is dead-letter depth, which needs a pg-boss handle
-// that an HTTP request does not have. That signal is read from the last
-// scan's snapshot and reports its own age, so it is visibly a stored
-// reading rather than a fresh one.
+// Every signal in this response is therefore measured now. Dead-letter
+// depth used to be the exception — read from the last scan's snapshot
+// because it needs a pg-boss handle an HTTP request does not have — but
+// pg-boss queues are process-wide, so that signal is platform-scoped now
+// and is named in `platformSignalsElsewhere` rather than repeated as a
+// per-tenant number nobody can act on. The scan's own age is still
+// reported, because a panel that renders perfectly while nothing has
+// scanned for a day is exactly the false comfort this exists to remove.
 //
 // IT CHANGES NOTHING. Read-only, no writes, no side effects — opening
 // the panel neither opens nor resolves an alert.
@@ -43,7 +47,6 @@ import {
   type SignalObservation,
 } from "../../lib/lifecycle-health/evaluate";
 import {
-  isWorkerOnly,
   LIFECYCLE_SIGNALS,
   TENANT_SIGNALS,
 } from "../../lib/lifecycle-health/signals";
@@ -116,27 +119,6 @@ async function readOpen(
   return out;
 }
 
-/** Turn a stored snapshot row back into an observation. */
-function snapshotToObservation(row: SnapshotRow): SignalObservation {
-  if (
-    row.status === "disabled" ||
-    row.status === "not_configured" ||
-    row.status === "unknown"
-  ) {
-    return {
-      state: row.status,
-      value: null,
-      reason: String(row.detail?.reason ?? "") || undefined,
-    };
-  }
-  return {
-    state: "measured",
-    value: row.observed_value,
-    sample: row.sample_size,
-    detail: (row.detail ?? {}) as Record<string, number | string | null>,
-  };
-}
-
 router.get(
   "/admin/lifecycle-health",
   adminReadRateLimiter,
@@ -180,24 +162,11 @@ router.get(
     const rows = TENANT_SIGNALS.map((signal) => {
       const stored = snapshot.get(signal.key) ?? null;
 
-      // Worker-only signals cannot be measured from an HTTP request.
-      // Read the stored one and say how old it is; never silently render
-      // it as though it were taken now.
-      const fromWorker = isWorkerOnly(signal.key);
-      const observation: SignalObservation = fromWorker
-        ? stored
-          ? snapshotToObservation(stored)
-          : {
-              state: "unknown",
-              value: null,
-              reason:
-                "This signal is measured by the background scan, which has not reported yet.",
-            }
-        : (observations[signal.key] ?? {
-            state: "unknown",
-            value: null,
-            reason: "No reading was taken for this signal.",
-          });
+      const observation: SignalObservation = observations[signal.key] ?? {
+        state: "unknown",
+        value: null,
+        reason: "No reading was taken for this signal.",
+      };
 
       const evaluation = evaluateSignal(signal, observation);
       const thresholds = resolveSignalThresholds(signal, process.env);
@@ -238,8 +207,14 @@ router.get(
         warnEnv: signal.warnEnv,
         failEnv: signal.failEnv,
 
-        /** True when this reading came from the last background scan. */
-        fromLastScan: fromWorker,
+        /**
+         * True when this reading came from the last background scan
+         * rather than from this request. No tenant signal is stored-only
+         * today — kept because the SPA renders a "stored, not live" badge
+         * from it and the moment a signal IS worker-only, silently
+         * rendering a stale number as current is the failure.
+         */
+        fromLastScan: false,
         lastScanAt: stored?.observed_at ?? null,
         lastScanAgeHours:
           stored && Number.isFinite(Date.parse(stored.observed_at))
@@ -299,10 +274,11 @@ router.get(
       scope: {
         kind: "tenant",
         /**
-         * Two signals are about rows that belong to NO tenant and are
-         * therefore not in this response. They are reported once, to the
-         * platform operator, rather than repeated identically inside
-         * every practice's panel.
+         * Signals about rows or resources that belong to NO tenant, and
+         * are therefore not in this response. They are reported once, to
+         * the platform operator, rather than repeated identically inside
+         * every practice's panel — which for a shared worker queue would
+         * have every practice chasing one dead job none of them can see.
          */
         platformSignalsElsewhere: LIFECYCLE_SIGNALS.filter(
           (s) => s.scope === "platform",

@@ -478,7 +478,14 @@ export const LIFECYCLE_SIGNALS: readonly LifecycleSignal[] = [
     key: "worker_failures",
     label: "Dead-lettered worker jobs",
     category: "platform",
-    scope: "tenant",
+    // PLATFORM, not tenant. pg-boss queues are process-wide: `getQueues()`
+    // reports one number for the whole deployment, and there is no way to
+    // attribute a dead-lettered job back to the tenant whose row it was
+    // working on. Evaluating it per tenant took that single number and
+    // opened an identical alert in every practice's scope — so one stuck
+    // job emailed N tenants, each told about a queue they cannot see and
+    // cannot drain. Reported once, to the operator who owns the worker.
+    scope: "platform",
     unit: "count",
     severity: "critical",
     defaultWarn: 1,
@@ -520,9 +527,14 @@ export const TENANT_SIGNALS: readonly LifecycleSignal[] =
  * Signals that can only be measured from inside the worker.
  *
  * Dead-letter depth is a pg-boss API call and there is no boss handle in
- * an HTTP request, so the admin route reads the last scan's observation
- * for these instead of computing one — and says how old it is, rather
- * than presenting a twelve-hour-old number as current.
+ * an HTTP request. It is also process-wide, which is why it is
+ * platform-scoped — so today this list and `PLATFORM_SIGNALS` happen to
+ * overlap on that one key.
+ *
+ * They stay separate concepts because they answer different questions
+ * ("who can take the reading" vs "whose problem is it"), and a caller
+ * that conflated them would silently present a stale stored number as a
+ * live one the first time a worker-only TENANT signal is added.
  */
 export const WORKER_ONLY_SIGNAL_KEYS: readonly string[] = ["worker_failures"];
 

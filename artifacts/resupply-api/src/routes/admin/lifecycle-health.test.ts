@@ -233,10 +233,21 @@ describe("shape", () => {
     expect(body.scope.platformSignalsElsewhere.sort()).toEqual([
       "inbound_attribution_failures",
       "voice_calls_unattributed",
+      "worker_failures",
     ]);
     expect(body.signals.some((s) => s.key === "voice_calls_unattributed")).toBe(
       false,
     );
+  });
+
+  it("does NOT repeat the shared worker queue inside a tenant's panel", () => {
+    // pg-boss queues are process-wide. One dead job rendered in every
+    // practice's panel is N operators chasing a queue none of them can
+    // see, drain, or be responsible for.
+    return get().then((body) => {
+      expect(body.signals.some((s) => s.key === "worker_failures")).toBe(false);
+      expect(body.scope.platformSignalsElsewhere).toContain("worker_failures");
+    });
   });
 
   it("stamps the reading with a time and forbids caching", async () => {
@@ -337,13 +348,15 @@ describe("thresholds are visible and tunable", () => {
   });
 });
 
-describe("a stored reading is visibly stored", () => {
-  it("marks the worker-only signal and reports its age", async () => {
+describe("the background scan's own age is reported", () => {
+  it("says how long ago the scan last reported", async () => {
+    // "The monitor is quiet" and "the monitor has not run since Tuesday"
+    // render identically unless something carries the age.
     const observedAt = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString();
     state.tables.lifecycle_health_observations = [
       {
         scope_id: MOCK_ORG_ID,
-        signal_key: "worker_failures",
+        signal_key: "shipped_unbilled",
         status: "warning",
         observed_value: 4,
         sample_size: null,
@@ -352,26 +365,21 @@ describe("a stored reading is visibly stored", () => {
       },
     ];
     const body = await get();
-    const worker = row(body, "worker_failures");
-    expect(worker.fromLastScan).toBe(true);
-    expect(worker.value).toBe(4);
-    expect(worker.lastScanAgeHours).toBeCloseTo(3, 0);
     expect(body.lastScanAgeHours).toBeCloseTo(3, 0);
+    expect(row(body, "shipped_unbilled").lastScanAgeHours).toBeCloseTo(3, 0);
   });
 
-  it("reports the worker signal as unknown when no scan has ever run", async () => {
-    // Not zero. "The monitor has not reported" and "there are no dead
-    // jobs" are different, and only one of them is good news.
+  it("reports a null age when no scan has ever run for this tenant", async () => {
     const body = await get();
-    const worker = row(body, "worker_failures");
-    expect(worker.status).toBe("unknown");
-    expect(worker.reason).toMatch(/has not reported yet/i);
     expect(body.lastScanAt).toBeNull();
+    expect(body.lastScanAgeHours).toBeNull();
   });
 
-  it("does not mark a live signal as coming from a scan", async () => {
+  it("marks every reading as live, because every tenant signal is", async () => {
+    // The one stored-only signal, dead-letter depth, is platform-scoped
+    // now and is not in this response at all.
     const body = await get();
-    expect(row(body, "shipped_unbilled").fromLastScan).toBe(false);
+    expect(body.signals.every((s) => s.fromLastScan === false)).toBe(true);
   });
 
   it("still renders when the snapshot table is unreadable", async () => {
@@ -380,7 +388,7 @@ describe("a stored reading is visibly stored", () => {
     state.failing.add("lifecycle_health_observations");
     const body = await get();
     expect(body.signals.length).toBeGreaterThan(20);
-    expect(row(body, "worker_failures").status).toBe("unknown");
+    expect(body.lastScanAt).toBeNull();
   });
 });
 
