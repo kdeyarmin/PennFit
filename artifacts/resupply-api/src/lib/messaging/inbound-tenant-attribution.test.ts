@@ -121,6 +121,7 @@ const {
   invalidateTenantTelecomCache,
   resolveOrgIdByCalledNumber,
   resolveOrgIdByPatientPhone,
+  resolveOrgIdByPatientPhoneDetailed,
 } = await import("./tenant-telecom");
 
 beforeEach(() => {
@@ -316,5 +317,99 @@ describe("attribution precedence", () => {
     await expect(
       resolveOrgIdByPatientPhone(SHARED_PATIENT_PHONE),
     ).resolves.toBe(TENANT_A);
+  });
+});
+
+describe("the caller lookup says WHY it failed", () => {
+  // The three reasons need three different fixes — register the DID,
+  // provision a dedicated one, or chase an outage — and only the resolver
+  // can tell them apart. A call site that infers the reason from whether
+  // a caller number happened to be supplied gets it wrong for every
+  // ordinary wrong number, and sends whoever reads the signal to do the
+  // wrong repair.
+
+  it("reports the tenant and NO reason on a clean match", async () => {
+    store.patients = [
+      { id: "p1", org_id: TENANT_A, phone_e164: SHARED_PATIENT_PHONE },
+    ];
+    await expect(
+      resolveOrgIdByPatientPhoneDetailed(SHARED_PATIENT_PHONE),
+    ).resolves.toEqual({ orgId: TENANT_A, reason: null });
+  });
+
+  it("says `unknown_caller` for a number nobody has", async () => {
+    await expect(
+      resolveOrgIdByPatientPhoneDetailed("+15550008888"),
+    ).resolves.toEqual({ orgId: null, reason: "unknown_caller" });
+  });
+
+  it("says `ambiguous_caller` — not unknown — when two tenants share it", async () => {
+    store.patients = [
+      { id: "p1", org_id: TENANT_A, phone_e164: SHARED_PATIENT_PHONE },
+      { id: "p2", org_id: TENANT_B, phone_e164: SHARED_PATIENT_PHONE },
+    ];
+    await expect(
+      resolveOrgIdByPatientPhoneDetailed(SHARED_PATIENT_PHONE),
+    ).resolves.toEqual({ orgId: null, reason: "ambiguous_caller" });
+  });
+
+  it("says `directory_unavailable` on a failed read, blaming the outage not the caller", async () => {
+    store.fail = true;
+    await expect(
+      resolveOrgIdByPatientPhoneDetailed(SHARED_PATIENT_PHONE),
+    ).resolves.toEqual({ orgId: null, reason: "directory_unavailable" });
+  });
+
+  it("says `unknown_caller` when there is no usable number at all", async () => {
+    for (const input of [undefined, "", "not-a-number"]) {
+      await expect(resolveOrgIdByPatientPhoneDetailed(input)).resolves.toEqual({
+        orgId: null,
+        reason: "unknown_caller",
+      });
+    }
+  });
+
+  it("does NOT cache an outage, so a recovered directory resolves at once", async () => {
+    // Caching a failed read would extend a brief outage to the full TTL
+    // for every caller who dialled during it — and keep reporting
+    // "unavailable" after the directory came back.
+    store.fail = true;
+    await expect(
+      resolveOrgIdByPatientPhoneDetailed(SHARED_PATIENT_PHONE),
+    ).resolves.toMatchObject({ reason: "directory_unavailable" });
+
+    store.fail = false;
+    store.patients = [
+      { id: "p1", org_id: TENANT_A, phone_e164: SHARED_PATIENT_PHONE },
+    ];
+    // No cache invalidation between these two calls, deliberately.
+    await expect(
+      resolveOrgIdByPatientPhoneDetailed(SHARED_PATIENT_PHONE),
+    ).resolves.toEqual({ orgId: TENANT_A, reason: null });
+  });
+
+  it("still caches a real answer, including a negative one", async () => {
+    await expect(
+      resolveOrgIdByPatientPhoneDetailed(SHARED_PATIENT_PHONE),
+    ).resolves.toMatchObject({ reason: "unknown_caller" });
+    // The row now exists, but the cached miss stands until the TTL.
+    store.patients = [
+      { id: "p1", org_id: TENANT_A, phone_e164: SHARED_PATIENT_PHONE },
+    ];
+    await expect(
+      resolveOrgIdByPatientPhoneDetailed(SHARED_PATIENT_PHONE),
+    ).resolves.toMatchObject({ orgId: null });
+  });
+
+  it("keeps the plain resolver's contract unchanged", async () => {
+    // Every existing caller still gets a bare org id or null, and still
+    // fails closed on ambiguity.
+    store.patients = [
+      { id: "p1", org_id: TENANT_A, phone_e164: SHARED_PATIENT_PHONE },
+      { id: "p2", org_id: TENANT_B, phone_e164: SHARED_PATIENT_PHONE },
+    ];
+    await expect(
+      resolveOrgIdByPatientPhone(SHARED_PATIENT_PHONE),
+    ).resolves.toBeNull();
   });
 });

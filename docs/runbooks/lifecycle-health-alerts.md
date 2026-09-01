@@ -478,19 +478,36 @@ nearest-looking practice is the isolation bug this platform refuses to have
 — but a rising count means a real patient is being ignored by a real
 practice's published number.
 
-The alert detail names the reason, and they need different fixes:
+**Every one of these means nobody owns the dialled line**, on that channel
+— that is what it takes to reach the caller fallback at all. So the first
+fix is always the same: register the number at `/admin/phone-settings`,
+remembering that SMS and voice ownership are **separate columns** (a DID
+registered for texting does not answer calls).
 
-- **`unknown_called_number`** — nobody owns the dialled line on that
-  channel. Register it at `/admin/phone-settings`. Note that SMS and voice
-  ownership are **separate columns**: a DID registered for texting does not
-  answer calls.
+The reason recorded is the more specific one: what the caller fallback
+found once the dialled number had already come back unowned. Each needs a
+different second step:
+
+- **`unknown_called_number`** — no caller number was supplied at all, so no
+  fallback was possible. The unregistered line is the whole story.
+- **`unknown_caller`** — a caller number was supplied and matches no
+  patient anywhere. Usually a genuine wrong number; only worth acting on in
+  volume. This is the expected reason for a stranger dialling an
+  unregistered line, and it is **not** an ambiguity.
 - **`ambiguous_caller`** — the caller's own number exists in more than one
   tenant, so ownership is genuinely undecidable. The fix is a dedicated DID
-  for the tenant, not a tie-break rule.
-- **`unknown_caller`** — the number matched nothing anywhere. Usually a
-  wrong number; only worth acting on in volume.
-- **`directory_unavailable`** — the lookup itself failed. This is an
-  outage, not a misconfiguration.
+  for that tenant, not a tie-break rule. Rare, and worth investigating even
+  at one.
+- **`directory_unavailable`** — the lookup itself failed. An outage: while
+  it lasts, neither of the two reasons above is knowable, so do not read a
+  drop in them as an improvement. This reason is deliberately **not**
+  cached, so recovery is picked up on the next inbound event.
+
+The resolver reports these; the inbound routes record what it reports. A
+route that inferred the reason from what it happened to have in scope —
+"a caller number was supplied, so it must be ambiguous" — would file every
+ordinary wrong number under `ambiguous_caller` and send you to provision a
+DID nobody needs.
 
 The counter holds a day, a channel, a reason and a count. There is no phone
 number in it and no column for one: attribution is exactly what failed, so

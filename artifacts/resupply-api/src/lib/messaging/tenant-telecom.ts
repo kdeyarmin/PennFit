@@ -316,7 +316,32 @@ export async function resolveOrgIdByFaxNumber(
 
 // patient phone (normalized E.164) → owning orgId, for routing an inbound
 // reply that landed on a SHARED number. Cached briefly like the others.
-const byPatientPhone = new Map<string, CacheEntry<string | null>>();
+const byPatientPhone = new Map<string, CacheEntry<PatientPhoneResolution>>();
+
+/**
+ * WHY a caller could not be resolved to one tenant.
+ *
+ * The three reasons need three different fixes, and the resolver is the
+ * only thing that can tell them apart — a caller that reads `null` at the
+ * call site could be any of them. Collapsing them there (by inferring
+ * from whether a number was supplied, say) produces an operational signal
+ * that points at the wrong repair.
+ */
+export type PatientPhoneFailure =
+  | /** No patient anywhere has this number. Usually a wrong number. */
+  "unknown_caller" /** The number exists in more than one tenant, so ownership is
+   *  genuinely undecidable. The fix is a dedicated DID, not a
+   *  tie-break. */
+  | "ambiguous_caller" /** The directory read itself failed. An outage — the other two are
+   *  unknowable while it lasts. */
+  | "directory_unavailable";
+
+export interface PatientPhoneResolution {
+  /** The single owning tenant, or null when there isn't exactly one. */
+  orgId: string | null;
+  /** null on success; the reason on every failure. */
+  reason: PatientPhoneFailure | null;
+}
 
 /**
  * Disambiguate an inbound reply that arrived on a SHARED platform number —
@@ -339,19 +364,42 @@ const byPatientPhone = new Map<string, CacheEntry<string | null>>();
 export async function resolveOrgIdByPatientPhone(
   fromNumber: string | undefined,
 ): Promise<string | null> {
+  return (await resolveOrgIdByPatientPhoneDetailed(fromNumber)).orgId;
+}
+
+/**
+ * As `resolveOrgIdByPatientPhone`, but says WHY it failed.
+ *
+ * Same resolution and the same fail-closed answer — this only adds the
+ * reason, for the inbound routes that record an attribution-failure
+ * signal. They cannot derive it themselves: "a caller number was
+ * supplied" is not evidence that the number is ambiguous.
+ */
+export async function resolveOrgIdByPatientPhoneDetailed(
+  fromNumber: string | undefined,
+): Promise<PatientPhoneResolution> {
   // Same normalize-before-lookup posture as resolveOrgIdByCalledNumber /
   // SMS inbound: bare NANP / 11-digit forms must become +1… before the
   // phone_e164 equality, and non-E.164 input must not reach PostgREST.
   const number = normalizeE164(fromNumber);
-  if (!number) return null;
+  // Nothing usable to look up. Not an outage and not an ambiguity: there
+  // is simply no caller to identify.
+  if (!number) return { orgId: null, reason: "unknown_caller" };
   const now = Date.now();
   const cached = byPatientPhone.get(number);
   if (cached && cached.expiresAt > now) return cached.value;
 
-  let value: string | null = null;
+  let value: PatientPhoneResolution = {
+    orgId: null,
+    reason: "unknown_caller",
+  };
   try {
     const raw = await rawOrgClient();
-    if (raw) {
+    if (!raw) {
+      // No seed org means the directory itself is unreachable. Saying
+      // "unknown caller" here would blame the patient for our outage.
+      value = { orgId: null, reason: "directory_unavailable" };
+    } else {
       const { data, error } = await raw
         .schema("resupply")
         .from("patients")
@@ -366,7 +414,7 @@ export async function resolveOrgIdByPatientPhone(
         ...new Set(rows.map((r) => r.org_id).filter((o): o is string => !!o)),
       ];
       if (orgs.length === 1) {
-        value = orgs[0] ?? null;
+        value = { orgId: orgs[0] ?? null, reason: null };
       } else if (orgs.length > 1) {
         // AMBIGUOUS — fail closed.
         //
@@ -383,7 +431,7 @@ export async function resolveOrgIdByPatientPhone(
         // / drop rather than guess), which loses a message the tenant can
         // recover by provisioning their own DID — a cost measured in
         // configuration, not in a disclosure.
-        value = null;
+        value = { orgId: null, reason: "ambiguous_caller" };
         logger.warn(
           {
             event: "tenant_telecom_patient_phone_ambiguous",
@@ -398,10 +446,17 @@ export async function resolveOrgIdByPatientPhone(
       { event: "tenant_telecom_org_by_patient_phone_failed", err },
       "tenant-telecom: org-by-patient-phone lookup failed",
     );
-    value = null;
+    value = { orgId: null, reason: "directory_unavailable" };
   }
 
-  byPatientPhone.set(number, { value, expiresAt: now + CACHE_TTL_MS });
+  // An OUTAGE is deliberately not cached. Caching it would extend a brief
+  // directory failure to the full TTL for every caller who dialled during
+  // it, and would keep reporting "unavailable" after the directory came
+  // back. A real answer — including "nobody has this number" — is cached
+  // as before.
+  if (value.reason !== "directory_unavailable") {
+    byPatientPhone.set(number, { value, expiresAt: now + CACHE_TTL_MS });
+  }
   return value;
 }
 export type InboundChannelKind = "sms" | "voice";

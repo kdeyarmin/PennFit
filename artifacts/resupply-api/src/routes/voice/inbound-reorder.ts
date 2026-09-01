@@ -45,7 +45,7 @@ import { logger } from "../../lib/logger";
 import { recordAttributionFailure } from "../../lib/messaging/attribution-failures";
 import {
   resolveOrgIdByCalledNumber,
-  resolveOrgIdByPatientPhone,
+  resolveOrgIdByPatientPhoneDetailed,
 } from "../../lib/messaging/tenant-telecom";
 import { resolveBrandingByOrgId } from "../../lib/tenant-branding";
 import { getPendingSessions } from "../../lib/voice/pending-sessions";
@@ -130,24 +130,34 @@ router.post("/voice/inbound-reorder", signatureMiddleware, async (req, res) => {
   // another tenant had registered for texting would have won.
   const calledOrgId = await resolveOrgIdByCalledNumber(calledNumber, "voice");
   const normalizedCaller = normalizeE164(callerRaw);
-  const orgId = calledOrgId
-    ? calledOrgId
-    : normalizedCaller
-      ? await resolveOrgIdByPatientPhone(normalizedCaller)
-      : null;
+  // The caller fallback reports WHY it failed. The call site cannot infer
+  // that — "a caller number was supplied" says nothing about whether the
+  // number is unknown, shared across tenants, or unreadable — and each of
+  // those needs a different fix from whoever reads the signal.
+  const callerMatch =
+    calledOrgId || !normalizedCaller
+      ? null
+      : await resolveOrgIdByPatientPhoneDetailed(normalizedCaller);
+  const orgId = calledOrgId ? calledOrgId : (callerMatch?.orgId ?? null);
   if (!orgId) {
     // Count the drop. Hanging up is correct — routing a stranger's call
     // into the nearest-looking practice is the isolation bug this
     // refuses to have — but an unrecorded drop means a DID pointed at
     // the platform before it was registered to a tenant can swallow a
-    // practice's calls indefinitely with nothing to show for it. The
-    // two reasons are kept apart because they need different fixes: no
-    // owner for the dialled line, versus a caller whose own number
-    // exists in several tenants. Aggregate only, and never awaited —
-    // Twilio is waiting on this response.
+    // practice's calls indefinitely with nothing to show for it.
+    //
+    // The reason recorded is the DECISIVE one. Reaching here always means
+    // no tenant owns the dialled line, so when no caller number was
+    // supplied that is the whole story. When a caller number WAS supplied
+    // the fallback ran and its reason is the more specific fact — a
+    // number shared across tenants and a number nobody has need different
+    // repairs, and an outage means neither is known.
+    //
+    // One increment per dropped event. Aggregate only, and never awaited
+    // — Twilio is waiting on this response.
     void recordAttributionFailure(
       "voice",
-      normalizedCaller ? "ambiguous_caller" : "unknown_called_number",
+      callerMatch?.reason ?? "unknown_called_number",
     );
     res
       .status(200)

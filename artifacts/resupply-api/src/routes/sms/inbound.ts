@@ -70,7 +70,7 @@ import { logger } from "../../lib/logger";
 import { recordAttributionFailure } from "../../lib/messaging/attribution-failures";
 import {
   resolveOrgIdByCalledNumber,
-  resolveOrgIdByPatientPhone,
+  resolveOrgIdByPatientPhoneDetailed,
 } from "../../lib/messaging/tenant-telecom";
 import { createAiFallbackAdapter } from "../../lib/messaging/ai-fallback-impl";
 import { ingestInboundMmsMedia } from "../../lib/messaging/ingest-mms";
@@ -304,9 +304,13 @@ router.post(
     //     STOP/HELP audits and unknown-number PHI under Penn. CTIA STOP/HELP
     //     still get a platform-branded reply with no DB write.
     const calledOrgId = await resolveOrgIdByCalledNumber(parsed.To, "sms");
-    const orgId = calledOrgId
-      ? calledOrgId
-      : await resolveOrgIdByPatientPhone(normalizedFrom);
+    // The caller fallback reports WHY it failed, so the drop below can be
+    // recorded against the reason that actually applies rather than a
+    // guess made from what happens to be in scope here.
+    const callerMatch = calledOrgId
+      ? null
+      : await resolveOrgIdByPatientPhoneDetailed(normalizedFrom);
+    const orgId = calledOrgId ? calledOrgId : (callerMatch?.orgId ?? null);
     if (!orgId) {
       if (earlyRouted.intent === "stop" || earlyRouted.intent === "help") {
         await safeAudit({
@@ -343,10 +347,19 @@ router.post(
       // refuses to have — but until this counter existed the failure
       // rate was zero by construction, so a DID pointed at the platform
       // before it was registered could swallow a practice's inbound
-      // messages indefinitely with nothing to show for it. Aggregate
-      // only: a day, a channel, a reason. Never awaited — an inbound
-      // webhook has to answer Twilio.
-      void recordAttributionFailure("sms", "unknown_called_number");
+      // messages indefinitely with nothing to show for it.
+      //
+      // The DECISIVE reason, as on the voice path: reaching here always
+      // means no tenant owns the texted line, so the fallback's own
+      // reason — unknown number, shared across tenants, or an unreadable
+      // directory — is the more specific and more actionable fact.
+      // Aggregate only: a day, a channel, a reason, and one increment per
+      // dropped message. Never awaited — an inbound webhook has to answer
+      // Twilio.
+      void recordAttributionFailure(
+        "sms",
+        callerMatch?.reason ?? "unknown_called_number",
+      );
       await safeAudit({
         action: "messaging.inbound.received",
         adminEmail: null,

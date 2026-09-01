@@ -61,6 +61,13 @@ vi.mock("../../lib/messaging/tenant-telecom", async () => {
     resolveOrgIdByCalledNumber: async () =>
       "00000000-0000-4000-8000-000000000000",
     resolveOrgIdByPatientPhone: async () => null,
+    // The called number resolves above, so the route never reaches the
+    // caller fallback in this suite; provided so the module shape matches
+    // the real one.
+    resolveOrgIdByPatientPhoneDetailed: async () => ({
+      orgId: null,
+      reason: "unknown_caller",
+    }),
   };
 });
 
