@@ -100,12 +100,47 @@ decision ten times.
 
 Work them at `GET /admin/pacware/shipment-exceptions`:
 
-| Resolution         | Effect                                                                                                                                                                                                                    |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `kept_recorded`    | The recorded date stands. The report was wrong.                                                                                                                                                                           |
-| `corrected`        | **The only one that rewrites the date.** A deliberate, attributed act. The claim must be corrected separately — re-submitting a claim is a billing decision with its own approval gate, and this route does not touch it. |
-| `duplicate_report` | The report duplicated a shipment already recorded.                                                                                                                                                                        |
-| `invalid_report`   | The report is wrong and no correction applies.                                                                                                                                                                            |
+| Resolution         | Effect                                                                                                                                                                                              |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `kept_recorded`    | The recorded date stands. The report was wrong.                                                                                                                                                     |
+| `corrected`        | **The only one that rewrites the date.** A deliberate, attributed act. When the exception carries a claim, it also **requires the corrected claim's reference** (`claimCorrectionRef`) — see below. |
+| `duplicate_report` | The report duplicated a shipment already recorded.                                                                                                                                                  |
+| `invalid_report`   | The report is wrong and no correction applies.                                                                                                                                                      |
+
+### Correcting a date that was already billed
+
+This route still does **not** re-submit a claim: that is a billing
+decision with its own approval gate. But it will not let you _close_ the
+exception on a billed fulfillment without a reference to the corrected or
+voided claim.
+
+The reason is what closing does. Resolving takes the row out of the work
+queue — so the old behaviour ended with the fulfillment showing the new
+date, the filed 837P still carrying the old one, and nothing watching the
+difference. That is precisely the hidden disagreement this table exists
+to surface, manufactured by the workflow meant to prevent it.
+
+So the order is forced:
+
+1. Correct or void the claim through the billing path.
+2. Resolve the exception here, citing that claim's reference.
+
+```
+POST /admin/pacware/shipment-exceptions/:id/resolve
+{ "resolution": "corrected", "claimCorrectionRef": "CORR-99812" }
+```
+
+Attempting step 2 first returns `claim_correction_ref_required` and
+changes nothing — the ship date is not rewritten and the exception stays
+open. A CHECK constraint (migration 0544) enforces the same rule at the
+database, so a second caller cannot bypass it.
+
+The requirement applies **only** to `corrected` on an exception with a
+claim. A correction on an unbilled fulfillment creates no disagreement,
+and the resolutions that change no date (`kept_recorded`,
+`duplicate_report`, `invalid_report`) need no claim work at all —
+demanding a reference for those would be ceremony that teaches operators
+to type anything into the box.
 
 Before 0541 the new date was silently dropped. Safe, but the correction
 the warehouse sent was lost.

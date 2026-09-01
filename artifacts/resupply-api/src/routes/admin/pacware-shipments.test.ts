@@ -555,6 +555,114 @@ describe("ship-date exception resolution", () => {
     expect(getSupabaseWritePayloads("fulfillments", "update")).toHaveLength(0);
   });
 
+  it("refuses to close a BILLED correction without the claim's reference", async () => {
+    // Resolving takes the row out of the queue. Without the reference the
+    // end state is the fulfillment showing the new date, the filed 837P
+    // still carrying the old one, and nothing watching the difference —
+    // the exact disagreement this table exists to surface. The order is
+    // forced: correct the claim, then close the exception citing it.
+    stubAdmin();
+    stageSupabaseResponse("shipment_date_exceptions", "select", {
+      data: {
+        id: "eeeeeeee-0000-4000-8000-000000000001",
+        fulfillment_id: FULFILLMENT,
+        proposed_shipped_at: "2026-08-20T12:00:00.000Z",
+        status: "open",
+        claim_id: "cccccccc-0000-4000-8000-000000000001",
+      },
+    });
+
+    const res = await request(makeApp())
+      .post(
+        "/admin/pacware/shipment-exceptions/eeeeeeee-0000-4000-8000-000000000001/resolve",
+      )
+      .send({ resolution: "corrected" });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("claim_correction_ref_required");
+    // And critically: the ship date was NOT rewritten.
+    expect(getSupabaseWritePayloads("fulfillments", "update")).toHaveLength(0);
+    expect(
+      getSupabaseWritePayloads("shipment_date_exceptions", "update"),
+    ).toHaveLength(0);
+  });
+
+  it("accepts a billed correction WITH the reference, and records it", async () => {
+    stubAdmin();
+    stageSupabaseResponse("shipment_date_exceptions", "select", {
+      data: {
+        id: "eeeeeeee-0000-4000-8000-000000000001",
+        fulfillment_id: FULFILLMENT,
+        proposed_shipped_at: "2026-08-20T12:00:00.000Z",
+        status: "open",
+        claim_id: "cccccccc-0000-4000-8000-000000000001",
+      },
+    });
+    stageSupabaseResponse("fulfillments", "update", { data: null });
+    stageSupabaseResponse("shipment_date_exceptions", "update", { data: null });
+
+    const res = await request(makeApp())
+      .post(
+        "/admin/pacware/shipment-exceptions/eeeeeeee-0000-4000-8000-000000000001/resolve",
+      )
+      .send({ resolution: "corrected", claimCorrectionRef: "CORR-99812" });
+
+    expect(res.status).toBe(200);
+    expect(getSupabaseWritePayloads("fulfillments", "update")).toHaveLength(1);
+    expect(
+      getSupabaseWritePayloads("shipment_date_exceptions", "update")[0],
+    ).toMatchObject({ claim_correction_ref: "CORR-99812" });
+  });
+
+  it("does not demand a reference when nothing was billed", async () => {
+    // No claim, no disagreement to create. Requiring a billing reference
+    // here would be ceremony that teaches operators to type anything.
+    stubAdmin();
+    stageSupabaseResponse("shipment_date_exceptions", "select", {
+      data: {
+        id: "eeeeeeee-0000-4000-8000-000000000001",
+        fulfillment_id: FULFILLMENT,
+        proposed_shipped_at: "2026-08-20T12:00:00.000Z",
+        status: "open",
+        claim_id: null,
+      },
+    });
+    stageSupabaseResponse("fulfillments", "update", { data: null });
+    stageSupabaseResponse("shipment_date_exceptions", "update", { data: null });
+
+    const res = await request(makeApp())
+      .post(
+        "/admin/pacware/shipment-exceptions/eeeeeeee-0000-4000-8000-000000000001/resolve",
+      )
+      .send({ resolution: "corrected" });
+
+    expect(res.status).toBe(200);
+    expect(getSupabaseWritePayloads("fulfillments", "update")).toHaveLength(1);
+  });
+
+  it("does not demand a reference for a resolution that changes no date", async () => {
+    stubAdmin();
+    stageSupabaseResponse("shipment_date_exceptions", "select", {
+      data: {
+        id: "eeeeeeee-0000-4000-8000-000000000001",
+        fulfillment_id: FULFILLMENT,
+        proposed_shipped_at: "2026-08-20T12:00:00.000Z",
+        status: "open",
+        claim_id: "cccccccc-0000-4000-8000-000000000001",
+      },
+    });
+    stageSupabaseResponse("shipment_date_exceptions", "update", { data: null });
+
+    const res = await request(makeApp())
+      .post(
+        "/admin/pacware/shipment-exceptions/eeeeeeee-0000-4000-8000-000000000001/resolve",
+      )
+      .send({ resolution: "invalid_report" });
+
+    expect(res.status).toBe(200);
+    expect(getSupabaseWritePayloads("fulfillments", "update")).toHaveLength(0);
+  });
+
   it("refuses to resolve an exception twice", async () => {
     stubAdmin();
     stageSupabaseResponse("shipment_date_exceptions", "select", {

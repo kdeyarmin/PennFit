@@ -318,6 +318,60 @@ describe("POST /admin/resupply-cutover/:key/enable", () => {
     expect(invalidateCacheMock).toHaveBeenCalledWith(DUE_AT);
   });
 
+  it("puts the flag BACK when the cutover record cannot be written", async () => {
+    // There are no cross-request transactions on this data path, so the
+    // flip and the record cannot be atomic. The dangerous window is a
+    // failed record after a successful flip: the response says "error"
+    // and the operator reasonably believes nothing happened, while the
+    // flag is quietly on with no evidence behind it.
+    //
+    // The invariant worth protecting is "never enabled without
+    // evidence" — a flag left OFF after a failed enable is just a retry.
+    stubAdmin();
+    assessMock.mockResolvedValue(readyReport());
+    stageFlagRow(false);
+    // The revert re-reads the row before writing, and by then the enable
+    // has landed — so it sees `true` and flips it back.
+    stageSupabaseResponse("feature_flags", "select", {
+      data: { key: DUE_AT, enabled: true },
+    });
+    stageSupabaseResponse("feature_flags", "update", { data: null });
+    writeRecordMock.mockRejectedValue(new Error("insert exploded"));
+
+    const res = await request(makeApp())
+      .post(`/admin/resupply-cutover/${DUE_AT}/enable`)
+      .send({ confirm: "ENABLE", evidenceId: "OPS-1234" });
+
+    expect(res.status).toBe(500);
+    expect(res.body.error).toBe("record_failed_flag_reverted");
+
+    // Two writes: the enable, then the revert back to the prior value.
+    const writes = getSupabaseWritePayloads("feature_flags", "update");
+    expect(writes).toHaveLength(2);
+    expect(writes[0]).toMatchObject({ enabled: true });
+    expect(writes[1]).toMatchObject({ enabled: false });
+  });
+
+  it("says so distinctly when the flag could NOT be put back", async () => {
+    // A different state needing a different response from the operator.
+    // Reporting it identically to the recovered case is how the one that
+    // still needs a human goes unnoticed.
+    stubAdmin();
+    assessMock.mockResolvedValue(readyReport());
+    // Only ONE staged select: the enable consumes it, so the revert's own
+    // read finds nothing and setFlag returns flag_not_seeded.
+    stageFlagRow(false);
+    writeRecordMock.mockRejectedValue(new Error("insert exploded"));
+
+    const res = await request(makeApp())
+      .post(`/admin/resupply-cutover/${DUE_AT}/enable`)
+      .send({ confirm: "ENABLE", evidenceId: "OPS-1234" });
+
+    expect(res.status).toBe(500);
+    expect(res.body.error).toBe("record_failed_flag_still_enabled");
+    expect(res.body.message).toMatch(/no cutover record/i);
+  });
+
   it("refuses a tenant whose flag row was never seeded", async () => {
     stubAdmin();
     assessMock.mockResolvedValue(readyReport());

@@ -765,6 +765,18 @@ const resolveBody = z
       "invalid_report",
     ]),
     note: z.string().trim().max(2000).optional(),
+    /**
+     * The corrected/voided claim's reference — a corrected-claim control
+     * number, a payer call reference, whatever the practice files under.
+     *
+     * REQUIRED when resolving `corrected` on an exception that carries a
+     * claim (enforced below, and by a CHECK in migration 0544). Closing
+     * such an exception removes it from the queue, so without this the
+     * fulfillment would show the new date, the filed 837P would still
+     * carry the old one, and nothing would be watching the difference —
+     * the exact disagreement this table exists to surface.
+     */
+    claimCorrectionRef: z.string().trim().min(3).max(120).optional(),
   })
   .strict();
 
@@ -792,7 +804,7 @@ router.post(
     const supabase = getOrgScopedClient(orgId);
     const { data: existing, error: readErr } = await supabase
       .from("shipment_date_exceptions")
-      .select("id, fulfillment_id, proposed_shipped_at, status")
+      .select("id, fulfillment_id, proposed_shipped_at, status, claim_id")
       .eq("id", id.data)
       .limit(1)
       .maybeSingle();
@@ -802,6 +814,7 @@ router.post(
       fulfillment_id: string;
       proposed_shipped_at: string;
       status: string;
+      claim_id: string | null;
     } | null;
     if (!row) {
       res.status(404).json({ error: "not_found" });
@@ -814,9 +827,34 @@ router.post(
 
     // `corrected` is the ONE resolution that rewrites the ship date, and
     // it is a deliberate, attributed act — never something an import
-    // does on its own. The claim it affects must be corrected separately;
-    // this route does not touch it, because re-submitting a claim is a
-    // billing decision with its own approval gate.
+    // does on its own.
+    //
+    // This route still does not re-submit the claim: that is a billing
+    // decision with its own approval gate. But it will not let the
+    // exception be CLOSED on a billed fulfillment without a reference to
+    // the corrected claim, because closing it takes the row out of the
+    // queue — and the old behaviour left the fulfillment showing the new
+    // date, the filed 837P carrying the old one, and nothing watching.
+    //
+    // The order is forced deliberately: correct the claim, then close the
+    // exception citing it.
+    if (
+      body.data.resolution === "corrected" &&
+      row.claim_id &&
+      !body.data.claimCorrectionRef
+    ) {
+      res.status(400).json({
+        error: "claim_correction_ref_required",
+        claimId: row.claim_id,
+        message:
+          "This ship date was already billed. Correct or void the claim " +
+          "first, then resolve this exception with the corrected claim's " +
+          "reference — otherwise the fulfillment and the filed claim end " +
+          "up disagreeing with nothing tracking it.",
+      });
+      return;
+    }
+
     if (body.data.resolution === "corrected") {
       const { error: updateErr } = await supabase
         .from("fulfillments")
@@ -834,6 +872,7 @@ router.post(
         status: "resolved",
         resolution: body.data.resolution,
         resolution_note: body.data.note ?? null,
+        claim_correction_ref: body.data.claimCorrectionRef ?? null,
         resolved_by_email: req.adminEmail ?? null,
         resolved_at: new Date().toISOString(),
       })

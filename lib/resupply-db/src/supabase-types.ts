@@ -1088,6 +1088,9 @@ export interface Database {
           status: string;
           resolution: string | null;
           resolution_note: string | null;
+          /** Migration 0544: the corrected/voided claim's reference.
+           *  Required when resolving `corrected` on a billed fulfillment. */
+          claim_correction_ref: string | null;
           raised_by_email: string | null;
           resolved_by_email: string | null;
           resolved_at: string | null;

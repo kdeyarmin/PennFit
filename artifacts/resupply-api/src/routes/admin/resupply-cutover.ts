@@ -327,18 +327,67 @@ router.post(
       return;
     }
 
-    const record = await writeCutoverRecord({
-      orgId,
-      flagKey: key,
-      action: "enable",
-      previousValue: flagResult.previous,
-      newValue: true,
-      readinessStatus: "ready",
-      report: report as unknown as Record<string, unknown>,
-      evidenceId: body.data.evidenceId,
-      actorEmail: req.adminEmail ?? null,
-      actorUserId: req.adminUserId ?? null,
-    });
+    // The flag is now ON. There are no cross-request transactions on this
+    // data path, so the record cannot be written atomically with the flip
+    // — which leaves exactly one dangerous window: the record fails, the
+    // response says "error", and the operator reasonably believes nothing
+    // happened while the flag is quietly enabled with no evidence behind
+    // it. That is the state `flags_without_readiness_evidence` exists to
+    // catch, and it should not be reachable through the supported path.
+    //
+    // So on a failed record we put the flag BACK. The invariant worth
+    // protecting is "never enabled without evidence"; a flag left off
+    // after a failed enable is merely a retry.
+    let record;
+    try {
+      record = await writeCutoverRecord({
+        orgId,
+        flagKey: key,
+        action: "enable",
+        previousValue: flagResult.previous,
+        newValue: true,
+        readinessStatus: "ready",
+        report: report as unknown as Record<string, unknown>,
+        evidenceId: body.data.evidenceId,
+        actorEmail: req.adminEmail ?? null,
+        actorUserId: req.adminUserId ?? null,
+      });
+    } catch (err) {
+      const reverted = await setFlag(orgId, key, flagResult.previous, {
+        email: req.adminEmail ?? null,
+        userId: req.adminUserId ?? null,
+      }).catch(() => null);
+      const rolledBack = reverted !== null && !("error" in reverted);
+      logger.error(
+        {
+          event: "resupply_cutover.record_failed",
+          flagKey: key,
+          rolledBack,
+          errName: err instanceof Error ? err.name : "unknown",
+        },
+        rolledBack
+          ? "resupply-cutover: could not record the enable; the flag was put back"
+          : "resupply-cutover: could not record the enable AND could not put the flag back — it is ON with no evidence",
+      );
+      invalidateFeatureFlagCache();
+      res.status(500).json({
+        // Two different states, and the operator has to act differently
+        // in each. Reporting them the same way is how the second one
+        // goes unnoticed.
+        error: rolledBack
+          ? "record_failed_flag_reverted"
+          : "record_failed_flag_still_enabled",
+        key,
+        ...(rolledBack
+          ? {}
+          : {
+              message:
+                "The flag is enabled with no cutover record. Roll it back " +
+                "from this page, or re-run the enable so a record is written.",
+            }),
+      });
+      return;
+    }
 
     await logAudit({
       action: "resupply_cutover.enable",
