@@ -29,9 +29,15 @@ import type PgBoss from "pg-boss";
 import { logAudit } from "@workspace/resupply-audit";
 import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 import {
+  ADAPTER_ERROR_CLASS,
+  breakerKey,
+  type FetchSnapshotResult,
+  IntegrationCircuitBreaker,
+  type IntegrationAdapter,
   type IntegrationSource,
   integrationSnapshotSchema,
   type AdapterError,
+  withRetries,
 } from "@workspace/resupply-integrations";
 
 import { recordSyncOutcome } from "../../lib/integrations/connector-status.js";
@@ -58,6 +64,83 @@ const THROTTLE_MS = 200;
 // least-recently-synced ordering on the scan query below.
 const MAX_LINKS_PER_RUN = 1000;
 
+// Bounded retries and a circuit breaker around the vendor call.
+//
+// WHY THIS LOOP IS THE PLACE FOR THEM
+// -----------------------------------
+// This is the only path that calls a therapy-cloud vendor a thousand
+// times in a row, so it is the only path where the two failure modes the
+// resilience layer exists for can actually happen: a single transient
+// blip losing a patient's night data for a day, and a wrong client secret
+// turning into thousands of rejected auth attempts in a few minutes.
+//
+// The retry budget is deliberately small. A nightly bulk walk is not an
+// interactive request — nobody is waiting on it, and it has a pg-boss
+// lease to stay inside. One retry catches the genuine blip; a vendor that
+// is actually down is the breaker's problem, not the retry loop's.
+// `withRetries` only ever retries a TRANSIENT classification, so a bad
+// credential is still returned on the first attempt.
+const FETCH_MAX_ATTEMPTS = 2;
+const FETCH_BASE_DELAY_MS = 250;
+const FETCH_MAX_DELAY_MS = 2_000;
+
+// Per `(source, org)`, per process. One tenant's wrong credentials must
+// not stop calls for a tenant whose credentials are fine, and one
+// vendor being down must not stop the other two.
+//
+// Module-level, so the state survives across the orgs within one run —
+// which is the point. It is deliberately NOT persisted: an in-process
+// breaker that starts closed on the next tick is the behaviour we want,
+// since the next tick is hours away and the vendor may well have
+// recovered.
+const BREAKER_FAILURE_THRESHOLD = 5;
+const BREAKER_COOLDOWN_MS = 5 * 60_000;
+const breaker = new IntegrationCircuitBreaker({
+  failureThreshold: BREAKER_FAILURE_THRESHOLD,
+  cooldownMs: BREAKER_COOLDOWN_MS,
+});
+
+/** Exposed for tests; also what an operator-forced retry would call. */
+export function resetTherapySyncBreaker(): void {
+  breaker.reset();
+}
+
+/**
+ * Fetch one patient's snapshot with bounded retries, under the breaker.
+ *
+ * Returns `null` when the breaker is open — the call was NOT made, which
+ * the caller must report differently from a call that failed.
+ */
+async function fetchWithResilience(
+  adapter: { fetchSnapshot: IntegrationAdapter["fetchSnapshot"] },
+  key: string,
+  input: { partnerPatientId: string },
+): Promise<{ result: FetchSnapshotResult; attempts: number } | null> {
+  if (!breaker.canAttempt(key)) return null;
+
+  const { result, attempts } = await withRetries(
+    () => adapter.fetchSnapshot(input),
+    {
+      maxAttempts: FETCH_MAX_ATTEMPTS,
+      baseDelayMs: FETCH_BASE_DELAY_MS,
+      maxDelayMs: FETCH_MAX_DELAY_MS,
+    },
+  );
+
+  if (result.ok) {
+    breaker.recordSuccess(key);
+  } else if (ADAPTER_ERROR_CLASS[result.error] === "no_data") {
+    // A vendor that legitimately has nothing for five patients in a row
+    // is not an outage, and tripping the breaker on it would turn an
+    // empty roster into one.
+    breaker.recordNoData(key);
+  } else {
+    breaker.recordFailure(key, result.error);
+  }
+
+  return { result, attempts };
+}
+
 type Json =
   Database["resupply"]["Tables"]["patient_integration_snapshots"]["Row"]["payload"];
 
@@ -73,7 +156,7 @@ async function sleep(ms: number): Promise<void> {
 async function stampLinkSkipped(
   supabase: ReturnType<typeof getOrgScopedClient>,
   linkId: string,
-  status: "adapter_missing" | "adapter_unavailable",
+  status: "adapter_missing" | "adapter_unavailable" | "breaker_open",
 ): Promise<void> {
   const { error } = await supabase
     .from("patient_therapy_links")
@@ -248,6 +331,16 @@ export interface NightlySyncResult {
   refreshed: number;
   failed: number;
   nightsPersisted: number;
+  /**
+   * Links whose vendor call was NOT made because the circuit breaker for
+   * that `(source, org)` was open. Counted inside `failed` — the
+   * patient's data is stale either way — but reported separately so a
+   * run that stopped calling a broken vendor is distinguishable from one
+   * that hammered it a thousand times.
+   */
+  breakerSkipped: number;
+  /** Links whose vendor call needed more than one attempt to answer. */
+  retriedLinks: number;
 }
 
 export async function runTherapyNightlySyncForOrg(
@@ -262,6 +355,8 @@ export async function runTherapyNightlySyncForOrg(
     refreshed: 0,
     failed: 0,
     nightsPersisted: 0,
+    breakerSkipped: 0,
+    retriedLinks: 0,
   };
 
   const { data: links, error } = await supabase
@@ -340,9 +435,38 @@ export async function runTherapyNightlySyncForOrg(
       continue;
     }
     try {
-      const fetched = await adapter.fetchSnapshot({
-        partnerPatientId: link.partner_patient_id,
-      });
+      // Bounded retries, under a per-(source, org) circuit breaker. A
+      // `null` means the breaker is OPEN and no call was made — reported
+      // separately from a call that was made and failed, because the two
+      // demand different things from an operator.
+      const attempted = await fetchWithResilience(
+        adapter,
+        breakerKey(source, orgId),
+        { partnerPatientId: link.partner_patient_id },
+      );
+      if (attempted === null) {
+        const openError = breaker.lastError(breakerKey(source, orgId));
+        // Stamp so a link skipped by an open breaker rotates to the back
+        // of the queue rather than occupying the front of every night's
+        // page — the same rotation-starvation guard as the two
+        // adapter-missing branches above.
+        await stampLinkSkipped(supabase, link.id, "breaker_open").catch((err) =>
+          logger.warn(
+            { err, link_id: link.id, source },
+            "nightly-sync: failed to stamp breaker_open link",
+          ),
+        );
+        result.failed += 1;
+        result.breakerSkipped += 1;
+        // Carry the error that OPENED the breaker, so the connector
+        // status row still names the vendor problem rather than
+        // reporting the breaker as its own novel failure.
+        tally(source, "failed", openError ?? undefined);
+        // No vendor call was made, so there is nothing to throttle for.
+        continue;
+      }
+      const fetched = attempted.result;
+      if (attempted.attempts > 1) result.retriedLinks += 1;
       const fetchedAtIso = new Date().toISOString();
       if (!fetched.ok) {
         // Writes must be error-checked: a silently failed
@@ -448,6 +572,10 @@ export async function runTherapyNightlySyncForOrg(
         continue;
       }
 
+      // Sub-resources the adapter told us it could NOT fetch. Empty when
+      // the fetch was whole, or when the adapter does not report them.
+      const explicitPartial = fetched.partial ?? [];
+
       // Same as the error branch above: a dropped write here both
       // over-reports `refreshed` and (for the stamp) starves rotation.
       const { error: okSnapErr } = await supabase
@@ -458,32 +586,67 @@ export async function runTherapyNightlySyncForOrg(
             source,
             partner_patient_id: link.partner_patient_id,
             payload: parsed.data as unknown as Json,
-            // `partial` when the vendor answered but left a sub-resource
-            // empty — no device settings, or no nights in the window.
-            // The column has allowed this value since migration 0219 and
-            // nothing ever wrote it, so a patient whose therapy feed had
-            // gone quiet was recorded identically to one syncing
+            // `partial` when the vendor answered but the snapshot is not
+            // whole. The column has allowed this value since migration
+            // 0219 and nothing ever wrote it, so a patient whose therapy
+            // feed had gone quiet was recorded identically to one syncing
             // perfectly, and the integrations dashboard counted both as
-            // healthy. Distinguishing them is the difference between
-            // "this connection is fine" and "this connection is up and
-            // returning nothing".
+            // healthy.
+            //
+            // TWO WAYS TO BE PARTIAL, AND THEY ARE NOT THE SAME
+            // -------------------------------------------------
+            // The adapter REPORTS one of them: `fetched.partial` names
+            // each sub-resource whose own call failed and the
+            // classification it failed with. A compliance summary missing
+            // because that endpoint 403'd is a missing entitlement — ours
+            // to fix, and it must reach `integrations-errors` with the
+            // category attached. Inferring partial only from emptiness
+            // discarded that report entirely and re-derived a weaker
+            // version of it, so a half-working connector that answered
+            // "no nights" for the same reason every night looked exactly
+            // like a patient who simply had no nights.
+            //
+            // The inference stays as the second arm, because an adapter
+            // that returns an empty snapshot without reporting why is
+            // still not a healthy sync.
             fetch_status:
+              explicitPartial.length > 0 ||
               parsed.data.settings == null ||
               (parsed.data.recentNights?.length ?? 0) === 0
                 ? "partial"
                 : "ok",
-            fetch_error: null,
+            // Carries the adapter's own reason when it gave one. Compact
+            // and machine-readable (`compliance=forbidden`), never a
+            // vendor response body. Null when the shortfall was only
+            // inferred — there is no reason to record.
+            fetch_error:
+              explicitPartial.length > 0
+                ? explicitPartial
+                    .map((e) => `${e.resource}=${e.error}`)
+                    .join(",")
+                    .slice(0, 200)
+                : null,
             fetched_at: fetchedAtIso,
           },
           { onConflict: "patient_id,source" },
         );
       if (okSnapErr) throw okSnapErr;
+      const partialReason =
+        explicitPartial.length > 0
+          ? explicitPartial
+              .map((e) => `${e.resource}=${e.error}`)
+              .join(",")
+              .slice(0, 200)
+          : null;
       const { error: okStampErr } = await supabase
         .from("patient_therapy_links")
         .update({
           last_synced_at: fetchedAtIso,
-          last_sync_status: "ok",
-          last_sync_error: null,
+          // The link's own status has to agree with the snapshot's. A
+          // link reading `ok` beside a snapshot reading `partial` is how
+          // an operator concludes the connection is fine.
+          last_sync_status: partialReason === null ? "ok" : "partial",
+          last_sync_error: partialReason,
         })
         .eq("id", link.id);
       if (okStampErr) throw okStampErr;
@@ -503,7 +666,16 @@ export async function runTherapyNightlySyncForOrg(
         );
       }
       result.refreshed += 1;
-      tally(source, "ok");
+      // A reported partial is NOT a clean sync for connector-status
+      // purposes: the sub-resource failure has a classification, and the
+      // whole reason for keeping it is that an operator acts on it. It is
+      // still counted as `refreshed` — the patient did get a snapshot —
+      // but the source is not allowed to report a spotless run.
+      if (explicitPartial.length > 0) {
+        tally(source, "failed", explicitPartial[0]!.error);
+      } else {
+        tally(source, "ok");
+      }
     } catch (err) {
       logger.warn(
         { err, link_id: link.id, source },
@@ -539,6 +711,8 @@ export async function runTherapyNightlySyncForOrg(
       refreshed: result.refreshed,
       failed: result.failed,
       nights_persisted: result.nightsPersisted,
+      breaker_skipped: result.breakerSkipped,
+      retried_links: result.retriedLinks,
     },
     ip: null,
     userAgent: null,
@@ -583,6 +757,8 @@ export async function runTherapyNightlySync(): Promise<NightlySyncResult> {
     refreshed: 0,
     failed: 0,
     nightsPersisted: 0,
+    breakerSkipped: 0,
+    retriedLinks: 0,
   };
   await forEachActiveOrg(
     async (orgId) => {
@@ -591,6 +767,8 @@ export async function runTherapyNightlySync(): Promise<NightlySyncResult> {
       result.refreshed += r.refreshed;
       result.failed += r.failed;
       result.nightsPersisted += r.nightsPersisted;
+      result.breakerSkipped += r.breakerSkipped;
+      result.retriedLinks += r.retriedLinks;
     },
     { jobName: THERAPY_NIGHTLY_SYNC_JOB },
   );

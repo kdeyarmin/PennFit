@@ -291,6 +291,18 @@ export async function recordSyncOutcome(input: {
     const wasValidated =
       prior?.status === "live_validated" || prior?.status === "degraded";
 
+    // `not_found` and `no_data` are the vendor answering successfully and
+    // having nothing for that patient. `indicatesUnhealthyConnector` says
+    // so, and the status branch below already honours it — but the
+    // counter did not, so a connector whose roster simply contains
+    // patients the vendor has never heard of climbed to three
+    // "consecutive failures" and then jumped straight to `failing` on the
+    // first real error, with an operator-facing count that had never
+    // corresponded to a failure. Compute it ONCE, here, and use the same
+    // answer for both.
+    const unhealthy =
+      !input.errorCategory || indicatesUnhealthyConnector(input.errorCategory);
+
     let status: ConnectorStatus;
     if (input.ok) {
       status =
@@ -303,9 +315,6 @@ export async function recordSyncOutcome(input: {
               // and records the evidence.
               ((prior?.status as ConnectorStatus) ?? "unvalidated");
     } else {
-      const unhealthy =
-        !input.errorCategory ||
-        indicatesUnhealthyConnector(input.errorCategory);
       status = unhealthy
         ? priorFailures + 1 >= 3
           ? "failing"
@@ -321,7 +330,11 @@ export async function recordSyncOutcome(input: {
       ...(input.ok ? { last_sync_success_at: now } : {}),
       last_error_category: input.ok ? null : (input.errorCategory ?? null),
       partial_resources: input.partialResources ?? [],
-      consecutive_failures: input.ok ? 0 : priorFailures + 1,
+      consecutive_failures: input.ok
+        ? 0
+        : unhealthy
+          ? priorFailures + 1
+          : priorFailures,
       updated_at: now,
     };
 

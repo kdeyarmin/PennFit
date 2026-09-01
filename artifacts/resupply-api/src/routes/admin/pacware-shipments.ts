@@ -288,12 +288,14 @@ async function analyzeFile(
   const parsed = parsePacwareShipmentCsv(csv);
   const fileHash = await computeShipmentFileHash(csv);
 
-  const usable: PacwareShipmentRow[] = [];
-  const usableIndex: number[] = [];
-  parsed.rows.forEach((row, i) => {
-    usable.push(row);
-    usableIndex.push(i + 1);
-  });
+  // The parser's own data-row numbering, NOT the position in `parsed.rows`.
+  // `parsed.rows` holds only the rows that validated, so on any file with
+  // an invalid row the two diverge — and every disposition line after that
+  // row cited a CSV line the operator would find the wrong shipment on.
+  // `rowIndexes` is aligned with `rows` and counts the way `errors[].rowIndex`
+  // counts, so both halves of a report now point at the same file.
+  const usable: PacwareShipmentRow[] = parsed.rows;
+  const usableIndex: number[] = parsed.rowIndexes;
 
   const { candidates, recordedShipDates } = await loadCandidates(
     supabase,
