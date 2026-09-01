@@ -142,10 +142,16 @@ async function requestOnce<T>(
   // vendor has no data", which is exactly how a wrong endpoint survives a
   // nightly sync. See lib/resupply-integrations/src/errors.ts.
   const classified = classifyHttpStatus(res.status, inferPathKind(path));
-  if (classified !== null && res.status !== 401 && res.status !== 403) {
+  if (classified !== null && res.status !== 401) {
     throw new ClientError(classified);
   }
-  if (res.status === 401 || res.status === 403) {
+  // 401 ONLY. A 403 means the credential authenticated and was
+  // refused, so the token is fine and the entitlement is not —
+  // clearing it and retrying would burn a second vendor call and,
+  // worse, report `auth_failed`, which tells the operator to rotate a
+  // working secret. The `forbidden` classification above already
+  // carries the right remedy.
+  if (res.status === 401) {
     // The cached token outlives a server-side revocation/rotation by
     // up to its full TTL. Drop it (when it's the one we used) and let
     // the caller's single retry mint a fresh one — otherwise every
@@ -154,9 +160,7 @@ async function requestOnce<T>(
     if (cachedToken && cachedToken.configKey === configKey(config)) {
       cachedToken = null;
     }
-    throw new ClientError(
-      classifyHttpStatus(res.status, "auth") ?? "auth_failed",
-    );
+    throw new ClientError("auth_failed");
   }
   return (await res.json()) as T;
 }

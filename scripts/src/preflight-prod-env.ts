@@ -579,21 +579,36 @@ function runChecks(): void {
         .map((v) => v.trim().toLowerCase())
         .includes(actual.fingerprint)
     ) {
-      // WARN, not FAIL. One production database legitimately has more
-      // than one host spelling — Railway hands out a pooled
-      // DATABASE_URL and a direct DATABASE_PUBLIC_URL, and a pgbouncer
-      // host fingerprints differently from the primary. The variable
-      // accepts a comma-separated list for exactly that reason. A
-      // mismatch is worth surfacing (if the pin omits the database
-      // production actually uses, the guard would classify it as
-      // non-production and a preview could migrate it) but it is not
-      // reliable enough to gate a launch on.
+      // FAIL. This was a warning once, on the reasoning that one
+      // production database legitimately has several host spellings —
+      // Railway hands out a pooled DATABASE_URL and a direct
+      // DATABASE_PUBLIC_URL, and a pgbouncer host fingerprints
+      // differently from the primary.
+      //
+      // That reasoning was backwards. The variable is comma-separated
+      // precisely so every spelling can be listed, so several spellings
+      // is an argument for a COMPLETE pin, not for tolerating an
+      // incomplete one. And the pin is not decoration: a non-match is
+      // load-bearing NEGATIVE evidence. `resolveDatabaseIdentity` reads
+      // "this fingerprint is not in the pin" as positive proof the
+      // database is a preview database, which is what lets a preview
+      // with its own database migrate freely.
+      //
+      // So an incomplete pin is the whole incident: a preview that
+      // inherited production's DATABASE_URL fingerprints as something
+      // absent from the pin, is therefore classified non-production, and
+      // is allowed to migrate production. This check, run against
+      // production itself, is the only thing that can prove the pin
+      // covers the database production actually uses — so it has to gate.
       record(
         "PRODUCTION_DATABASE_FINGERPRINT",
-        "warn",
+        "fail",
         `does not include this environment's DATABASE_URL (${actual.fingerprint}). ` +
-          "The pin must list every host spelling of the production database — " +
-          "otherwise the migration guard treats production's own database as non-production.",
+          "Add it to the comma-separated pin, alongside every other host " +
+          "spelling of the production database (pooled and direct). Until it " +
+          "is listed, the migration guard reads production's own database as " +
+          "NON-production, and a preview that inherited this DATABASE_URL " +
+          "would be allowed to migrate it.",
       );
     } else {
       record("PRODUCTION_DATABASE_FINGERPRINT", "pass", "set");
@@ -621,11 +636,18 @@ function runChecks(): void {
         .map((v) => v.trim().toLowerCase())
         .includes(actual.fingerprint)
     ) {
+      // FAIL, for the same reason as the database pin above: the boot
+      // guard reads a non-match as evidence that this deployment is NOT
+      // holding production's data path, so an incomplete pin is what
+      // would let a preview serve production PHI unremarked.
       record(
         "PRODUCTION_SUPABASE_FINGERPRINT",
-        "warn",
+        "fail",
         `does not include this environment's SUPABASE_URL (${actual.fingerprint}). ` +
-          "Add it to the comma-separated pin.",
+          "Add it to the comma-separated pin. Until it is listed, the " +
+          "boot-time data-path guard reads production's own Supabase project " +
+          "as non-production, and a preview that inherited this SUPABASE_URL " +
+          "would serve production PHI without refusing to start.",
       );
     } else {
       record("PRODUCTION_SUPABASE_FINGERPRINT", "pass", "set");

@@ -516,3 +516,69 @@ describe("configKey secret rotation — cache invalidation (PR change)", () => {
     expect(tokenFetchCount.count).toBe(afterFirst);
   });
 });
+
+// ── 401 vs 403 ────────────────────────────────────────────────────────────────
+
+describe("a resource 403 is an entitlement problem, not a credential one", () => {
+  // The distinction is the whole point of the `forbidden` category. A 403
+  // means the credential authenticated and was REFUSED, so reporting
+  // `auth_failed` sends the operator to rotate a secret that works, and
+  // clearing the cached token burns a second vendor call proving it.
+
+  it("maps a 403 on a patient resource to `forbidden`", async () => {
+    vi.stubGlobal("fetch", mockFetch(new Response("nope", { status: 403 })));
+
+    const result = await fetchAirviewSnapshot(CONFIG, {
+      partnerPatientId: "p1",
+      windowDays: 30,
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toBe("forbidden");
+    }
+  });
+
+  it("retries a 401 but NOT a 403", async () => {
+    // Asserted as a RATIO rather than a fixed count: a snapshot fetches
+    // several resources, and hard-coding how many would make this test
+    // fail the next time one is added, for a reason that has nothing to
+    // do with what it checks.
+    //
+    // The auth retry exists to mint a fresh token after a server-side
+    // revocation. A 403 token is not stale, so retrying is pure waste
+    // against a vendor that already said no — and reporting it as an auth
+    // failure sends the operator to rotate a working secret.
+    const countApiCalls = async (status: number) => {
+      const fetchMock = mockFetch(new Response("no", { status }));
+      vi.stubGlobal("fetch", fetchMock);
+      await fetchAirviewSnapshot(CONFIG, {
+        partnerPatientId: "p1",
+        windowDays: 30,
+      });
+      return fetchMock.mock.calls.filter(
+        (c) => !String(c[0]).includes("/oauth/token"),
+      ).length;
+    };
+
+    const forbiddenCalls = await countApiCalls(403);
+    const unauthorizedCalls = await countApiCalls(401);
+
+    expect(forbiddenCalls).toBeGreaterThan(0);
+    expect(unauthorizedCalls).toBe(forbiddenCalls * 2);
+  });
+
+  it("still maps a 401 to `auth_failed`", async () => {
+    vi.stubGlobal("fetch", mockFetch(new Response("stale", { status: 401 })));
+
+    const result = await fetchAirviewSnapshot(CONFIG, {
+      partnerPatientId: "p1",
+      windowDays: 30,
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toBe("auth_failed");
+    }
+  });
+});

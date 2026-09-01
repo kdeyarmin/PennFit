@@ -1069,7 +1069,14 @@ describe("edge cases and regression", () => {
 
   it("passes when SUPABASE_URL is https://127.0.0.1 — localhost check does NOT apply to SUPABASE_URL (forbidLocalhost=false)", () => {
     // SUPABASE_URL uses requireHttpsUrl with forbidLocalhost=false, so localhost IS allowed
-    const env = withEnv({ SUPABASE_URL: "https://127.0.0.1:8080" });
+    //
+    // The pin is moved with the URL. Changing SUPABASE_URL without it
+    // would trip the (separate, and now failing) fingerprint-completeness
+    // check, and this test is about the localhost rule alone.
+    const env = withEnv({
+      SUPABASE_URL: "https://127.0.0.1:8080",
+      PRODUCTION_SUPABASE_FINGERPRINT: fingerprintOf("https://127.0.0.1:8080"),
+    });
     const { exitCode } = run(env);
     // Must be https — that part still applies
     expect(exitCode).toBe(0);
@@ -1154,15 +1161,43 @@ describe("edge cases and regression", () => {
     expect(stdout).toContain("PRODUCTION_SUPABASE_FINGERPRINT");
   });
 
-  it("warns (does not fail) when the pinned fingerprint omits the database in use", () => {
+  it("FAILS when the pinned fingerprint omits the database in use", () => {
+    // This was once a warning, on the reasoning that a pooled and a
+    // direct host legitimately fingerprint differently. That reasoning
+    // was backwards: the pin is comma-separated so every spelling can be
+    // listed, and a non-match is load-bearing NEGATIVE evidence —
+    // `resolveDatabaseIdentity` reads "not in the pin" as proof the
+    // database is a preview one. An incomplete pin is therefore the whole
+    // incident: a preview holding production's DATABASE_URL classifies as
+    // non-production and is allowed to migrate it.
     const { exitCode, stdout } = run(
       withEnv({ PRODUCTION_DATABASE_FINGERPRINT: "deadbeefcafe" }),
     );
-    // A pooled vs direct host legitimately fingerprints differently, so
-    // this is advisory — but it must still be said out loud.
-    expect(exitCode).toBe(0);
-    expect(stdout).toContain("Launch-eligible with warnings.");
+    expect(exitCode).not.toBe(0);
     expect(stdout).toContain("PRODUCTION_DATABASE_FINGERPRINT");
+    expect(stdout).toContain("would be allowed to migrate it");
+  });
+
+  it("FAILS when the pinned Supabase fingerprint omits the project in use", () => {
+    const { exitCode, stdout } = run(
+      withEnv({ PRODUCTION_SUPABASE_FINGERPRINT: "deadbeefcafe" }),
+    );
+    expect(exitCode).not.toBe(0);
+    expect(stdout).toContain("PRODUCTION_SUPABASE_FINGERPRINT");
+    expect(stdout).toContain("would serve production PHI");
+  });
+
+  it("passes when the pin lists several host spellings including the one in use", () => {
+    // The intended way to satisfy the check with a pooled and a direct
+    // host: list both, rather than tolerating a miss.
+    const env = withEnv({});
+    const actual = env.PRODUCTION_DATABASE_FINGERPRINT;
+    const { exitCode } = run(
+      withEnv({
+        PRODUCTION_DATABASE_FINGERPRINT: `deadbeefcafe,${actual},0123456789ab`,
+      }),
+    );
+    expect(exitCode).toBe(0);
   });
 
   it("fails when the migration break-glass override is left armed", () => {

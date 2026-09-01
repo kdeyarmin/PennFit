@@ -230,6 +230,22 @@ which **fails** when `DEPLOY_ENV` / `PRODUCTION_DATABASE_FINGERPRINT` /
 `PRODUCTION_SUPABASE_FINGERPRINT` are missing in `NODE_ENV=production`, or
 when break-glass is left armed.
 
+It also **fails when a pin does not list the database or Supabase project
+this environment is actually using.** That check is not tidiness: a
+non-match is load-bearing negative evidence. `resolveDatabaseIdentity`
+reads "this fingerprint is not in the pin" as proof the database is a
+_preview_ database — which is exactly what lets a preview with its own
+database migrate freely. So an incomplete pin recreates the whole
+incident: a preview that inherited production's `DATABASE_URL`
+fingerprints as something absent from the pin, is classified
+non-production, and is allowed to migrate production.
+
+Running preflight **against production** is the only thing that can prove
+the pin covers what production really uses. If a pooled and a direct host
+both appear in normal operation, list **both** in the comma-separated pin
+— that is what the comma is for. Do not resolve a mismatch by removing the
+check.
+
 ---
 
 ## Related
