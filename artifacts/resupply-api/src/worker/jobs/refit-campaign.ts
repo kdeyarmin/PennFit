@@ -307,7 +307,6 @@ async function findReportedBadFits(
   return out;
 }
 
-/** Patients whose fitted mask the manufacturer has discontinued. */
 /**
  * Patients whose CURRENT mask is discontinued.
  *

@@ -188,11 +188,16 @@ export const bootstrapResupplyPrescriptions = (
 // ---------------------------------------------------------------------------
 // Shipment confirmations — the RETURN leg of the file exchange.
 //
-// `resupply-due.csv` tells PacWare what to ship. Nothing ever came back,
-// so `fulfillments.shipped_at` was never written: refill cadence timed
-// itself from when we QUEUED an order rather than when the patient got
-// it, and every claim carried today's date as its date of service. This
-// import closes that loop.
+// `resupply-due.csv` tells PacWare what to ship. For a long time nothing
+// came back, so `fulfillments.shipped_at` had no writer: refill cadence
+// timed itself from when we QUEUED an order rather than when the patient
+// got it, and every claim carried today's date as its date of service.
+//
+// This import closed that loop. `shipped_at` now has exactly ONE writer —
+// `recordShipmentEvidence` — and this is the path that feeds it. PacWare
+// has no API, so it stays a FILE exchange: a tenant that never imports a
+// report still produces no evidence, and the platform says so through the
+// `assumed_shipped` bucket rather than inventing a date.
 // ---------------------------------------------------------------------------
 
 export interface PacwareShipmentPreview {

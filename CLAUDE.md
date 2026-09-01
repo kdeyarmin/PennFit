@@ -807,6 +807,18 @@ Wiring & conventions:
   [`docs/runbooks/production-launch.md`](./docs/runbooks/production-launch.md)
   (paired with the broader checklist in
   [`docs/PRODUCTION_READINESS.md`](./docs/PRODUCTION_READINESS.md)).
+- For **what is and is not production-ready right now**, read
+  [`docs/reviews/caremetric-breathe-production-readiness-final.md`](./docs/reviews/caremetric-breathe-production-readiness-final.md).
+  The system is **not production validated**: nine external validations
+  are outstanding and tracked in
+  [`docs/reviews/external-validation-checklist.md`](./docs/reviews/external-validation-checklist.md).
+  Do NOT label a connector, a device or a flow validated until its row
+  there says Passed — a fixture-tested connector is not a validated one,
+  and two enforcement points (a DB CHECK on
+  `integration_connector_status`, and the fitter release gate) exist to
+  keep that true.
+- For the lifecycle health signals and what to do when one fires, read
+  [`docs/runbooks/lifecycle-health-alerts.md`](./docs/runbooks/lifecycle-health-alerts.md).
 - For how Railway builds & runs the repo (the `railway.json` fields, the
   service-boot contract, Node/pnpm version resolution, and the pre/post-deploy
   probes), read [`docs/railway-deployment.md`](./docs/railway-deployment.md)
