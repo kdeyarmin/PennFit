@@ -266,9 +266,7 @@ describe("what one scan produces", () => {
     expect(result.resolved).toBe(0);
     expect(items).toHaveLength(0);
     expect(
-      db.writes.some(
-        (w) => w.op === "update" && "resolved_at" in w.payload,
-      ),
+      db.writes.some((w) => w.op === "update" && "resolved_at" in w.payload),
     ).toBe(false);
   });
 });

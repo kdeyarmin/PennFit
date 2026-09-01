@@ -54,7 +54,10 @@ import {
   collectTenantObservations,
   type Observations,
 } from "../../lib/lifecycle-health/collect";
-import { renderDigest, type DigestItem } from "../../lib/lifecycle-health/digest";
+import {
+  renderDigest,
+  type DigestItem,
+} from "../../lib/lifecycle-health/digest";
 import { evaluateSignal } from "../../lib/lifecycle-health/evaluate";
 import {
   LIFECYCLE_SIGNALS,

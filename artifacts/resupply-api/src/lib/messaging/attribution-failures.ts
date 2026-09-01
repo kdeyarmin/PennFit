@@ -82,10 +82,12 @@ export async function recordAttributionFailure(
     const seedOrgId = await resolveSeedOrgId();
     if (!seedOrgId) return;
     const raw = getOrgScopedClient(seedOrgId).raw();
-    const { error } = await raw.schema("resupply").rpc(
-      "record_inbound_attribution_failure",
-      { p_channel: channel, p_reason: reason },
-    );
+    const { error } = await raw
+      .schema("resupply")
+      .rpc("record_inbound_attribution_failure", {
+        p_channel: channel,
+        p_reason: reason,
+      });
     if (error) throw error;
   } catch (err) {
     logger.warn(

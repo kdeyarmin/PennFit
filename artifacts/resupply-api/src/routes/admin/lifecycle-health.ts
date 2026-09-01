@@ -276,7 +276,8 @@ router.get(
       signals: rows,
       refreshedAt: new Date(now).toISOString(),
       /** null when the background scan has never reported for this tenant. */
-      lastScanAt: lastScanAt === null ? null : new Date(lastScanAt).toISOString(),
+      lastScanAt:
+        lastScanAt === null ? null : new Date(lastScanAt).toISOString(),
       lastScanAgeHours:
         lastScanAt === null
           ? null

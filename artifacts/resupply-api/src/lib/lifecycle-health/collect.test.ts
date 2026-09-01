@@ -148,9 +148,8 @@ vi.mock("@workspace/resupply-cutover", () => ({
   }),
 }));
 
-const { collectTenantObservations, collectPlatformObservations } = await import(
-  "./collect"
-);
+const { collectTenantObservations, collectPlatformObservations } =
+  await import("./collect");
 const { TENANT_SIGNALS } = await import("./signals");
 
 function isoAgo(ms: number): string {
@@ -248,7 +247,9 @@ describe("intake", () => {
     // must not read as a stalled sweep.
     const obs = await collect();
     expect(obs.cycle_creation_stalled.state).toBe("disabled");
-    expect(obs.cycle_creation_stalled.reason).toMatch(/no active prescription/i);
+    expect(obs.cycle_creation_stalled.reason).toMatch(
+      /no active prescription/i,
+    );
   });
 
   it("ages a stall from the last cycle when one exists", async () => {
@@ -323,7 +324,11 @@ describe("outreach and fulfillment", () => {
     store.tables.fulfillments = [
       { status: "queued", shipped_at: null, created_at: isoAgo(10 * DAY) },
       { status: "queued", shipped_at: null, created_at: isoAgo(2 * DAY) },
-      { status: "queued", shipped_at: isoAgo(DAY), created_at: isoAgo(9 * DAY) },
+      {
+        status: "queued",
+        shipped_at: isoAgo(DAY),
+        created_at: isoAgo(9 * DAY),
+      },
     ];
     const obs = await collect();
     expect(obs.fulfilled_not_shipped.value).toBe(1);
@@ -338,7 +343,11 @@ describe("the anti-join collectors actually subtract", () => {
       { id: "f3", shipped_at: isoAgo(30 * DAY), status: "queued" },
     ];
     store.tables.insurance_claims = [
-      { fulfillment_id: "f1", status: "submitted", created_at: isoAgo(9 * DAY) },
+      {
+        fulfillment_id: "f1",
+        status: "submitted",
+        created_at: isoAgo(9 * DAY),
+      },
     ];
     const obs = await collect();
     expect(obs.shipped_unbilled.value).toBe(2);
@@ -419,7 +428,12 @@ describe("billing rates", () => {
 
   it("reports a rate of zero, not null, when nothing was rejected", async () => {
     store.tables.insurance_claims = [
-      { id: "p1", status: "paid", created_at: isoAgo(DAY), fulfillment_id: null },
+      {
+        id: "p1",
+        status: "paid",
+        created_at: isoAgo(DAY),
+        fulfillment_id: null,
+      },
     ];
     const obs = await collect();
     expect(obs.clearinghouse_rejection_rate.value).toBe(0);
@@ -582,9 +596,9 @@ describe("flags without readiness evidence", () => {
     store.freshAssessment["resupply.due_at_authoritative"] = false;
     const obs = await collect();
     expect(obs.flags_without_readiness_evidence.value).toBe(1);
-    expect(String(obs.flags_without_readiness_evidence.detail?.flags)).toContain(
-      "due_at_authoritative",
-    );
+    expect(
+      String(obs.flags_without_readiness_evidence.detail?.flags),
+    ).toContain("due_at_authoritative");
   });
 
   it("does not count a flag that is on WITH evidence", async () => {
@@ -637,7 +651,10 @@ describe("platform scope", () => {
       // Unattributed but outside the window.
       { org_id: null, created_at: isoAgo(30 * DAY) },
     ];
-    const obs = await collectPlatformObservations({ nowMs: NOW, seedOrgId: ORG });
+    const obs = await collectPlatformObservations({
+      nowMs: NOW,
+      seedOrgId: ORG,
+    });
     expect(obs.voice_calls_unattributed.value).toBe(2);
   });
 
@@ -658,7 +675,10 @@ describe("platform scope", () => {
         failures: 1,
       },
     ];
-    const obs = await collectPlatformObservations({ nowMs: NOW, seedOrgId: ORG });
+    const obs = await collectPlatformObservations({
+      nowMs: NOW,
+      seedOrgId: ORG,
+    });
     expect(obs.inbound_attribution_failures.value).toBe(5);
     expect(String(obs.inbound_attribution_failures.detail?.reasons)).toContain(
       "unknown_called_number=4",
@@ -667,7 +687,10 @@ describe("platform scope", () => {
 
   it("reports unknown — not zero — when the platform read fails", async () => {
     store.failing.add("voice_calls");
-    const obs = await collectPlatformObservations({ nowMs: NOW, seedOrgId: ORG });
+    const obs = await collectPlatformObservations({
+      nowMs: NOW,
+      seedOrgId: ORG,
+    });
     expect(obs.voice_calls_unattributed.state).toBe("unknown");
   });
 });

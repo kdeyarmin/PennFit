@@ -244,7 +244,12 @@ describe("display helpers", () => {
   it("counts only warning and failure as alerting", () => {
     expect(isAlerting("warning")).toBe(true);
     expect(isAlerting("failure")).toBe(true);
-    for (const quiet of ["ok", "disabled", "not_configured", "unknown"] as const) {
+    for (const quiet of [
+      "ok",
+      "disabled",
+      "not_configured",
+      "unknown",
+    ] as const) {
       expect(isAlerting(quiet), quiet).toBe(false);
     }
   });

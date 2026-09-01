@@ -19,9 +19,17 @@
 //   * the instructions and the expected signs are actually rendered, so
 //     an operator running the sequence is told which way to move.
 //
-// HARNESS: dev server only (the default `pnpm test:e2e` flow). Under
-// `vite preview` the route is compiled out on purpose, and the spec
-// asserts exactly that instead of skipping.
+// HARNESS: dev server (the default `pnpm test:e2e` flow). Under
+// `vite preview` the route is compiled out on purpose, and every test
+// here ASSERTS that rather than skipping.
+//
+// No test in this file calls `test.skip()`, deliberately. Playwright
+// exits 0 on a skip, so a skip against the dev server is a silent pass —
+// which is exactly what happened when these guards used
+// `locator.count()`: the route is lazily imported, so a count taken the
+// instant navigation resolves is zero on a dev build too, and four real
+// assertions quietly stopped running. The bundle probe below is a
+// synchronous fact about the document and does not race hydration.
 
 import { expect, test } from "@playwright/test";
 
@@ -47,6 +55,30 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
+/**
+ * Open the page and say whether this is a development build.
+ *
+ * Deliberately NOT `locator.count()`: the route is lazily imported, so a
+ * count taken the instant navigation resolves is zero on a dev build too
+ * — which turned four real assertions into silent skips against the very
+ * server they are supposed to run on. The bundle probe is a synchronous
+ * fact about the document and does not race the SPA's hydration.
+ */
+async function openDiagnostics(page: import("@playwright/test").Page) {
+  const response = await page.goto(ROUTE);
+  expect(response?.status()).toBeLessThan(400);
+  const isDev = await page.evaluate(
+    () => !document.querySelector('script[src*="/assets/index-"]'),
+  );
+  if (isDev) {
+    // Auto-waits, so the lazy chunk has time to mount.
+    await expect(
+      page.getByRole("heading", { name: /Head-pose convention validation/ }),
+    ).toBeVisible();
+  }
+  return isDev;
+}
+
 test("the validation page is reachable in a development build", async ({
   page,
 }) => {
@@ -71,9 +103,13 @@ test("the validation page is reachable in a development build", async ({
 });
 
 test("refuses to start the camera until consent is given", async ({ page }) => {
-  await page.goto(ROUTE);
   const start = page.getByRole("button", { name: /Start the sequence/ });
-  if ((await start.count()) === 0) test.skip(true, "production build");
+  if (!(await openDiagnostics(page))) {
+    // A production bundle compiles the route out. Asserting THAT is more
+    // valuable than skipping — a skip here would read as a pass.
+    await expect(start).toHaveCount(0);
+    return;
+  }
 
   await expect(start).toBeDisabled();
   await page.getByRole("checkbox").check();
@@ -81,11 +117,7 @@ test("refuses to start the camera until consent is given", async ({ page }) => {
 });
 
 test("lists every guided movement before anything starts", async ({ page }) => {
-  await page.goto(ROUTE);
-  const heading = page.getByRole("heading", {
-    name: /Head-pose convention validation/,
-  });
-  if ((await heading.count()) === 0) test.skip(true, "production build");
+  if (!(await openDiagnostics(page))) return;
 
   // An operator who is not told which way to move produces an
   // inconclusive run, which is the outcome the report refuses to round
@@ -103,11 +135,7 @@ test("lists every guided movement before anything starts", async ({ page }) => {
 });
 
 test("states that no image is captured", async ({ page }) => {
-  await page.goto(ROUTE);
-  const heading = page.getByRole("heading", {
-    name: /Head-pose convention validation/,
-  });
-  if ((await heading.count()) === 0) test.skip(true, "production build");
+  if (!(await openDiagnostics(page))) return;
 
   await expect(
     page.getByText(/No image is captured, stored or transmitted/i),
@@ -118,9 +146,11 @@ test("survives a denied camera without crashing the app", async ({ page }) => {
   const pageErrors: string[] = [];
   page.on("pageerror", (err) => pageErrors.push(err.message));
 
-  await page.goto(ROUTE);
   const start = page.getByRole("button", { name: /Start the sequence/ });
-  if ((await start.count()) === 0) test.skip(true, "production build");
+  if (!(await openDiagnostics(page))) {
+    await expect(start).toHaveCount(0);
+    return;
+  }
 
   await page.getByRole("checkbox").check();
   await start.click();

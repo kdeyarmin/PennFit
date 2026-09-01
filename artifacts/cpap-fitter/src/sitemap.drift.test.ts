@@ -58,6 +58,13 @@ const EXCLUDED_PREFIXES = [
   // B2B content, NOT tenant content (pennpaps.com is reserved for the first
   // tenant, Penn Home Medical Supply), so none of /breathe/* is indexed.
   "/breathe",
+  // Internal engineering diagnostics. `/internal/pose-diagnostics` is
+  // mounted only when `import.meta.env.PROD` is false, so it does not
+  // exist in a production bundle at all — indexing it would advertise a
+  // page that 404s. It is also the one surface that reads the camera for
+  // a non-clinical purpose, and nobody should arrive at it from a search
+  // result.
+  "/internal",
 ];
 
 const EXCLUDED_EXACT = new Set([

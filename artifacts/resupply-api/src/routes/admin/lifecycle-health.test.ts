@@ -67,7 +67,11 @@ vi.mock("@workspace/resupply-db", () => {
     let wantCount = false;
     const settle = () =>
       state.failing.has(table)
-        ? { data: null, count: null, error: { message: "relation unavailable" } }
+        ? {
+            data: null,
+            count: null,
+            error: { message: "relation unavailable" },
+          }
         : {
             data: headOnly ? null : rows,
             count: wantCount ? rows.length : null,
