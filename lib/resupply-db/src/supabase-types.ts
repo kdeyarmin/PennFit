@@ -1101,6 +1101,73 @@ export interface Database {
         >;
         Relationships: [];
       };
+      lifecycle_health_alerts: {
+        Row: {
+          id: string;
+          /** An org uuid as text, or the literal 'platform'. */
+          scope_id: string;
+          org_id: string | null;
+          signal_key: string;
+          status: string;
+          peak_status: string;
+          observed_value: number | null;
+          threshold_value: number | null;
+          sample_size: number | null;
+          detail: Json;
+          first_observed_at: string;
+          last_observed_at: string;
+          resolved_at: string | null;
+          resolved_reason: string | null;
+          last_notified_at: string | null;
+          last_notified_status: string | null;
+          notify_count: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["lifecycle_health_alerts"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["lifecycle_health_alerts"]["Row"]
+        >;
+        Relationships: [];
+      };
+      lifecycle_health_observations: {
+        Row: {
+          scope_id: string;
+          org_id: string | null;
+          signal_key: string;
+          status: string;
+          observed_value: number | null;
+          sample_size: number | null;
+          detail: Json;
+          observed_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["lifecycle_health_observations"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["lifecycle_health_observations"]["Row"]
+        >;
+        Relationships: [];
+      };
+      inbound_attribution_failures: {
+        Row: {
+          day: string;
+          channel: string;
+          reason: string;
+          failures: number;
+          first_seen_at: string;
+          last_seen_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["inbound_attribution_failures"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["inbound_attribution_failures"]["Row"]
+        >;
+        Relationships: [];
+      };
       resupply_cutover_records: {
         Row: {
           id: string;

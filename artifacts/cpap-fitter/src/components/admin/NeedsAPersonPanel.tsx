@@ -22,11 +22,39 @@ import {
   type ApprovalGateRow,
 } from "@/lib/admin/approval-gates-api";
 
-/** Anything with a queue we could read and something in it, busiest
- *  first; then the gates with nothing waiting, so the panel still
- *  documents the full set without burying what needs doing. */
+/**
+ * What is LATE first, then what is busiest.
+ *
+ * A count alone sorts fifty items that arrived this morning above five
+ * that have sat for six weeks, and only the second group is failing
+ * anybody. So a breached queue outranks a merely large one, and within
+ * each band the deeper queue comes first. Gates with nothing waiting
+ * stay listed at the bottom, so the panel still documents the full set
+ * without burying what needs doing.
+ */
+const AGE_RANK: Record<string, number> = {
+  escalate: 0,
+  breached: 1,
+  due_soon: 2,
+  unknown: 3,
+  ok: 4,
+  no_sla: 5,
+};
+
 function order(gates: ApprovalGateRow[]): ApprovalGateRow[] {
-  return [...gates].sort((a, b) => (b.waiting ?? -1) - (a.waiting ?? -1));
+  return [...gates].sort((a, b) => {
+    const byAge = (AGE_RANK[a.ageStatus] ?? 9) - (AGE_RANK[b.ageStatus] ?? 9);
+    if (byAge !== 0) return byAge;
+    return (b.waiting ?? -1) - (a.waiting ?? -1);
+  });
+}
+
+/** How long the oldest item has waited, in words. */
+function waitedFor(hours: number | null): string {
+  if (hours === null) return "";
+  if (hours < 1) return "under an hour";
+  if (hours < 48) return `${Math.round(hours)} hours`;
+  return `${Math.round(hours / 24)} days`;
 }
 
 export function NeedsAPersonPanel() {
@@ -73,6 +101,33 @@ export function NeedsAPersonPanel() {
                 >
                   {gate.actorLabel} — {gate.why}
                 </p>
+                {(gate.ageStatus === "breached" ||
+                  gate.ageStatus === "escalate") && (
+                  // The half a count cannot show. `escalate` is past the
+                  // SLA by the configured multiple: past the SLA is
+                  // late, past the multiple is nobody is working this,
+                  // and those want different responses.
+                  <p
+                    className="text-xs mt-0.5 font-medium"
+                    style={{
+                      color:
+                        gate.ageStatus === "escalate" ? "#991b1b" : "#92400e",
+                    }}
+                  >
+                    Oldest has waited {waitedFor(gate.oldestAgeHours)} —{" "}
+                    {gate.ageStatus === "escalate" ? "well past" : "past"} the{" "}
+                    {gate.slaHours}h expectation for this queue.
+                  </p>
+                )}
+                {gate.ageStatus === "due_soon" && (
+                  <p
+                    className="text-xs mt-0.5"
+                    style={{ color: "hsl(var(--ink-3))" }}
+                  >
+                    Oldest has waited {waitedFor(gate.oldestAgeHours)}, due
+                    within {gate.slaHours}h.
+                  </p>
+                )}
                 {gate.partlyAutomated && (
                   // Without this the count reads as a backlog when part of
                   // it will clear on its own, and an operator who opens the
@@ -102,9 +157,10 @@ export function NeedsAPersonPanel() {
                 title={
                   gate.waiting !== null
                     ? undefined
-                    : gate.countable
+                    : gate.countFailed
                       ? "Could not read this queue just now — the number is unknown, not zero"
-                      : "No single queue to count for this step"
+                      : (gate.uncountableReason ??
+                        "No single queue to count for this step")
                 }
               >
                 {gate.waiting === null ? "—" : gate.waiting.toLocaleString()}

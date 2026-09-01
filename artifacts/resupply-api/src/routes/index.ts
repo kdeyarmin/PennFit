@@ -61,6 +61,7 @@ import reorderRemindersRouter from "./admin/reorder-reminders.js";
 import analyticsOutreachAttributionRouter from "./admin/analytics-outreach-attribution.js";
 import analyticsOrderOutcomesRouter from "./admin/analytics-order-outcomes.js";
 import approvalGatesRouter from "./admin/approval-gates.js";
+import lifecycleHealthRouter from "./admin/lifecycle-health.js";
 import integrationsValidateRouter from "./admin/integrations-validate.js";
 import analyticsMarginRouter from "./admin/analytics-margin.js";
 import analyticsRevenueBySourceRouter from "./admin/analytics-revenue-by-source.js";
@@ -934,6 +935,14 @@ router.use(analyticsOrderOutcomesRouter);
 // live counts. Read-only and changes no gate: the posture was already
 // deliberate, it was just stated in a dozen places and nowhere as a set.
 router.use(approvalGatesRouter);
+
+// /admin/lifecycle-health — the ~27 signals that say whether the resupply
+// lifecycle is actually working, measured live. Read-only. Distinguishes
+// "fine", "nothing configured", "this tenant does not do that" and "we
+// could not find out", because four different answers rendering as one
+// green number is how a closed loop reports success while money and
+// patients fall out of it.
+router.use(lifecycleHealthRouter);
 
 // /admin/integrations/:source/{validate,reconcile} — prove a therapy-cloud
 // connection works before a nightly sync silently depends on it, and diff

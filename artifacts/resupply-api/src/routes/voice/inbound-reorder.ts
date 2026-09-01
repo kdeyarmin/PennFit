@@ -42,6 +42,7 @@ import {
 import { getCompanyInfo } from "../../lib/company-info";
 import { isFeatureEnabled } from "../../lib/feature-flags";
 import { logger } from "../../lib/logger";
+import { recordAttributionFailure } from "../../lib/messaging/attribution-failures";
 import {
   resolveOrgIdByCalledNumber,
   resolveOrgIdByPatientPhone,
@@ -135,6 +136,19 @@ router.post("/voice/inbound-reorder", signatureMiddleware, async (req, res) => {
       ? await resolveOrgIdByPatientPhone(normalizedCaller)
       : null;
   if (!orgId) {
+    // Count the drop. Hanging up is correct — routing a stranger's call
+    // into the nearest-looking practice is the isolation bug this
+    // refuses to have — but an unrecorded drop means a DID pointed at
+    // the platform before it was registered to a tenant can swallow a
+    // practice's calls indefinitely with nothing to show for it. The
+    // two reasons are kept apart because they need different fixes: no
+    // owner for the dialled line, versus a caller whose own number
+    // exists in several tenants. Aggregate only, and never awaited —
+    // Twilio is waiting on this response.
+    void recordAttributionFailure(
+      "voice",
+      normalizedCaller ? "ambiguous_caller" : "unknown_called_number",
+    );
     res
       .status(200)
       .type("text/xml")

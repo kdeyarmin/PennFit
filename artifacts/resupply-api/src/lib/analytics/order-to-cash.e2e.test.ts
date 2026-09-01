@@ -257,7 +257,9 @@ const CLAIM_INPUT: Claim837PInput = {
     },
   ],
   control: allocateControlNumbers({
-    submittedAt: new Date("2026-06-11T12:00:00.000Z"),
+    // Epoch milliseconds, not a Date — the allocator does arithmetic on
+    // it, and a Date coerces at runtime while failing the typecheck.
+    submittedAt: Date.parse("2026-06-11T12:00:00.000Z"),
     sequence: 1,
   }),
   usageIndicator: "T",

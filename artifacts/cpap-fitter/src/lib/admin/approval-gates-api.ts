@@ -23,10 +23,42 @@ export interface ApprovalGateRow {
   /** A worker moves part of this queue for this tenant, so `waiting` is a
    *  ceiling rather than a backlog. */
   partlyAutomated: boolean;
+
+  /** True only when the read itself failed — an outage signal, distinct
+   *  from a gate that has no queue at all. */
+  countFailed: boolean;
+  /** Why a gate cannot be counted, when it cannot. Makes a permanent
+   *  dash informative rather than indistinguishable from an outage. */
+  uncountableReason: string | null;
+  /** 1 = a patient is blocked today. 3 = a standing task. */
+  priority: 1 | 2 | 3;
+  /** Where this gate's decision is recorded, for the question always
+   *  asked afterwards: who approved this, and when? */
+  disposition: string;
+  /** Hours this queue is expected to be worked within. `null` for a
+   *  standing task — giving one an SLA would manufacture an alarm. */
+  slaHours: number | null;
+  /** The oldest waiting item. Five items sitting for six weeks and fifty
+   *  that arrived this morning are different problems, and a count alone
+   *  cannot tell them apart. */
+  oldestAt: string | null;
+  oldestAgeHours: number | null;
+  /**
+   * `ok` | `due_soon` | `breached` | `escalate` | `no_sla` | `unknown`.
+   *
+   * `escalate` is past the SLA by a configurable multiple: past the SLA
+   * is late, past the multiple is nobody is working this, and those want
+   * different responses.
+   */
+  ageStatus: string;
 }
 
 export interface ApprovalGatesResponse {
   gates: ApprovalGateRow[];
+  /** When this reading was taken. A dashboard left open overnight shows
+   *  yesterday's depths as though they were now. */
+  refreshedAt: string;
+  escalationMultiplier: number;
   totals: {
     gateCount: number;
     waiting: number;
@@ -36,6 +68,11 @@ export interface ApprovalGatesResponse {
      *  totals are understated right now, which is an outage, not a
      *  quiet day. */
     failedCounts: number;
+    /** Queues whose oldest item is past that queue's own expectation. */
+    breachedGates: number;
+    /** …and past it by the escalation multiple, which is a different
+     *  problem: not "late" but "nobody is working this". */
+    escalatedGates: number;
   };
 }
 

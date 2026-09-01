@@ -67,6 +67,7 @@ import { smsAsksRefillAttestation } from "@workspace/resupply-reminders";
 
 import { getCompanyInfo, PLATFORM_NAME } from "../../lib/company-info";
 import { logger } from "../../lib/logger";
+import { recordAttributionFailure } from "../../lib/messaging/attribution-failures";
 import {
   resolveOrgIdByCalledNumber,
   resolveOrgIdByPatientPhone,
@@ -295,8 +296,10 @@ router.post(
     //   * If the CALLED number (Twilio `To`) is owned by a tenant
     //     (per-tenant-number case, G7), that tenant is authoritative.
     //   * Otherwise it's the SHARED platform number — route by the PATIENT
-    //     phone (most-recent conversation wins when the phone exists in
-    //     more than one tenant, INCLUDING seed).
+    //     phone. That lookup FAILS CLOSED when the phone exists in more
+    //     than one tenant — recency of contact is not evidence of
+    //     ownership, and tie-breaking on it would hand this patient's
+    //     thread, and any PHI in it, to whichever tenant messaged last.
     //   * Never invent the seed org for an unknown phone: that would park
     //     STOP/HELP audits and unknown-number PHI under Penn. CTIA STOP/HELP
     //     still get a platform-branded reply with no DB write.
@@ -335,6 +338,15 @@ router.post(
           );
         return;
       }
+      // Count the drop. Dropping is correct — filing a stranger's text
+      // under the nearest-looking practice is the isolation bug this
+      // refuses to have — but until this counter existed the failure
+      // rate was zero by construction, so a DID pointed at the platform
+      // before it was registered could swallow a practice's inbound
+      // messages indefinitely with nothing to show for it. Aggregate
+      // only: a day, a channel, a reason. Never awaited — an inbound
+      // webhook has to answer Twilio.
+      void recordAttributionFailure("sms", "unknown_called_number");
       await safeAudit({
         action: "messaging.inbound.received",
         adminEmail: null,
