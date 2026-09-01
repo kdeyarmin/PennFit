@@ -70,6 +70,7 @@ import { registerMetricsSnapshotJob } from "./jobs/metrics-snapshot.js";
 import { registerMetricAlertsEvaluatorJob } from "./jobs/metric-alerts-evaluator.js";
 import { registerMetricAlertsNotifyJob } from "./jobs/metric-alerts-notify.js";
 import { registerDlqMonitorJob } from "./jobs/dlq-monitor.js";
+import { registerLifecycleHealthScanJob } from "./jobs/lifecycle-health-scan.js";
 import { registerDeliveryFailureMonitorJob } from "./jobs/delivery-failure-monitor.js";
 import { registerOwnerDigestJob } from "./jobs/owner-digest.js";
 import { registerRefitCampaignJob } from "./jobs/refit-campaign.js";
@@ -854,6 +855,17 @@ async function doStartWorker(): Promise<void> {
   // that exhausted their retries; without it a DLQ fills silently.
   await safeRegister("registerDlqMonitorJob", registrationFailures, () =>
     registerDlqMonitorJob(boss),
+  );
+
+  // Lifecycle health scan (every 2h at :20). Measures the ~27 signals
+  // that say whether the resupply lifecycle is working, opens/escalates/
+  // resolves alerts against them, and sends at most ONE digest per
+  // tenant per scan. Changes nothing else: no cycle closes, no flag
+  // flips, no patient is contacted.
+  await safeRegister(
+    "registerLifecycleHealthScanJob",
+    registrationFailures,
+    () => registerLifecycleHealthScanJob(boss),
   );
 
   // Watch for a spike in failed/bounced outbound patient messages every

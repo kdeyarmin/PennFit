@@ -55,7 +55,7 @@ phases below. `railway.json` overrides the relevant defaults:
 | Phase           | What runs                                                                                                       | Source                                |
 | --------------- | --------------------------------------------------------------------------------------------------------------- | ------------------------------------- |
 | **Install**     | `pnpm install` (Corepack pins `pnpm@11.7.0` from `packageManager`)                                              | Railpack default                      |
-| **Build**       | `pnpm -r --workspace-concurrency=1 --if-present run build`                                                      | `build.buildCommand`                  |
+| **Build**       | `pnpm install --frozen-lockfile --prod=false && pnpm -r --workspace-concurrency=1 --if-present run build`       | `build.buildCommand`                  |
 | **Pre-deploy**  | `node lib/resupply-db/scripts/deploy-migrate.mjs` (gates the deploy; **no-op unless `RUN_DB_MIGRATIONS=true`**) | `deploy.preDeployCommand`             |
 | **Start**       | `node --enable-source-maps artifacts/resupply-api/dist/index.mjs`                                               | `deploy.startCommand`                 |
 | **Health gate** | `GET /resupply-api/healthz` must return `200` within 90 s before traffic shifts to the new release              | `deploy.healthcheckPath` / `…Timeout` |
@@ -87,18 +87,18 @@ route depend on:
 Every field below is valid against the live schema
 (`https://railway.com/railway.schema.json`) and is set deliberately:
 
-| Field                            | Value                                                             | Why                                                                                                                                                  |
-| -------------------------------- | ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `build.builder`                  | `RAILPACK`                                                        | Railpack auto-detects pnpm + Node; no Dockerfile/nixpacks to maintain.                                                                               |
-| `build.buildCommand`             | `pnpm -r --workspace-concurrency=1 --if-present run build`        | Builds both artifacts, serialized, **without** the OOM-prone typecheck (R6).                                                                         |
-| `build.watchPatterns`            | source dirs + key root config files                               | Scopes which path changes trigger a rebuild (`artifacts/**`, `lib/**`, the root manifests, `tsconfig*`, `railway.json`).                             |
-| `deploy.preDeployCommand`        | `node lib/resupply-db/scripts/deploy-migrate.mjs`                 | Runs the migrator once per deploy **and gates on success** (a bad migration keeps the previous release live). No-op unless `RUN_DB_MIGRATIONS=true`. |
-| `deploy.startCommand`            | `node --enable-source-maps artifacts/resupply-api/dist/index.mjs` | **Direct `node`, not `pnpm start`** so Node is PID 1 and SIGTERM reaches the graceful-shutdown handler (D3). Source maps make stack traces readable. |
-| `deploy.healthcheckPath`         | `/resupply-api/healthz`                                           | **Liveness only — never `/readyz`** (D2). Touches no dependency, so a DB/worker hiccup can't blackhole the whole site behind the health gate.        |
-| `deploy.healthcheckTimeout`      | `90`                                                              | Seconds Railway waits for the first `200` before failing the deploy.                                                                                 |
-| `deploy.drainingSeconds`         | `30`                                                              | Grace before SIGKILL on rollover. The app's shutdown budget is 25 s (`TOTAL_BUDGET_MS`), so it always exits cleanly first (D4).                      |
-| `deploy.restartPolicyType`       | `ON_FAILURE`                                                      | Restart a crashed process, but don't mask a clean exit.                                                                                              |
-| `deploy.restartPolicyMaxRetries` | `10`                                                              | Bounded crash-loop retries before the deploy is marked failed.                                                                                       |
+| Field                            | Value                                                                                                     | Why                                                                                                                                                          |
+| -------------------------------- | --------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `build.builder`                  | `RAILPACK`                                                                                                | Railpack auto-detects pnpm + Node; no Dockerfile/nixpacks to maintain.                                                                                       |
+| `build.buildCommand`             | `pnpm install --frozen-lockfile --prod=false && pnpm -r --workspace-concurrency=1 --if-present run build` | Installs build-time deps even if Railpack did a pruned production install, then builds both artifacts, serialized, **without** the OOM-prone typecheck (R6). |
+| `build.watchPatterns`            | source dirs + key root config files                                                                       | Scopes which path changes trigger a rebuild (`artifacts/**`, `lib/**`, the root manifests, `tsconfig*`, `railway.json`).                                     |
+| `deploy.preDeployCommand`        | `node lib/resupply-db/scripts/deploy-migrate.mjs`                                                         | Runs the migrator once per deploy **and gates on success** (a bad migration keeps the previous release live). No-op unless `RUN_DB_MIGRATIONS=true`.         |
+| `deploy.startCommand`            | `node --enable-source-maps artifacts/resupply-api/dist/index.mjs`                                         | **Direct `node`, not `pnpm start`** so Node is PID 1 and SIGTERM reaches the graceful-shutdown handler (D3). Source maps make stack traces readable.         |
+| `deploy.healthcheckPath`         | `/resupply-api/healthz`                                                                                   | **Liveness only — never `/readyz`** (D2). Touches no dependency, so a DB/worker hiccup can't blackhole the whole site behind the health gate.                |
+| `deploy.healthcheckTimeout`      | `90`                                                                                                      | Seconds Railway waits for the first `200` before failing the deploy.                                                                                         |
+| `deploy.drainingSeconds`         | `30`                                                                                                      | Grace before SIGKILL on rollover. The app's shutdown budget is 25 s (`TOTAL_BUDGET_MS`), so it always exits cleanly first (D4).                              |
+| `deploy.restartPolicyType`       | `ON_FAILURE`                                                                                              | Restart a crashed process, but don't mask a clean exit.                                                                                                      |
+| `deploy.restartPolicyMaxRetries` | `10`                                                                                                      | Bounded crash-loop retries before the deploy is marked failed.                                                                                               |
 
 > **Schema gotcha.** Railway's prose docs summarize `preDeployCommand` as an
 > "array" and `drainingSeconds`/`overlapSeconds` as "string". The
@@ -238,6 +238,28 @@ adoption procedure (and how to baseline a brand-new environment against an
 existing database) is preserved in
 [`docs/runbooks/adopt-migration-ledger.md`](./runbooks/adopt-migration-ledger.md)
 and the `pennfit-migrations` skill.
+
+### The environment guard (a preview must not migrate production)
+
+Before the migrator opens a connection, `deploy-migrate.mjs` resolves **two
+independent identities** — which deployment this is, and which database it
+is pointed at — and refuses when a non-production deployment is holding the
+production database. This exists because a PR-preview environment inherited
+the production service's shared `DATABASE_URL` and applied an unmerged
+migration to production.
+
+A refusal exits **3** (distinct from `1` "a migration failed" and `2`
+"`DATABASE_URL` unset"), executes nothing, and opens no connection. Because
+`preDeployCommand` gates the deploy, the **previous release keeps serving**.
+
+The deployment identity is `DEPLOY_ENV` **cross-checked against**
+`RAILWAY_ENVIRONMENT_NAME` and `RAILWAY_GIT_BRANCH` — which Railway sets per
+environment and a shared variable cannot forge. A `DEPLOY_ENV=production`
+those markers deny is treated as ambiguous and blocked.
+
+Variables to configure (and, crucially, **which of them to share**) are in
+[`docs/runbooks/migration-environment-guard.md`](./runbooks/migration-environment-guard.md).
+`preflight:prod` fails when they are missing.
 
 ## What is intentionally absent
 

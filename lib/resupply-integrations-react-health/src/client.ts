@@ -26,6 +26,10 @@ import type {
   SupplyItem,
   TherapyNight,
 } from "@workspace/resupply-integrations";
+import {
+  classifyHttpStatus,
+  inferPathKind,
+} from "@workspace/resupply-integrations";
 
 import type { ReactHealthConfig } from "./config";
 
@@ -147,8 +151,25 @@ async function requestOnce<T>(
     },
     API_TIMEOUT_MS,
   );
-  if (res.status === 404) throw new ClientError("not_found");
-  if (res.status === 401 || res.status === 403) {
+  // Classified through the shared vocabulary so all three vendors report
+  // the same distinctions: a 403 is `forbidden` (credentials fine, this
+  // account lacks the entitlement — almost always a missing agreement,
+  // NOT a bad secret), and a 404 on a patient path is `not_found` while a
+  // 404 anywhere else is `endpoint_not_found` (our URL shape is wrong for
+  // this instance). Reported identically, the second one reads as "the
+  // vendor has no data", which is exactly how a wrong endpoint survives a
+  // nightly sync. See lib/resupply-integrations/src/errors.ts.
+  const classified = classifyHttpStatus(res.status, inferPathKind(path));
+  if (classified !== null && res.status !== 401) {
+    throw new ClientError(classified);
+  }
+  // 401 ONLY. A 403 means the credential authenticated and was
+  // refused, so the token is fine and the entitlement is not —
+  // clearing it and retrying would burn a second vendor call and,
+  // worse, report `auth_failed`, which tells the operator to rotate a
+  // working secret. The `forbidden` classification above already
+  // carries the right remedy.
+  if (res.status === 401) {
     // The cached token outlives a server-side revocation/rotation by
     // up to its full TTL. Drop it (when it's the one we used) and let
     // the caller's single retry mint a fresh one — otherwise every
@@ -159,9 +180,6 @@ async function requestOnce<T>(
     }
     throw new ClientError("auth_failed");
   }
-  if (res.status === 429) throw new ClientError("rate_limited");
-  if (res.status >= 500) throw new ClientError("unavailable");
-  if (!res.ok) throw new ClientError("unknown_error");
   return (await res.json()) as T;
 }
 

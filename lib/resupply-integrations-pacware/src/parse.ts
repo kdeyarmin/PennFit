@@ -73,6 +73,20 @@ export interface PacwareRowError {
 export interface PacwareParseResult<T> {
   /** Rows that passed validation, in source order. */
   rows: T[];
+  /**
+   * The file DATA-ROW NUMBER of each entry in `rows`, same length and
+   * same order (1-based, header excluded, blank rows not counted) — the
+   * same numbering `errors[].rowIndex` uses.
+   *
+   * It exists because the two arrays do not line up: `rows` holds only
+   * the rows that VALIDATED, so the moment one row fails, every later
+   * valid row's position in `rows` is smaller than its position in the
+   * file. A caller that derived a row number from the array index was
+   * therefore telling an operator to go look at the wrong line of their
+   * CSV — and it only diverged on files that already had a problem,
+   * which is exactly when someone reads the row numbers.
+   */
+  rowIndexes: number[];
   /** Per-row validation failures. */
   errors: PacwareRowError[];
   /** Count of data rows seen (valid + invalid), header excluded. */
@@ -203,6 +217,7 @@ function buildParseResult<T>(
   normalizeValues: boolean,
 ): PacwareParseResult<T> {
   const rows: T[] = [];
+  const rowIndexes: number[] = [];
   const errors: PacwareRowError[] = [];
   const headerCells = matrix[0] ?? [];
   const unmappedHeaders: string[] = [];
@@ -250,6 +265,7 @@ function buildParseResult<T>(
     const parsed = schema.safeParse(raw);
     if (parsed.success) {
       rows.push(parsed.data);
+      rowIndexes.push(dataRowIndex);
     } else {
       const first = parsed.error.issues[0];
       errors.push({
@@ -262,6 +278,7 @@ function buildParseResult<T>(
 
   return {
     rows,
+    rowIndexes,
     errors,
     totalDataRows: dataRowIndex,
     unmappedHeaders,

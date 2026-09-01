@@ -72,6 +72,19 @@ vi.mock("../../lib/messaging/tenant-telecom", async () => {
       resolveOrgIdByCalledNumberMock(...a),
     resolveOrgIdByPatientPhone: (...a: unknown[]) =>
       resolveOrgIdByPatientPhoneMock(...a),
+    // The route asks for the reason as well as the answer, so the drop it
+    // records names the failure that actually occurred. Derived from the
+    // plain mock above so every existing `mockResolvedValue(SEED_ORG)`
+    // staging in this file keeps driving the route unchanged — a test that
+    // only cares "this phone belongs to that tenant" should not have to
+    // know about the reason plumbing.
+    resolveOrgIdByPatientPhoneDetailed: async (...a: unknown[]) => {
+      const orgId = await resolveOrgIdByPatientPhoneMock(...a);
+      return {
+        orgId: orgId ?? null,
+        reason: orgId ? null : "unknown_caller",
+      };
+    },
   };
 });
 

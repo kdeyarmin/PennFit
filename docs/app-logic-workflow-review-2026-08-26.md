@@ -6,6 +6,44 @@ hard-rule sweeps, then end-to-end traces of every major product domain
 against the live route, worker, and SPA paths (file:line evidence). This
 is a correctness / completeness review, not a visual redesign pass.
 
+> **STATUS — superseded in part. Read this before acting on any finding below.**
+>
+> This is a **dated snapshot**, kept as a record of what was true on
+> 2026-08-26. It is deliberately NOT rewritten, but many of its findings
+> have since been closed and acting on them today would be acting on a
+> problem that no longer exists. Closed since:
+>
+> - **"No production `.insert` into `episodes`"** and **"automation is
+>   one-shot"** — `openOutreachEpisode` is the producer, called from
+>   prescription create, the import bootstrap, shipment evidence, the
+>   confirm path (`order-flow.ts`) and the safety-net sweep
+>   (`resupply-cycle-sweep.ts`).
+> - **"`awaiting_response` is never written"** — written by
+>   `lib/episodes/mark-awaiting-response.ts`.
+> - **"Cycles have a beginning and no end"** — migration 0538 added
+>   `closed_at` / `closed_reason` / `closing_fulfillment_id` /
+>   `cycle_number`, and the expiry and grace sweeps close them.
+> - **"PacWare never callbacks ship"** — the shipment-confirmation import
+>   exists (`/admin/pacware`, migration 0541) and
+>   `recordShipmentEvidence` is the single writer of
+>   `fulfillments.shipped_at`. It is a **file exchange**, so a tenant
+>   still has to import a report; the `assumed_shipped` bucket is what
+>   the platform shows for one that does not.
+> - **"Stale comment in `refit-campaign.ts`"** — corrected; the columns
+>   have had a writer since migration 0519.
+> - **"Decline only closes the conversation"** — the close-out vocabulary
+>   in `lib/resupply-domain/src/episode-status.ts` separates
+>   `patient_declined` from `patient_opted_out`, `no_response` and
+>   `never_contacted`, and a STOP-then-START re-opens the ladder
+>   (`reopenLadderAfterOptIn`).
+>
+> Still open, and tracked in
+> [`reviews/caremetric-breathe-production-readiness-final.md`](./reviews/caremetric-breathe-production-readiness-final.md):
+> everything that needs evidence from outside this repository — a real
+> PacWare file, a real manufacturer connection, a physical-device fitting
+> validation, an inbound call on each tenant's own number, and a
+> clearinghouse sandbox round trip.
+
 **Prior art consulted** (not re-litigated unless still open on main):
 
 - [`complete-domain-review-2026-06-20.md`](./complete-domain-review-2026-06-20.md)

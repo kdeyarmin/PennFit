@@ -38,6 +38,29 @@ export {
 } from "./adapter";
 
 export {
+  ADAPTER_ERRORS,
+  ADAPTER_ERROR_CLASS,
+  ADAPTER_ERROR_REMEDY,
+  type AdapterErrorClass,
+  classifyHttpStatus,
+  classifyNetworkError,
+  inferPathKind,
+  indicatesUnhealthyConnector,
+  isRetryable,
+} from "./errors";
+
+export {
+  IntegrationCircuitBreaker,
+  backoffDelayMs,
+  breakerKey,
+  withRetries,
+  type BreakerOptions,
+  type BreakerState,
+  type RetryOptions,
+  type RetryOutcome,
+} from "./resilience";
+
+export {
   reconcileIntegrationSource,
   type PortalPatientRow,
   type LocalPatientRow,

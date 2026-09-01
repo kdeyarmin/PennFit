@@ -126,6 +126,54 @@ describe("parsePacwarePatientCsv", () => {
   });
 });
 
+describe("rowIndexes — where each valid row actually came from", () => {
+  it("keeps file row numbers when an earlier row failed validation", () => {
+    // `rows` holds only the rows that validated, so the moment row 2
+    // fails, row 3's position in `rows` is 1 — and a caller that read the
+    // array index as a row number sent an operator to the wrong line of
+    // their CSV, in exactly the reports they read because the file had a
+    // problem.
+    const csv = [
+      "PacWare ID,Legal First Name,Legal Last Name,Date of Birth",
+      "PW1,Jane,Doe,1970-05-04",
+      "PW2,,Smith,1980-01-01",
+      "PW3,Ann,Lee,1990-02-03",
+    ].join("\n");
+    const res = parsePacwarePatientCsv(csv);
+    expect(res.rows).toHaveLength(2);
+    expect(res.errors[0].rowIndex).toBe(2);
+    // Not [1, 2] — the second valid row is the THIRD data row.
+    expect(res.rowIndexes).toEqual([1, 3]);
+  });
+
+  it("is aligned with rows, one entry each, on a clean file", () => {
+    const csv = [
+      "PacWare ID,Legal First Name,Legal Last Name,Date of Birth",
+      "PW1,Jane,Doe,1970-05-04",
+      "PW2,Ann,Lee,1990-02-03",
+    ].join("\n");
+    const res = parsePacwarePatientCsv(csv);
+    expect(res.rowIndexes).toHaveLength(res.rows.length);
+    expect(res.rowIndexes).toEqual([1, 2]);
+  });
+
+  it("does not count blank spacer rows, matching errors[].rowIndex", () => {
+    const csv = [
+      "PacWare ID,Legal First Name,Legal Last Name,Date of Birth",
+      "PW1,Jane,Doe,1970-05-04",
+      ",,,",
+      "PW2,,Smith,1980-01-01",
+      "PW3,Ann,Lee,1990-02-03",
+    ].join("\n");
+    const res = parsePacwarePatientCsv(csv);
+    // The blank row is skipped entirely, so the invalid row is data row 2
+    // and the last valid row is data row 3 — both halves of a report now
+    // count the same way.
+    expect(res.errors[0].rowIndex).toBe(2);
+    expect(res.rowIndexes).toEqual([1, 3]);
+  });
+});
+
 describe("pacwarePatientRowSchema", () => {
   it("is exported for server-side re-validation", () => {
     const ok = pacwarePatientRowSchema.safeParse({

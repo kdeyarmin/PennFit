@@ -85,6 +85,15 @@ const Capture = lazyWithRetry(() =>
 const Measure = lazyWithRetry(() =>
   import("@/pages/measure").then((m) => ({ default: m.Measure })),
 );
+// Internal head-pose convention validator. NOT a patient surface: it is
+// unlinked and gated to non-production builds below, because it exists to
+// answer an engineering question (does MediaPipe's transformation matrix
+// mean what this code assumes?) on a real device, not to serve anyone.
+const PoseDiagnostics = lazyWithRetry(() =>
+  import("@/pages/pose-diagnostics").then((m) => ({
+    default: m.PoseDiagnostics,
+  })),
+);
 const Questionnaire = lazyWithRetry(() =>
   import("@/pages/questionnaire").then((m) => ({ default: m.Questionnaire })),
 );
@@ -1134,6 +1143,19 @@ function PatientRouter() {
             <Route path="/consent" component={GuardedConsent} />
             <Route path="/fitter-invite" component={FitterInvite} />
             <Route path="/capture" component={GuardedCapture} />
+            {/*
+              Head-pose validation instrument. Registered only when the
+              build is not production, so it cannot be reached from a
+              deployed patient site even by typing the URL — and so a
+              route that turns on the camera can never appear in a
+              patient's history.
+            */}
+            {!import.meta.env.PROD && (
+              <Route
+                path="/internal/pose-diagnostics"
+                component={PoseDiagnostics}
+              />
+            )}
             <Route path="/masks" component={Masks} />
             <Route path="/cpap-masks" component={CpapMasks} />
             <Route

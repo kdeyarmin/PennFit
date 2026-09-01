@@ -47,6 +47,12 @@
 
 import { createPublicKey } from "node:crypto";
 
+import {
+  BREAK_GLASS_VAR,
+  fingerprintDatabaseUrl,
+  fingerprintSupabaseUrl,
+  resolveDeploymentIdentity,
+} from "@workspace/resupply-db/deploy-environment";
 import { applyEnvAliases } from "@workspace/resupply-secrets";
 
 const RESET = "\x1b[0m";
@@ -514,6 +520,148 @@ function runChecks(): void {
           : "RAILWAY_PUBLIC_DOMAIN set (Railway deployment)",
       );
     }
+  }
+
+  // 1b. Deployment identity + the production database fingerprint.
+  //
+  // A Railway PR-preview environment inherited the production service's
+  // shared variables and its preDeployCommand applied an unmerged
+  // migration to the PRODUCTION database. The gate that now prevents
+  // that (lib/resupply-db/scripts/deploy-environment.mjs) can only do
+  // its job if two variables are configured, and neither is required to
+  // BOOT — so nothing else would ever notice they were missing. This is
+  // where the pressure to set them belongs: preflight is already a
+  // launch gate, and a FAIL here costs an operator two minutes, whereas
+  // a FAIL in the migrator costs a release.
+  const deploymentIdentity = resolveDeploymentIdentity(process.env);
+  if (deploymentIdentity.ambiguous) {
+    record(
+      "DEPLOY_ENV",
+      "fail",
+      `deployment identity is ambiguous: ${deploymentIdentity.reason}`,
+    );
+  } else if (getTrimmed("DEPLOY_ENV") === undefined) {
+    record(
+      "DEPLOY_ENV",
+      prodModeEarly ? "fail" : "warn",
+      `unset — resolved to "${deploymentIdentity.tier}" from ${deploymentIdentity.reason}. ` +
+        "Set it explicitly on every environment so a preview cannot inherit a production identity.",
+    );
+  } else {
+    record(
+      "DEPLOY_ENV",
+      "pass",
+      `declared "${deploymentIdentity.tier}"` +
+        (deploymentIdentity.inferred
+          ? `, corroborated by ${deploymentIdentity.signal}`
+          : ""),
+    );
+  }
+
+  {
+    const pinned = getTrimmed("PRODUCTION_DATABASE_FINGERPRINT");
+    const actual = fingerprintDatabaseUrl(getTrimmed("DATABASE_URL"));
+    if (pinned === undefined) {
+      record(
+        "PRODUCTION_DATABASE_FINGERPRINT",
+        prodModeEarly ? "fail" : "warn",
+        "unset — nothing can prove a preview deployment is NOT pointed at the " +
+          "production database" +
+          (actual
+            ? `. On this environment DATABASE_URL fingerprints as ${actual.fingerprint}.`
+            : "."),
+      );
+    } else if (
+      prodModeEarly &&
+      actual &&
+      !pinned
+        .split(",")
+        .map((v) => v.trim().toLowerCase())
+        .includes(actual.fingerprint)
+    ) {
+      // FAIL. This was a warning once, on the reasoning that one
+      // production database legitimately has several host spellings —
+      // Railway hands out a pooled DATABASE_URL and a direct
+      // DATABASE_PUBLIC_URL, and a pgbouncer host fingerprints
+      // differently from the primary.
+      //
+      // That reasoning was backwards. The variable is comma-separated
+      // precisely so every spelling can be listed, so several spellings
+      // is an argument for a COMPLETE pin, not for tolerating an
+      // incomplete one. And the pin is not decoration: a non-match is
+      // load-bearing NEGATIVE evidence. `resolveDatabaseIdentity` reads
+      // "this fingerprint is not in the pin" as positive proof the
+      // database is a preview database, which is what lets a preview
+      // with its own database migrate freely.
+      //
+      // So an incomplete pin is the whole incident: a preview that
+      // inherited production's DATABASE_URL fingerprints as something
+      // absent from the pin, is therefore classified non-production, and
+      // is allowed to migrate production. This check, run against
+      // production itself, is the only thing that can prove the pin
+      // covers the database production actually uses — so it has to gate.
+      record(
+        "PRODUCTION_DATABASE_FINGERPRINT",
+        "fail",
+        `does not include this environment's DATABASE_URL (${actual.fingerprint}). ` +
+          "Add it to the comma-separated pin, alongside every other host " +
+          "spelling of the production database (pooled and direct). Until it " +
+          "is listed, the migration guard reads production's own database as " +
+          "NON-production, and a preview that inherited this DATABASE_URL " +
+          "would be allowed to migrate it.",
+      );
+    } else {
+      record("PRODUCTION_DATABASE_FINGERPRINT", "pass", "set");
+    }
+  }
+
+  {
+    const pinned = getTrimmed("PRODUCTION_SUPABASE_FINGERPRINT");
+    const actual = fingerprintSupabaseUrl(getTrimmed("SUPABASE_URL"));
+    if (pinned === undefined) {
+      record(
+        "PRODUCTION_SUPABASE_FINGERPRINT",
+        prodModeEarly ? "fail" : "warn",
+        "unset — the runtime data path is Supabase, so without this a preview " +
+          "that inherited SUPABASE_URL would serve production PHI" +
+          (actual
+            ? `. On this environment SUPABASE_URL fingerprints as ${actual.fingerprint}.`
+            : "."),
+      );
+    } else if (
+      prodModeEarly &&
+      actual &&
+      !pinned
+        .split(",")
+        .map((v) => v.trim().toLowerCase())
+        .includes(actual.fingerprint)
+    ) {
+      // FAIL, for the same reason as the database pin above: the boot
+      // guard reads a non-match as evidence that this deployment is NOT
+      // holding production's data path, so an incomplete pin is what
+      // would let a preview serve production PHI unremarked.
+      record(
+        "PRODUCTION_SUPABASE_FINGERPRINT",
+        "fail",
+        `does not include this environment's SUPABASE_URL (${actual.fingerprint}). ` +
+          "Add it to the comma-separated pin. Until it is listed, the " +
+          "boot-time data-path guard reads production's own Supabase project " +
+          "as non-production, and a preview that inherited this SUPABASE_URL " +
+          "would serve production PHI without refusing to start.",
+      );
+    } else {
+      record("PRODUCTION_SUPABASE_FINGERPRINT", "pass", "set");
+    }
+  }
+
+  // Break-glass must never be left armed in a real environment.
+  if (getTrimmed(BREAK_GLASS_VAR) !== undefined) {
+    record(
+      BREAK_GLASS_VAR,
+      "fail",
+      "the migration break-glass override is armed. It is for a single " +
+        "supervised run and must be removed from the environment immediately after.",
+    );
   }
 
   // 2. Admin allowlist — WARN, not FAIL.

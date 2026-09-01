@@ -34,6 +34,32 @@ describe("approval gate registry", () => {
     }
   });
 
+  it("ages a queue from when the item ENTERED it, not from row creation", () => {
+    // `denial_work` is the case that made this a rule. A claim is
+    // created, submitted, adjudicated and only then denied — often two
+    // months after `created_at`. Aged from creation, every denial landed
+    // in the queue already past its 10-day SLA, so the gate was
+    // permanently breached however fast a biller worked it: it measured
+    // the payer's turnaround, not ours.
+    const denial = findApprovalGate("denial_work");
+    expect(denial?.queue?.ageColumn).toBe("decision_at");
+    expect(denial?.queue?.ageColumn).not.toBe("created_at");
+  });
+
+  it("only ages from `created_at` where the row is CREATED into the queue", () => {
+    // Every other queue's rows are written when the work appears — a
+    // pending fit review, an outstanding paperwork requirement, a queued
+    // fulfillment. For those, `created_at` IS the moment it started
+    // waiting. This pins the reasoning rather than the list, so a new
+    // gate over a long-lived row has to make the same decision
+    // deliberately.
+    const createdAtGates = APPROVAL_GATES.filter(
+      (g) => g.queue?.ageColumn === "created_at",
+    ).map((g) => g.key);
+    expect(createdAtGates).not.toContain("denial_work");
+    expect(createdAtGates.length).toBeGreaterThan(0);
+  });
+
   it("labels every actor", () => {
     for (const gate of APPROVAL_GATES) {
       expect(APPROVAL_ACTOR_LABEL[gate.actor], gate.key).toBeTruthy();

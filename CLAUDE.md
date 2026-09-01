@@ -167,6 +167,30 @@ _unledgered_ database (`migrate.mjs` adoption guard) — that now only
 applies to a brand-new environment adopting an existing DB, via
 `migrate.mjs --baseline-through=<prefix>`.
 
+**A preview deployment must never migrate production.** A Railway
+PR-preview environment inherited the production service's shared
+`DATABASE_URL` and its `preDeployCommand` applied an unmerged migration
+to the **production** database. Both `deploy-migrate.mjs` and
+`migrate.mjs` now evaluate
+`lib/resupply-db/scripts/deploy-environment.mjs` first and **exit 3
+without opening a connection** when a non-production deployment is
+pointed at the production database, or when the deployment identity is
+ambiguous. The deployment identity is `DEPLOY_ENV` **cross-checked
+against** `RAILWAY_ENVIRONMENT_NAME` / `RAILWAY_GIT_BRANCH` — Railway
+sets those per environment, so a shared `DEPLOY_ENV=production` leaking
+into a preview is caught rather than believed. The database identity is a
+salted digest of `host:port/dbname` pinned in
+`PRODUCTION_DATABASE_FINGERPRINT` (share this one — a preview needs it to
+recognise production). The same module backs a boot-time guard
+(`artifacts/resupply-api/src/lib/data-path-guard.ts`) covering
+`SUPABASE_URL`, the real runtime data path; that one refuses only on a
+positive cross-tier match and warns on ambiguity, because a refused
+migration keeps the old release serving while a refused boot would not.
+Break-glass exists, needs two variables, and `preflight:prod` fails while
+it is armed. Never widen this by relying on `NODE_ENV` — Railway does not
+inject it. See
+[`docs/runbooks/migration-environment-guard.md`](./docs/runbooks/migration-environment-guard.md).
+
 Post-mortem of the historical Git-drift event:
 [`docs/git-state-2026-05-01.md`](./docs/git-state-2026-05-01.md).
 
@@ -783,6 +807,18 @@ Wiring & conventions:
   [`docs/runbooks/production-launch.md`](./docs/runbooks/production-launch.md)
   (paired with the broader checklist in
   [`docs/PRODUCTION_READINESS.md`](./docs/PRODUCTION_READINESS.md)).
+- For **what is and is not production-ready right now**, read
+  [`docs/reviews/caremetric-breathe-production-readiness-final.md`](./docs/reviews/caremetric-breathe-production-readiness-final.md).
+  The system is **not production validated**: nine external validations
+  are outstanding and tracked in
+  [`docs/reviews/external-validation-checklist.md`](./docs/reviews/external-validation-checklist.md).
+  Do NOT label a connector, a device or a flow validated until its row
+  there says Passed — a fixture-tested connector is not a validated one,
+  and two enforcement points (a DB CHECK on
+  `integration_connector_status`, and the fitter release gate) exist to
+  keep that true.
+- For the lifecycle health signals and what to do when one fires, read
+  [`docs/runbooks/lifecycle-health-alerts.md`](./docs/runbooks/lifecycle-health-alerts.md).
 - For how Railway builds & runs the repo (the `railway.json` fields, the
   service-boot contract, Node/pnpm version resolution, and the pre/post-deploy
   probes), read [`docs/railway-deployment.md`](./docs/railway-deployment.md)

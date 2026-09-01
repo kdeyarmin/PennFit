@@ -24,6 +24,11 @@ const { mockAdmin, state } = vi.hoisted(() => ({
     failingTables: new Set<string>(),
     /** Count returned for every table that does not fail. */
     count: 3,
+    /** Tables whose OLDEST-ITEM read should fail. Distinct from a failed
+     *  count: the count still stands and only the age is unknown. */
+    failingAgeTables: new Set<string>(),
+    /** ISO timestamp returned as the oldest waiting item, or null. */
+    oldestAt: null as string | null,
   },
 }));
 
@@ -44,13 +49,24 @@ vi.mock("../../middlewares/admin-rate-limit", () => {
 });
 
 vi.mock("@workspace/resupply-db", () => {
-  /** Minimal thenable PostgREST builder: every filter returns `this`, and
-   *  awaiting it resolves the head-count. */
+  /** Minimal thenable PostgREST builder: every filter returns `this`,
+   *  awaiting it resolves the head-count, and `.order().limit()
+   *  .maybeSingle()` resolves the oldest-item read the age check makes. */
   function builder(table: string) {
     const self: Record<string, unknown> = {};
-    for (const m of ["select", "eq", "in", "is", "not", "neq"]) {
+    for (const m of ["select", "eq", "in", "is", "not", "neq", "order"]) {
       self[m] = () => self;
     }
+    self.limit = () => ({
+      maybeSingle: async () =>
+        state.failingAgeTables.has(table)
+          ? { data: null, error: { message: "age read failed" } }
+          : {
+              data:
+                state.oldestAt === null ? null : { created_at: state.oldestAt },
+              error: null,
+            },
+    });
     self.then = (
       resolve: (v: { count: number | null; error: unknown }) => unknown,
     ) =>
@@ -71,7 +87,9 @@ let app: Express;
 beforeEach(async () => {
   vi.resetModules();
   state.failingTables = new Set();
+  state.failingAgeTables = new Set();
   state.count = 3;
+  state.oldestAt = null;
   mockAdmin.current = {
     userId: "u-1",
     email: "csr@example.com",
@@ -91,16 +109,29 @@ afterEach(() => {
 type GateRow = {
   key: string;
   countable: boolean;
+  countFailed: boolean;
   waiting: number | null;
   why: string;
+  href: string;
+  priority: number;
+  disposition: string;
+  slaHours: number | null;
+  uncountableReason: string | null;
+  oldestAt: string | null;
+  oldestAgeHours: number | null;
+  ageStatus: string;
 };
 type Body = {
   gates: GateRow[];
+  refreshedAt: string;
+  escalationMultiplier: number;
   totals: {
     gateCount: number;
     waiting: number;
     uncountableGates: number;
     failedCounts: number;
+    breachedGates: number;
+    escalatedGates: number;
   };
 };
 
@@ -195,6 +226,155 @@ describe("GET /admin/approval-gates", () => {
     }
   });
 
+  it("explains every gate it cannot count", async () => {
+    // A permanent dash with no explanation is indistinguishable from an
+    // outage, and an operator looking at one has no way to tell.
+    const body = await get();
+    for (const gate of body.gates.filter((g) => !g.countable)) {
+      expect(gate.uncountableReason, gate.key).toBeTruthy();
+    }
+    for (const gate of body.gates.filter((g) => g.countable)) {
+      expect(gate.uncountableReason, gate.key).toBeNull();
+    }
+  });
+
+  it("distinguishes a failed count from an uncountable gate in the ROW, not only the totals", async () => {
+    const baseline = await get();
+    const target = baseline.gates.find((g) => g.countable);
+    const { APPROVAL_GATES } =
+      await import("../../lib/approval-gates/registry");
+    state.failingTables.add(
+      APPROVAL_GATES.find((g) => g.key === target?.key)?.queue?.table as string,
+    );
+    const body = await get();
+    const failed = body.gates.find((g) => g.key === target?.key);
+    expect(failed?.countFailed).toBe(true);
+    expect(failed?.countable).toBe(true);
+    for (const gate of body.gates.filter((g) => !g.countable)) {
+      // An uncountable gate has not FAILED. Reporting it as an outage
+      // would make a permanent property look like a transient one.
+      expect(gate.countFailed, gate.key).toBe(false);
+    }
+  });
+
+  it("carries an owner, a deep link, a priority and a disposition on every gate", async () => {
+    const body = await get();
+    for (const gate of body.gates) {
+      expect(gate.href, gate.key).toMatch(/^\/admin\//);
+      expect([1, 2, 3], gate.key).toContain(gate.priority);
+      expect(gate.disposition.length, gate.key).toBeGreaterThan(20);
+    }
+  });
+
+  it("stamps when the reading was taken", async () => {
+    // A dashboard left open overnight shows yesterday's depths as though
+    // they were now, and the counts look identical either way.
+    const body = await get();
+    expect(Date.parse(body.refreshedAt)).toBeGreaterThan(0);
+  });
+});
+
+describe("aging", () => {
+  /** An ISO timestamp `hours` in the past. */
+  function hoursAgo(hours: number): string {
+    return new Date(Date.now() - hours * 3600_000).toISOString();
+  }
+
+  it("reports a fresh queue as ok", async () => {
+    state.oldestAt = hoursAgo(1);
+    const body = await get();
+    const gate = body.gates.find((g) => g.key === "address_change_confirm");
+    expect(gate?.oldestAgeHours).toBeGreaterThanOrEqual(1);
+    expect(gate?.ageStatus).toBe("ok");
+  });
+
+  it("warns before the expectation is missed, not after", async () => {
+    // 24h SLA; 20h is inside it but past three quarters.
+    state.oldestAt = hoursAgo(20);
+    const body = await get();
+    expect(
+      body.gates.find((g) => g.key === "address_change_confirm")?.ageStatus,
+    ).toBe("due_soon");
+  });
+
+  it("marks a breach when the oldest item is past the expectation", async () => {
+    state.oldestAt = hoursAgo(30);
+    const body = await get();
+    const gate = body.gates.find((g) => g.key === "address_change_confirm");
+    expect(gate?.ageStatus).toBe("breached");
+    expect(body.totals.breachedGates).toBeGreaterThan(0);
+  });
+
+  it("escalates when a queue has stopped being worked entirely", async () => {
+    // Past the SLA is late. Past the multiplier is nobody is working
+    // this, and those want different responses.
+    state.oldestAt = hoursAgo(24 * 30);
+    const body = await get();
+    expect(
+      body.gates.find((g) => g.key === "address_change_confirm")?.ageStatus,
+    ).toBe("escalate");
+    expect(body.totals.escalatedGates).toBeGreaterThan(0);
+  });
+
+  it("honours a configured escalation multiplier", async () => {
+    const previous = process.env.APPROVAL_GATE_ESCALATION_MULTIPLIER;
+    process.env.APPROVAL_GATE_ESCALATION_MULTIPLIER = "50";
+    try {
+      state.oldestAt = hoursAgo(24 * 30);
+      const body = await get();
+      expect(body.escalationMultiplier).toBe(50);
+      // 720h against a 24h SLA is 30x — a breach, but no longer an
+      // escalation at 50x.
+      expect(
+        body.gates.find((g) => g.key === "address_change_confirm")?.ageStatus,
+      ).toBe("breached");
+    } finally {
+      if (previous === undefined) {
+        delete process.env.APPROVAL_GATE_ESCALATION_MULTIPLIER;
+      } else {
+        process.env.APPROVAL_GATE_ESCALATION_MULTIPLIER = previous;
+      }
+    }
+  });
+
+  it("never manufactures an alarm for a standing task", async () => {
+    // Catalog sign-off has no due date. Giving it one would invent a
+    // breach out of a task nobody is late on.
+    state.oldestAt = hoursAgo(24 * 365);
+    const body = await get();
+    const gate = body.gates.find((g) => g.key === "mask_catalog_signoff");
+    expect(gate?.slaHours).toBeNull();
+    expect(gate?.ageStatus).toBe("no_sla");
+  });
+
+  it("does not report an age for an empty queue", async () => {
+    state.count = 0;
+    state.oldestAt = hoursAgo(500);
+    const body = await get();
+    for (const gate of body.gates.filter((g) => g.countable)) {
+      expect(gate.oldestAt, gate.key).toBeNull();
+      expect(gate.ageStatus, gate.key).not.toBe("breached");
+    }
+  });
+
+  it("keeps the COUNT when only the age read fails", async () => {
+    // A failed age read is not a failed count. Dropping the whole gate to
+    // null over an unknown age would hide a real backlog.
+    const { APPROVAL_GATES } =
+      await import("../../lib/approval-gates/registry");
+    const table = APPROVAL_GATES.find((g) => g.key === "address_change_confirm")
+      ?.queue?.table as string;
+    state.failingAgeTables.add(table);
+    state.oldestAt = hoursAgo(5);
+    const body = await get();
+    const gate = body.gates.find((g) => g.key === "address_change_confirm");
+    expect(gate?.waiting).toBe(3);
+    expect(gate?.countFailed).toBe(false);
+    expect(gate?.oldestAt).toBeNull();
+  });
+});
+
+describe("tenant scope", () => {
   it("refuses without a tenant rather than counting across all of them", async () => {
     // `orgId: null` makes the mock attach no `req.orgId` at all — the
     // shape a route actually sees when tenant context is missing.

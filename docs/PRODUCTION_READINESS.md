@@ -20,6 +20,23 @@ smoke-test), see [`runbooks/production-launch.md`](./runbooks/production-launch.
 The `pnpm --filter @workspace/scripts preflight:prod` script validates
 every required variable below in one pass.
 
+> **Before working through this list, read
+> [`reviews/caremetric-breathe-production-readiness-final.md`](./reviews/caremetric-breathe-production-readiness-final.md).**
+>
+> That review is the current statement of what is and is not ready, with a
+> per-area matrix and the rollback path for each. In particular: the
+> system is **not production validated**. Nine external validations
+> remain outstanding, tracked in
+> [`reviews/external-validation-checklist.md`](./reviews/external-validation-checklist.md)
+> — every one of them requiring a counterparty this repository cannot
+> supply (a real PacWare export, three manufacturer sandboxes, a physical
+> device, two inbound telephone calls, a clearinghouse sandbox round trip,
+> and a per-tenant feature-flag cutover).
+>
+> Nothing may be labelled Production Validated, Live Validated or
+> Physical Validation Passed until the corresponding row there says
+> Passed with its evidence attached.
+
 ---
 
 ## 1. Required environment variables

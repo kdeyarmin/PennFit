@@ -11,6 +11,8 @@ import { fileURLToPath } from "node:url";
 import { resolve, dirname } from "node:path";
 import { describe, it, expect } from "vitest";
 
+import { fingerprintDatabaseUrl } from "@workspace/resupply-db/deploy-environment";
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const SCRIPT_PACKAGE_DIR = resolve(__dirname, "..");
 const SCRIPT = resolve(__dirname, "preflight-prod-env.ts");
@@ -31,6 +33,15 @@ const SUBPROCESS_ENV_PASSTHROUGH = [
 // comfortably above the 32-byte minimum the script enforces for HMAC keys.
 const VALID_HMAC_KEY = Buffer.alloc(48, 0).toString("base64");
 
+/**
+ * Fingerprint a URL with the guard's own helper rather than hard-coding a
+ * digest — the salt is an implementation detail, "this is the production
+ * database" is not.
+ */
+function fingerprintOf(url: string): string {
+  return (fingerprintDatabaseUrl(url) as { fingerprint: string }).fingerprint;
+}
+
 // A minimal environment that passes every check in production mode.
 const VALID_PROD_ENV: Record<string, string> = {
   // Inherited from parent so Node can find tsx/dependencies:
@@ -42,6 +53,18 @@ const VALID_PROD_ENV: Record<string, string> = {
   PORT: "3000",
   DATABASE_URL: "postgres://user:pass@db.prod.example.com:5432/pennpaps",
   SUPABASE_URL: "https://abcxyz123.supabase.co",
+  // Deployment/database identity (the preview-migrated-production guard).
+  // The two fingerprints are computed from the two URLs above by the same
+  // helper the guard uses, so the happy-path fixture is the shape an
+  // operator ends up with after following
+  // docs/runbooks/migration-environment-guard.md.
+  DEPLOY_ENV: "production",
+  PRODUCTION_DATABASE_FINGERPRINT: fingerprintOf(
+    "postgres://user:pass@db.prod.example.com:5432/pennpaps",
+  ),
+  PRODUCTION_SUPABASE_FINGERPRINT: fingerprintOf(
+    "https://abcxyz123.supabase.co",
+  ),
   SUPABASE_SERVICE_ROLE_KEY:
     "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.service_role",
   SUPABASE_STORAGE_BUCKET_PRIVATE: "attachments",
@@ -186,8 +209,14 @@ describe("happy path — all checks pass", () => {
   });
 
   it("exits 0 and prints 'Ready for launch.' when DATABASE_URL uses postgresql:// prefix", () => {
+    // The production-database fingerprint pin travels with the URL — a
+    // pin that does not list the database actually in use is a WARN, so
+    // override both together to keep this test about the URL scheme.
     const env = withEnv({
       DATABASE_URL: "postgresql://user:pass@db.example.com:5432/pennpaps",
+      PRODUCTION_DATABASE_FINGERPRINT: fingerprintOf(
+        "postgresql://user:pass@db.example.com:5432/pennpaps",
+      ),
     });
     const { exitCode, stdout } = run(env);
     expect(exitCode).toBe(0);
@@ -1040,7 +1069,14 @@ describe("edge cases and regression", () => {
 
   it("passes when SUPABASE_URL is https://127.0.0.1 — localhost check does NOT apply to SUPABASE_URL (forbidLocalhost=false)", () => {
     // SUPABASE_URL uses requireHttpsUrl with forbidLocalhost=false, so localhost IS allowed
-    const env = withEnv({ SUPABASE_URL: "https://127.0.0.1:8080" });
+    //
+    // The pin is moved with the URL. Changing SUPABASE_URL without it
+    // would trip the (separate, and now failing) fingerprint-completeness
+    // check, and this test is about the localhost rule alone.
+    const env = withEnv({
+      SUPABASE_URL: "https://127.0.0.1:8080",
+      PRODUCTION_SUPABASE_FINGERPRINT: fingerprintOf("https://127.0.0.1:8080"),
+    });
     const { exitCode } = run(env);
     // Must be https — that part still applies
     expect(exitCode).toBe(0);
@@ -1077,10 +1113,106 @@ describe("edge cases and regression", () => {
     // userinfo contains "replace_me" but whose host is a real
     // (non-localhost) host passes in production.
     const { exitCode, stdout } = run(
-      withEnv({ DATABASE_URL: "postgres://replace_me:pass@host:5432/db" }),
+      withEnv({
+        DATABASE_URL: "postgres://replace_me:pass@host:5432/db",
+        PRODUCTION_DATABASE_FINGERPRINT: fingerprintOf(
+          "postgres://replace_me:pass@host:5432/db",
+        ),
+      }),
     );
     expect(exitCode).toBe(0);
     expect(stdout).toContain("Ready for launch.");
+  });
+
+  // -------------------------------------------------------------------
+  // Deployment/database identity — the preview-migrated-production guard
+  // -------------------------------------------------------------------
+
+  it("fails in production when DEPLOY_ENV is unset", () => {
+    const { exitCode, stdout } = run(withEnv({ DEPLOY_ENV: undefined }));
+    expect(exitCode).toBe(1);
+    expect(stdout).toContain("DEPLOY_ENV");
+  });
+
+  it("fails when DEPLOY_ENV claims production but the platform says PR preview", () => {
+    const { exitCode, stdout } = run(
+      withEnv({
+        DEPLOY_ENV: "production",
+        RAILWAY_ENVIRONMENT_NAME: "PennFit-pr-1366",
+      }),
+    );
+    expect(exitCode).toBe(1);
+    expect(stdout).toContain("ambiguous");
+  });
+
+  it("fails in production when PRODUCTION_DATABASE_FINGERPRINT is unset", () => {
+    const { exitCode, stdout } = run(
+      withEnv({ PRODUCTION_DATABASE_FINGERPRINT: undefined }),
+    );
+    expect(exitCode).toBe(1);
+    expect(stdout).toContain("PRODUCTION_DATABASE_FINGERPRINT");
+  });
+
+  it("fails in production when PRODUCTION_SUPABASE_FINGERPRINT is unset", () => {
+    const { exitCode, stdout } = run(
+      withEnv({ PRODUCTION_SUPABASE_FINGERPRINT: undefined }),
+    );
+    expect(exitCode).toBe(1);
+    expect(stdout).toContain("PRODUCTION_SUPABASE_FINGERPRINT");
+  });
+
+  it("FAILS when the pinned fingerprint omits the database in use", () => {
+    // This was once a warning, on the reasoning that a pooled and a
+    // direct host legitimately fingerprint differently. That reasoning
+    // was backwards: the pin is comma-separated so every spelling can be
+    // listed, and a non-match is load-bearing NEGATIVE evidence —
+    // `resolveDatabaseIdentity` reads "not in the pin" as proof the
+    // database is a preview one. An incomplete pin is therefore the whole
+    // incident: a preview holding production's DATABASE_URL classifies as
+    // non-production and is allowed to migrate it.
+    const { exitCode, stdout } = run(
+      withEnv({ PRODUCTION_DATABASE_FINGERPRINT: "deadbeefcafe" }),
+    );
+    expect(exitCode).not.toBe(0);
+    expect(stdout).toContain("PRODUCTION_DATABASE_FINGERPRINT");
+    expect(stdout).toContain("would be allowed to migrate it");
+  });
+
+  it("FAILS when the pinned Supabase fingerprint omits the project in use", () => {
+    const { exitCode, stdout } = run(
+      withEnv({ PRODUCTION_SUPABASE_FINGERPRINT: "deadbeefcafe" }),
+    );
+    expect(exitCode).not.toBe(0);
+    expect(stdout).toContain("PRODUCTION_SUPABASE_FINGERPRINT");
+    expect(stdout).toContain("would serve production PHI");
+  });
+
+  it("passes when the pin lists several host spellings including the one in use", () => {
+    // The intended way to satisfy the check with a pooled and a direct
+    // host: list both, rather than tolerating a miss.
+    const env = withEnv({});
+    const actual = env.PRODUCTION_DATABASE_FINGERPRINT;
+    const { exitCode } = run(
+      withEnv({
+        PRODUCTION_DATABASE_FINGERPRINT: `deadbeefcafe,${actual},0123456789ab`,
+      }),
+    );
+    expect(exitCode).toBe(0);
+  });
+
+  it("fails when the migration break-glass override is left armed", () => {
+    const { exitCode, stdout } = run(
+      withEnv({
+        DANGEROUSLY_ALLOW_PRODUCTION_DB_MIGRATION_FROM_NONPRODUCTION:
+          "I-UNDERSTAND-THIS-WRITES-TO-PRODUCTION",
+        MIGRATION_BREAK_GLASS_REASON:
+          "INC-4412 restoring a dropped index after the outage",
+      }),
+    );
+    expect(exitCode).toBe(1);
+    expect(stdout).toContain(
+      "DANGEROUSLY_ALLOW_PRODUCTION_DB_MIGRATION_FROM_NONPRODUCTION",
+    );
   });
 
   it("TWILIO_ACCOUNT_SID placeholder ACxxx... is caught as failure", () => {

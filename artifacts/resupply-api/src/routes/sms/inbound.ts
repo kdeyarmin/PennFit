@@ -67,9 +67,10 @@ import { smsAsksRefillAttestation } from "@workspace/resupply-reminders";
 
 import { getCompanyInfo, PLATFORM_NAME } from "../../lib/company-info";
 import { logger } from "../../lib/logger";
+import { recordAttributionFailure } from "../../lib/messaging/attribution-failures";
 import {
   resolveOrgIdByCalledNumber,
-  resolveOrgIdByPatientPhone,
+  resolveOrgIdByPatientPhoneDetailed,
 } from "../../lib/messaging/tenant-telecom";
 import { createAiFallbackAdapter } from "../../lib/messaging/ai-fallback-impl";
 import { ingestInboundMmsMedia } from "../../lib/messaging/ingest-mms";
@@ -295,15 +296,21 @@ router.post(
     //   * If the CALLED number (Twilio `To`) is owned by a tenant
     //     (per-tenant-number case, G7), that tenant is authoritative.
     //   * Otherwise it's the SHARED platform number — route by the PATIENT
-    //     phone (most-recent conversation wins when the phone exists in
-    //     more than one tenant, INCLUDING seed).
+    //     phone. That lookup FAILS CLOSED when the phone exists in more
+    //     than one tenant — recency of contact is not evidence of
+    //     ownership, and tie-breaking on it would hand this patient's
+    //     thread, and any PHI in it, to whichever tenant messaged last.
     //   * Never invent the seed org for an unknown phone: that would park
     //     STOP/HELP audits and unknown-number PHI under Penn. CTIA STOP/HELP
     //     still get a platform-branded reply with no DB write.
     const calledOrgId = await resolveOrgIdByCalledNumber(parsed.To, "sms");
-    const orgId = calledOrgId
-      ? calledOrgId
-      : await resolveOrgIdByPatientPhone(normalizedFrom);
+    // The caller fallback reports WHY it failed, so the drop below can be
+    // recorded against the reason that actually applies rather than a
+    // guess made from what happens to be in scope here.
+    const callerMatch = calledOrgId
+      ? null
+      : await resolveOrgIdByPatientPhoneDetailed(normalizedFrom);
+    const orgId = calledOrgId ? calledOrgId : (callerMatch?.orgId ?? null);
     if (!orgId) {
       if (earlyRouted.intent === "stop" || earlyRouted.intent === "help") {
         await safeAudit({
@@ -335,6 +342,24 @@ router.post(
           );
         return;
       }
+      // Count the drop. Dropping is correct — filing a stranger's text
+      // under the nearest-looking practice is the isolation bug this
+      // refuses to have — but until this counter existed the failure
+      // rate was zero by construction, so a DID pointed at the platform
+      // before it was registered could swallow a practice's inbound
+      // messages indefinitely with nothing to show for it.
+      //
+      // The DECISIVE reason, as on the voice path: reaching here always
+      // means no tenant owns the texted line, so the fallback's own
+      // reason — unknown number, shared across tenants, or an unreadable
+      // directory — is the more specific and more actionable fact.
+      // Aggregate only: a day, a channel, a reason, and one increment per
+      // dropped message. Never awaited — an inbound webhook has to answer
+      // Twilio.
+      void recordAttributionFailure(
+        "sms",
+        callerMatch?.reason ?? "unknown_called_number",
+      );
       await safeAudit({
         action: "messaging.inbound.received",
         adminEmail: null,

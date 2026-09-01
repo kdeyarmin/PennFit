@@ -294,7 +294,11 @@ router.post(
           "pacware/import: existing-lookup failed",
         );
         batchErrors.push(
-          `Rows ${i + 1}-${i + chunk.length} could not be checked (database error).`,
+          // Positions in the DEDUPED batch, not file rows: `deduped`
+          // collapses repeated pacware ids, so these numbers are a
+          // progress marker for which chunk failed and must not be
+          // presented as CSV line numbers.
+          `Batch ${i + 1}-${i + chunk.length} of ${deduped.length} could not be checked (database error).`,
         );
         continue;
       }
@@ -334,7 +338,7 @@ router.post(
             "pacware/import: insert failed",
           );
           batchErrors.push(
-            `${inserts.length} new patient(s) near row ${i + 1} failed to write (database error).`,
+            `${inserts.length} new patient(s) in batch starting at ${i + 1} of ${deduped.length} failed to write (database error).`,
           );
         } else {
           created += inserts.length;

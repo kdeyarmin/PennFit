@@ -1024,6 +1024,178 @@ export interface Database {
         Update: Partial<Database["resupply"]["Tables"]["episodes"]["Row"]>;
         Relationships: [];
       };
+      integration_connector_status: {
+        Row: {
+          id: string;
+          org_id: string;
+          source: string;
+          status: string;
+          last_validation_attempt_at: string | null;
+          last_validation_success_at: string | null;
+          last_sync_attempt_at: string | null;
+          last_sync_success_at: string | null;
+          last_error_category: string | null;
+          last_error_step: string | null;
+          vendor_api_version: string | null;
+          partial_resources: Json;
+          consecutive_failures: number;
+          last_reconciliation_at: string | null;
+          last_reconciliation_status: string | null;
+          validated_by_email: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["integration_connector_status"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["integration_connector_status"]["Row"]
+        >;
+        Relationships: [];
+      };
+      pacware_shipment_imports: {
+        Row: {
+          id: string;
+          org_id: string;
+          file_hash: string;
+          mode: string;
+          total_data_rows: number;
+          applied_count: number;
+          dispositions: Json;
+          oldest_ship_date: string | null;
+          newest_ship_date: string | null;
+          reimport_acknowledged: boolean;
+          imported_by_email: string | null;
+          created_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["pacware_shipment_imports"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["pacware_shipment_imports"]["Row"]
+        >;
+        Relationships: [];
+      };
+      shipment_date_exceptions: {
+        Row: {
+          id: string;
+          org_id: string;
+          fulfillment_id: string;
+          recorded_shipped_at: string;
+          proposed_shipped_at: string;
+          claim_id: string | null;
+          source: string;
+          status: string;
+          resolution: string | null;
+          resolution_note: string | null;
+          /** Migration 0544: the corrected/voided claim's reference.
+           *  Required when resolving `corrected` on a billed fulfillment. */
+          claim_correction_ref: string | null;
+          raised_by_email: string | null;
+          resolved_by_email: string | null;
+          resolved_at: string | null;
+          created_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["shipment_date_exceptions"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["shipment_date_exceptions"]["Row"]
+        >;
+        Relationships: [];
+      };
+      lifecycle_health_alerts: {
+        Row: {
+          id: string;
+          /** An org uuid as text, or the literal 'platform'. */
+          scope_id: string;
+          org_id: string | null;
+          signal_key: string;
+          status: string;
+          peak_status: string;
+          observed_value: number | null;
+          threshold_value: number | null;
+          sample_size: number | null;
+          detail: Json;
+          first_observed_at: string;
+          last_observed_at: string;
+          resolved_at: string | null;
+          resolved_reason: string | null;
+          last_notified_at: string | null;
+          last_notified_status: string | null;
+          notify_count: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["lifecycle_health_alerts"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["lifecycle_health_alerts"]["Row"]
+        >;
+        Relationships: [];
+      };
+      lifecycle_health_observations: {
+        Row: {
+          scope_id: string;
+          org_id: string | null;
+          signal_key: string;
+          status: string;
+          observed_value: number | null;
+          sample_size: number | null;
+          detail: Json;
+          observed_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["lifecycle_health_observations"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["lifecycle_health_observations"]["Row"]
+        >;
+        Relationships: [];
+      };
+      inbound_attribution_failures: {
+        Row: {
+          day: string;
+          channel: string;
+          reason: string;
+          failures: number;
+          first_seen_at: string;
+          last_seen_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["inbound_attribution_failures"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["inbound_attribution_failures"]["Row"]
+        >;
+        Relationships: [];
+      };
+      resupply_cutover_records: {
+        Row: {
+          id: string;
+          org_id: string;
+          flag_key: string;
+          action: string;
+          previous_value: boolean | null;
+          new_value: boolean | null;
+          readiness_status: string;
+          report: Json;
+          evidence_id: string | null;
+          rollback_reason: string | null;
+          actor_email: string | null;
+          actor_user_id: string | null;
+          evaluated_at: string;
+          created_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["resupply_cutover_records"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["resupply_cutover_records"]["Row"]
+        >;
+        Relationships: [];
+      };
       integration_reconciliation_runs: {
         Row: {
           id: string;

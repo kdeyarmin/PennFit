@@ -61,6 +61,7 @@ import reorderRemindersRouter from "./admin/reorder-reminders.js";
 import analyticsOutreachAttributionRouter from "./admin/analytics-outreach-attribution.js";
 import analyticsOrderOutcomesRouter from "./admin/analytics-order-outcomes.js";
 import approvalGatesRouter from "./admin/approval-gates.js";
+import lifecycleHealthRouter from "./admin/lifecycle-health.js";
 import integrationsValidateRouter from "./admin/integrations-validate.js";
 import analyticsMarginRouter from "./admin/analytics-margin.js";
 import analyticsRevenueBySourceRouter from "./admin/analytics-revenue-by-source.js";
@@ -112,6 +113,7 @@ import locationsRouter from "./admin/locations.js";
 import glAccountMappingsRouter from "./admin/gl-account-mappings.js";
 import reportPresetsRouter from "./admin/report-presets.js";
 import featureFlagsRouter from "./admin/feature-flags.js";
+import resupplyCutoverRouter from "./admin/resupply-cutover.js";
 import appConfigRouter from "./admin/app-config.js";
 import slackTestRouter from "./admin/slack-test.js";
 import slackOAuthRouter from "./admin/slack-oauth.js";
@@ -934,6 +936,14 @@ router.use(analyticsOrderOutcomesRouter);
 // deliberate, it was just stated in a dozen places and nowhere as a set.
 router.use(approvalGatesRouter);
 
+// /admin/lifecycle-health — the ~27 signals that say whether the resupply
+// lifecycle is actually working, measured live. Read-only. Distinguishes
+// "fine", "nothing configured", "this tenant does not do that" and "we
+// could not find out", because four different answers rendering as one
+// green number is how a closed loop reports success while money and
+// patients fall out of it.
+router.use(lifecycleHealthRouter);
+
 // /admin/integrations/:source/{validate,reconcile} — prove a therapy-cloud
 // connection works before a nightly sync silently depends on it, and diff
 // what we hold against the manufacturer's own portal export. Every check
@@ -1099,6 +1109,12 @@ router.use(reportPresetsRouter);
 // /admin/feature-flags/* — Control Center on/off toggles that gate
 // dispatchers and route handlers in real time.
 router.use(featureFlagsRouter);
+// /admin/resupply-cutover/* — the per-tenant cutover workflow for the
+// two resupply lifecycle flags. They are reachable from the flags page
+// above like any other switch, but each changes WHEN a live patient is
+// contacted, so the supported path gates enabling on a fresh, clean,
+// recorded readiness assessment of that tenant's own data.
+router.use(resupplyCutoverRouter);
 // /admin/system/config/* — super-admin System Configuration store:
 // enter/rotate integration credentials + platform secrets (migration
 // 0211). super_admin-only (system.config.manage).

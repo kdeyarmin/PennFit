@@ -28,6 +28,7 @@ import {
 } from "lucide-react";
 
 import { Card } from "@/components/admin/Card";
+import { LifecycleHealthPanel } from "@/components/admin/LifecycleHealthPanel";
 import { NeedsAPersonPanel } from "@/components/admin/NeedsAPersonPanel";
 import { Spinner } from "@/components/admin/Spinner";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
@@ -100,6 +101,7 @@ export function TodayWorklistSection() {
           <DocumentsCard data={data} />
           <InboundFaxesCard data={data} />
           <NeedsAPersonPanel />
+          <LifecycleHealthPanel />
         </div>
       )}
     </section>
