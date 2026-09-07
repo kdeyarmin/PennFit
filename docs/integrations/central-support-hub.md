@@ -11,8 +11,8 @@ does not change the public `/help` page, `FloatingContactLauncher`, mobile
 
 ## Rollout and rollback
 
-Set this browser build variable on the `cpap-fitter` Railway service and
-redeploy:
+Set this browser build variable on the production `resupply-api` Railway
+service, which builds and embeds the `cpap-fitter` SPA, and redeploy:
 
 ```dotenv
 VITE_CENTRAL_SUPPORT_HUB_ENABLED=true
