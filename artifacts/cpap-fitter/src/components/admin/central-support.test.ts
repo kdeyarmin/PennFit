@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   buildCentralSupportUrl,
@@ -58,6 +58,10 @@ const NAV: ReadonlyArray<NavGroup> = [
     ],
   },
 ];
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
 
 describe("central support feature flag", () => {
   it("is positive opt-in only", () => {
@@ -148,6 +152,18 @@ describe("central Support Hub URL", () => {
     expect(built.searchParams.has("route")).toBe(false);
     expect(built.toString()).not.toContain("secret");
     expect(built.searchParams.get("environment")).toBe("staging");
+  });
+
+  it("falls through blank metadata overrides to injected build metadata", () => {
+    vi.stubEnv("VITE_APP_VERSION", "   ");
+    vi.stubEnv("VITE_APP_ENVIRONMENT", "");
+
+    const built = new URL(
+      buildCentralSupportUrl({ appVersion: "", environment: "   " }),
+    );
+
+    expect(built.searchParams.get("app_version")).toBe("test-build");
+    expect(built.searchParams.get("environment")).toBe("development");
   });
 
   it("exports the verified central contact endpoints", () => {

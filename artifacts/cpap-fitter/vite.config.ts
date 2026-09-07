@@ -7,19 +7,27 @@ import { fitterChunkForPackage } from "../shared/vite/chunk-groups";
 
 const isBuild = process.argv.includes("build");
 
+function firstNonBlank(
+  ...values: ReadonlyArray<string | undefined>
+): string | undefined {
+  return values.find((value) => value !== undefined && value.trim() !== "");
+}
+
 // Non-sensitive build metadata for the central admin Support Hub. Railway
 // provides the commit SHA and environment name automatically. Explicit VITE_*
 // values take precedence so local/alternate deploys can supply equivalent
 // metadata without exposing any server secrets to the browser bundle.
 const centralSupportBuildVersion =
-  process.env.VITE_APP_VERSION ??
-  process.env.RAILWAY_GIT_COMMIT_SHA ??
-  "development";
+  firstNonBlank(
+    process.env.VITE_APP_VERSION,
+    process.env.RAILWAY_GIT_COMMIT_SHA,
+  ) ?? "development";
 const centralSupportBuildEnvironment =
-  process.env.VITE_APP_ENVIRONMENT ??
-  process.env.RAILWAY_ENVIRONMENT_NAME ??
-  process.env.DEPLOY_ENV ??
-  (isBuild ? "production" : "development");
+  firstNonBlank(
+    process.env.VITE_APP_ENVIRONMENT,
+    process.env.RAILWAY_ENVIRONMENT_NAME,
+    process.env.DEPLOY_ENV,
+  ) ?? (isBuild ? "production" : "development");
 
 const rawPort = process.env.PORT;
 if (!isBuild && !rawPort) {

@@ -138,6 +138,12 @@ function injectedBuildEnvironment(): string | undefined {
   return undefined;
 }
 
+function firstNonBlank(
+  ...values: ReadonlyArray<string | undefined>
+): string | undefined {
+  return values.find((value) => value !== undefined && value.trim() !== "");
+}
+
 export type CentralSupportUrlOptions = {
   /** Must already be a static href selected from the admin nav model. */
   staticRoute?: string;
@@ -160,18 +166,22 @@ export function buildCentralSupportUrl(
   url.searchParams.set(
     "app_version",
     normalizeCentralSupportVersion(
-      options.appVersion ??
-        import.meta.env.VITE_APP_VERSION ??
+      firstNonBlank(
+        options.appVersion,
+        import.meta.env.VITE_APP_VERSION,
         injectedBuildVersion(),
+      ),
     ),
   );
   url.searchParams.set(
     "environment",
     normalizeCentralSupportEnvironment(
-      options.environment ??
-        import.meta.env.VITE_APP_ENVIRONMENT ??
-        injectedBuildEnvironment() ??
+      firstNonBlank(
+        options.environment,
+        import.meta.env.VITE_APP_ENVIRONMENT,
+        injectedBuildEnvironment(),
         import.meta.env.MODE,
+      ),
     ),
   );
 
