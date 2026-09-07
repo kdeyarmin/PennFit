@@ -60,4 +60,3 @@ must never be added to the outbound URL.
 
 These are platform software-support contacts. Patient/DME contacts continue to
 come from the active tenant configuration on the existing public help surface.
-
