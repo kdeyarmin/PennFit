@@ -116,6 +116,11 @@ import {
 } from "@workspace/api-client-react/admin";
 import { getMfaStatus } from "@/lib/admin/mfa-api";
 import { startTenantCheckout } from "@/lib/admin/platform-billing-api";
+import {
+  buildCentralSupportUrl,
+  isCentralSupportHubEnabled,
+  staticAdminSupportRoute,
+} from "./central-support";
 
 // Client-side nav-visibility token (NOT a server permission) gating the
 // Locations entry. Injected into the nav permission set when /me reports
@@ -1166,7 +1171,7 @@ export const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         icon: LifeBuoy,
         href: "/admin/support",
         matchPrefix: "/admin/support",
-        hint: "File a support request — our AI assistant answers how-to questions instantly, and a person handles the rest",
+        hint: "Open the centralized CareMetric software Support Hub",
       },
       {
         label: "Help & Resources",
@@ -1654,10 +1659,13 @@ function NavItem({
   isActive,
   badgeCount,
   onClick,
+  externalHref,
 }: NavLink & {
   isActive: boolean;
   badgeCount?: number;
   onClick?: () => void;
+  /** When present, this nav entry opens a separately hosted destination. */
+  externalHref?: string;
 }) {
   // The nav-item-active / nav-item-idle utilities live in admin.css —
   // active state is navy fill + gold leading accent, idle hovers to a
@@ -1665,17 +1673,12 @@ function NavItem({
   // icon so reps can scan the sidebar visually rather than reading
   // every label.
   const showBadge = typeof badgeCount === "number" && badgeCount > 0;
-  return (
-    <Link
-      href={href}
-      title={hint}
-      className={`flex items-center gap-2.5 px-3 py-2 text-sm rounded-md font-medium ${
-        isActive ? "nav-item-active" : "nav-item-idle"
-      }`}
-      aria-current={isActive ? "page" : undefined}
-      onClick={onClick}
-      data-testid={`admin-nav-${href.replace(/\//g, "-").replace(/^-/, "")}`}
-    >
+  const className = `flex items-center gap-2.5 px-3 py-2 text-sm rounded-md font-medium ${
+    isActive ? "nav-item-active" : "nav-item-idle"
+  }`;
+  const testId = `admin-nav-${href.replace(/\//g, "-").replace(/^-/, "")}`;
+  const content = (
+    <>
       <Icon className="h-4 w-4 shrink-0 opacity-90" aria-hidden="true" />
       <span className="truncate">{label}</span>
       {showBadge && (
@@ -1687,6 +1690,36 @@ function NavItem({
           {badgeCount > 99 ? "99+" : badgeCount}
         </span>
       )}
+    </>
+  );
+
+  if (externalHref) {
+    return (
+      <a
+        href={externalHref}
+        target="_blank"
+        rel="noopener noreferrer"
+        title={hint}
+        className={className}
+        aria-current={isActive ? "page" : undefined}
+        onClick={onClick}
+        data-testid={testId}
+      >
+        {content}
+      </a>
+    );
+  }
+
+  return (
+    <Link
+      href={href}
+      title={hint}
+      className={className}
+      aria-current={isActive ? "page" : undefined}
+      onClick={onClick}
+      data-testid={testId}
+    >
+      {content}
     </Link>
   );
 }
@@ -1863,6 +1896,11 @@ function SidebarNavBody({
   // Resolve "which sidebar entry is active" once per render so a section
   // and one of its tabs don't both highlight.
   const activeSection = pickActiveTarget(location, visibleGroups)?.section;
+  const centralSupportHref = isCentralSupportHubEnabled()
+    ? buildCentralSupportUrl({
+        staticRoute: staticAdminSupportRoute(location, visibleGroups),
+      })
+    : undefined;
 
   return (
     <div className="flex flex-col gap-2">
@@ -1942,6 +1980,11 @@ function SidebarNavBody({
                       isActive={link === activeSection}
                       badgeCount={sectionBadgeCount(link, counts, permissions)}
                       onClick={onItemClick}
+                      externalHref={
+                        href === "/admin/support"
+                          ? centralSupportHref
+                          : undefined
+                      }
                     />
                   </Fragment>
                 );

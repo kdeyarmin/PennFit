@@ -8,7 +8,13 @@
 
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { BookOpen, LifeBuoy } from "lucide-react";
+import {
+  BookOpen,
+  ExternalLink,
+  LifeBuoy,
+  Mail,
+  PhoneCall,
+} from "lucide-react";
 
 import { Badge } from "@/components/admin/Badge";
 import { Button } from "@/components/admin/Button";
@@ -29,6 +35,14 @@ import {
   type SupportTicket,
 } from "@/lib/admin/support-api";
 import { formatAppDateTime } from "@/lib/utils";
+import {
+  buildCentralSupportUrl,
+  CENTRAL_SUPPORT_EMAIL,
+  CENTRAL_SUPPORT_PHONE_DISPLAY,
+  CENTRAL_SUPPORT_PHONE_E164,
+  isCentralSupportHubEnabled,
+  safeStaticAdminNavHref,
+} from "@/components/admin/central-support";
 
 const TEXTAREA_CLASS =
   "w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2";
@@ -311,7 +325,87 @@ function TicketThread({ id }: { id: string }) {
   );
 }
 
-export function AdminSupportPage() {
+function CentralAdminSupportPage() {
+  const supportHubUrl = buildCentralSupportUrl({
+    staticRoute: safeStaticAdminNavHref("/admin/support"),
+  });
+
+  return (
+    <div className="admin-root space-y-6">
+      <PageHeader
+        title="Support"
+        description="One place for CareMetric Breathe software help, courses, tutorials, videos, and support requests."
+        icon={LifeBuoy}
+      />
+      <div className="grid gap-6 lg:grid-cols-2 items-start">
+        <Card
+          title="CareMetric Support Hub"
+          subtitle="Search shared guidance or contact the central software support team."
+        >
+          <div className="space-y-4">
+            <p className="text-sm" style={{ color: "hsl(var(--ink-2))" }}>
+              The Support Hub brings product help, training courses, tutorials,
+              and explainer videos together so the same resources can be used
+              across CareMetric software.
+            </p>
+            <a
+              href={supportHubUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 rounded-md px-4 py-2 text-sm font-semibold"
+              style={{
+                backgroundColor: "hsl(var(--penn-navy))",
+                color: "white",
+              }}
+              data-testid="central-support-hub-link"
+            >
+              <LifeBuoy className="h-4 w-4" aria-hidden="true" />
+              Open Support Hub
+              <ExternalLink className="h-4 w-4" aria-hidden="true" />
+            </a>
+            <p className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
+              The launcher sends only the Breathe product key, this static admin
+              page category, app version, and deployment environment. It does
+              not place user, tenant, patient, or ticket details in the URL.
+            </p>
+          </div>
+        </Card>
+
+        <Card
+          title="Contact software support"
+          subtitle="Use the central CareMetric contact details for help with the software."
+        >
+          <div className="space-y-3">
+            <a
+              href={`tel:${CENTRAL_SUPPORT_PHONE_E164}`}
+              className="flex items-center gap-3 rounded-md border px-3 py-3 text-sm font-semibold"
+              style={{
+                borderColor: "hsl(var(--line-1))",
+                color: "hsl(var(--penn-navy))",
+              }}
+            >
+              <PhoneCall className="h-4 w-4" aria-hidden="true" />
+              {CENTRAL_SUPPORT_PHONE_DISPLAY}
+            </a>
+            <a
+              href={`mailto:${CENTRAL_SUPPORT_EMAIL}`}
+              className="flex items-center gap-3 rounded-md border px-3 py-3 text-sm font-semibold"
+              style={{
+                borderColor: "hsl(var(--line-1))",
+                color: "hsl(var(--penn-navy))",
+              }}
+            >
+              <Mail className="h-4 w-4" aria-hidden="true" />
+              {CENTRAL_SUPPORT_EMAIL}
+            </a>
+          </div>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+function LocalAdminSupportPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const list = useQuery({
     queryKey: ["support-tickets"],
@@ -373,5 +467,17 @@ export function AdminSupportPage() {
         )}
       </div>
     </div>
+  );
+}
+
+/**
+ * Feature-flagged handoff. Turning the flag off restores the existing local
+ * ticket UI without a code rollback or data migration.
+ */
+export function AdminSupportPage() {
+  return isCentralSupportHubEnabled() ? (
+    <CentralAdminSupportPage />
+  ) : (
+    <LocalAdminSupportPage />
   );
 }
