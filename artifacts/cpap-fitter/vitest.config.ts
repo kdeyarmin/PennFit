@@ -10,6 +10,10 @@ import path from "node:path";
 // directive at the top of the file. Keep new render tests in that
 // `.render.test.tsx` shape so the split stays obvious.
 export default defineConfig({
+  define: {
+    __CARE_METRIC_SUPPORT_BUILD_VERSION__: JSON.stringify("test-build"),
+    __CARE_METRIC_SUPPORT_BUILD_ENVIRONMENT__: JSON.stringify("development"),
+  },
   plugins: [react()],
   resolve: {
     alias: {
