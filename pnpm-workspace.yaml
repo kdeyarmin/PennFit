@@ -171,6 +171,11 @@ overrides:
   # sourceMappingURL comment (GHSA). Pin the eslint-plugin-react-hooks
   # transitive to the patched version.
   "@babel/core@<7.29.6": ^7.29.6
+  # browserslist <=4.28.6 allows attacker-controlled query/stat inputs to
+  # cause unbounded memory growth or an uncaught prototype-write crash
+  # (GHSA-c83g-rgw3-j3cx, GHSA-73wf-gq98-2v4g). This is reached through
+  # eslint-plugin-react-hooks' Babel toolchain; pin every transitive copy.
+  browserslist: ^4.28.7
   # undici >=7.23.0 <7.28.0 is vulnerable to TLS certificate validation
   # bypass via dropped requestTls in the SOCKS5 ProxyAgent
   # (GHSA-vmh5-mc38-953g) and <7.29.0 the follow-up advisory. undici is a
