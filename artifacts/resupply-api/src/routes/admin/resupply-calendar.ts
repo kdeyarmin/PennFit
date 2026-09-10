@@ -4,6 +4,12 @@ import { getOrgScopedClient, type Database } from "@workspace/resupply-db";
 import { requirePermission } from "../../middlewares/requireAdmin";
 import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit";
 import { resolveSkuEntitlement } from "../../lib/entitlement/resolve-sku-entitlement";
+import {
+  loadCsrScheduleContext,
+  loadLastSupplyDates,
+  resolveCsrSchedule,
+  supplyDateKey,
+} from "../../lib/resupply/csr-schedule";
 
 type Tables = Database["resupply"]["Tables"];
 type Episode = Tables["episodes"]["Row"];
@@ -41,6 +47,8 @@ router.get(
     }
     const db = getOrgScopedClient(req.orgId);
     const { from, to, overdue } = parsed.data;
+    const scheduleContext = await loadCsrScheduleContext(db, req.orgId);
+    const now = new Date();
     const items = [];
     // Walk every page, including large overdue queues. Never silently truncate
     // a month at PostgREST's default row cap. Child lookups stay page-bounded.
@@ -49,10 +57,11 @@ router.get(
         .from("episodes")
         .select("id, patient_id, prescription_id, status, due_at, expires_at")
         .in("status", ["outreach_pending", "awaiting_response"]);
-      query =
-        overdue === "true"
-          ? query.lt("due_at", from)
-          : query.gte("due_at", from).lt("due_at", to);
+      if (scheduleContext.dueAtAuthoritative)
+        query =
+          overdue === "true"
+            ? query.lt("due_at", from)
+            : query.gte("due_at", from).lt("due_at", to);
       const { data, error } = await query
         .order("due_at")
         .order("id")
@@ -64,18 +73,23 @@ router.get(
         db
           .from("patients")
           .select(
-            "id, legal_first_name, legal_last_name, status, phone_e164, email, channel_preference",
+            "id, legal_first_name, legal_last_name, status, phone_e164, email, channel_preference, created_at, insurance_payer, cadence_override_days",
           )
           .in("id", [...new Set(episodes.map((e) => e.patient_id))]),
         db
           .from("prescriptions")
-          .select("id, patient_id, item_sku, cadence_days, status, valid_until")
+          .select(
+            "id, patient_id, item_sku, cadence_days, status, valid_until, created_at",
+          )
           .in("id", [...new Set(episodes.map((e) => e.prescription_id))]),
       ]);
       if (patients.error) throw patients.error;
       if (prescriptions.error) throw prescriptions.error;
       const pts = new Map((patients.data as Patient[]).map((p) => [p.id, p]));
       const rxs = new Map((prescriptions.data as Rx[]).map((r) => [r.id, r]));
+      const lastDates = scheduleContext.dueAtAuthoritative
+        ? new Map<string, string>()
+        : await loadLastSupplyDates(db, [...pts.keys()]);
       for (const e of episodes) {
         const p = pts.get(e.patient_id);
         const rx = rxs.get(e.prescription_id);
@@ -87,13 +101,29 @@ router.get(
           rx.patient_id !== p.id
         )
           continue;
+        const schedule = resolveCsrSchedule(
+          scheduleContext,
+          p,
+          rx,
+          e.due_at,
+          lastDates.get(supplyDateKey(p.id, rx.item_sku)),
+          now,
+        );
+        if (!schedule.dueAt) continue;
+        const dueMs = Date.parse(schedule.dueAt);
+        if (
+          overdue === "true"
+            ? dueMs >= Date.parse(from)
+            : dueMs < Date.parse(from) || dueMs >= Date.parse(to)
+        )
+          continue;
         items.push({
           id: e.id,
           patientId: p.id,
           patientName: `${p.legal_first_name} ${p.legal_last_name}`.trim(),
           itemSku: rx.item_sku,
-          cadenceDays: rx.cadence_days,
-          dueAt: e.due_at,
+          cadenceDays: schedule.cadenceDays,
+          dueAt: schedule.dueAt,
           status: e.status,
           expiresAt: e.expires_at,
           prescriptionValidUntil: rx.valid_until,
@@ -129,7 +159,9 @@ router.get(
     const db = getOrgScopedClient(req.orgId);
     const patient = await db
       .from("patients")
-      .select("id")
+      .select(
+        "id, created_at, insurance_payer, cadence_override_days, channel_preference, phone_e164",
+      )
       .eq("id", id.data)
       .maybeSingle();
     if (patient.error) throw patient.error;
@@ -137,10 +169,13 @@ router.get(
       res.status(404).json({ error: "patient_not_found" });
       return;
     }
+    const scheduleContext = await loadCsrScheduleContext(db, req.orgId);
     const [prescriptions, fills, episodes, drafts] = await Promise.all([
       db
         .from("prescriptions")
-        .select("id, item_sku, hcpcs_code, cadence_days, status, valid_until")
+        .select(
+          "id, item_sku, hcpcs_code, cadence_days, status, valid_until, created_at",
+        )
         .eq("patient_id", id.data)
         .eq("status", "active")
         .order("created_at", { ascending: false }),
@@ -214,6 +249,10 @@ router.get(
       (products.data as Product[]).map((p) => [p.sku, p.name]),
     );
     const supplies = [];
+    const lastDates = scheduleContext.dueAtAuthoritative
+      ? new Map<string, string>()
+      : await loadLastSupplyDates(db, [id.data]);
+    const now = new Date();
     for (const rx of rxs) {
       // Patient ownership was checked above; this shared adapter reads global
       // HCPCS reference data and the already-verified patient's dispense rows.
@@ -234,15 +273,25 @@ router.get(
       const episode = (episodes.data as Episode[]).find(
         (e) => e.prescription_id === rx.id,
       );
+      const schedule = episode
+        ? resolveCsrSchedule(
+            scheduleContext,
+            patient.data,
+            rx,
+            episode.due_at,
+            lastDates.get(supplyDateKey(id.data, rx.item_sku)),
+            now,
+          )
+        : null;
       supplies.push({
         prescriptionId: rx.id,
         itemSku: rx.item_sku,
         itemName: names.get(rx.item_sku) ?? rx.item_sku,
         hcpcsCode: entitlement?.hcpcsCode ?? rx.hcpcs_code,
-        cadenceDays: rx.cadence_days,
+        cadenceDays: schedule?.cadenceDays ?? rx.cadence_days,
         validUntil: rx.valid_until,
         episodeId: episode?.id ?? null,
-        scheduledDueAt: episode?.due_at ?? null,
+        scheduledDueAt: schedule?.dueAt ?? null,
         lastOrderedAt: lastOrder.data?.created_at ?? null,
         eligibility: entitlement
           ? {

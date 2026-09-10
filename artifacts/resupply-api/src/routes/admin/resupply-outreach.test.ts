@@ -59,6 +59,18 @@ beforeEach(() => {
   quiet.mockReturnValue(false);
 });
 describe("CSR individual and bulk outreach", () => {
+  it.each(["sms", "email", "voice"])(
+    "rejects clinician %s outreach before queueing",
+    async (channel) => {
+      admin.current!.granularRole = "rt";
+      const result = await request(app())
+        .post("/admin/resupply-outreach")
+        .send({ episodeIds: [E1], channel });
+      expect(result.status).toBe(403);
+      expect(check).not.toHaveBeenCalled();
+      expect(send).not.toHaveBeenCalled();
+    },
+  );
   it.each([
     ["sms", "reminders.send-sms"],
     ["email", "reminders.send-email"],

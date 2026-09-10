@@ -223,7 +223,7 @@ export function AdminResupplyCalendarPage() {
             )}
           </div>
           <p className="text-xs text-muted-foreground mt-3">
-            Dates follow scheduled resupply episodes and your browser's
+            Dates follow the tenant's resupply schedule and your browser's
             timezone. Open a patient to check replacement eligibility and order
             history. Calendar dates alone do not confirm insurance coverage.
           </p>

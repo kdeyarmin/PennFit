@@ -8,11 +8,13 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-const { calendar, overview, queue } = vi.hoisted(() => ({
+const { calendar, overview, queue, me } = vi.hoisted(() => ({
   calendar: vi.fn(),
   overview: vi.fn(),
   queue: vi.fn(),
+  me: vi.fn(),
 }));
+vi.mock("@workspace/api-client-react/admin", () => ({ useGetAdminMe: me }));
 vi.mock("@/lib/admin/resupply-calendar-api", async () => ({
   ...(await vi.importActual("@/lib/admin/resupply-calendar-api")),
   getResupplyCalendar: calendar,
@@ -44,6 +46,9 @@ function mount(element = <AdminResupplyCalendarPage />) {
 }
 beforeEach(() => {
   vi.clearAllMocks();
+  me.mockReturnValue({
+    data: { permissions: ["patients.read", "conversations.manage"] },
+  });
   calendar.mockResolvedValue({
     items: [
       row,
@@ -71,6 +76,15 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 describe("CSR resupply workflow", () => {
+  it("keeps the calendar readable without exposing outreach to read-only staff", async () => {
+    me.mockReturnValue({ data: { permissions: ["patients.read"] } });
+    mount();
+    await screen.findByText("Jane Example");
+    expect(screen.queryByRole("button", { name: "Email" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "SMS" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Automated call" })).toBeNull();
+    expect(queue).not.toHaveBeenCalled();
+  });
   it("groups supplies by patient and counts each patient once on a calendar day", async () => {
     mount();
     expect(

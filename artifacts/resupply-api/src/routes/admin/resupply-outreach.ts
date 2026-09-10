@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 import { hasLinkHmacKey } from "@workspace/resupply-secrets";
-import { requireAdmin } from "../../middlewares/requireAdmin";
+import { requirePermission } from "../../middlewares/requireAdmin";
 import {
   adminRateLimit,
   adminWriteRateLimiter,
@@ -34,7 +34,7 @@ const body = z
 router.post(
   "/admin/resupply-outreach",
   adminWriteRateLimiter,
-  requireAdmin,
+  requirePermission("conversations.manage"),
   adminRateLimit({ name: "resupply_outreach", preset: "mutation" }),
   async (req, res) => {
     const parsed = body.safeParse(req.body);

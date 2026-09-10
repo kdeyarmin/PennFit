@@ -12,10 +12,12 @@ import {
   getSupabaseFilterCalls,
 } from "../../test-helpers/supabase-mock";
 const db = installSupabaseMock();
-const { admin, entitlement } = vi.hoisted(() => ({
+const { admin, entitlement, authoritative } = vi.hoisted(() => ({
   admin: { current: null as MockAdminCtx | null },
   entitlement: vi.fn(),
+  authoritative: vi.fn(),
 }));
+vi.mock("../../lib/feature-flags", () => ({ isFeatureEnabled: authoritative }));
 vi.mock("../../middlewares/requireAdmin", () => makeRequireAdminMock(admin));
 vi.mock("../../lib/entitlement/resolve-sku-entitlement", () => ({
   resolveSkuEntitlement: entitlement,
@@ -31,8 +33,85 @@ beforeEach(() => {
   db.reset();
   admin.current = { userId: "csr", email: "csr@example.test", role: "agent" };
   entitlement.mockReset().mockResolvedValue(null);
+  authoritative.mockReset().mockResolvedValue(true);
 });
 describe("resupply calendar", () => {
+  it("filters legacy dates after applying overrides and shipment baselines", async () => {
+    authoritative.mockResolvedValue(false);
+    const p2 = "55555555-5555-4555-8555-555555555555";
+    stage("episodes", "select", {
+      data: [
+        {
+          id: E,
+          patient_id: P,
+          prescription_id: RX,
+          due_at: "2026-12-01T12:00:00Z",
+        },
+        {
+          id: "e2",
+          patient_id: p2,
+          prescription_id: "r2",
+          due_at: "2026-09-02T12:00:00Z",
+        },
+      ],
+    });
+    stage("patients", "select", {
+      data: [
+        {
+          id: P,
+          legal_first_name: "Jane",
+          legal_last_name: "Example",
+          status: "active",
+          cadence_override_days: 15,
+          created_at: "2025-01-01T00:00:00Z",
+        },
+        { id: p2, status: "active", created_at: "2025-01-01T00:00:00Z" },
+      ],
+    });
+    stage("prescriptions", "select", {
+      data: [
+        {
+          id: RX,
+          patient_id: P,
+          item_sku: "MASK",
+          status: "active",
+          cadence_days: 90,
+          created_at: "2026-08-01T12:00:00Z",
+        },
+        {
+          id: "r2",
+          patient_id: p2,
+          item_sku: "MASK",
+          status: "active",
+          cadence_days: 90,
+          created_at: "2026-09-01T12:00:00Z",
+        },
+      ],
+    });
+    stage("fulfillments", "select", {
+      data: [
+        {
+          id: "f1",
+          patient_id: P,
+          item_sku: "MASK",
+          created_at: "2026-08-30T12:00:00Z",
+          shipped_at: "2026-09-01T12:00:00Z",
+        },
+      ],
+    });
+    const result = await request(app()).get(URL);
+    expect(result.status).toBe(200);
+    expect(result.body.items).toHaveLength(1);
+    expect(result.body.items[0]).toMatchObject({
+      id: E,
+      cadenceDays: 15,
+      dueAt: "2026-09-16T12:00:00.000Z",
+    });
+    expect(getSupabaseFilterCalls("episodes", "select")).not.toContainEqual({
+      verb: "gte",
+      args: ["due_at", "2026-09-01T04:00:00.000Z"],
+    });
+  });
   it("requires authentication and tenant context", async () => {
     admin.current = null;
     expect((await request(app()).get(URL)).status).toBe(401);

@@ -23,8 +23,14 @@ Open **Schedule → Resupply calendar** (`/admin/resupply-calendar`).
 
 ## Dates and guardrails
 
-Calendar dates come from open `episodes.due_at` values, in the browser's
-timezone. They are scheduled resupply dates, separate from the HCPCS interval
+Calendar dates use the same tenant cutover as the reminder scanner. Before
+`resupply.due_at_authoritative` is enabled, they derive from the last shipment
+(or order creation, then prescription creation) plus the effective cadence:
+patient override, matching frequency rule, then prescription default. All
+open episodes are considered before filtering by the derived date, so a stale
+stored episode date cannot hide patients. After the cutover, the calendar
+uses `episodes.due_at`. Outreach rechecks and the patient review use this same
+calculation. Dates display in the browser's timezone, separate from the HCPCS interval
 and quantity results in the patient review. Replacement eligibility uses the
 existing `resolveSkuEntitlement` adapter. An unmapped SKU displays **Needs
 eligibility review**; it does not invent coverage. Quantity-limit dates are
@@ -55,6 +61,8 @@ No database migration or new provider integration is required. The API,
 pg-boss worker, and the existing channel credentials must be running;
 email also requires the tenant's verified link domain. No real patient
 messages are sent by the automated tests or demo handlers.
+Viewing requires `patients.read`; sending outreach additionally requires
+`conversations.manage` in both the API and user interface.
 
 Demo preview: `/admin/resupply-calendar?demo=1`. It uses fictional patients
 and reports simulated outreach explicitly.

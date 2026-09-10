@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useGetAdminMe } from "@workspace/api-client-react/admin";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Mail, MessageSquare, Phone } from "lucide-react";
 import { Button } from "./Button";
@@ -14,6 +15,10 @@ export function ResupplyOutreachActions({
 }: {
   recipients: { id: string; patientName: string }[];
 }) {
+  const adminMe = useGetAdminMe();
+  const canSend = (adminMe.data?.permissions ?? []).includes(
+    "conversations.manage",
+  );
   const [confirm, dialog] = useConfirmDialog();
   const [queued, setQueued] = useState<Set<string>>(new Set());
   const [reviewing, setReviewing] = useState(false);
@@ -47,7 +52,7 @@ export function ResupplyOutreachActions({
   const pending = recipients.filter((r) => !queued.has(r.id));
   async function contact(channel: OutreachChannel) {
     const slate = pending.slice(0, 50);
-    if (!slate.length || send.isPending || reviewing) return;
+    if (!canSend || !slate.length || send.isPending || reviewing) return;
     setReviewing(true);
     const label =
       channel === "voice"
@@ -83,6 +88,7 @@ export function ResupplyOutreachActions({
     );
     send.mutate({ ids: slate.map((r) => r.id), channel });
   }
+  if (!canSend) return null;
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
