@@ -3,7 +3,7 @@ import { z } from "zod";
 import { getOrgScopedClient, type Database } from "@workspace/resupply-db";
 import { requirePermission } from "../../middlewares/requireAdmin";
 import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit";
-import { resolveSkuEntitlement } from "../../lib/entitlement/resolve-sku-entitlement";
+import { loadPatientSupplySummary } from "../../lib/entitlement/patient-supply-summary";
 import {
   loadCsrScheduleContext,
   loadLastSupplyDates,
@@ -249,27 +249,15 @@ router.get(
       (products.data as Product[]).map((p) => [p.sku, p.name]),
     );
     const supplies = [];
-    const lastDates = scheduleContext.dueAtAuthoritative
-      ? new Map<string, string>()
-      : await loadLastSupplyDates(db, [id.data]);
     const now = new Date();
+    const summary = await loadPatientSupplySummary(
+      db,
+      id.data,
+      rxs.map((r) => r.item_sku),
+      now,
+    );
     for (const rx of rxs) {
-      // Patient ownership was checked above; this shared adapter reads global
-      // HCPCS reference data and the already-verified patient's dispense rows.
-      const entitlement = await resolveSkuEntitlement(db.raw(), {
-        patientId: id.data,
-        itemSku: rx.item_sku,
-      });
-      const lastOrder = await db
-        .from("fulfillments")
-        .select("created_at")
-        .eq("patient_id", id.data)
-        .eq("item_sku", rx.item_sku)
-        .neq("status", "cancelled")
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      if (lastOrder.error) throw lastOrder.error;
+      const entitlement = summary.entitlements.get(rx.item_sku);
       const episode = (episodes.data as Episode[]).find(
         (e) => e.prescription_id === rx.id,
       );
@@ -279,7 +267,7 @@ router.get(
             patient.data,
             rx,
             episode.due_at,
-            lastDates.get(supplyDateKey(id.data, rx.item_sku)),
+            summary.lastSuppliedAt.get(rx.item_sku),
             now,
           )
         : null;
@@ -292,7 +280,7 @@ router.get(
         validUntil: rx.valid_until,
         episodeId: episode?.id ?? null,
         scheduledDueAt: schedule?.dueAt ?? null,
-        lastOrderedAt: lastOrder.data?.created_at ?? null,
+        lastOrderedAt: summary.lastOrderedAt.get(rx.item_sku) ?? null,
         eligibility: entitlement
           ? {
               status: entitlement.status,

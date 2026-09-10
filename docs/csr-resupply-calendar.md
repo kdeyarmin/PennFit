@@ -32,7 +32,8 @@ stored episode date cannot hide patients. After the cutover, the calendar
 uses `episodes.due_at`. Outreach rechecks and the patient review use this same
 calculation. Dates display in the browser's timezone, separate from the HCPCS interval
 and quantity results in the patient review. Replacement eligibility uses the
-existing `resolveSkuEntitlement` adapter. An unmapped SKU displays **Needs
+same entitlement calculation as the existing `resolveSkuEntitlement` adapter,
+with reference data and patient history loaded once for all supplies. An unmapped SKU displays **Needs
 eligibility review**; it does not invent coverage. Quantity-limit dates are
 shown as the next quantity review, not a guaranteed payable date. Insurance
 coverage and prescription validity must still be verified before fulfillment.

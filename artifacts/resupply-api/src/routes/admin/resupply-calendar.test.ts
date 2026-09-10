@@ -19,8 +19,8 @@ const { admin, entitlement, authoritative } = vi.hoisted(() => ({
 }));
 vi.mock("../../lib/feature-flags", () => ({ isFeatureEnabled: authoritative }));
 vi.mock("../../middlewares/requireAdmin", () => makeRequireAdminMock(admin));
-vi.mock("../../lib/entitlement/resolve-sku-entitlement", () => ({
-  resolveSkuEntitlement: entitlement,
+vi.mock("../../lib/entitlement/patient-supply-summary", () => ({
+  loadPatientSupplySummary: entitlement,
 }));
 import router from "./resupply-calendar";
 const P = "11111111-1111-4111-8111-111111111111";
@@ -32,7 +32,13 @@ const app = () => express().use(router);
 beforeEach(() => {
   db.reset();
   admin.current = { userId: "csr", email: "csr@example.test", role: "agent" };
-  entitlement.mockReset().mockResolvedValue(null);
+  entitlement
+    .mockReset()
+    .mockResolvedValue({
+      entitlements: new Map(),
+      lastOrderedAt: new Map(),
+      lastSuppliedAt: new Map(),
+    });
   authoritative.mockReset().mockResolvedValue(true);
 });
 describe("resupply calendar", () => {
