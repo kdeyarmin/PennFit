@@ -28,6 +28,7 @@ import { LogInterventionCard } from "@/components/admin/LogInterventionCard";
 import { PatientCmnCard } from "@/components/admin/PatientCmnCard";
 import { PatientBillingTab } from "@/components/admin/PatientBillingTab";
 import { PatientResupplyTab } from "@/components/admin/PatientResupplyTab";
+import { PatientSupplyOverview } from "@/components/admin/PatientSupplyOverview";
 import { PatientPacketsTab } from "@/components/admin/PatientPacketsTab";
 import { PortalTab } from "@/components/admin/PortalTab";
 import { PrescriptionsTab } from "@/components/admin/PrescriptionsTab";
@@ -471,7 +472,15 @@ export function PatientDetailPage({ id }: { id: string }) {
         {tab === "insurance" && <InsuranceCoveragesTab patientId={id} />}
         {tab === "prior-auths" && <PriorAuthorizationsTab patientId={id} />}
         {tab === "billing" && <PatientBillingTab patientId={id} />}
-        {tab === "resupply" && <PatientResupplyTab patientId={id} />}
+        {tab === "resupply" && (
+          <div className="space-y-6">
+            <PatientSupplyOverview
+              patientId={id}
+              patientName={`${data.firstName} ${data.lastName}`}
+            />
+            <PatientResupplyTab patientId={id} />
+          </div>
+        )}
         {tab === "equipment" && <EquipmentTab patientId={id} />}
         {tab === "forms" && <FormAcksTab patientId={id} />}
         {tab === "packets" && (

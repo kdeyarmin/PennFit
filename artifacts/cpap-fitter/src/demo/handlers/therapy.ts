@@ -7,6 +7,10 @@
 import { route, type DemoHandler } from "../types";
 import { json } from "../respond";
 import {
+  demoResupplyCalendar,
+  demoSupplyOverview,
+} from "../fixtures/resupply-calendar";
+import {
   demoResupplySummary,
   demoResupplyOpportunities,
   demoResupplyDrafts,
@@ -28,6 +32,31 @@ function intParam(
 }
 
 export const therapyHandlers: DemoHandler[] = [
+  route("GET", "/resupply-api/admin/resupply-calendar", (req) =>
+    json(
+      demoResupplyCalendar(
+        req.query.get("from") ?? "",
+        req.query.get("to") ?? "",
+        req.query.get("overdue") === "true",
+      ),
+    ),
+  ),
+  route(
+    "GET",
+    "/resupply-api/admin/patients/:id/supply-overview",
+    (_req, { id }) => json(demoSupplyOverview(id)),
+  ),
+  route("POST", "/resupply-api/admin/resupply-outreach", (req) =>
+    json({
+      results: (req.json<{ episodeIds: string[] }>()?.episodeIds ?? []).map(
+        (episodeId) => ({
+          episodeId,
+          status: "queued",
+          message: "Demo only: outreach simulated. No patient was contacted.",
+        }),
+      ),
+    }),
+  ),
   // ── Resupply Opportunities ──────────────────────────────────────────
   route("GET", "/resupply-api/admin/therapy-resupply/summary", (req) =>
     json(demoResupplySummary(intParam(req, "dueWithinDays", 0))),

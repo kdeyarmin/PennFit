@@ -111,6 +111,11 @@ const ConversationDetailPage = lazyWithRetry(() =>
     default: m.ConversationDetailPage,
   })),
 );
+const AdminResupplyCalendarPage = lazyWithRetry(() =>
+  import("@/pages/admin/admin-resupply-calendar").then((m) => ({
+    default: m.AdminResupplyCalendarPage,
+  })),
+);
 const EpisodesPage = lazyWithRetry(() =>
   import("@/pages/admin/episodes").then((m) => ({ default: m.EpisodesPage })),
 );
@@ -1090,6 +1095,10 @@ function AdminConsole() {
               <Redirect to="/admin/conversations?channel=email" replace />
             </Route>
             <Route path="/admin/episodes" component={EpisodesPage} />
+            <Route
+              path="/admin/resupply-calendar"
+              component={AdminResupplyCalendarPage}
+            />
             <Route path="/admin/rules" component={RulesPage} />
             <Route
               path="/admin/compliance-rules"

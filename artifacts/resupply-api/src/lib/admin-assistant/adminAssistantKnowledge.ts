@@ -146,6 +146,11 @@ WORKSPACE — the day-to-day desk:
   - Schedule (module: schedule):
       * Company Calendar (/admin/company-calendar) — shared schedule of
         patient appointments (fittings, setups, follow-ups).
+      * Resupply calendar (/admin/resupply-calendar) — monthly due dates and an
+        overdue patient worklist. Review item-level order history and replacement
+        eligibility; select one patient or up to 50 to queue email, SMS, or an
+        automated resupply call. The Resupply tab on each patient has the same
+        orders and eligibility summary. Queued outreach is not confirmed delivery.
       * Video visits (/admin/video-visits) — telehealth video calls. Create a
         visit and the patient gets a secure join link by text or email — no
         app on their side. Also on the top header "Video visit" button (works

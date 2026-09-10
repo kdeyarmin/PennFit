@@ -65,6 +65,7 @@
 // touch the same day.)
 
 import type PgBoss from "pg-boss";
+import { checkCsrOutreach } from "../../lib/resupply/csr-outreach.js";
 
 import {
   IN_PROGRESS_EPISODE_STATUSES,
@@ -264,6 +265,8 @@ export interface ScanJobData {
 }
 
 export interface SendJobData {
+  /** Staff-queued outreach must recheck the current cycle before sending. */
+  csrRequested?: boolean;
   patientId: string;
   episodeId: string;
   /**
@@ -1043,6 +1046,11 @@ export async function registerReminderJobs(boss: PgBoss): Promise<void> {
       return;
     }
     const supabase = getOrgScopedClient(orgId);
+    if (
+      j.data.csrRequested &&
+      (await checkCsrOutreach(orgId, j.data.episodeId, "sms")).reason
+    )
+      return;
     // Quiet-hours backstop. The hourly scan checks this before enqueuing,
     // but the daily escalation job enqueues SEND_SMS_JOB directly (it runs
     // at 18:00 UTC = 08:00 HST, before a Hawaii patient's 9am local window).
@@ -1176,6 +1184,11 @@ export async function registerReminderJobs(boss: PgBoss): Promise<void> {
       return;
     }
     const supabase = getOrgScopedClient(orgId);
+    if (
+      j.data.csrRequested &&
+      (await checkCsrOutreach(orgId, j.data.episodeId, "email")).reason
+    )
+      return;
     // Idempotency: short-circuit if another attempt already sent (or
     // is sending) for this (patient, episode, channel, day).
     const { proceed, key: dedupKey } = await tryClaimReminderDedupKey(

@@ -1,4 +1,6 @@
 import { Router, type IRouter } from "express";
+import resupplyCalendarRouter from "./admin/resupply-calendar.js";
+import resupplyOutreachRouter from "./admin/resupply-outreach.js";
 import shopCustomerNotesRouter from "./admin/customer-notes.js";
 import shopCustomerFollowupsRouter from "./admin/customer-followups.js";
 import customerTimelineRouter from "./admin/customer-timeline.js";
@@ -1063,6 +1065,8 @@ router.use(therapyClinicalInsightsRouter);
 // vendor supply rosters whose nextEligibleDate has arrived, surfaced as
 // a fleet "due/overdue" queue (with CSV export) to drive resupply orders.
 router.use(therapyResupplyRouter);
+router.use(resupplyCalendarRouter);
+router.use(resupplyOutreachRouter);
 // /admin/therapy-resupply/draft-orders — staged resupply order proposals
 // (review queue + batch-stage + dismiss). A draft is a proposal a CSR
 // reviews and approves into the sign-&-pay order flow; nothing is charged
