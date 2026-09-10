@@ -44,10 +44,11 @@ import { emptyGetFallbackBody } from "./empty";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_DIR = path.resolve(__dirname, "../..");
 /** The client layer — where every API call in the SPA is declared. */
-const CLIENT_DIR = path.resolve(__dirname, "../lib");
+const CLIENT_DIR = path.resolve(__dirname, "../lib").replaceAll("\\", "/");
 
 /** Wrappers whose single type argument IS the parsed response body. */
-const FETCH_WRAPPERS = /^(jsonFetch|adminFetch|apiFetch|fetchJson)$/;
+const FETCH_WRAPPERS =
+  /^(jsonFetch|adminFetch|apiFetch|fetchJson|adminJsonFetch)$/;
 
 /**
  * Names deliberately seeded as `{}` rather than `[]` because pages INDEX into
@@ -69,7 +70,8 @@ function responseCollectionKeys(): Set<string> {
   // Scope the program to the client layer: enough to resolve every response
   // type (imports are pulled in transitively) without compiling the whole SPA.
   const entry = parsed.fileNames.filter(
-    (f) => f.startsWith(CLIENT_DIR) && !f.includes(".test."),
+    (f) =>
+      f.replaceAll("\\", "/").startsWith(CLIENT_DIR) && !f.includes(".test."),
   );
   const program = ts.createProgram(entry, { ...parsed.options, noEmit: true });
   const checker = program.getTypeChecker();
@@ -89,7 +91,7 @@ function responseCollectionKeys(): Set<string> {
 
   for (const sf of program.getSourceFiles()) {
     if (sf.isDeclarationFile) continue;
-    if (!sf.fileName.startsWith(CLIENT_DIR)) continue;
+    if (!sf.fileName.replaceAll("\\", "/").startsWith(CLIENT_DIR)) continue;
     const visit = (node: ts.Node): void => {
       if (ts.isCallExpression(node) && node.typeArguments?.length === 1) {
         if (FETCH_WRAPPERS.test(node.expression.getText())) {

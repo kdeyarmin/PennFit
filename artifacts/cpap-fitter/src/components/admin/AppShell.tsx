@@ -239,6 +239,14 @@ export const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             hint: "Shared schedule of patient appointments — fittings, setups, follow-ups — visible to the whole team",
           },
           {
+            href: "/admin/resupply-calendar",
+            label: "Resupply calendar",
+            icon: CalendarDays,
+            matchPrefix: "/admin/resupply-calendar",
+            hint: "Patients due for supplies, order history, and individual or bulk outreach",
+            requiredPermission: "patients.read",
+          },
+          {
             href: "/admin/video-visits",
             label: "Video visits",
             icon: Video,

@@ -25,6 +25,7 @@
 // next tick simply re-enqueues the voice step until it lands in-hours.
 
 import type PgBoss from "pg-boss";
+import { checkCsrOutreach } from "../../lib/resupply/csr-outreach.js";
 
 import { getOrgScopedClient } from "@workspace/resupply-db";
 
@@ -46,6 +47,7 @@ import {
 export const SEND_VOICE_JOB = "reminders.place-call";
 
 export interface VoiceSendJobData {
+  csrRequested?: boolean;
   patientId: string;
   episodeId: string;
   /**
@@ -94,6 +96,11 @@ export async function registerReminderVoiceJob(boss: PgBoss): Promise<void> {
       return;
     }
     const supabase = getOrgScopedClient(orgId);
+    if (
+      j.data.csrRequested &&
+      (await checkCsrOutreach(orgId, j.data.episodeId, "voice")).reason
+    )
+      return;
 
     // Local-business-hours gate (TCPA). The escalation cron fires at 18:00
     // UTC — inside 9am–8pm for every CONTINENTAL-US timezone — but a HI/AK

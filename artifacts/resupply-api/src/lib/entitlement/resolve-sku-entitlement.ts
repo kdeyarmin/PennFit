@@ -20,7 +20,7 @@ import {
   resolveResupplyEntitlement,
   type ResupplyEntitlementResult,
 } from "@workspace/resupply-domain";
-import type { ResupplySupabaseClient } from "@workspace/resupply-db";
+import type { Database, ResupplySupabaseClient } from "@workspace/resupply-db";
 
 export interface ResolveSkuEntitlementArgs {
   patientId: string;
@@ -90,8 +90,26 @@ export async function resolveSkuEntitlement(
     .order("created_at", { ascending: false })
     .limit(200);
   if (fErr) throw fErr;
-  const rows = fulfillments ?? [];
+  return calculateSkuEntitlement(
+    match,
+    hcpcs,
+    fulfillments ?? [],
+    requestedQuantity,
+    now,
+  );
+}
 
+type Tables = Database["resupply"]["Tables"];
+export function calculateSkuEntitlement(
+  match: Pick<Tables["sku_hcpcs_map"]["Row"], "sku_prefix" | "hcpcs_code">,
+  hcpcs: Pick<
+    Tables["hcpcs_codes"]["Row"],
+    "code" | "min_interval_days" | "max_quantity_per_period" | "period_days"
+  >,
+  rows: Pick<Tables["fulfillments"]["Row"], "quantity" | "created_at">[],
+  requestedQuantity: number,
+  now: Date,
+): SkuEntitlement {
   const lastFulfilledAt =
     rows.length > 0 && rows[0]?.created_at
       ? new Date(rows[0].created_at)

@@ -25,6 +25,8 @@ const EMPTY_COLLECTION_KEYS = [
   "products",
   "masks",
   "orders",
+  "supplies",
+  "linkedOrders",
   "events",
   "messageEvents",
   "recallEvents",

@@ -12,6 +12,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
   installSupabaseMock,
   stageSupabaseResponse,
+  getSupabaseWritePayloads,
+  getSupabaseFilterCalls,
 } from "../../test-helpers/supabase-mock";
 
 const supabaseMock = installSupabaseMock();
@@ -94,6 +96,9 @@ describe("placeOutboundReorderCall (system actor)", () => {
       conversationId: CONVERSATION_ID,
       callSid: "CA_TEST_123",
     });
+    expect(
+      getSupabaseWritePayloads("conversations", "update"),
+    ).not.toContainEqual(expect.objectContaining({ last_message_at: null }));
 
     // Twilio dialed with the conversation-scoped TwiML URL.
     expect(placeCallMock).toHaveBeenCalledTimes(1);
@@ -173,5 +178,15 @@ describe("placeOutboundReorderCall (system actor)", () => {
     });
     expect(logAuditMock).toHaveBeenCalledTimes(1);
     expect(logAuditMock.mock.calls[0][0].metadata.status).toBe("twilio_error");
+    expect(getSupabaseWritePayloads("conversations", "update")).toContainEqual(
+      expect.objectContaining({ last_message_at: null }),
+    );
+    expect(getSupabaseFilterCalls("conversations", "update")).toEqual(
+      expect.arrayContaining([
+        { verb: "eq", args: ["org_id", ORG_ID] },
+        { verb: "eq", args: ["id", CONVERSATION_ID] },
+        { verb: "is", args: ["external_ref", null] },
+      ]),
+    );
   });
 });

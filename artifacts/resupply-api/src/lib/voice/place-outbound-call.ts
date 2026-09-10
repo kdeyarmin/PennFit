@@ -190,6 +190,18 @@ export async function placeOutboundReorderCall(
     });
     callSid = result.sid;
   } catch (err) {
+    if (err instanceof TwilioConfigError || err instanceof TwilioApiError) {
+      // Keep the failed-attempt timeline/audit row, but do not count a
+      // rejected dial as patient contact. Otherwise the CSR worker's
+      // 48-hour check would suppress the retry after a provider rejection.
+      // A callback that already attached a CallSid keeps its timestamp.
+      const { error: rejectedAttemptErr } = await supabase
+        .from("conversations")
+        .update({ last_message_at: null, updated_at: new Date().toISOString() })
+        .eq("id", conversationId)
+        .is("external_ref", null);
+      if (rejectedAttemptErr) throw rejectedAttemptErr;
+    }
     if (err instanceof TwilioConfigError) {
       logger.error(
         { err: { name: err.name, message: err.message } },
