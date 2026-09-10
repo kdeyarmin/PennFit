@@ -32,13 +32,11 @@ const app = () => express().use(router);
 beforeEach(() => {
   db.reset();
   admin.current = { userId: "csr", email: "csr@example.test", role: "agent" };
-  entitlement
-    .mockReset()
-    .mockResolvedValue({
-      entitlements: new Map(),
-      lastOrderedAt: new Map(),
-      lastSuppliedAt: new Map(),
-    });
+  entitlement.mockReset().mockResolvedValue({
+    entitlements: new Map(),
+    lastOrderedAt: new Map(),
+    lastSuppliedAt: new Map(),
+  });
   authoritative.mockReset().mockResolvedValue(true);
 });
 describe("resupply calendar", () => {
