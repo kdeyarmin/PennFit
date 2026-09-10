@@ -40,6 +40,10 @@ worker's existing daily reminder claim limit duplicate requests. Patients
 receive the tenant's configured identity and sender through the existing
 messaging and voice workers.
 
+Provider-rejected call attempts keep their conversation and audit records,
+but do not count as patient contact for the 48-hour check, so the queue can
+retry them. Accepted calls retain their contact timestamp.
+
 The calendar walks all matching pages; it does not truncate at the first
 PostgREST page. All patient reads and outreach checks are tenant-scoped.
 Historical ad-hoc CSR orders that have no patient/draft link cannot be
