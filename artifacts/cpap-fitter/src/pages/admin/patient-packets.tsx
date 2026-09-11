@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { captureSessionCacheGuard } from "@workspace/resupply-auth-react";
 
 import {
   useListPatients,
@@ -406,6 +407,7 @@ function SendPacketPanel({
   });
 
   const send = useSendPatientPacket();
+  const qc = useQueryClient();
   const sendContact = useSendPacketToContact();
 
   // Seed the selection with the default-included documents once the
@@ -465,6 +467,7 @@ function SendPacketPanel({
   };
 
   const handleSend = async () => {
+    const isCurrentSession = captureSessionCacheGuard(qc);
     setError(null);
     setResult(null);
     if (chosen.length === 0) {
@@ -501,6 +504,7 @@ function SendPacketPanel({
             documentOverrides,
           },
         });
+        if (!isCurrentSession()) return;
         setResult({
           link: res.signingLink,
           emailSent: res.emailSent,
@@ -528,6 +532,7 @@ function SendPacketPanel({
           deliveryDetails,
           documentOverrides,
         });
+        if (!isCurrentSession()) return;
         setResult({
           link: res.signingLink,
           emailSent: res.emailSent,
@@ -541,6 +546,7 @@ function SendPacketPanel({
       }
       onSent();
     } catch (err) {
+      if (!isCurrentSession()) return;
       setError(describeError(err).detail ?? "Failed to send packet.");
     }
   };
@@ -1157,19 +1163,24 @@ function PacketPresetBar({
             size="sm"
             isLoading={deletePreset.isPending}
             onClick={async () => {
+              const isCurrentSession = captureSessionCacheGuard(qc);
               const ok = await confirm({
                 title: `Delete the “${selected.name}” bundle?`,
                 confirmLabel: "Delete",
                 destructive: true,
               });
+              if (!isCurrentSession()) return;
               if (!ok) return;
               setMsg(null);
               try {
                 await deletePreset.mutateAsync({ id: selected.id });
+                if (!isCurrentSession()) return;
                 setSelectedId("");
                 await refresh();
+                if (!isCurrentSession()) return;
                 setMsg("Bundle deleted.");
               } catch (err) {
+                if (!isCurrentSession()) return;
                 setMsg(describeError(err).detail ?? "Delete failed.");
               }
             }}
@@ -1202,17 +1213,21 @@ function PacketPresetBar({
             isLoading={createPreset.isPending}
             disabled={presetName.trim().length < 2 || currentKeys.length === 0}
             onClick={async () => {
+              const isCurrentSession = captureSessionCacheGuard(qc);
               setMsg(null);
               try {
                 await createPreset.mutateAsync({
                   name: presetName.trim(),
                   documentKeys: currentKeys,
                 });
+                if (!isCurrentSession()) return;
                 setPresetName("");
                 setSaving(false);
                 await refresh();
+                if (!isCurrentSession()) return;
                 setMsg("Bundle saved.");
               } catch (err) {
+                if (!isCurrentSession()) return;
                 const detail = describeError(err).detail;
                 setMsg(
                   detail === "name_taken"
@@ -1486,9 +1501,11 @@ function PacketDetailPanel({
               intent="secondary"
               isLoading={resend.isPending}
               onClick={async () => {
+                const isCurrentSession = captureSessionCacheGuard(qc);
                 setActionMsg(null);
                 try {
                   const res = await resend.mutateAsync({ packetId });
+                  if (!isCurrentSession()) return;
                   setActionMsg(
                     res.emailSent
                       ? "A fresh signing link was emailed to the patient."
@@ -1496,6 +1513,7 @@ function PacketDetailPanel({
                   );
                   refresh();
                 } catch (err) {
+                  if (!isCurrentSession()) return;
                   setActionMsg(describeError(err).detail ?? "Resend failed.");
                 }
               }}
@@ -1508,12 +1526,15 @@ function PacketDetailPanel({
               intent="ghost"
               isLoading={voidPacket.isPending}
               onClick={async () => {
+                const isCurrentSession = captureSessionCacheGuard(qc);
                 setActionMsg(null);
                 try {
                   await voidPacket.mutateAsync({ packetId });
+                  if (!isCurrentSession()) return;
                   setActionMsg("Packet voided.");
                   refresh();
                 } catch (err) {
+                  if (!isCurrentSession()) return;
                   setActionMsg(describeError(err).detail ?? "Void failed.");
                 }
               }}

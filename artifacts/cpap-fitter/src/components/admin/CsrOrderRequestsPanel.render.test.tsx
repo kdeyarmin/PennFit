@@ -68,11 +68,12 @@ function mount() {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
-  return render(
+  const view = render(
     <QueryClientProvider client={client}>
       <CsrOrderRequestsPanel />
     </QueryClientProvider>,
   );
+  return { ...view, client };
 }
 
 beforeEach(() => vi.clearAllMocks());
@@ -198,6 +199,11 @@ describe("signature order history", () => {
       await screen.findByText(
         /Could not load signature orders: Temporary failure/,
       );
+      // React Query drops placeholder data when the destination page
+      // errors, so none of the previous page's actions remain visible.
+      expect(screen.queryByText("RECENT-ORDER")).toBeNull();
+      expect(screen.queryByRole("button", { name: "Resend" })).toBeNull();
+      expect(screen.queryByRole("button", { name: "Cancel" })).toBeNull();
       expect(screen.queryByText(/No signature orders yet/)).toBeNull();
       fireEvent.click(screen.getByRole("button", { name: recovery }));
       await screen.findByText(
@@ -208,4 +214,41 @@ describe("signature order history", () => {
       expect(cancel).not.toHaveBeenCalled();
     },
   );
+
+  it("disables cached row actions after a background refresh fails until retry succeeds", async () => {
+    const page = { requests: [request], total: 1, page: 1, pageSize: 25 };
+    listRequests
+      .mockResolvedValueOnce(page)
+      .mockRejectedValueOnce(new Error("Refresh failed"));
+    const { client } = mount();
+    await screen.findByText("CSR-001");
+    await act(() =>
+      client.invalidateQueries({
+        queryKey: ["/resupply-api/admin/csr-order-requests"],
+      }),
+    );
+    await screen.findByText(/Could not load signature orders: Refresh failed/);
+    expect(screen.getByText("CSR-001")).toBeTruthy();
+    for (const name of ["Resend", "Cancel"]) {
+      const button = screen.getByRole("button", { name }) as HTMLButtonElement;
+      expect(button.disabled).toBe(true);
+      fireEvent.click(button);
+    }
+    expect(resend).not.toHaveBeenCalled();
+    expect(cancel).not.toHaveBeenCalled();
+
+    listRequests.mockResolvedValueOnce(page);
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await waitFor(() =>
+      expect(screen.queryByText(/Could not load signature orders/)).toBeNull(),
+    );
+    expect(
+      (screen.getByRole("button", { name: "Resend" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(false);
+    expect(
+      (screen.getByRole("button", { name: "Cancel" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(false);
+  });
 });

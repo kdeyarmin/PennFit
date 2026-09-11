@@ -21,6 +21,7 @@
 import { useState } from "react";
 import { Link } from "wouter";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { captureSessionCacheGuard } from "@workspace/resupply-auth-react";
 
 import { Card } from "@/components/admin/Card";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
@@ -50,6 +51,7 @@ export function AdminOfficeAllySubmissionDetailPage({
   const resubmitMutation = useMutation({
     mutationFn: () => resubmitOaSubmission(submissionId),
     onSuccess: async (r) => {
+      const isCurrentSession = captureSessionCacheGuard(queryClient);
       setActionMsg(
         r.ok
           ? `Resubmitted as new batch ${r.submissionId.slice(0, 8)} (${r.claimCount} claims, ${r.transport})`
@@ -58,6 +60,7 @@ export function AdminOfficeAllySubmissionDetailPage({
       await queryClient.invalidateQueries({
         queryKey: ["admin-oa-submission-detail", submissionId],
       });
+      if (!isCurrentSession()) return;
       await queryClient.invalidateQueries({
         queryKey: ["admin-oa-submissions"],
       });

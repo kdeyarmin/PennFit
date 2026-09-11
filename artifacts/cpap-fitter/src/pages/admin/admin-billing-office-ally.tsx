@@ -19,6 +19,7 @@
 import { useState } from "react";
 import { Link } from "wouter";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { captureSessionCacheGuard } from "@workspace/resupply-auth-react";
 
 import { Card } from "@/components/admin/Card";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
@@ -549,11 +550,13 @@ function SubmissionsSection() {
   const bulkResubmitMut = useMutation({
     mutationFn: (ids: string[]) => bulkResubmitOaSubmissions(ids),
     onSuccess: async (r) => {
+      const isCurrentSession = captureSessionCacheGuard(queryClient);
       setBulkResult(r);
       setSelectedIds(new Set());
       await queryClient.invalidateQueries({
         queryKey: ["admin-oa-submissions"],
       });
+      if (!isCurrentSession()) return;
       await queryClient.invalidateQueries({
         queryKey: ["admin-oa-operations-summary"],
       });
@@ -1210,11 +1213,13 @@ function UploadAckModal({
         fileName: fileName.trim() || undefined,
       }),
     onSuccess: async (r) => {
+      const isCurrentSession = captureSessionCacheGuard(queryClient);
       setResult(r);
       onUploaded();
       await queryClient.invalidateQueries({
         queryKey: ["admin-oa-submissions"],
       });
+      if (!isCurrentSession()) return;
       await queryClient.invalidateQueries({
         queryKey: ["admin-oa-operations-summary"],
       });
@@ -1447,9 +1452,11 @@ function ClearinghousesSection() {
   const pollMutation = useMutation({
     mutationFn: pollNow,
     onSuccess: async () => {
+      const isCurrentSession = captureSessionCacheGuard(queryClient);
       await queryClient.invalidateQueries({
         queryKey: ["admin-oa-inbound-files"],
       });
+      if (!isCurrentSession()) return;
       await queryClient.invalidateQueries({
         queryKey: ["admin-clearinghouses"],
       });

@@ -721,7 +721,9 @@ function FlagRow({
       // switch UI doesn't jitter back to the prior state while the
       // server round-trip is in flight.
       await queryClient.cancelQueries({ queryKey: QUERY_KEY });
-      if (!isCurrentSession()) return { isCurrentSession, prior: undefined };
+      // Returning context would still dispatch mutationFn with the new cookie.
+      if (!isCurrentSession())
+        throw new Error("Session changed before the action could be sent.");
       const prior = queryClient.getQueryData<{ flags: FeatureFlag[] }>(
         QUERY_KEY,
       );

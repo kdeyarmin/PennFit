@@ -12,6 +12,7 @@
 
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { captureSessionCacheGuard } from "@workspace/resupply-auth-react";
 
 import { useConfirmDialog } from "@/hooks/use-confirm-dialog";
 
@@ -145,6 +146,7 @@ export function PacketTemplatesPanel({ onClose }: { onClose: () => void }) {
     qc.invalidateQueries({ queryKey: getPatientPacketTemplatesQueryKey() });
 
   const openTemplate = async (t: PatientPacketTemplate) => {
+    const isCurrentSession = captureSessionCacheGuard(qc);
     setSelectedKey(t.key);
     setEditing(false);
     setShowHistory(false);
@@ -153,8 +155,10 @@ export function PacketTemplatesPanel({ onClose }: { onClose: () => void }) {
     setPreviewSections(null);
     try {
       const res = await preview.mutateAsync({ key: t.key });
+      if (!isCurrentSession()) return;
       setPreviewSections(res.sections);
     } catch {
+      if (!isCurrentSession()) return;
       // Preview is best-effort; the token-form sections still render.
       setPreviewSections(null);
     }
@@ -169,6 +173,7 @@ export function PacketTemplatesPanel({ onClose }: { onClose: () => void }) {
   };
 
   const handlePreviewDraft = async () => {
+    const isCurrentSession = captureSessionCacheGuard(qc);
     if (!selected) return;
     setError(null);
     const sections = textToSections(draftText);
@@ -178,14 +183,17 @@ export function PacketTemplatesPanel({ onClose }: { onClose: () => void }) {
     }
     try {
       const res = await preview.mutateAsync({ key: selected.key, sections });
+      if (!isCurrentSession()) return;
       setPreviewSections(res.sections);
       setMessage("Previewing your unsaved edits below.");
     } catch (err) {
+      if (!isCurrentSession()) return;
       setError(describeError(err).detail ?? "Preview failed.");
     }
   };
 
   const handleSave = async () => {
+    const isCurrentSession = captureSessionCacheGuard(qc);
     if (!selected) return;
     setError(null);
     setMessage(null);
@@ -199,7 +207,9 @@ export function PacketTemplatesPanel({ onClose }: { onClose: () => void }) {
         key: selected.key,
         data: { title: draftTitle.trim() || undefined, sections },
       });
+      if (!isCurrentSession()) return;
       await refresh();
+      if (!isCurrentSession()) return;
       setEditing(false);
       setMessage(
         "Saved. Every packet sent from now on uses this wording; packets already sent are not changed.",
@@ -207,13 +217,16 @@ export function PacketTemplatesPanel({ onClose }: { onClose: () => void }) {
       const res = await preview
         .mutateAsync({ key: selected.key, sections })
         .catch(() => null);
+      if (!isCurrentSession()) return;
       setPreviewSections(res?.sections ?? null);
     } catch (err) {
+      if (!isCurrentSession()) return;
       setError(describeError(err).detail ?? "Save failed.");
     }
   };
 
   const handleReset = async () => {
+    const isCurrentSession = captureSessionCacheGuard(qc);
     if (!selected) return;
     const ok = await confirm({
       title: "Revert to the built-in wording?",
@@ -221,19 +234,24 @@ export function PacketTemplatesPanel({ onClose }: { onClose: () => void }) {
       confirmLabel: "Revert",
       destructive: true,
     });
+    if (!isCurrentSession()) return;
     if (!ok) return;
     setError(null);
     setMessage(null);
     try {
       await reset.mutateAsync({ key: selected.key });
+      if (!isCurrentSession()) return;
       await refresh();
+      if (!isCurrentSession()) return;
       setEditing(false);
       setMessage("Reverted to the built-in wording.");
       const res = await preview
         .mutateAsync({ key: selected.key })
         .catch(() => null);
+      if (!isCurrentSession()) return;
       setPreviewSections(res?.sections ?? null);
     } catch (err) {
+      if (!isCurrentSession()) return;
       setError(describeError(err).detail ?? "Revert failed.");
     }
   };
@@ -360,13 +378,16 @@ export function PacketTemplatesPanel({ onClose }: { onClose: () => void }) {
                   <TemplateHistoryPanel
                     templateKey={selected.key}
                     onRestored={async () => {
+                      const isCurrentSession = captureSessionCacheGuard(qc);
                       await refresh();
+                      if (!isCurrentSession()) return;
                       setMessage(
                         "Revision restored — it now applies to every packet sent from now on.",
                       );
                       const res = await preview
                         .mutateAsync({ key: selected.key })
                         .catch(() => null);
+                      if (!isCurrentSession()) return;
                       setPreviewSections(res?.sections ?? null);
                     }}
                   />
@@ -501,20 +522,26 @@ function TemplateHistoryPanel({
   const revisions = historyQuery.data?.revisions ?? [];
 
   const handleRestore = async (rev: PacketTemplateRevision) => {
+    const isCurrentSession = captureSessionCacheGuard(qc);
     const ok = await confirm({
       title: `Restore revision ${rev.revision ?? "?"}?`,
       description: "It will apply to every packet sent from now on.",
       confirmLabel: "Restore",
     });
+    if (!isCurrentSession()) return;
     if (!ok) return;
     setError(null);
     try {
       await restore.mutateAsync({ key: templateKey, revisionId: rev.id });
+      if (!isCurrentSession()) return;
       await qc.invalidateQueries({
         queryKey: getPacketTemplateHistoryQueryKey(templateKey),
       });
+      if (!isCurrentSession()) return;
       await onRestored();
+      if (!isCurrentSession()) return;
     } catch (err) {
+      if (!isCurrentSession()) return;
       setError(describeError(err).detail ?? "Restore failed.");
     }
   };

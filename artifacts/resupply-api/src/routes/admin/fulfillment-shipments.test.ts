@@ -54,6 +54,28 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers());
 
 describe("manual shipment dates", () => {
+  it.each(["shippedAt", "deliveredAt"])(
+    "rejects tomorrow's %s late at night",
+    async (field) => {
+      vi.setSystemTime(new Date("2026-03-05T23:30:00Z"));
+      const response = await request(app)
+        .post(endpoint)
+        .send({
+          shippedAt: "2026-03-04",
+          [field]: "2026-03-06",
+        });
+      expect(response.status).toBe(400);
+      expect(record).not.toHaveBeenCalled();
+    },
+  );
+
+  it("accepts today's calendar dates before the midday storage anchor", async () => {
+    vi.setSystemTime(new Date("2026-03-05T00:30:00Z"));
+    const response = await request(app)
+      .post(endpoint)
+      .send({ shippedAt: "2026-03-05", deliveredAt: "2026-03-05" });
+    expect(response.status).toBe(200);
+  });
   it.each(["2026-02-29", "2026-02-31", "2026-13-01"])(
     "rejects an impossible ship date %s before recording evidence",
     async (shippedAt) => {

@@ -131,7 +131,18 @@ export function PatientSearchCombobox({
   }
 
   function onKeyDown(e: KeyboardEvent<HTMLInputElement>) {
-    if (disabled || !resultsCurrent) return;
+    if (disabled) return;
+    // Dismissal must work while the new query is still debouncing;
+    // otherwise its eventual matches reopen after the user pressed Escape.
+    if (e.key === "Escape") {
+      if (open) {
+        e.preventDefault();
+        setOpen(false);
+        setActive(-1);
+      }
+      return;
+    }
+    if (!resultsCurrent) return;
     if (e.key === "ArrowDown") {
       if (items.length === 0) return;
       e.preventDefault();
@@ -147,11 +158,6 @@ export function PatientSearchCombobox({
       if (showList && active >= 0 && active < items.length) {
         e.preventDefault();
         select(items[active]!);
-      }
-    } else if (e.key === "Escape") {
-      if (open) {
-        e.preventDefault();
-        setOpen(false);
       }
     }
   }

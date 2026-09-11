@@ -150,7 +150,9 @@ export function AdminOrderDetail() {
           </Badge>
           {o.emailDeliveredAt && (
             <div className="text-xs text-muted-foreground mt-1">
-              Email delivered {formatAppDateTime(o.emailDeliveredAt)}
+              {/* This legacy field records the successful send attempt,
+                  not a provider delivery webhook or physical shipment. */}
+              Email sent {formatAppDateTime(o.emailDeliveredAt)}
             </div>
           )}
         </div>

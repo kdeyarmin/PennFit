@@ -75,7 +75,9 @@ export function FollowupsTab({ patientId }: { patientId: string }) {
     onMutate: async (followupId) => {
       const isCurrentSession = captureSessionCacheGuard(queryClient);
       await queryClient.cancelQueries({ queryKey });
-      if (!isCurrentSession()) return { isCurrentSession, previous: undefined };
+      // Returning context would still dispatch mutationFn with the new cookie.
+      if (!isCurrentSession())
+        throw new Error("Session changed before the action could be sent.");
       const previous =
         queryClient.getQueryData<AdminPatientFollowupsListResponse>(queryKey);
       if (previous) {

@@ -11,6 +11,8 @@
 // this file -- they're not used anywhere else.
 
 import { useEffect, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { captureSessionCacheGuard } from "@workspace/resupply-auth-react";
 
 import {
   ApiError,
@@ -75,6 +77,7 @@ export function PrescriptionsTab({
   prescriptions: Prescription[];
   onChanged: () => void;
 }) {
+  const queryClient = useQueryClient();
   const [showAdd, setShowAdd] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const updateStatus = useUpdatePrescriptionStatus();
@@ -93,6 +96,7 @@ export function PrescriptionsTab({
   );
 
   async function handleUpload(rxId: string, file: File) {
+    const isCurrentSession = captureSessionCacheGuard(queryClient);
     setActionError(null);
     if (file.size > MAX_ATTACHMENT_BYTES) {
       setActionError(
@@ -103,8 +107,10 @@ export function PrescriptionsTab({
     setBusyAttachmentRxId(rxId);
     try {
       await uploadPrescriptionAttachment({ patientId, rxId, file });
+      if (!isCurrentSession()) return;
       onChanged();
     } catch (err) {
+      if (!isCurrentSession()) return;
       setActionError(
         err instanceof Error ? err.message : "Couldn't attach document.",
       );
@@ -114,6 +120,7 @@ export function PrescriptionsTab({
   }
 
   async function handleRemoveAttachment(rxId: string) {
+    const isCurrentSession = captureSessionCacheGuard(queryClient);
     if (
       !(await confirm({
         title: "Remove attached document?",
@@ -124,12 +131,15 @@ export function PrescriptionsTab({
     ) {
       return;
     }
+    if (!isCurrentSession()) return;
     setActionError(null);
     setBusyAttachmentRxId(rxId);
     try {
       await removePrescriptionAttachment({ patientId, rxId });
+      if (!isCurrentSession()) return;
       onChanged();
     } catch (err) {
+      if (!isCurrentSession()) return;
       setActionError(
         err instanceof Error ? err.message : "Couldn't remove attachment.",
       );
@@ -139,6 +149,7 @@ export function PrescriptionsTab({
   }
 
   async function changeStatus(rxId: string, nextStatus: "expired" | "revoked") {
+    const isCurrentSession = captureSessionCacheGuard(queryClient);
     const verb = nextStatus === "revoked" ? "revoke" : "mark expired";
     if (
       !(await confirm({
@@ -150,6 +161,7 @@ export function PrescriptionsTab({
     ) {
       return;
     }
+    if (!isCurrentSession()) return;
     setActionError(null);
     setBusyRxId(rxId);
     try {
@@ -157,8 +169,10 @@ export function PrescriptionsTab({
         rxId,
         data: { status: nextStatus },
       });
+      if (!isCurrentSession()) return;
       onChanged();
     } catch (err) {
+      if (!isCurrentSession()) return;
       const msg =
         err instanceof Error && err.message
           ? err.message
@@ -479,6 +493,7 @@ function AddPrescriptionModal({
   onClose: () => void;
   onCreated: () => void;
 }) {
+  const queryClient = useQueryClient();
   const create = useCreatePrescription();
   const [itemSku, setItemSku] = useState("");
   const [cadenceDays, setCadenceDays] = useState("90");
@@ -501,6 +516,7 @@ function AddPrescriptionModal({
   }, [onClose, isPending]);
 
   async function onSubmit(e: React.FormEvent) {
+    const isCurrentSession = captureSessionCacheGuard(queryClient);
     e.preventDefault();
     setError(null);
 
@@ -558,8 +574,10 @@ function AddPrescriptionModal({
 
     try {
       await create.mutateAsync({ id: patientId, data: body });
+      if (!isCurrentSession()) return;
       onCreated();
     } catch (err) {
+      if (!isCurrentSession()) return;
       const msg =
         err instanceof ApiError
           ? ((err.data as { message?: string } | undefined)?.message ??

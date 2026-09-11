@@ -12,15 +12,14 @@
 //   4. Runs the pure entitlement decision.
 //
 // Returns `null` when the SKU can't be mapped to a known/active HCPCS
-// family. Callers MUST treat `null` (and any thrown error) as "no
-// opinion" → fail OPEN (allow the order). Blocking a confirmation we
-// can't fully evaluate would strand a legitimate patient reorder.
+// family. Lookup errors propagate: enforcement callers hold the order;
+// metadata-only callers may omit the unavailable entitlement instead.
 
 import {
   resolveResupplyEntitlement,
   type ResupplyEntitlementResult,
 } from "@workspace/resupply-domain";
-import type { Database, ResupplySupabaseClient } from "@workspace/resupply-db";
+import type { Database, OrgScopedClient } from "@workspace/resupply-db";
 
 export interface ResolveSkuEntitlementArgs {
   patientId: string;
@@ -74,8 +73,32 @@ export function groupFulfillmentsByHcpcs<Row extends { item_sku: string }>(
   return groups;
 }
 
+/** PostgreSQL ARE pattern equivalent to the longest-prefix classifier.
+ * Filter the family in SQL so aliases count together without reading
+ * years of unrelated supplies. Escaping makes reference prefixes literal. */
+export function hcpcsFamilyPattern(code: string, mappings: SkuMapping[]) {
+  const literal = (value: string) =>
+    value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const branches = mappings
+    .filter((m) => m.hcpcs_code === code)
+    .map((m) => {
+      const exclusions = mappings
+        .filter(
+          (other) =>
+            other.hcpcs_code !== code &&
+            other.sku_prefix.startsWith(m.sku_prefix),
+        )
+        .map((other) => literal(other.sku_prefix.slice(m.sku_prefix.length)));
+      return (
+        literal(m.sku_prefix) +
+        (exclusions.length ? `(?!(?:${exclusions.join("|")}))` : "")
+      );
+    });
+  return branches.length ? `^(?:${branches.join("|")})` : "(?!)";
+}
+
 export async function resolveSkuEntitlement(
-  supabase: ResupplySupabaseClient,
+  supabase: OrgScopedClient,
   args: ResolveSkuEntitlementArgs,
 ): Promise<SkuEntitlement | null> {
   const now = args.now ?? new Date();
@@ -85,6 +108,7 @@ export async function resolveSkuEntitlement(
   //    tiny reference table (~9 rows), so fetch it whole and match in
   //    memory rather than pushing a prefix predicate to PostgREST.
   const { data: mapRows, error: mapErr } = await supabase
+    .raw()
     .schema("resupply")
     .from("sku_hcpcs_map")
     .select("sku_prefix, hcpcs_code");
@@ -94,6 +118,7 @@ export async function resolveSkuEntitlement(
 
   // 2. Load the replacement rule.
   const { data: hcpcs, error: hcpcsErr } = await supabase
+    .raw()
     .schema("resupply")
     .from("hcpcs_codes")
     .select(
@@ -104,27 +129,53 @@ export async function resolveSkuEntitlement(
   if (hcpcsErr) throw hcpcsErr;
   if (!hcpcs || hcpcs.active === false) return null;
 
-  // 3. Classify history by HCPCS, not a raw prefix. MASK-FULL may map
-  //    elsewhere than MASK, while a different manufacturer's prefix may
-  //    share MASK's allowance. Walk every page so other supplies cannot
-  //    displace the relevant family's last dispense or rolling quantity.
-  const fulfillments: Pick<
-    Tables["fulfillments"]["Row"],
-    "item_sku" | "quantity" | "created_at"
-  >[] = [];
-  for (let offset = 0; ; offset += 200) {
-    const { data, error } = await supabase
-      .schema("resupply")
+  // 3. Only the rolling quantity window needs all rows. ID keysets avoid
+  //    duplicated/skipped rows when earlier records are added or cancelled
+  //    during pagination. A latest-row fallback below preserves an older
+  //    interval/refill anchor without loading lifetime history.
+  const periodDays = Number.isFinite(hcpcs.period_days)
+    ? Math.max(0, hcpcs.period_days)
+    : 0;
+  const periodStart = new Date(
+    now.getTime() - periodDays * DAY_MS,
+  ).toISOString();
+  const familyPattern = hcpcsFamilyPattern(match.hcpcs_code, mapRows ?? []);
+  const historyQuery = () =>
+    supabase
       .from("fulfillments")
-      .select("item_sku, quantity, created_at")
+      .select("id, item_sku, quantity, created_at")
       .eq("patient_id", args.patientId)
       .neq("status", "cancelled")
-      .order("created_at", { ascending: false })
+      .filter("item_sku", "match", familyPattern)
+      .lte("created_at", now.toISOString());
+  const fulfillments: Pick<
+    Tables["fulfillments"]["Row"],
+    "id" | "item_sku" | "quantity" | "created_at"
+  >[] = [];
+  let afterId: string | undefined;
+  for (;;) {
+    let query = historyQuery()
+      .gte("created_at", periodStart)
       .order("id")
-      .range(offset, offset + 199);
+      .limit(200);
+    if (afterId) query = query.gt("id", afterId);
+    const { data, error } = await query;
     if (error) throw error;
     fulfillments.push(...(data ?? []));
     if (!data || data.length < 200) break;
+    const nextId = data[data.length - 1]?.id;
+    if (!nextId || (afterId && nextId <= afterId))
+      throw new Error("Entitlement history cursor did not advance");
+    afterId = nextId;
+  }
+  if (!fulfillments.length) {
+    const { data, error } = await historyQuery()
+      .lt("created_at", periodStart)
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: false })
+      .limit(1);
+    if (error) throw error;
+    fulfillments.push(...(data ?? []));
   }
   const families = groupFulfillmentsByHcpcs(fulfillments, mapRows ?? []);
   return calculateSkuEntitlement(
@@ -146,10 +197,15 @@ export function calculateSkuEntitlement(
   requestedQuantity: number,
   now: Date,
 ): SkuEntitlement {
-  const lastFulfilledAt =
-    rows.length > 0 && rows[0]?.created_at
-      ? new Date(rows[0].created_at)
-      : null;
+  let lastFulfilledAt: Date | null = null;
+  for (const row of rows) {
+    const at = new Date(row.created_at);
+    if (!Number.isFinite(at.getTime())) {
+      lastFulfilledAt = at; // preserve the domain's invalid-date guard
+      break;
+    }
+    if (!lastFulfilledAt || at > lastFulfilledAt) lastFulfilledAt = at;
+  }
 
   const periodStart = now.getTime() - hcpcs.period_days * DAY_MS;
   const inPeriodRows = rows.filter(

@@ -30,22 +30,50 @@ cached patient navigation, signature resize/remount, failed page retrieval, and
 shipment cancellation races. An isolated PGlite query also reproduced the old
 shipment predicate overwriting cancellation and verified the corrected predicate.
 
+## Follow-up review corrections
+
+The second pass addressed the PR review and checked related asynchronous workflows:
+
+- Feature-flag and follow-up mutations now abort if the session changes while
+  query cancellation is pending, before a request can use the next account's cookie.
+- The app uses a shared mutation cache that detaches old observers, suppresses
+  late success/error/settled callbacks, and blocks queued or retried dispatches.
+  Explicit guards also protect already-entered async callbacks and manual
+  save/refresh/preview, patient creation, settings, prescription, packet, and CSV
+  batch continuations. Authentication completion retains its navigation behavior.
+- Cleanup runs inside dispatched authentication requests so a late password/MFA
+  sign-in, sign-out, or password-reset response still purges private data if it
+  changes the cookie after another account signed in. Four controlled-response
+  regressions reproduced the gap; old navigation callbacks stay detached.
+- Entitlement callers now pass the tenant-scoped client. SQL filters the exact
+  HCPCS family; keyset pagination reads only the rolling quantity window, with
+  one latest-row lookup when the replacement interval needs an older dispense.
+  PostgreSQL tests check nested prefixes and literal punctuation in SKU mappings.
+- Shipment and delivery dates compare UTC calendar dates, rejecting tomorrow
+  even at 23:30 UTC while accepting today shortly after midnight.
+- Escape dismisses patient search during debounce; retained CSR actions stay
+  disabled after a failed refresh; the email timestamp says "Email sent."
+  A regression also establishes that this React Query version removes placeholder
+  rows after a failed next-page request, contrary to the review's suggested cause.
+
 ## Verification
 
 - `pnpm build` passed, including the final workspace typecheck and both production bundles.
 - `pnpm lint:resupply` passed; later edits also passed targeted ESLint.
 - `node scripts/run-resupply-checks.mjs` passed architecture, route authorization,
   tenant isolation, raw query scope, and approval-link checks.
-- The final frontend suite passed **4,702 tests in 279 files**.
-- The shared auth package passed **45 tests**, including session-generation guards.
+- The final second-pass frontend suite passed **4,723 tests in 284 files**.
+- The shared auth package passed **52 tests**, including queued dispatch, retries,
+  observer reset, late success/failure, and overlapping cache-cleanup generations.
+- The backend follow-up passed **69 focused tests**, including PostgreSQL family
+  pattern checks, tenant filtering, paging, interval anchors, and calendar boundaries.
 - The full workspace run passed 25 package suites. The backend run passed 8,676
   tests but had timeout failures in three files; those three files subsequently
   passed **47 tests** together with reduced worker concurrency. The initial
   migration-guard subprocess timeout also passed both its isolated rerun and the
   subsequent workspace run. No assertion was removed or relaxed.
-- Browser coverage exercised all 41 storefront/fitter scenarios: 40 passed on the
-  full run and the animation-sensitive questionnaire/a11y scenario passed its
-  isolated rerun. Coverage includes route loading, responsive navigation, fitting
+- The first pass's final browser run passed all 41 storefront/fitter scenarios
+  together. Coverage includes route loading, responsive navigation, fitting
   requests, consent/population gates, camera failures, retry flows, and accessibility.
 - Formatting and `git diff --check` passed for the patch.
 
@@ -64,6 +92,14 @@ migration-prefix warnings. Historical migration filenames were not changed.
 No patient messages, phone calls, production data writes, or migrations were
 performed during this review.
 
+The PR preview built successfully but its pre-deploy migration guard refused an
+ambiguous database identity. Preview deployment
+`76ea7396-5904-4a0f-9b9c-f51d1168ceed` and the production baseline logs report the
+same database-target fingerprint (`28616a064d1b`). This is not evidence of an
+isolated preview database. No environment labels, credentials, migration guards,
+or staged deployment configuration were changed. Preview needs a verified isolated
+database and matching Supabase runtime target before it can be deployed safely.
+
 ## Follow-up improvements and validation limits
 
 1. Complete the existing [external validation checklist](external-validation-checklist.md):
@@ -76,3 +112,6 @@ performed during this review.
 3. Review long-running Windows test subprocesses and animation-sensitive browser
    helpers. This pass encountered timeout-only failures that need isolated reruns;
    assertions and application safeguards were not weakened to silence them.
+4. Explicit auth transitions are isolated within this QueryClient. Session expiry
+   and cookie changes originating in another browser tab still need a separate
+   synchronization pass. Already-dispatched requests cannot be undone client-side.

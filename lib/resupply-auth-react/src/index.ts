@@ -16,7 +16,11 @@ export type {
 } from "./client";
 
 export { createAuthHooks, SESSION_QUERY_KEY } from "./hooks";
-export { clearSessionCache, captureSessionCacheGuard } from "./session-cache";
+export {
+  clearSessionCache,
+  captureSessionCacheGuard,
+  SessionMutationCache,
+} from "./session-cache";
 export type { AuthHooks, CreateAuthHooksOptions } from "./hooks";
 
 export { authErrorMessage, serverUnavailableMessage } from "./error-message";

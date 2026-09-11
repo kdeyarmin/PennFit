@@ -42,7 +42,7 @@ export function useDashboardIdentity(): DashboardIdentity {
       // (much worse than the patient case — admin tokens unlock
       // PHI). Re-throw so the caller surfaces a retry prompt.
       await authClient.signOut();
-      await clearSessionCache(queryClient);
+      if (!(await clearSessionCache(queryClient))) return;
       // Invalidate cached identity queries so AppShell stops
       // rendering with the prior role/email. Without this, sign-out
       // + sign-in as a demoted user (admin → agent) would render

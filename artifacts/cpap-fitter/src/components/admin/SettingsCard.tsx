@@ -18,7 +18,8 @@
 // the way back to rules / prescription defaults.
 
 import { useEffect, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { captureSessionCacheGuard } from "@workspace/resupply-auth-react";
 
 import {
   ApiError,
@@ -44,6 +45,7 @@ export function SettingsCard({
   patient: PatientDetail;
   onSaved: () => void;
 }) {
+  const queryClient = useQueryClient();
   // Local form state. We re-seed from the server snapshot whenever
   // the patient row refetches (e.g. after a successful save) so the
   // "dirty" indicator clears.
@@ -196,6 +198,7 @@ export function SettingsCard({
   }
 
   async function onSave() {
+    const isCurrentSession = captureSessionCacheGuard(queryClient);
     setError(null);
     setStatusMsg(null);
     const { body, error: validationError } = buildPatch();
@@ -215,6 +218,7 @@ export function SettingsCard({
     body.expectedUpdatedAt = patient.updatedAt;
     try {
       const res = await mutation.mutateAsync({ id: patient.id, data: body });
+      if (!isCurrentSession()) return;
       setStatusMsg(
         res.changed.length === 0
           ? "No fields changed."
@@ -222,6 +226,7 @@ export function SettingsCard({
       );
       onSaved();
     } catch (err) {
+      if (!isCurrentSession()) return;
       if (err instanceof ApiError && err.status === 409) {
         setError(
           "This patient was changed by someone else since you opened it. Refreshing — please re-apply your edits.",
@@ -234,6 +239,7 @@ export function SettingsCard({
   }
 
   async function onReset() {
+    const isCurrentSession = captureSessionCacheGuard(queryClient);
     setError(null);
     setStatusMsg(null);
     const body: Record<string, string | number | null> = {};
@@ -249,9 +255,11 @@ export function SettingsCard({
     body.expectedUpdatedAt = patient.updatedAt;
     try {
       await mutation.mutateAsync({ id: patient.id, data: body });
+      if (!isCurrentSession()) return;
       setStatusMsg("Reset to defaults — eligibility engine will use rules.");
       onSaved();
     } catch (err) {
+      if (!isCurrentSession()) return;
       if (err instanceof ApiError && err.status === 409) {
         setError(
           "This patient was changed by someone else since you opened it. Refreshing — please re-apply your reset.",

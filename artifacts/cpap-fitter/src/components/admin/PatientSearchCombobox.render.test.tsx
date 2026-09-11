@@ -1,7 +1,13 @@
 // @vitest-environment jsdom
 
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
-import { render, screen, fireEvent, cleanup } from "@testing-library/react";
+import {
+  render,
+  screen,
+  fireEvent,
+  cleanup,
+  waitFor,
+} from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 const { listPatients } = vi.hoisted(() => ({ listPatients: vi.fn() }));
@@ -124,5 +130,24 @@ describe("PatientSearchCombobox", () => {
     expect(onChange).not.toHaveBeenCalled();
     expect(screen.queryByRole("option")).toBeNull();
     expect(input.getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("keeps results dismissed when Escape is pressed during debounce", async () => {
+    const { onChange } = renderCombobox();
+    const input = screen.getByTestId("patient-search-input");
+    fireEvent.change(input, { target: { value: "lov" } });
+    await screen.findByTestId("patient-search-option-pat-123");
+    fireEvent.change(input, { target: { value: "ada" } });
+    fireEvent.keyDown(input, { key: "Escape" });
+
+    await waitFor(() =>
+      expect(listPatients).toHaveBeenLastCalledWith(
+        expect.objectContaining({ search: "ada" }),
+      ),
+    );
+    expect(screen.queryByRole("option")).toBeNull();
+    expect(input.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(onChange).not.toHaveBeenCalled();
   });
 });

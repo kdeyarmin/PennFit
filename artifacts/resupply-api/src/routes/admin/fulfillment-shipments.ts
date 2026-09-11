@@ -78,7 +78,7 @@ function atMiddayUtc(isoDate: string): Date {
 
 function shipDateProblem(shippedAt: Date, now: Date): string | null {
   if (!Number.isFinite(shippedAt.getTime())) return "not a real date";
-  if (shippedAt.getTime() - now.getTime() > DAY_MS) {
+  if (shippedAt.toISOString().slice(0, 10) > now.toISOString().slice(0, 10)) {
     return "that ship date is in the future";
   }
   if (now.getTime() - shippedAt.getTime() > MAX_SHIP_BACKDATE_DAYS * DAY_MS) {
@@ -138,7 +138,10 @@ router.post(
       });
       return;
     }
-    if (deliveredAt && deliveredAt.getTime() - now.getTime() > DAY_MS) {
+    if (
+      parsed.data.deliveredAt &&
+      parsed.data.deliveredAt > now.toISOString().slice(0, 10)
+    ) {
       res.status(400).json({
         error: "invalid_delivery_date",
         message: "the delivery date is in the future",

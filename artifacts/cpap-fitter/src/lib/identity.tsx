@@ -121,7 +121,8 @@ export function useShopIdentity(): ShopIdentity {
       // shared device kept rendering &lt;SignedIn&gt; gates with the
       // prior user's identity for up to a minute.
       try {
-        if (!serverSignOutError) await clearSessionCache(queryClient);
+        if (!serverSignOutError && !(await clearSessionCache(queryClient)))
+          return;
         await queryClient.invalidateQueries({ queryKey: SESSION_QUERY_KEY });
       } catch {
         /* best-effort */

@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { captureSessionCacheGuard } from "@workspace/resupply-auth-react";
 import {
   useAdminAgreements,
   useAcceptAgreement,
@@ -53,6 +54,7 @@ export function AgreementsGate() {
       { type: current.type, version: current.version, signatoryName: name },
       {
         onSuccess: async (res) => {
+          const isCurrentSession = captureSessionCacheGuard(queryClient);
           // Re-read the agreement list so the just-signed doc drops out of
           // `pending`, and refresh /me so AdminConsole re-evaluates the gate
           // (once `allSigned`, pendingAgreements is empty and the console
@@ -64,6 +66,7 @@ export function AgreementsGate() {
               queryKey: getAdminAgreementsQueryKey(),
             }),
           ]);
+          if (!isCurrentSession()) return;
           if (res.allSigned) {
             await queryClient.invalidateQueries({
               queryKey: getGetAdminMeQueryKey(),

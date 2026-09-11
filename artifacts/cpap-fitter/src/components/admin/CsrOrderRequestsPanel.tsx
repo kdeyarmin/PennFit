@@ -288,7 +288,11 @@ export function CsrOrderRequestsPanel() {
                                 variant="outline"
                                 size="sm"
                                 className="mr-2"
-                                disabled={resend.isPending || isFetching}
+                                disabled={
+                                  resend.isPending ||
+                                  isFetching ||
+                                  Boolean(error)
+                                }
                                 onClick={() => handleResend(r)}
                                 data-testid={`button-resend-${r.orderReference}`}
                               >
@@ -297,7 +301,11 @@ export function CsrOrderRequestsPanel() {
                               <Button
                                 variant="outline"
                                 size="sm"
-                                disabled={cancel.isPending || isFetching}
+                                disabled={
+                                  cancel.isPending ||
+                                  isFetching ||
+                                  Boolean(error)
+                                }
                                 onClick={() => handleCancel(r)}
                                 data-testid={`button-cancel-${r.orderReference}`}
                               >

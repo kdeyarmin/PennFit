@@ -7,6 +7,7 @@ import {
   useLocation,
 } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { SessionMutationCache } from "@workspace/resupply-auth-react";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/not-found";
@@ -679,6 +680,7 @@ function RouteFallback() {
 // is already server-cached ~60s, so a 60s client staleTime keeps the two in
 // lockstep; one retry absorbs a transient blip without hammering the API.
 const queryClient = new QueryClient({
+  mutationCache: new SessionMutationCache(),
   defaultOptions: {
     queries: {
       staleTime: 60_000,
