@@ -174,6 +174,70 @@ describe("session-ending auth mutations", () => {
 });
 
 describe("overlapping authentication responses", () => {
+  it("a session refresh preserves the sign-in whose response is still finishing", async () => {
+    const client = new QueryClient({
+      mutationCache: new SessionMutationCache(),
+    });
+    const session = (id: string) => ({
+      id,
+      email: `${id}@example.test`,
+      role: "customer" as const,
+      displayName: id,
+      emailVerified: true,
+      mustChangePassword: false,
+    });
+    client.setQueryData(["auth", "me"], session("account-a"));
+    client.setQueryData(["private-order-history"], ["account-a order"]);
+    let finish!: (response: Response) => void;
+    const response = new Promise<Response>((resolve) => {
+      finish = resolve;
+    });
+    const dispatched = vi.fn();
+    const hooks = createAuthHooks(
+      createAuthClient({
+        basePath: "/api/auth",
+        fetch: vi.fn(async (_url, init) => {
+          if (init?.method === "POST") {
+            dispatched();
+            return response;
+          }
+          return new Response(
+            JSON.stringify({ userId: "account-b", ...session("account-b") }),
+            { status: 200 },
+          );
+        }),
+      }),
+    );
+    const { result } = renderHook(
+      () => ({
+        signIn: hooks.useSignIn(),
+        session: hooks.useSession(),
+      }),
+      {
+        wrapper: ({ children }: { children: ReactNode }) => (
+          <QueryClientProvider client={client}>{children}</QueryClientProvider>
+        ),
+      },
+    );
+    const navigate = vi.fn();
+    let pending!: Promise<unknown>;
+    await act(async () => {
+      pending = result.current.signIn.mutateAsync(
+        { email: "account-b@example.test", password: "fixture" },
+        { onSuccess: navigate },
+      );
+      await vi.waitFor(() => expect(dispatched).toHaveBeenCalledOnce());
+      await result.current.session.refetch();
+    });
+    expect(client.getQueryData(["private-order-history"])).toBeUndefined();
+    await act(async () => {
+      finish(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+      await pending;
+    });
+    expect(navigate).toHaveBeenCalledOnce();
+    client.clear();
+  });
+
   it.each(["password", "mfa", "signOut", "resetPassword"] as const)(
     "clears account data when an already-dispatched %s response changes the session later",
     async (mode) => {

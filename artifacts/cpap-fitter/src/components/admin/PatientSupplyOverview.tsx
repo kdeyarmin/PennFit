@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { Card } from "./Card";
 import { Button } from "./Button";
@@ -21,12 +21,25 @@ export function PatientSupplyOverview({
   const query = useQuery({
     queryKey: ["admin", "supply-overview", patientId, offset],
     queryFn: () => getSupplyOverview(patientId, offset),
+    placeholderData: keepPreviousData,
   });
   if (query.isPending)
     return <Spinner label="Loading orders and supply dates…" />;
   if (query.isError)
     return (
-      <ErrorPanel error={query.error} onRetry={() => void query.refetch()} />
+      <div className="space-y-3">
+        <ErrorPanel error={query.error} onRetry={() => void query.refetch()} />
+        {offset > 0 && (
+          <Button
+            intent="secondary"
+            size="sm"
+            disabled={query.isFetching}
+            onClick={() => setOffset((previous) => Math.max(0, previous - 25))}
+          >
+            Newer
+          </Button>
+        )}
+      </div>
     );
   const { supplies, orders, totalOrders, linkedOrders = [] } = query.data;
   const due = supplies
@@ -226,18 +239,20 @@ export function PatientSupplyOverview({
             <Button
               intent="secondary"
               size="sm"
-              disabled={offset === 0}
+              disabled={offset === 0 || query.isFetching}
               onClick={() => setOffset(offset - 25)}
             >
               Newer
             </Button>
             <span>
-              {offset + 1}–{Math.min(offset + 25, totalOrders)} of {totalOrders}
+              {query.isFetching
+                ? "Loading order history…"
+                : `${offset + 1}–${Math.min(offset + 25, totalOrders)} of ${totalOrders}`}
             </span>
             <Button
               intent="secondary"
               size="sm"
-              disabled={offset + 25 >= totalOrders}
+              disabled={offset + 25 >= totalOrders || query.isFetching}
               onClick={() => setOffset(offset + 25)}
             >
               Older

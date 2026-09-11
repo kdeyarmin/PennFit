@@ -1,9 +1,12 @@
 import {
   MutationCache,
+  hashKey,
   type Mutation,
   type MutationObserver,
   type QueryClient,
+  type QueryKey,
 } from "@tanstack/react-query";
+import type { AuthMe } from "./client";
 
 /** Tracks public observer events so account changes also detach per-call callbacks. */
 export class SessionMutationCache extends MutationCache {
@@ -30,6 +33,64 @@ export class SessionMutationCache extends MutationCache {
 }
 
 const generations = new WeakMap<QueryClient, number>();
+const changeListeners = new WeakMap<QueryClient, Set<() => void>>();
+
+export function onSessionCacheChange(
+  client: QueryClient,
+  listener: () => void,
+) {
+  const listeners = changeListeners.get(client) ?? new Set();
+  listeners.add(listener);
+  changeListeners.set(client, listeners);
+  return () => {
+    listeners.delete(listener);
+  };
+}
+
+/** Confirm identity before returning a refreshed session to its mounted gates. */
+export async function readSession(
+  client: QueryClient,
+  queryKey: QueryKey,
+  fetchMe: () => Promise<AuthMe | null>,
+  signal?: AbortSignal,
+): Promise<AuthMe | null> {
+  const isCurrent = captureSessionCacheGuard(client);
+  const session = await fetchMe();
+  // Other surfaces may have confirmed an identity while this request awaited.
+  // Compare at completion, including when this particular /me key is new.
+  const previous = client
+    .getQueriesData<AuthMe | null>({ queryKey: ["auth", "me"] })
+    .map(([, value]) => value)
+    .filter((value): value is AuthMe => !!value);
+  if (
+    isCurrent() &&
+    !signal?.aborted &&
+    previous.some(
+      (value) =>
+        !session || value.id !== session.id || value.role !== session.role,
+    )
+  ) {
+    // Do not cancel the /me read that discovered the change. Other session
+    // queries and private requests are obsolete, including their callbacks.
+    const cleared = await clearSessionCache(client, undefined, {
+      preserveQueryKey: queryKey,
+      // Observing a cookie is not a new auth operation. Its originating sign-in
+      // may still be reading its response; let that operation finish/navigation
+      // run and broadcast when it completes, without a feedback invalidation.
+      broadcast: false,
+      preserveAuthTransitions: true,
+    });
+    if (cleared && !signal?.aborted) {
+      // Other mounted gates were reset too. Keep them checking the current
+      // cookie instead of stranding them on an idle, cached signed-out result.
+      void client.invalidateQueries({
+        queryKey: ["auth", "me"],
+        predicate: (query) => query.queryHash !== hashKey(queryKey),
+      });
+    }
+  }
+  return session;
+}
 
 /** Capture before an async write; its old response must not update a new session. */
 export function captureSessionCacheGuard(client: QueryClient): () => boolean {
@@ -47,6 +108,11 @@ export function captureSessionCacheGuard(client: QueryClient): () => boolean {
 export async function clearSessionCache(
   client: QueryClient,
   initiatingContext?: unknown,
+  options: {
+    broadcast?: boolean;
+    preserveQueryKey?: QueryKey;
+    preserveAuthTransitions?: boolean;
+  } = {},
 ): Promise<boolean> {
   generations.set(client, (generations.get(client) ?? 0) + 1);
   const isCurrent = captureSessionCacheGuard(client);
@@ -54,6 +120,8 @@ export async function clearSessionCache(
   // Invalidate synchronously, before awaiting query cancellation. Clearing the
   // cache alone does not stop a pending mutation's callbacks or queued retries.
   for (const mutation of cache.getAll()) {
+    if (options.preserveAuthTransitions && mutation.meta?.sessionTransition)
+      continue;
     if (
       initiatingContext !== undefined &&
       mutation.state.context === initiatingContext
@@ -72,9 +140,23 @@ export async function clearSessionCache(
     });
     cache.remove(mutation);
   }
+  if (options.broadcast !== false) {
+    for (const notify of changeListeners.get(client) ?? []) {
+      try {
+        notify();
+      } catch {
+        /* A blocked browser API must not prevent cleanup. */
+      }
+    }
+  }
   // Cancel first: a response belonging to the old account must not refill
   // its cache after the next account signs in on this workstation.
-  await client.cancelQueries();
+  const preservedHash = options.preserveQueryKey
+    ? hashKey(options.preserveQueryKey)
+    : undefined;
+  await client.cancelQueries({
+    predicate: (query) => query.queryHash !== preservedHash,
+  });
   if (!isCurrent()) return false;
   client.removeQueries({
     predicate: ({ queryKey }) =>

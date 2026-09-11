@@ -12,9 +12,10 @@
 // Reuses the storefront SPA's root QueryClient; the provider session
 // cookie is the same pf_session set by /api/provider/auth.
 
-import { useEffect, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useState, type ReactNode } from "react";
 import { Redirect, Route, Switch, useLocation } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { captureSessionCacheGuard } from "@workspace/resupply-auth-react";
 
 import {
   getProviderMe,
@@ -85,20 +86,24 @@ function WrongTenantHost() {
   const withPortal = linked.filter((o) => o.hasVerifiedPortal && o.portalUrl);
 
   async function pinOrg(orgId: string) {
+    const isCurrentSession = captureSessionCacheGuard(queryClient);
     setSelectError(null);
     setSelectingId(orgId);
     try {
       await selectProviderOrg(orgId);
+      if (!isCurrentSession()) return;
       await queryClient.invalidateQueries({ queryKey: ["provider", "me"] });
+      if (!isCurrentSession()) return;
       await queryClient.invalidateQueries({ queryKey: ["provider", "orgs"] });
     } catch (err) {
+      if (!isCurrentSession()) return;
       const message =
         err instanceof ProviderApiError
           ? err.message
           : "Could not open that practice. Try again.";
       setSelectError(message);
     } finally {
-      setSelectingId(null);
+      if (isCurrentSession()) setSelectingId(null);
     }
   }
 
@@ -220,15 +225,57 @@ function isWrongTenantHostError(error: unknown): boolean {
 /** Run the /me gate, then render the children with the resolved
  *  identity. `allowUnenrolled` lets the MFA-setup screen render even
  *  before enrollment (otherwise it would redirect to itself). */
-function Gated({
-  allowUnenrolled,
-  render,
-}: {
+interface ProviderGateProps {
   allowUnenrolled?: boolean;
   render: (me: ProviderMe) => ReactNode;
-}) {
+}
+
+function Gated(props: ProviderGateProps) {
+  const session = providerAuthHooks.useSession();
+  if (session.isPending || (session.data === null && session.isFetching)) {
+    return (
+      <ProviderAuthLayout>
+        <Spinner label="Checking sign-in…" />
+      </ProviderAuthLayout>
+    );
+  }
+  if (session.isError && !session.data)
+    return <ConnectionError onRetry={() => void session.refetch()} />;
+  if (!session.data) return <Redirect to="/provider/sign-in" />;
+  return (
+    <ProviderDataGate
+      key={`${session.data.id}:${session.data.role}`}
+      accountId={session.data.id}
+      {...props}
+    />
+  );
+}
+
+function ConnectionError({ onRetry }: { onRetry: () => void }) {
+  return (
+    <ProviderAuthLayout>
+      <Card className="p-6 text-center">
+        <h1 className="text-xl font-bold text-slate-900">
+          Couldn't connect to the portal
+        </h1>
+        <p className="mt-2 text-sm text-slate-500">
+          There was a temporary problem loading your account. Please try again.
+        </p>
+        <Button variant="secondary" className="mt-5" onClick={onRetry}>
+          Try again
+        </Button>
+      </Card>
+    </ProviderAuthLayout>
+  );
+}
+
+function ProviderDataGate({
+  accountId,
+  allowUnenrolled,
+  render,
+}: ProviderGateProps & { accountId: string }) {
   const me = useQuery({
-    queryKey: ["provider", "me"],
+    queryKey: ["provider", "me", accountId],
     queryFn: getProviderMe,
     retry: false,
   });
@@ -247,31 +294,12 @@ function Gated({
     // 403 / role mismatch → genuinely no access.
     if (status === 403) return <NoAccess />;
     // 5xx or network failure → transient error, not an access decision.
-    return (
-      <ProviderAuthLayout>
-        <Card className="p-6 text-center">
-          <h1 className="text-xl font-bold text-slate-900">
-            Couldn't connect to the portal
-          </h1>
-          <p className="mt-2 text-sm text-slate-500">
-            There was a temporary problem loading your account. Please try
-            again.
-          </p>
-          <Button
-            variant="secondary"
-            className="mt-5"
-            onClick={() => void me.refetch()}
-          >
-            Try again
-          </Button>
-        </Card>
-      </ProviderAuthLayout>
-    );
+    return <ConnectionError onRetry={() => void me.refetch()} />;
   }
   if (!me.data.account.mfaEnrolled && !allowUnenrolled) {
     return <Redirect to="/provider/mfa-setup" />;
   }
-  return <>{render(me.data)}</>;
+  return <Fragment key={me.data.account.id}>{render(me.data)}</Fragment>;
 }
 
 export function ProviderPortalRoute() {

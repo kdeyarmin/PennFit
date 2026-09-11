@@ -56,8 +56,47 @@ The second pass addressed the PR review and checked related asynchronous workflo
   A regression also establishes that this React Query version removes placeholder
   rows after a failed next-page request, contrary to the review's suggested cause.
 
+## Cross-tab and CSR follow-up
+
+The third pass merged the latest main (`a1cbe82`) and addressed additional
+reproduced workflow gaps:
+
+- Browser tabs invalidate account caches after explicit sign-in/sign-out using
+  BroadcastChannel and a storage-event fallback. Events contain only an opaque
+  nonce. Focus, reconnect, restored pages, and a visible-session timer recheck the
+  shared cookie when cross-tab delivery is unavailable.
+- Session reads respect cancellation and compare all loaded auth surfaces when
+  they finish. A changed identity clears private data and refreshes other mounted
+  session gates. Observation-driven cleanup preserves authentication that is still
+  completing its response and does not rebroadcast that observation.
+- Account, billing, admin, platform, and provider pages reset their local state
+  when identity changes. Gates wait for a cached signed-out result to be
+  revalidated, avoiding a return-to-sign-in loop after another tab signs in.
+- Account-chat persistence records its owner, rejects unowned legacy history,
+  and discards streams belonging to a superseded session.
+- Calendar refresh recomputes the due-now cutoff. Reviewing one patient's orders
+  preserves bulk selections, unavailable selections no longer consume the 50-person
+  limit, and outreach confirmation cannot submit after an account change.
+- Supply history disables paging during retrieval and offers a route back to newer
+  orders after an older-page error.
+- An outbound call accepted by the provider remains accepted if subsequent SID
+  bookkeeping fails. Independent writes and reconciliation logs retain recovery
+  evidence without releasing the retry guard and redialling the patient. A failure
+  registering the call before dialing no longer counts as patient contact.
+
 ## Verification
 
+- The third-pass production build and workspace typecheck passed. The complete
+  frontend suite passed **4,755 tests in 287 files**, plus 16 model-setup checks.
+- The shared auth package passed **68 tests**. Coverage includes cancelled reads,
+  simultaneous first session reads, cross-surface refresh, opaque transport events,
+  late mutation suppression, and preserved authentication completion.
+- The outbound-call and outreach follow-up passed **50 tests in six files**,
+  including failures before dialing and failures after provider acceptance.
+- All **44 Chromium scenarios** passed together after source changes finished,
+  including independent BroadcastChannel/storage transports, two-tab account
+  changes, late billing-response isolation, and session expiry. Full lint,
+  architecture/route/tenant checks, formatting, and diff checks also passed.
 - `pnpm build` passed, including the final workspace typecheck and both production bundles.
 - `pnpm lint:resupply` passed; later edits also passed targeted ESLint.
 - `node scripts/run-resupply-checks.mjs` passed architecture, route authorization,
@@ -100,6 +139,15 @@ isolated preview database. No environment labels, credentials, migration guards,
 or staged deployment configuration were changed. Preview needs a verified isolated
 database and matching Supabase runtime target before it can be deployed safely.
 
+A read-only follow-up located the isolated `bucket-b-dryrun` Supabase branch
+(`cgddjicbfhfsttnumwyi`), but it has a failed migration status, an incomplete
+schema, and no application migration ledger. It is not a ready preview target.
+The local Supabase CLI requires authentication before it can retrieve branch
+credentials. Any reuse requires schema reconciliation first; the preview's
+inherited migration-baseline settings must also be cleared. Production credentials
+must not be relabelled as preview credentials, and the existing migration guard
+must remain enabled. No infrastructure changes were made in this follow-up.
+
 ## Follow-up improvements and validation limits
 
 1. Complete the existing [external validation checklist](external-validation-checklist.md):
@@ -112,6 +160,6 @@ database and matching Supabase runtime target before it can be deployed safely.
 3. Review long-running Windows test subprocesses and animation-sensitive browser
    helpers. This pass encountered timeout-only failures that need isolated reruns;
    assertions and application safeguards were not weakened to silence them.
-4. Explicit auth transitions are isolated within this QueryClient. Session expiry
-   and cookie changes originating in another browser tab still need a separate
-   synchronization pass. Already-dispatched requests cannot be undone client-side.
+4. Already-dispatched requests cannot be undone client-side. Cross-tab invalidation
+   and session revalidation now cover the browser boundaries described above;
+   external delivery and production acceptance still require separate evidence.

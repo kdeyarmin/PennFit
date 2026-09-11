@@ -22,14 +22,17 @@ export interface ShopIdentity {
 }
 
 export function useShopIdentity(): ShopIdentity {
-  const { data, isPending } = authHooks.useSession();
+  const { data, isPending, isFetching } = authHooks.useSession();
   const queryClient = useQueryClient();
   return {
     email: data?.email ?? null,
     userId: data?.id ?? null,
     displayName: data?.displayName ?? null,
     isSignedIn: Boolean(data),
-    isLoaded: !isPending,
+    // A prior signed-out result can remain cached after another tab signs
+    // in. Let protected routes await the confirming /me request instead of
+    // redirecting back to sign-in before that request resolves.
+    isLoaded: !isPending && !(data === null && isFetching),
     signOut: async () => {
       // Push subscriptions persist past localStorage clears — the
       // browser holds them in the SW registration, and the SERVER

@@ -22,7 +22,7 @@ import {
 } from "@tanstack/react-query";
 
 import type { AuthClient, AuthError, AuthMe, SignInResult } from "./client";
-import { clearSessionCache } from "./session-cache";
+import { clearSessionCache, readSession } from "./session-cache";
 
 export const SESSION_QUERY_KEY = ["auth", "me"] as const;
 
@@ -103,11 +103,16 @@ export function createAuthHooks(
 
   return {
     useSession() {
+      const qc = useQueryClient();
       return useQuery({
         queryKey: sessionQueryKey,
-        queryFn: () => client.fetchMe(),
+        queryFn: ({ signal }) =>
+          readSession(qc, sessionQueryKey, () => client.fetchMe(), signal),
         staleTime,
-        refetchOnWindowFocus: false,
+        refetchOnWindowFocus: "always",
+        refetchOnReconnect: "always",
+        // Revalidate visible signed-in sessions even when the tab stays open.
+        refetchInterval: (query) => (query.state.data ? 60_000 : false),
       });
     },
 
@@ -115,6 +120,7 @@ export function createAuthHooks(
       const qc = useQueryClient();
       return useMutation({
         // The execution context preserves only this auth completion during cleanup.
+        meta: { sessionTransition: true },
         onMutate: (_input, context) => context,
         mutationFn: async (input, context) => {
           const result = await client.signIn(input);
@@ -135,6 +141,7 @@ export function createAuthHooks(
     useVerifySignInMfa() {
       const qc = useQueryClient();
       return useMutation({
+        meta: { sessionTransition: true },
         onMutate: (_input, context) => context,
         mutationFn: async (input, context) => {
           await client.verifySignInMfa(input);
@@ -154,6 +161,7 @@ export function createAuthHooks(
     useSignOut() {
       const qc = useQueryClient();
       return useMutation({
+        meta: { sessionTransition: true },
         onMutate: (_input, context) => context,
         mutationFn: async (_input, context) => {
           await client.signOut();
@@ -175,6 +183,7 @@ export function createAuthHooks(
     useResetPassword() {
       const qc = useQueryClient();
       return useMutation({
+        meta: { sessionTransition: true },
         onMutate: (_input, context) => context,
         mutationFn: async (input, context) => {
           await client.resetPassword(input);

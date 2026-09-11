@@ -7,7 +7,10 @@ import {
   useLocation,
 } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { SessionMutationCache } from "@workspace/resupply-auth-react";
+import {
+  SessionMutationCache,
+  connectSessionCacheAcrossTabs,
+} from "@workspace/resupply-auth-react";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/not-found";
@@ -1090,17 +1093,17 @@ function GuardedOrderSuccess() {
 }
 
 function GuardedAccount() {
-  const { isSignedIn, isLoaded } = useShopIdentity();
+  const { isSignedIn, isLoaded, userId } = useShopIdentity();
   if (!isLoaded) return <RouteFallback />;
   if (!isSignedIn) return <Redirect to="/sign-in" />;
-  return <AccountPage />;
+  return <AccountPage key={userId} />;
 }
 
 function GuardedAccountBilling() {
-  const { isSignedIn, isLoaded } = useShopIdentity();
+  const { isSignedIn, isLoaded, userId } = useShopIdentity();
   if (!isLoaded) return <RouteFallback />;
   if (!isSignedIn) return <Redirect to="/sign-in" />;
-  return <AccountBillingPage />;
+  return <AccountBillingPage key={userId} />;
 }
 
 /**
@@ -1561,6 +1564,7 @@ function TopRouter() {
 // All components below this point use the identity shim
 // in `@/lib/identity` for auth state.
 function AppInner() {
+  useEffect(() => connectSessionCacheAcrossTabs(queryClient), []);
   return (
     <DemoModeProvider>
       <QueryClientProvider client={queryClient}>

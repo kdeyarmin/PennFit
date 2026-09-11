@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useGetAdminMe } from "@workspace/api-client-react/admin";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { captureSessionCacheGuard } from "@workspace/resupply-auth-react";
 import { Mail, MessageSquare, Phone } from "lucide-react";
 import { Button } from "./Button";
 import { ErrorPanel } from "./ErrorPanel";
@@ -53,6 +54,7 @@ export function ResupplyOutreachActions({
   async function contact(channel: OutreachChannel) {
     const slate = pending.slice(0, 50);
     if (!canSend || !slate.length || send.isPending || reviewing) return;
+    const isCurrentSession = captureSessionCacheGuard(client);
     setReviewing(true);
     const label =
       channel === "voice"
@@ -82,7 +84,7 @@ export function ResupplyOutreachActions({
       ),
     });
     setReviewing(false);
-    if (!approved) return;
+    if (!approved || !isCurrentSession()) return;
     setSubmittedNames(
       Object.fromEntries(slate.map((r) => [r.id, r.patientName])),
     );

@@ -148,6 +148,96 @@ describe("placeOutboundReorderCall (system actor)", () => {
     expect(logAuditMock).not.toHaveBeenCalled();
   });
 
+  it.each(["pending session", "conversation"])(
+    "preserves an accepted call when the %s SID write fails",
+    async (failedWrite) => {
+      stageSupabaseResponse("patients", "select", {
+        data: { id: PATIENT_ID, phone_e164: "+12155551212", status: "active" },
+      });
+      stageSupabaseResponse("episodes", "select", {
+        data: { id: EPISODE_ID, patient_id: PATIENT_ID },
+      });
+      stageSupabaseResponse("conversations", "insert", {
+        data: { id: CONVERSATION_ID },
+      });
+      if (failedWrite === "pending session") {
+        vi.spyOn(getPendingSessions(), "attachCallSid").mockRejectedValueOnce(
+          new Error("pending session unavailable"),
+        );
+      } else {
+        stageSupabaseResponse("conversations", "update", {
+          error: { code: "08006", message: "database unavailable" },
+        });
+      }
+      placeCallMock.mockResolvedValue({ sid: "CA_ACCEPTED" });
+
+      await expect(
+        placeOutboundReorderCall({
+          orgId: ORG_ID,
+          patientId: PATIENT_ID,
+          episodeId: EPISODE_ID,
+          config: CONFIG,
+          actor: systemActor(),
+        }),
+      ).resolves.toEqual({
+        status: "ok",
+        conversationId: CONVERSATION_ID,
+        callSid: "CA_ACCEPTED",
+      });
+      expect(placeCallMock).toHaveBeenCalledTimes(1);
+      // A failed pending-store write must not prevent the independent
+      // conversation stamp or erase evidence that the provider accepted.
+      expect(getSupabaseWritePayloads("conversations", "update")).toEqual([
+        expect.objectContaining({ external_ref: "CA_ACCEPTED" }),
+      ]);
+      expect(logAuditMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          metadata: expect.objectContaining({
+            status: "ok",
+            twilio_call_sid: "CA_ACCEPTED",
+          }),
+        }),
+      );
+    },
+  );
+
+  it("does not count a failed pre-dial session registration as patient contact", async () => {
+    stageSupabaseResponse("patients", "select", {
+      data: { id: PATIENT_ID, phone_e164: "+12155551212", status: "active" },
+    });
+    stageSupabaseResponse("episodes", "select", {
+      data: { id: EPISODE_ID, patient_id: PATIENT_ID },
+    });
+    stageSupabaseResponse("conversations", "insert", {
+      data: { id: CONVERSATION_ID },
+    });
+    vi.spyOn(getPendingSessions(), "register").mockRejectedValueOnce(
+      new Error("pending session unavailable"),
+    );
+
+    await expect(
+      placeOutboundReorderCall({
+        orgId: ORG_ID,
+        patientId: PATIENT_ID,
+        episodeId: EPISODE_ID,
+        config: CONFIG,
+        actor: systemActor(),
+      }),
+    ).rejects.toThrow("pending session unavailable");
+    expect(placeCallMock).not.toHaveBeenCalled();
+    expect(getSupabaseWritePayloads("conversations", "update")).toEqual([
+      expect.objectContaining({ last_message_at: null }),
+    ]);
+    expect(getSupabaseWritePayloads("conversations", "delete")).toEqual([]);
+    expect(getSupabaseFilterCalls("conversations", "update")).toEqual(
+      expect.arrayContaining([
+        { verb: "eq", args: ["org_id", ORG_ID] },
+        { verb: "eq", args: ["id", CONVERSATION_ID] },
+        { verb: "is", args: ["external_ref", null] },
+      ]),
+    );
+  });
+
   it("audits twilio_error and returns a retryable twilio_api_error outcome", async () => {
     stageSupabaseResponse("patients", "select", {
       data: { id: PATIENT_ID, phone_e164: "+12155551212", status: "active" },

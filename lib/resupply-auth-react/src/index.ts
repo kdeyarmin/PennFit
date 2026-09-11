@@ -22,6 +22,7 @@ export {
   SessionMutationCache,
 } from "./session-cache";
 export type { AuthHooks, CreateAuthHooksOptions } from "./hooks";
+export { connectSessionCacheAcrossTabs } from "./session-sync";
 
 export { authErrorMessage, serverUnavailableMessage } from "./error-message";
 export type { AuthErrorMessageOptions } from "./error-message";

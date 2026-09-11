@@ -34,12 +34,6 @@ export function AdminResupplyCalendarPage() {
     null,
   );
   const nextMonth = new Date(month.getFullYear(), month.getMonth() + 1, 1);
-  const from =
-    mode === "month" ? month.toISOString() : new Date().toISOString();
-  const to =
-    mode === "month"
-      ? nextMonth.toISOString()
-      : new Date(Date.now() + 86400000).toISOString();
   // A date-stable key prevents a request loop in the due-now view.
   const query = useQuery({
     queryKey: [
@@ -49,7 +43,17 @@ export function AdminResupplyCalendarPage() {
       localDayKey(month),
       localDayKey(new Date()),
     ],
-    queryFn: () => getResupplyCalendar(from, to, mode === "due"),
+    queryFn: () => {
+      // Refresh the due-now cutoff on every fetch, including window focus.
+      const from = mode === "month" ? month : new Date();
+      const to =
+        mode === "month" ? nextMonth : new Date(from.getTime() + 86400000);
+      return getResupplyCalendar(
+        from.toISOString(),
+        to.toISOString(),
+        mode === "due",
+      );
+    },
     refetchOnWindowFocus: true,
   });
   const items = query.data?.items ?? [];
@@ -61,6 +65,7 @@ export function AdminResupplyCalendarPage() {
         .includes(search.toLowerCase().trim()),
   );
   const groups = groupResupplyPatients(visible);
+  const visiblePatientIds = new Set(groups.map((g) => g[0]!.patientId));
   const recipients = groups
     .filter((g) => selected.has(g[0]!.patientId))
     .map((g) => ({ id: g[0]!.id, patientName: g[0]!.patientName }));
@@ -76,7 +81,9 @@ export function AdminResupplyCalendarPage() {
   }
   function toggle(id: string) {
     setSelected((previous) => {
-      const next = new Set(previous);
+      const next = new Set(
+        [...previous].filter((patientId) => visiblePatientIds.has(patientId)),
+      );
       if (next.has(id)) next.delete(id);
       else if (next.size < 50) next.add(id);
       return next;
@@ -339,7 +346,7 @@ export function AdminResupplyCalendarPage() {
                               checked={selected.has(first.patientId)}
                               disabled={
                                 !selected.has(first.patientId) &&
-                                selected.size >= 50
+                                recipients.length >= 50
                               }
                               onChange={() => toggle(first.patientId)}
                             />
@@ -389,7 +396,6 @@ export function AdminResupplyCalendarPage() {
                                   id: first.patientId,
                                   name: first.patientName,
                                 });
-                                setSelected(new Set([first.patientId]));
                               }}
                             >
                               Orders & eligibility
