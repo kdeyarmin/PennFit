@@ -12,7 +12,8 @@ PR 1373's Railway environment `1275d316-9b22-4e00-a1fa-7e59f0a95d47`
 project `30957b23-dfb7-4751-934c-25b212ec49b7`. Failed deployment
 `59ef60f5-5d69-4125-86f8-ce017feb7f53` reported database fingerprint
 `28616a064d1b`, also reported by the production baseline. The migration guard
-exited before connecting or executing SQL. This is not a verified preview target.
+exited before connecting or executing SQL. That inherited connection was replaced
+with the verified isolated preview below.
 
 A dedicated branch was created in the existing PennPaps organization after the
 provisioning cost confirmation ($0.01344/hour):
@@ -49,14 +50,24 @@ checks passed. CLI authentication is complete, and
 the actual preview Storage API passed signed upload/download and rejection of
 public access to a private object. Both buckets were verified again and all probe
 objects removed. The Data API already exposes `graphql_public`, `public`,
-`resupply`, and `resupply_auth`; no settings change was needed. Railway readiness
-and hosted CSR browser verification remain pending; no preview deployment has
-passed readiness yet.
+`resupply`, and `resupply_auth`; no settings change was needed.
+
+Railway deployment `8e8e0470-5713-4499-9631-ec7bccb2dfe8` successfully deployed
+application commit `c030803e218251fcdccad6245ec307a2534cce3d` to the
+[preview origin](https://resupply-api-pennfit-pr-1373.up.railway.app).
+The 144 preview variable overrides include isolated credentials, preview URLs,
+disabled integrations, and empty overrides for inherited delivery credentials.
+Health and readiness both returned HTTP 200; the migration guard confirmed
+preview database fingerprint `146780b90245`. All 37 outbound flags are disabled
+for the seed organization and the fictional review organization.
 
 Actual Data API requests to `resupply.patients` and `resupply_auth.users` returned
 HTTP 200 for `service_role`; anonymous requests to both returned HTTP 401 with
-code `42501`. These database, permission, and storage checks do not establish
-application readiness.
+code `42501`. Hosted authenticated API and browser checks also passed: due-patient
+counts, 26-order pagination, eligibility dates, individual/bulk confirmations,
+selection clearing, and six real disabled-channel responses. No communication
+or delivery job was created. The complete evidence and delivery-test limits are
+in [PR1373 hosted verification](../reviews/pr1373-preview-verification.md).
 
 The older `bucket-b-dryrun` branch (`cgddjicbfhfsttnumwyi`) also has an incomplete
 schema and belongs to another task. Do not repurpose or reset it. Production and
@@ -284,10 +295,11 @@ non-superuser with no CREATE on `auth`, verified both timestamp triggers and the
 original ledger hashes, and applied zero migrations on rerun. The managed-auth
 sentinel remained unchanged. The isolated cluster was stopped after validation.
 
-Actual hosted migration, runtime-grant, Data API, and Storage verification is
-complete as described above. Railway health/readiness, app authentication, and
-CSR browser verification remain pending. Infrastructure checks do not establish
-that the hosted application is ready.
+Actual hosted migration, runtime-grant, Data API, Storage, Railway readiness,
+authentication, and CSR browser verification have passed on the isolated target,
+as described above. Synthetic review fixtures remain available; Storage probe
+objects were removed. Provider delivery remains unconfigured and untested in
+the preview.
 
 Supabase references: [branch troubleshooting](https://supabase.com/docs/guides/deployment/branching/troubleshooting)
 [incomplete branch migrations](https://supabase.com/docs/guides/troubleshooting/branch-in-migrations-failed-status),

@@ -2,12 +2,13 @@
 
 ## Status and scope
 
-Hosted CSR verification and Railway readiness remain **pending**. CLI login is
-complete. The dedicated Supabase preview is `dfwwhqeebadwpbzjnxuj`, branch
-`pennfit-pr-1373` (`4baf93dc-fb0e-4b33-bef5-0b1c2916d8dc`), created without
-production data. The deployed preview origin and commit still need verification
-before app/browser tests. Local PostgreSQL/PostgREST results do not establish
-that the hosted preview works.
+Hosted CSR verification and Railway readiness **passed** on 2026-09-11 at
+[the isolated preview](https://resupply-api-pennfit-pr-1373.up.railway.app/admin/resupply-calendar).
+Deployment `8e8e0470-5713-4499-9631-ec7bccb2dfe8` runs application commit
+`c030803e218251fcdccad6245ec307a2534cce3d`. The dedicated Supabase preview is
+`dfwwhqeebadwpbzjnxuj`, branch `pennfit-pr-1373`
+(`4baf93dc-fb0e-4b33-bef5-0b1c2916d8dc`), created without production data.
+Email, SMS, and voice delivery remain deliberately unconfigured in this preview.
 
 Verified setup evidence on 2026-09-11:
 
@@ -34,8 +35,38 @@ Verified setup evidence on 2026-09-11:
   `service_role`; anonymous requests returned HTTP 401 with code `42501`.
 - The actual preview Storage API passed signed upload and download checks and
   rejected public access to a private object. Both required buckets were verified
-  again, and all probe objects were removed. These checks establish storage
-  behavior only; they do not establish app authentication or CSR readiness.
+  again, and all probe objects were removed.
+- All 11 [CI jobs passed on the deployed application commit](https://github.com/kdeyarmin/PennFit/actions/runs/34645386830).
+  Railway reported `SUCCESS`; its migration guard logged preview database
+  fingerprint `146780b90245`. Both health and readiness returned HTTP 200,
+  readiness reported `ready`, and unauthenticated staff endpoints returned 401.
+- The fictional `CareMetric PR1373 Preview` organization contains four synthetic
+  patients, five prescriptions, eight episodes, and 28 fulfillment rows. Its
+  synthetic agreement fixtures are explicitly labeled as test data, with no
+  signatory email or IP. All 37 outbound flags are disabled for both active
+  organizations. Synthetic patients have no email addresses or phone numbers.
+- A real hosted Chromium run passed ten browser checks, including ordinary
+  sign-in, two due patients/three cycles, future and expired exclusions, all 26
+  orders across pages, known and unknown eligibility rules, practice dates in a
+  Tokyo browser, individual/bulk unique confirmations, Cancel/Escape without
+  dispatch, hidden-selection clearing, and the patient Resupply deep link.
+  A separate seven-check visual run verified settled, readable confirmation
+  dialogs and issued zero outreach requests.
+- Six actual UI submissions (email/SMS/voice, individually and in bulk) each
+  included CSRF protection and returned 503 `channel_not_configured`. The UI
+  displayed the failure and kept retry available without claiming patients were
+  queued. Separate SQL checks found zero conversations, messages, delivery jobs,
+  archived delivery jobs, or CSR-requested jobs.
+- Independent hosted API verification used normal CSRF sign-in and sign-out,
+  checked the exact synthetic identity and permissions, and verified all expected
+  calendar and order IDs, quantities, dates, pagination, and eligibility.
+
+Synthetic fixtures remain available for review. Their manifest uses marker
+`csr-preview-97364540-1880-4269-8bb7-4b39dd476b08` and organization
+`45c8cb47-dc00-4d8c-a96b-524cf364dc90`; cleanup must stay scoped to those fixture
+IDs. Secrets are held outside the repository in protected local storage and
+preview-only Railway variables. Successful provider delivery is a separate test
+requiring configured test senders and recipients.
 
 See the [preview isolation runbook](../runbooks/pr-preview-isolation.md) for target
 guards, credential handling, and managed-auth compatibility details.
