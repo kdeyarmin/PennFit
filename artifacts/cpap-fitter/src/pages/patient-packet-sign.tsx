@@ -233,7 +233,8 @@ export function PatientPacketSign() {
     }
   }, []);
 
-  const { data, isLoading, error } = useViewPatientPacket(token);
+  const { data, isLoading, isFetching, error, refetch } =
+    useViewPatientPacket(token);
   const sign = useSignPatientPacket();
 
   const [acked, setAcked] = useState<Record<string, boolean>>({});
@@ -359,19 +360,36 @@ export function PatientPacketSign() {
       },
     };
     const m = messages[code] ?? messages.error;
-    return (
-      <PageShell>
-        <Card className="border-0 shadow-sm">
-          <CardHeader className="space-y-3 text-center">
-            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-100">
-              <AlertTriangle className="h-6 w-6 text-amber-600" />
-            </div>
-            <CardTitle>{m.title}</CardTitle>
-            <CardDescription>{m.body}</CardDescription>
-          </CardHeader>
-        </Card>
-      </PageShell>
+    const canRetry = !["expired", "voided", "invalid", "not_found"].includes(
+      code,
     );
+    // Keep a confirmed signature through transient refresh failures,
+    // while respecting a terminal response such as a withdrawn packet.
+    if ((!completedAt && data?.status !== "completed") || !canRetry)
+      return (
+        <PageShell>
+          <Card className="border-0 shadow-sm">
+            <CardHeader className="space-y-3 text-center">
+              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-100">
+                <AlertTriangle className="h-6 w-6 text-amber-600" />
+              </div>
+              <CardTitle>{m.title}</CardTitle>
+              <CardDescription>{m.body}</CardDescription>
+            </CardHeader>
+            {canRetry && (
+              <CardContent className="text-center">
+                <Button
+                  variant="outline"
+                  onClick={() => void refetch()}
+                  disabled={isFetching}
+                >
+                  {isFetching ? "Trying again…" : "Try again"}
+                </Button>
+              </CardContent>
+            )}
+          </Card>
+        </PageShell>
+      );
   }
 
   // ── Already completed (server) or just signed ──

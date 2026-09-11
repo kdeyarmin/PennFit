@@ -40,10 +40,96 @@ function stageCushionRule(): void {
 beforeEach(() => supabaseMock.reset());
 
 describe("resolveSkuEntitlement", () => {
+  it("ignores a longer prefix that belongs to a different HCPCS family", async () => {
+    stageSupabaseResponse("sku_hcpcs_map", "select", {
+      data: [
+        { sku_prefix: "MASK", hcpcs_code: "A7034" },
+        { sku_prefix: "MASK-FULL", hcpcs_code: "A7030" },
+      ],
+    });
+    stageSupabaseResponse("hcpcs_codes", "select", {
+      data: {
+        code: "A7034",
+        min_interval_days: 90,
+        max_quantity_per_period: 1,
+        period_days: 90,
+        active: true,
+      },
+    });
+    stageSupabaseResponse("fulfillments", "select", {
+      data: [
+        {
+          item_sku: "MASK-FULL-L",
+          quantity: 1,
+          created_at: isoDaysAgo(1),
+          status: "shipped",
+        },
+      ],
+    });
+    const result = await resolveSkuEntitlement(getSupabaseServiceRoleClient(), {
+      patientId: PATIENT_ID,
+      itemSku: "MASK-M",
+      now: NOW,
+    });
+    expect(result).toMatchObject({ eligible: true, hcpcsCode: "A7034" });
+  });
+
+  it("includes same-family dispenses beyond the first page of patient history", async () => {
+    stageSupabaseResponse("sku_hcpcs_map", "select", {
+      data: [
+        { sku_prefix: "MASK", hcpcs_code: "A7034" },
+        { sku_prefix: "NASAL-INTERFACE", hcpcs_code: "A7034" },
+      ],
+    });
+    stageSupabaseResponse("hcpcs_codes", "select", {
+      data: {
+        code: "A7034",
+        min_interval_days: 90,
+        max_quantity_per_period: 1,
+        period_days: 90,
+        active: true,
+      },
+    });
+    stageSupabaseResponse("fulfillments", "select", {
+      data: Array.from({ length: 200 }, () => ({
+        item_sku: "FILTER-DISP",
+        quantity: 1,
+        created_at: isoDaysAgo(1),
+        status: "shipped",
+      })),
+    });
+    stageSupabaseResponse("fulfillments", "select", {
+      data: [
+        {
+          item_sku: "NASAL-INTERFACE-L",
+          quantity: 1,
+          created_at: isoDaysAgo(2),
+          status: "shipped",
+        },
+      ],
+    });
+    const result = await resolveSkuEntitlement(getSupabaseServiceRoleClient(), {
+      patientId: PATIENT_ID,
+      itemSku: "MASK-M",
+      now: NOW,
+    });
+    expect(result).toMatchObject({
+      eligible: false,
+      daysUntilEligible: 88,
+      hcpcsCode: "A7034",
+    });
+  });
   it("blocks a too-soon reorder", async () => {
     stageCushionRule();
     stageSupabaseResponse("fulfillments", "select", {
-      data: [{ quantity: 1, created_at: isoDaysAgo(2), status: "shipped" }],
+      data: [
+        {
+          item_sku: "CUSHION-NASAL-MED",
+          quantity: 1,
+          created_at: isoDaysAgo(2),
+          status: "shipped",
+        },
+      ],
       error: null,
     });
 
@@ -81,8 +167,18 @@ describe("resolveSkuEntitlement", () => {
     // enough that the interval gate is open.
     stageSupabaseResponse("fulfillments", "select", {
       data: [
-        { quantity: 1, created_at: isoDaysAgo(20), status: "shipped" },
-        { quantity: 1, created_at: isoDaysAgo(25), status: "shipped" },
+        {
+          item_sku: "CUSHION-NASAL-MED",
+          quantity: 1,
+          created_at: isoDaysAgo(20),
+          status: "shipped",
+        },
+        {
+          item_sku: "CUSHION-NASAL-MED",
+          quantity: 1,
+          created_at: isoDaysAgo(25),
+          status: "shipped",
+        },
       ],
       error: null,
     });

@@ -96,4 +96,33 @@ describe("PatientSearchCombobox", () => {
     fireEvent.click(screen.getByRole("button", { name: /change patient/i }));
     expect(onChange).toHaveBeenCalledWith(null);
   });
+
+  it("cannot select a prior search result while the next search is debouncing", async () => {
+    const { onChange } = renderCombobox();
+    const input = screen.getByTestId("patient-search-input");
+    fireEvent.change(input, { target: { value: "lov" } });
+    await screen.findByTestId("patient-search-option-pat-123");
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+
+    fireEvent.change(input, { target: { value: "different patient" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    expect(onChange).not.toHaveBeenCalled();
+    expect(screen.queryByRole("option")).toBeNull();
+    expect(input.getAttribute("aria-activedescendant")).toBeNull();
+  });
+
+  it("closes results immediately when the search is cleared", async () => {
+    const { onChange } = renderCombobox();
+    const input = screen.getByTestId("patient-search-input");
+    fireEvent.change(input, { target: { value: "lov" } });
+    await screen.findByTestId("patient-search-option-pat-123");
+    fireEvent.change(input, { target: { value: "" } });
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    expect(onChange).not.toHaveBeenCalled();
+    expect(screen.queryByRole("option")).toBeNull();
+    expect(input.getAttribute("aria-expanded")).toBe("false");
+  });
 });

@@ -70,6 +70,9 @@ export function PatientSearchCombobox({
   const listId = useId();
   const optionId = (i: number) => `${listId}-opt-${i}`;
   const wrapRef = useRef<HTMLDivElement>(null);
+  // Old matches must stop being selectable as soon as typing resumes,
+  // before the debounce commits the next query (including a cleared input).
+  const resultsCurrent = search.trim() === debounced;
 
   useEffect(() => {
     const handle = window.setTimeout(() => setDebounced(search.trim()), 300);
@@ -84,12 +87,18 @@ export function PatientSearchCombobox({
         limit: 10,
         ...(status ? { status } : {}),
       }),
-    enabled: !value && debounced.length >= MIN_CHARS,
+    enabled:
+      !disabled && !value && resultsCurrent && debounced.length >= MIN_CHARS,
     staleTime: 30_000,
   });
 
   const items = useMemo(() => matches.data?.items ?? [], [matches.data]);
-  const showList = open && !value && debounced.length >= MIN_CHARS;
+  const showList =
+    open &&
+    !disabled &&
+    !value &&
+    resultsCurrent &&
+    debounced.length >= MIN_CHARS;
 
   // Reset the highlight whenever the result set changes.
   useEffect(() => setActive(-1), [debounced, items.length]);
@@ -106,6 +115,7 @@ export function PatientSearchCombobox({
   }, []);
 
   function select(p: PatientListItem) {
+    if (disabled || !resultsCurrent) return;
     onChange(p);
     setOpen(false);
     setSearch("");
@@ -121,6 +131,7 @@ export function PatientSearchCombobox({
   }
 
   function onKeyDown(e: KeyboardEvent<HTMLInputElement>) {
+    if (disabled || !resultsCurrent) return;
     if (e.key === "ArrowDown") {
       if (items.length === 0) return;
       e.preventDefault();
@@ -172,6 +183,7 @@ export function PatientSearchCombobox({
         value={search}
         onChange={(e) => {
           setSearch(e.target.value);
+          setActive(-1);
           setOpen(true);
         }}
         onFocus={() => setOpen(true)}

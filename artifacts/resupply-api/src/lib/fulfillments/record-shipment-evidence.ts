@@ -142,9 +142,9 @@ export async function recordShipmentEvidence(
 
   base.episodeId = fulfillment.episode_id;
 
-  // 1. Atomic claim. `.is("shipped_at", null)` is the whole guard: two
-  //    concurrent imports of the same file both run this UPDATE, Postgres
-  //    serialises them, and the loser matches zero rows.
+  // 1. Atomic claim. Concurrent imports and cancellations serialize on
+  //    this row. Both guards are necessary: a cancellation may have won
+  //    after our read, and a cancelled row still has a null ship date.
   const { data: claimed, error: claimErr } = await supabase
     .from("fulfillments")
     .update({
@@ -163,6 +163,7 @@ export async function recordShipmentEvidence(
     })
     .eq("id", input.fulfillmentId)
     .is("shipped_at", null)
+    .neq("status", FULFILLMENT_CANCELLED)
     .select("id");
   if (claimErr) throw claimErr;
 
@@ -181,13 +182,23 @@ export async function recordShipmentEvidence(
   const alreadyRecorded = (claimed ?? []).length === 0;
   let effectiveShippedAt = input.shippedAt;
   if (alreadyRecorded) {
-    const stored = await readStoredShipDate(supabase, input.fulfillmentId);
-    if (!stored) {
-      // Cannot establish what was recorded; repairing blind could anchor
-      // a ladder to a date nobody chose.
-      return { ...base, status: "already_recorded" };
-    }
-    effectiveShippedAt = stored;
+    const { data: stored, error } = await supabase
+      .from("fulfillments")
+      .select("status, shipped_at")
+      .eq("id", input.fulfillmentId)
+      .maybeSingle();
+    if (error) throw error;
+    if (!stored) return { ...base, status: "not_found" };
+    if (stored.status === FULFILLMENT_CANCELLED)
+      return { ...base, status: "not_shippable" };
+    const shipDate = stored.shipped_at ? new Date(stored.shipped_at) : null;
+    // A failed claim only counts as a successful replay when shipment
+    // evidence actually exists. Otherwise the caller must be able to retry.
+    if (!shipDate || !Number.isFinite(shipDate.getTime()))
+      throw new Error(
+        "Shipment evidence could not be confirmed after the update",
+      );
+    effectiveShippedAt = shipDate;
   }
 
   // 2. Close the episode. Fail-soft from here down.
@@ -240,32 +251,6 @@ export async function recordShipmentEvidence(
   }
 
   return { ...base, status: alreadyRecorded ? "already_recorded" : "applied" };
-}
-
-/**
- * The ship date already on the row, for a replay that lost the atomic
- * claim. Returns null if it cannot be read — the caller then leaves the
- * lifecycle alone rather than repairing against a guess.
- */
-async function readStoredShipDate(
-  supabase: ReturnType<typeof getOrgScopedClient>,
-  fulfillmentId: string,
-): Promise<Date | null> {
-  try {
-    const { data, error } = await supabase
-      .from("fulfillments")
-      .select("shipped_at")
-      .eq("id", fulfillmentId)
-      .limit(1)
-      .maybeSingle();
-    if (error) throw error;
-    const raw = (data as { shipped_at: string | null } | null)?.shipped_at;
-    if (!raw) return null;
-    const parsed = new Date(raw);
-    return Number.isNaN(parsed.getTime()) ? null : parsed;
-  } catch {
-    return null;
-  }
 }
 
 /**

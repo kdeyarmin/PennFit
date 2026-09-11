@@ -7,6 +7,7 @@
 
 import type * as React from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { clearSessionCache } from "@workspace/resupply-auth-react";
 
 import { authClient, authHooks, SESSION_QUERY_KEY } from "./auth-hooks";
 import { csrfHeader } from "./csrf";
@@ -120,6 +121,7 @@ export function useShopIdentity(): ShopIdentity {
       // shared device kept rendering &lt;SignedIn&gt; gates with the
       // prior user's identity for up to a minute.
       try {
+        if (!serverSignOutError) await clearSessionCache(queryClient);
         await queryClient.invalidateQueries({ queryKey: SESSION_QUERY_KEY });
       } catch {
         /* best-effort */

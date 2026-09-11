@@ -876,6 +876,7 @@ describe("placeResupplyOrderForConversation — refill-window guard", () => {
     stageSupabaseResponse("fulfillments", "select", {
       data: [
         {
+          item_sku: "CUSHION-NASAL-MED",
           quantity: 1,
           created_at: lastDispense.toISOString(),
           status: "shipped",

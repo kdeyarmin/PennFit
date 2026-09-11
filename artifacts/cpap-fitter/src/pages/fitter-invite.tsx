@@ -78,11 +78,16 @@ export function FitterInvite() {
     setEntryPoint,
   } = useFitterStore();
   const [state, setState] = useState<State>({ kind: "loading" });
-  // The store setters in the deps get a fresh identity whenever the
-  // provider re-renders — which the setInviteToken call below itself
-  // causes — so without this guard the effect re-runs and the invite is
-  // resolved (and tracked) twice per landing.
+  // The store setters change identity when the provider rerenders.
+  // Share the request across effect subscriptions, but only mark it
+  // resolved once a live subscription has applied its result. Marking
+  // it at request start stranded the loading screen if a rerender
+  // canceled that subscription before the response arrived.
   const resolvedTokenRef = useRef<string | null>(null);
+  const pendingResolutionRef = useRef<{
+    token: string;
+    result: ReturnType<typeof resolveFitterInvite>;
+  } | null>(null);
 
   useEffect(() => {
     const token = getTokenFromUrl();
@@ -91,12 +96,18 @@ export function FitterInvite() {
       return;
     }
     if (resolvedTokenRef.current === token) return;
-    resolvedTokenRef.current = token;
+    if (pendingResolutionRef.current?.token !== token) {
+      track("fitter_invite_opened");
+      pendingResolutionRef.current = {
+        token,
+        result: resolveFitterInvite(token),
+      };
+    }
     let cancelled = false;
-    track("fitter_invite_opened");
-    resolveFitterInvite(token)
+    pendingResolutionRef.current.result
       .then((res) => {
         if (cancelled) return;
+        resolvedTokenRef.current = token;
         if (!res.valid) {
           setState({ kind: "invalid", reason: res.reason ?? "error" });
           return;
@@ -149,7 +160,10 @@ export function FitterInvite() {
         });
       })
       .catch(() => {
-        if (!cancelled) setState({ kind: "invalid", reason: "error" });
+        if (!cancelled) {
+          resolvedTokenRef.current = token;
+          setState({ kind: "invalid", reason: "error" });
+        }
       });
     return () => {
       cancelled = true;

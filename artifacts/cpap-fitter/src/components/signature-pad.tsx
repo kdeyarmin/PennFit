@@ -48,21 +48,36 @@ export const SignaturePad = React.forwardRef<
   const lastRef = useRef<{ x: number; y: number } | null>(null);
   const emptyRef = useRef(true);
   const [empty, setEmpty] = useState(true);
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
 
-  const setEmptyState = useCallback(
-    (next: boolean) => {
-      if (emptyRef.current !== next) {
-        emptyRef.current = next;
-        setEmpty(next);
-        onChange?.(next);
-      }
-    },
-    [onChange],
-  );
+  const setEmptyState = useCallback((next: boolean) => {
+    if (emptyRef.current !== next) {
+      emptyRef.current = next;
+      setEmpty(next);
+      onChangeRef.current?.(next);
+    }
+  }, []);
+
+  useEffect(() => {
+    // Type → Draw mounts a new, empty canvas. Tell the signing form so
+    // a drawing from a previous mount cannot enable submission here.
+    onChangeRef.current?.(emptyRef.current);
+  }, []);
 
   const setupCanvas = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
+    // Changing canvas dimensions erases its bitmap. Keep the signature
+    // when a phone rotates or its keyboard changes the viewport size.
+    const previous = !emptyRef.current
+      ? document.createElement("canvas")
+      : null;
+    if (previous) {
+      previous.width = canvas.width;
+      previous.height = canvas.height;
+      previous.getContext("2d")?.drawImage(canvas, 0, 0);
+    }
     const ratio = Math.max(window.devicePixelRatio || 1, 1);
     const rect = canvas.getBoundingClientRect();
     const width = rect.width || canvas.clientWidth || 320;
@@ -75,18 +90,17 @@ export const SignaturePad = React.forwardRef<
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
     ctx.strokeStyle = "#0f172a";
+    if (previous) ctx.drawImage(previous, 0, 0, width, height);
+    drawingRef.current = false;
+    lastRef.current = null;
   }, [height]);
 
   useEffect(() => {
     setupCanvas();
-    const onResize = () => {
-      // Re-setup wipes the canvas; acceptable on orientation change.
-      setupCanvas();
-      setEmptyState(true);
-    };
+    const onResize = () => setupCanvas();
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
-  }, [setupCanvas, setEmptyState]);
+  }, [setupCanvas]);
 
   const pointFromEvent = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current!;
@@ -129,6 +143,8 @@ export const SignaturePad = React.forwardRef<
   };
 
   const clear = useCallback(() => {
+    drawingRef.current = false;
+    lastRef.current = null;
     const canvas = canvasRef.current;
     const ctx = canvas?.getContext("2d");
     if (!canvas || !ctx) return;

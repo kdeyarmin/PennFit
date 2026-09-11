@@ -36,15 +36,21 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const MAX_SHIP_BACKDATE_DAYS = 180;
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+const shipmentDate = z
+  .string()
+  .regex(ISO_DATE, "must be YYYY-MM-DD")
+  .refine((value) => {
+    const parsed = atMiddayUtc(value);
+    return (
+      Number.isFinite(parsed.getTime()) &&
+      parsed.toISOString().slice(0, 10) === value
+    );
+  }, "must be a real calendar date");
 
 const markShippedSchema = z
   .object({
-    shippedAt: z.string().regex(ISO_DATE, "must be YYYY-MM-DD"),
-    deliveredAt: z
-      .string()
-      .regex(ISO_DATE, "must be YYYY-MM-DD")
-      .nullable()
-      .optional(),
+    shippedAt: shipmentDate,
+    deliveredAt: shipmentDate.nullable().optional(),
     trackingNumber: z.string().trim().max(64).optional(),
     carrier: z.string().trim().max(64).optional(),
     pacwareOrderRef: z.string().trim().max(64).optional(),
@@ -114,8 +120,9 @@ router.post(
       return;
     }
 
+    const now = new Date();
     const shippedAt = atMiddayUtc(parsed.data.shippedAt);
-    const problem = shipDateProblem(shippedAt, new Date());
+    const problem = shipDateProblem(shippedAt, now);
     if (problem) {
       res.status(400).json({ error: "invalid_ship_date", message: problem });
       return;
@@ -128,6 +135,13 @@ router.post(
       res.status(400).json({
         error: "invalid_delivery_date",
         message: "the delivery date is before the ship date",
+      });
+      return;
+    }
+    if (deliveredAt && deliveredAt.getTime() - now.getTime() > DAY_MS) {
+      res.status(400).json({
+        error: "invalid_delivery_date",
+        message: "the delivery date is in the future",
       });
       return;
     }

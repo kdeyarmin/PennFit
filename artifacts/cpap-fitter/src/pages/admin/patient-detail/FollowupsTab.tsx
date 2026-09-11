@@ -11,6 +11,7 @@
 
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { captureSessionCacheGuard } from "@workspace/resupply-auth-react";
 import { Spinner } from "@/components/admin/Spinner";
 import { EmptyState } from "@/components/admin/EmptyState";
 import { Button } from "@/components/admin/Button";
@@ -44,15 +45,20 @@ export function FollowupsTab({ patientId }: { patientId: string }) {
   });
 
   const createMutation = useMutation({
+    onMutate: () => ({
+      isCurrentSession: captureSessionCacheGuard(queryClient),
+    }),
     mutationFn: ({ body, dueAt }: { body: string; dueAt: Date }) =>
       createAdminPatientFollowup(patientId, body, dueAt),
-    onSuccess: () => {
+    onSuccess: (_data, _variables, ctx) => {
+      if (!ctx?.isCurrentSession()) return;
       setBody("");
       setDueLocal(defaultFollowupDueLocal());
       setSubmitError(null);
       void queryClient.invalidateQueries({ queryKey });
     },
-    onError: (err) => {
+    onError: (err, _variables, ctx) => {
+      if (!ctx?.isCurrentSession()) return;
       setSubmitError(
         err instanceof Error ? err.message : "Failed to schedule followup.",
       );
@@ -67,7 +73,9 @@ export function FollowupsTab({ patientId }: { patientId: string }) {
     // it (with a busy spinner) until the round-trip + refetch land.
     // Rolled back on error; settled always re-syncs with the server.
     onMutate: async (followupId) => {
+      const isCurrentSession = captureSessionCacheGuard(queryClient);
       await queryClient.cancelQueries({ queryKey });
+      if (!isCurrentSession()) return { isCurrentSession, previous: undefined };
       const previous =
         queryClient.getQueryData<AdminPatientFollowupsListResponse>(queryKey);
       if (previous) {
@@ -76,12 +84,14 @@ export function FollowupsTab({ patientId }: { patientId: string }) {
           followups: previous.followups.filter((f) => f.id !== followupId),
         });
       }
-      return { previous };
+      return { previous, isCurrentSession };
     },
     onError: (_err, _followupId, ctx) => {
+      if (!ctx?.isCurrentSession()) return;
       if (ctx?.previous) queryClient.setQueryData(queryKey, ctx.previous);
     },
-    onSettled: () => {
+    onSettled: (_data, _err, _followupId, ctx) => {
+      if (!ctx?.isCurrentSession()) return;
       void queryClient.invalidateQueries({ queryKey });
     },
   });

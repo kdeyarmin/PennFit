@@ -22,6 +22,7 @@ import {
 } from "@tanstack/react-query";
 
 import type { AuthClient, AuthError, AuthMe, SignInResult } from "./client";
+import { clearSessionCache } from "./session-cache";
 
 export const SESSION_QUERY_KEY = ["auth", "me"] as const;
 
@@ -114,12 +115,13 @@ export function createAuthHooks(
       const qc = useQueryClient();
       return useMutation({
         mutationFn: (input) => client.signIn(input),
-        onSuccess: (result) => {
+        onSuccess: async (result) => {
           // Only invalidate /me on the single-step path — the
           // mfaRequired branch hasn't set a session cookie yet,
           // and invalidating would trigger a /me probe that
           // returns 401 and confuses any session-watching gates.
           if (!result.mfaRequired) {
+            await clearSessionCache(qc);
             invalidateMe(qc);
           }
         },
@@ -130,7 +132,10 @@ export function createAuthHooks(
       const qc = useQueryClient();
       return useMutation({
         mutationFn: (input) => client.verifySignInMfa(input),
-        onSuccess: () => invalidateMe(qc),
+        onSuccess: async () => {
+          await clearSessionCache(qc);
+          invalidateMe(qc);
+        },
       });
     },
 
@@ -146,7 +151,8 @@ export function createAuthHooks(
       const qc = useQueryClient();
       return useMutation({
         mutationFn: () => client.signOut(),
-        onSuccess: () => {
+        onSuccess: async () => {
+          await clearSessionCache(qc);
           // Reset to null immediately so any gate watching
           // useSession redirects without a flicker.
           qc.setQueryData(sessionQueryKey, null);
@@ -165,7 +171,8 @@ export function createAuthHooks(
       const qc = useQueryClient();
       return useMutation({
         mutationFn: (input) => client.resetPassword(input),
-        onSuccess: () => {
+        onSuccess: async () => {
+          await clearSessionCache(qc);
           // Server revoked all sessions for this user. Force the
           // SPA to re-fetch; it'll get null and route to sign-in.
           qc.setQueryData(sessionQueryKey, null);

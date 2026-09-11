@@ -284,7 +284,7 @@ describe("app modules card", () => {
     );
     // Inside the toggle mutation's onSettled, alongside the other two
     // invalidations — not merely imported somewhere in the file.
-    const settledIdx = SRC.indexOf("onSettled: () => {");
+    const settledIdx = SRC.search(/onSettled:\s*\([^)]*\)\s*=>\s*\{/);
     const closeIdx = SRC.indexOf("\n    },", settledIdx);
     expect(settledIdx).toBeGreaterThan(-1);
     expect(closeIdx).toBeGreaterThan(settledIdx);

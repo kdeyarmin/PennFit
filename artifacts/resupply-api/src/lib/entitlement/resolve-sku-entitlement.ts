@@ -45,6 +45,34 @@ export type SkuEntitlement = ResupplyEntitlementResult & {
 };
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+type Tables = Database["resupply"]["Tables"];
+type SkuMapping = Pick<
+  Tables["sku_hcpcs_map"]["Row"],
+  "sku_prefix" | "hcpcs_code"
+>;
+
+/** Classify every SKU independently: a more specific prefix can change
+ * its family, and unrelated prefixes can still represent the same code. */
+export function findSkuHcpcsMapping(itemSku: string, mappings: SkuMapping[]) {
+  return mappings
+    .filter((mapping) => itemSku.startsWith(mapping.sku_prefix))
+    .sort((a, b) => b.sku_prefix.length - a.sku_prefix.length)[0];
+}
+
+export function groupFulfillmentsByHcpcs<Row extends { item_sku: string }>(
+  rows: Row[],
+  mappings: SkuMapping[],
+) {
+  const groups = new Map<string, Row[]>();
+  for (const row of rows) {
+    const match = findSkuHcpcsMapping(row.item_sku, mappings);
+    if (!match) continue;
+    const family = groups.get(match.hcpcs_code) ?? [];
+    family.push(row);
+    groups.set(match.hcpcs_code, family);
+  }
+  return groups;
+}
 
 export async function resolveSkuEntitlement(
   supabase: ResupplySupabaseClient,
@@ -61,9 +89,7 @@ export async function resolveSkuEntitlement(
     .from("sku_hcpcs_map")
     .select("sku_prefix, hcpcs_code");
   if (mapErr) throw mapErr;
-  const match = (mapRows ?? [])
-    .filter((r) => args.itemSku.startsWith(r.sku_prefix))
-    .sort((a, b) => b.sku_prefix.length - a.sku_prefix.length)[0];
+  const match = findSkuHcpcsMapping(args.itemSku, mapRows ?? []);
   if (!match) return null;
 
   // 2. Load the replacement rule.
@@ -78,28 +104,38 @@ export async function resolveSkuEntitlement(
   if (hcpcsErr) throw hcpcsErr;
   if (!hcpcs || hcpcs.active === false) return null;
 
-  // 3. The patient's non-cancelled dispenses of this family, newest
-  //    first. Bounded at 200 — far more than any rolling period needs.
-  const { data: fulfillments, error: fErr } = await supabase
-    .schema("resupply")
-    .from("fulfillments")
-    .select("quantity, created_at, status")
-    .eq("patient_id", args.patientId)
-    .like("item_sku", `${match.sku_prefix}%`)
-    .neq("status", "cancelled")
-    .order("created_at", { ascending: false })
-    .limit(200);
-  if (fErr) throw fErr;
+  // 3. Classify history by HCPCS, not a raw prefix. MASK-FULL may map
+  //    elsewhere than MASK, while a different manufacturer's prefix may
+  //    share MASK's allowance. Walk every page so other supplies cannot
+  //    displace the relevant family's last dispense or rolling quantity.
+  const fulfillments: Pick<
+    Tables["fulfillments"]["Row"],
+    "item_sku" | "quantity" | "created_at"
+  >[] = [];
+  for (let offset = 0; ; offset += 200) {
+    const { data, error } = await supabase
+      .schema("resupply")
+      .from("fulfillments")
+      .select("item_sku, quantity, created_at")
+      .eq("patient_id", args.patientId)
+      .neq("status", "cancelled")
+      .order("created_at", { ascending: false })
+      .order("id")
+      .range(offset, offset + 199);
+    if (error) throw error;
+    fulfillments.push(...(data ?? []));
+    if (!data || data.length < 200) break;
+  }
+  const families = groupFulfillmentsByHcpcs(fulfillments, mapRows ?? []);
   return calculateSkuEntitlement(
     match,
     hcpcs,
-    fulfillments ?? [],
+    families.get(match.hcpcs_code) ?? [],
     requestedQuantity,
     now,
   );
 }
 
-type Tables = Database["resupply"]["Tables"];
 export function calculateSkuEntitlement(
   match: Pick<Tables["sku_hcpcs_map"]["Row"], "sku_prefix" | "hcpcs_code">,
   hcpcs: Pick<

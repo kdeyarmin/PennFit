@@ -13,6 +13,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { captureSessionCacheGuard } from "@workspace/resupply-auth-react";
 
 import { humanizeAction } from "@/components/admin/Badge";
 import { Spinner } from "@/components/admin/Spinner";
@@ -86,8 +87,12 @@ function PresetCard() {
   const [lastSummary, setLastSummary] = useState<string | null>(null);
 
   const applyMutation = useMutation({
+    onMutate: () => ({
+      isCurrentSession: captureSessionCacheGuard(queryClient),
+    }),
     mutationFn: () => applyFeatureFlagPreset(false),
-    onSuccess: (result) => {
+    onSuccess: (result, _variables, ctx) => {
+      if (!ctx?.isCurrentSession()) return;
       setPreview(null);
       setLastSummary(
         result.changes.length === 0
@@ -102,8 +107,12 @@ function PresetCard() {
   });
 
   const previewMutation = useMutation({
+    onMutate: () => ({
+      isCurrentSession: captureSessionCacheGuard(queryClient),
+    }),
     mutationFn: () => applyFeatureFlagPreset(true),
-    onSuccess: (result) => {
+    onSuccess: (result, _variables, ctx) => {
+      if (!ctx?.isCurrentSession()) return;
       setLastSummary(null);
       // Clear any error left over from a previous failed apply so the fresh
       // preview modal doesn't open showing a stale message.
@@ -707,10 +716,12 @@ function FlagRow({
   const mutation = useMutation({
     mutationFn: (next: boolean) => toggleFeatureFlag(flag.key, next),
     onMutate: async (next: boolean) => {
+      const isCurrentSession = captureSessionCacheGuard(queryClient);
       // Optimistic: swap the row's enabled flag immediately so the
       // switch UI doesn't jitter back to the prior state while the
       // server round-trip is in flight.
       await queryClient.cancelQueries({ queryKey: QUERY_KEY });
+      if (!isCurrentSession()) return { isCurrentSession, prior: undefined };
       const prior = queryClient.getQueryData<{ flags: FeatureFlag[] }>(
         QUERY_KEY,
       );
@@ -721,14 +732,16 @@ function FlagRow({
           ),
         });
       }
-      return { prior };
+      return { prior, isCurrentSession };
     },
     onError: (_err, _next, ctx) => {
+      if (!ctx?.isCurrentSession()) return;
       if (ctx?.prior) {
         queryClient.setQueryData(QUERY_KEY, ctx.prior);
       }
     },
-    onSettled: () => {
+    onSettled: (_data, _err, _next, ctx) => {
+      if (!ctx?.isCurrentSession()) return;
       void queryClient.invalidateQueries({ queryKey: QUERY_KEY });
       // A successful (or even failed-then-corrected) toggle writes
       // an audit row, so the activity panel needs a refetch too.

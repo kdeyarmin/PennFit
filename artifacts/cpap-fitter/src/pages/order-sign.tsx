@@ -177,7 +177,8 @@ export function OrderSign() {
     }
   }, []);
 
-  const { data, isLoading, error, refetch } = useViewCsrOrder(token);
+  const { data, isLoading, isFetching, error, refetch } =
+    useViewCsrOrder(token);
   const sign = useSignCsrOrder();
 
   const [acked, setAcked] = useState<Record<string, boolean>>({});
@@ -283,19 +284,36 @@ export function OrderSign() {
       },
     };
     const m = messages[code] ?? messages.error;
-    return (
-      <PageShell>
-        <Card className="border-0 shadow-sm">
-          <CardHeader className="space-y-3 text-center">
-            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-100">
-              <AlertTriangle className="h-6 w-6 text-amber-600" />
-            </div>
-            <CardTitle>{m.title}</CardTitle>
-            <CardDescription>{m.body}</CardDescription>
-          </CardHeader>
-        </Card>
-      </PageShell>
+    const canRetry = !["expired", "canceled", "invalid", "not_found"].includes(
+      code,
     );
+    // A transient refresh failure must not undo a confirmed signature;
+    // a terminal link response still takes precedence over cached data.
+    if (!signed || !canRetry)
+      return (
+        <PageShell>
+          <Card className="border-0 shadow-sm">
+            <CardHeader className="space-y-3 text-center">
+              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-100">
+                <AlertTriangle className="h-6 w-6 text-amber-600" />
+              </div>
+              <CardTitle>{m.title}</CardTitle>
+              <CardDescription>{m.body}</CardDescription>
+            </CardHeader>
+            {canRetry && (
+              <CardContent className="text-center">
+                <Button
+                  variant="outline"
+                  onClick={() => void refetch()}
+                  disabled={isFetching}
+                >
+                  {isFetching ? "Trying again…" : "Try again"}
+                </Button>
+              </CardContent>
+            )}
+          </Card>
+        </PageShell>
+      );
   }
 
   const company = data?.company;

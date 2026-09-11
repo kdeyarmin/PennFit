@@ -1,6 +1,8 @@
 import type { Database, OrgScopedClient } from "@workspace/resupply-db";
 import {
   calculateSkuEntitlement,
+  findSkuHcpcsMapping,
+  groupFulfillmentsByHcpcs,
   type SkuEntitlement,
 } from "./resolve-sku-entitlement";
 type Tables = Database["resupply"]["Tables"];
@@ -60,10 +62,9 @@ export async function loadPatientSupplySummary(
     if (!lastSuppliedAt.has(f.item_sku) || at > lastSuppliedAt.get(f.item_sku)!)
       lastSuppliedAt.set(f.item_sku, at);
   }
+  const families = groupFulfillmentsByHcpcs(fills, mappings.data ?? []);
   for (const sku of new Set(itemSkus)) {
-    const match = (mappings.data ?? [])
-      .filter((m) => sku.startsWith(m.sku_prefix))
-      .sort((a, b) => b.sku_prefix.length - a.sku_prefix.length)[0];
+    const match = findSkuHcpcsMapping(sku, mappings.data ?? []);
     const code =
       match && (codes.data ?? []).find((c) => c.code === match.hcpcs_code);
     entitlements.set(
@@ -72,9 +73,7 @@ export async function loadPatientSupplySummary(
         ? calculateSkuEntitlement(
             match,
             code,
-            fills
-              .filter((f) => f.item_sku.startsWith(match.sku_prefix))
-              .slice(0, 200),
+            families.get(match.hcpcs_code) ?? [],
             1,
             now,
           )
