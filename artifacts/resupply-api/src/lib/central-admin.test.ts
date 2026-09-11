@@ -30,7 +30,10 @@ function fixture(nativeId = NATIVE_ID) {
     CAREMETRIC_ADMIN_IDENTITY_MAP_JSON: JSON.stringify({ [HUB_ID]: nativeId }),
   };
   const state = {
-    actor: { user_id: HUB_ID, role: "platform_admin", aal: "aal2" },
+    actor: { user_id: HUB_ID, role: "platform_admin", aal: "aal2" } as Record<
+      string,
+      unknown
+    >,
     actorStatus: 200,
     nativeError: false,
     countsUnavailable: false,
@@ -87,6 +90,16 @@ function fixture(nativeId = NATIVE_ID) {
     const method = init.method ?? "GET";
     calls.push({ url, headers, method });
     expect(init.signal).toBeInstanceOf(AbortSignal);
+    if (url.origin === "https://support-hub-web-production.up.railway.app") {
+      expect(url.pathname).toBe("/api/internal/admin/breathe/authorize");
+      expect(headers.get("apikey")).toBeNull();
+      expect(headers.get("origin")).toBeNull();
+      expect(headers.get("authorization")).toMatch(
+        /^Bearer cmh_[A-Za-z0-9_-]{43}$/,
+      );
+      expect(init.redirect).toBe("error");
+      return Response.json(state.actor, { status: state.actorStatus });
+    }
     if (url.origin === HUB) {
       expect(url.pathname).toBe("/rest/v1/rpc/authorize_platform_admin");
       expect(headers.get("apikey")).toBe(PUB);
@@ -207,6 +220,58 @@ function fixture(nativeId = NATIVE_ID) {
 }
 
 describe("central Hub to Breathe native adapter", () => {
+  it("accepts operation-bound SMS delegation while preserving native membership checks", async () => {
+    const f = fixture("user_LegacyABC123");
+    f.state.actor = {
+      user_id: HUB_ID,
+      role: "platform_admin",
+      method: "sms",
+      operation: { operation: "capabilities" },
+    };
+    const headers = {
+      Authorization: "Bearer cmh_" + "a".repeat(43),
+      "Content-Type": "application/json",
+    };
+    expect(
+      (await f.read({ operation: "capabilities" }, { headers })).status,
+    ).toBe(200);
+    expect(f.calls.some((call) => call.url.origin === HUB)).toBe(false);
+    f.state.membership = null;
+    expect(
+      (await f.read({ operation: "capabilities" }, { headers })).status,
+    ).toBe(403);
+  });
+  it("denies altered operations, methods, identities and expired SMS delegations", async () => {
+    const headers = {
+      Authorization: "Bearer cmh_" + "a".repeat(43),
+      "Content-Type": "application/json",
+    };
+    for (const extra of [
+      { method: "email" },
+      { user_id: ORG_ID },
+      { role: "agent" },
+      { operation: { operation: "overview" } },
+      { operation: { operation: "capabilities", organizationId: ORG_ID } },
+    ]) {
+      const f = fixture();
+      f.state.actor = {
+        user_id: HUB_ID,
+        role: "platform_admin",
+        method: "sms",
+        operation: { operation: "capabilities" },
+        ...extra,
+      };
+      expect(
+        (await f.read({ operation: "capabilities" }, { headers })).status,
+      ).toBe(403);
+      expect(f.getClient).not.toHaveBeenCalled();
+    }
+    const f = fixture();
+    f.state.actorStatus = 401;
+    expect(
+      (await f.read({ operation: "capabilities" }, { headers })).status,
+    ).toBe(401);
+  });
   it("preserves validated opaque native IDs while keeping Hub identities UUID-only", async () => {
     const f = fixture("user_LegacyABC123");
     expect((await f.read({ operation: "capabilities" })).status).toBe(200);
