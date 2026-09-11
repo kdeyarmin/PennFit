@@ -426,7 +426,8 @@ jobs:
               src/worker/jobs/recall-notifications-send.integration.test.ts \
               src/worker/jobs/patient-packet-reminders.integration.test.ts \
               src/worker/jobs/pacware-ready-to-sync-digest.integration.test.ts \
-              src/worker/jobs/reminders.integration.test.ts
+              src/worker/jobs/reminders.integration.test.ts \
+              src/worker/jobs/reminders.csr-dedup.postgrest.test.ts
 
   a11y:
     name: A11y (Playwright + axe)

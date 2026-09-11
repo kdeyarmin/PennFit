@@ -29,6 +29,10 @@
 import { logAudit } from "@workspace/resupply-audit";
 import { getOrgScopedClient } from "@workspace/resupply-db";
 import {
+  withReminderSendStage,
+  type ReminderSendStage,
+} from "@workspace/resupply-reminders";
+import {
   createTwilioClient,
   TwilioApiError,
   TwilioConfigError,
@@ -94,6 +98,15 @@ export interface PlaceOutboundReorderCallInput {
 export async function placeOutboundReorderCall(
   input: PlaceOutboundReorderCallInput,
 ): Promise<PlaceCallOutcome> {
+  return withReminderSendStage((stage) =>
+    placeOutboundReorderCallAttempt(input, stage),
+  );
+}
+
+async function placeOutboundReorderCallAttempt(
+  input: PlaceOutboundReorderCallInput,
+  stage: ReminderSendStage,
+): Promise<PlaceCallOutcome> {
   const { orgId, patientId, episodeId, config, actor } = input;
   const supabase = getOrgScopedClient(orgId);
 
@@ -151,12 +164,20 @@ export async function placeOutboundReorderCall(
   // suppress the CSR worker's retry as "contacted within 48 hours".
   // A callback that already attached a CallSid keeps its timestamp.
   const clearUnsentAttempt = async () => {
-    const { error } = await supabase
-      .from("conversations")
-      .update({ last_message_at: null, updated_at: new Date().toISOString() })
-      .eq("id", conversationId)
-      .is("external_ref", null);
-    if (error) throw error;
+    try {
+      const { error } = await supabase
+        .from("conversations")
+        .update({ last_message_at: null, updated_at: new Date().toISOString() })
+        .eq("id", conversationId)
+        .is("external_ref", null);
+      if (error) throw error;
+    } catch {
+      // Preserve the actual send/preparation failure for the caller.
+      logger.warn(
+        { event: "voice.place-call.unsent_cleanup_failed", conversationId },
+        "voice.place-call: unsent conversation timestamp could not be cleared",
+      );
+    }
   };
 
   // Register pending session BEFORE Twilio dials so the WS upgrade — which
@@ -184,15 +205,15 @@ export async function placeOutboundReorderCall(
 
   // Place the call from the tenant's own voice caller-id when it has one
   // (G7), else the platform default. Fails soft to the default.
-  const callerId =
-    (await resolveTenantVoiceFrom(orgId)) ?? config.twilioPhoneNumber;
-
   let callSid: string;
   try {
+    const callerId =
+      (await resolveTenantVoiceFrom(orgId)) ?? config.twilioPhoneNumber;
     const twilio = createTwilioClient({
       accountSid: config.twilioAccountSid,
       authToken: config.twilioAuthToken,
     });
+    stage.markProviderAttempted();
     const result = await twilio.placeCall({
       to: patient.phone_e164,
       from: callerId,
@@ -207,7 +228,11 @@ export async function placeOutboundReorderCall(
     });
     callSid = result.sid;
   } catch (err) {
-    if (err instanceof TwilioConfigError || err instanceof TwilioApiError) {
+    if (
+      !stage.providerAttempted ||
+      err instanceof TwilioConfigError ||
+      err instanceof TwilioApiError
+    ) {
       await clearUnsentAttempt();
     }
     if (err instanceof TwilioConfigError) {

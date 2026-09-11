@@ -357,7 +357,7 @@ describe("tryClaimReminderDedupKey — source structural checks (PR change)", ()
     expect(SRC).toContain('error.code === "23505"');
     const block23505Idx = SRC.indexOf('error.code === "23505"');
     const returnFalseIdx = SRC.indexOf(
-      "return { proceed: false, key }",
+      "return { proceed: false, key: primaryKey, keys: [] }",
       block23505Idx,
     );
     expect(returnFalseIdx).toBeGreaterThan(block23505Idx);
@@ -365,11 +365,12 @@ describe("tryClaimReminderDedupKey — source structural checks (PR change)", ()
 
   it("returns true on successful INSERT (won the race)", () => {
     // The success branch returns true so the caller proceeds.
-    // The comment and return are on the same line.
-    expect(SRC).toContain("won the race");
-    expect(SRC).toContain("return { proceed: true, key }");
+    expect(SRC).toContain("Won the race");
+    expect(SRC).toMatch(
+      /return\s*\{\s*proceed: true,\s*key: primaryKey,\s*keys:/,
+    );
     // Both appear before the 23505 unique-violation branch.
-    const returnTrueIdx = SRC.indexOf("return { proceed: true, key }");
+    const returnTrueIdx = SRC.indexOf("proceed: true,");
     const uniqueViolationIdx = SRC.indexOf('error.code === "23505"');
     expect(returnTrueIdx).toBeLessThan(uniqueViolationIdx);
   });

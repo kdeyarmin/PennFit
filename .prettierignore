@@ -25,3 +25,6 @@ pnpm-lock.yaml
 # `prettier --check .` walks the filesystem — without this entry
 # format:check fails locally any time the dev/build script has run.
 artifacts/cpap-fitter/public/mediapipe/**
+
+# Playwright's generated local sign-in state is not authored source.
+e2e/.auth/**

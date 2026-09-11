@@ -57,6 +57,8 @@ vi.mock("./safe-audit", () => ({
 }));
 
 import { sendReminderEmail } from "./send-email";
+import { isReminderPreSendError } from "./send-stage";
+import { EmailConfigError } from "@workspace/resupply-email";
 
 function makeSupabase() {
   const terminalFor = (table: string, op: string): (() => unknown) => {
@@ -247,5 +249,64 @@ describe("sendReminderEmail — early exits", () => {
     const result = await sendReminderEmail(makeInput());
     expect(result.status).toBe("patient_missing_email");
     expect(sendEmailMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("sendReminderEmail — delivery stage", () => {
+  it("preserves and marks a database error before any provider attempt", async () => {
+    const error = { code: "08006", message: "Patient read unavailable" };
+    patientReadMock.mockResolvedValue({ data: null, error });
+    await expect(sendReminderEmail(makeInput())).rejects.toBe(error);
+    expect(isReminderPreSendError(error)).toBe(true);
+    expect(sendEmailMock).not.toHaveBeenCalled();
+  });
+
+  it("cleans up a failed link preparation without contacting the provider", async () => {
+    stageHappyPath();
+    delete process.env.RESUPPLY_LINK_HMAC_KEY;
+    const error = await sendReminderEmail(makeInput()).catch(
+      (failure: unknown) => failure,
+    );
+    expect(isReminderPreSendError(error)).toBe(true);
+    expect(sendEmailMock).not.toHaveBeenCalled();
+    expect(convDeleteMock).toHaveBeenCalledOnce();
+  });
+
+  it("marks known local header validation and preserves its error if cleanup also fails", async () => {
+    stageHappyPath();
+    const error = new EmailConfigError("Invalid email header");
+    sendEmailMock.mockRejectedValue(error);
+    convDeleteMock.mockRejectedValue(new Error("Cleanup unavailable"));
+    await expect(sendReminderEmail(makeInput())).rejects.toBe(error);
+    expect(isReminderPreSendError(error)).toBe(true);
+    expect(error).toBeInstanceOf(EmailConfigError);
+  });
+
+  it("does not mark unknown transport failure or erase its attempt", async () => {
+    stageHappyPath();
+    const error = new Error("Connection reset after request");
+    sendEmailMock.mockRejectedValue(error);
+    await expect(sendReminderEmail(makeInput())).rejects.toBe(error);
+    expect(isReminderPreSendError(error)).toBe(false);
+    expect(convDeleteMock).not.toHaveBeenCalled();
+  });
+
+  it("never marks an unexpected post-acceptance projection failure as unsent", async () => {
+    stageHappyPath();
+    const error = new Error("Projection unexpectedly threw");
+    tryUpsertMock.mockRejectedValue(error);
+    await expect(sendReminderEmail(makeInput())).rejects.toBe(error);
+    expect(isReminderPreSendError(error)).toBe(false);
+    expect(sendEmailMock).toHaveBeenCalledOnce();
+  });
+
+  it("keeps an accepted email successful when its message write fails", async () => {
+    stageHappyPath();
+    msgInsertMock.mockRejectedValue(new Error("Message write failed"));
+    await expect(sendReminderEmail(makeInput())).resolves.toMatchObject({
+      status: "ok",
+      vendorRef: "SG_TEST_1",
+    });
+    expect(convDeleteMock).not.toHaveBeenCalled();
   });
 });

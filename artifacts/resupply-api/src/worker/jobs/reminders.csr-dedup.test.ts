@@ -1,4 +1,5 @@
 import { PGlite } from "@electric-sql/pglite";
+import { randomUUID } from "node:crypto";
 import {
   afterAll,
   afterEach,
@@ -24,6 +25,11 @@ const mocks = vi.hoisted(() => ({
   voice: vi.fn(),
   markAwaiting: vi.fn(),
   company: vi.fn(),
+  smsProvider: vi.fn(),
+  emailProvider: vi.fn(),
+  voiceProvider: vi.fn(),
+  pendingRegister: vi.fn(),
+  pendingAttach: vi.fn(),
 }));
 vi.mock("@workspace/resupply-db", async () => {
   const actual = await vi.importActual<typeof import("@workspace/resupply-db")>(
@@ -31,23 +37,46 @@ vi.mock("@workspace/resupply-db", async () => {
   );
   return {
     ...actual,
+    tryUpsertPatientLatestMessageSb: vi.fn(),
     getOrgScopedClient: (
       org: string,
       raw?: Parameters<typeof actual.getOrgScopedClient>[1],
     ) => actual.getOrgScopedClient(org, raw ?? createRaw()),
   };
 });
-vi.mock("@workspace/resupply-reminders", () => ({
+vi.mock("@workspace/resupply-reminders", async () => ({
+  ...(await vi.importActual<typeof import("@workspace/resupply-reminders")>(
+    "@workspace/resupply-reminders",
+  )),
   sendReminderSms: mocks.sms,
   sendReminderEmail: mocks.email,
 }));
-vi.mock("@workspace/resupply-secrets", () => ({ hasLinkHmacKey: () => true }));
+vi.mock("@workspace/resupply-secrets", async () => ({
+  ...(await vi.importActual<typeof import("@workspace/resupply-secrets")>(
+    "@workspace/resupply-secrets",
+  )),
+  hasLinkHmacKey: () => true,
+}));
+vi.mock("@workspace/resupply-telecom", async () => ({
+  ...(await vi.importActual<typeof import("@workspace/resupply-telecom")>(
+    "@workspace/resupply-telecom",
+  )),
+  createTwilioSmsClient: () => ({ sendSms: mocks.smsProvider }),
+  createTwilioClient: () => ({ placeCall: mocks.voiceProvider }),
+}));
+vi.mock("@workspace/resupply-email", async () => ({
+  ...(await vi.importActual<typeof import("@workspace/resupply-email")>(
+    "@workspace/resupply-email",
+  )),
+  createSendgridClient: () => ({ sendEmail: mocks.emailProvider }),
+}));
 vi.mock("../../lib/resupply/csr-outreach", () => ({
   checkCsrOutreach: async () => ({ reason: null }),
 }));
 vi.mock("../../lib/company-info", () => ({ getCompanyInfo: mocks.company }));
 vi.mock("../../lib/messaging/tenant-telecom", () => ({
   applyTenantSmsFrom: async (_org: string, cfg: unknown) => cfg,
+  resolveTenantVoiceFrom: async () => null,
 }));
 vi.mock("../../lib/email/apply-tenant-email-sender", () => ({
   applyTenantEmailSender: async (_org: string, cfg: unknown) => cfg,
@@ -64,7 +93,18 @@ vi.mock("../../lib/voice/place-outbound-call", () => ({
   placeOutboundReorderCall: mocks.voice,
 }));
 vi.mock("../../lib/voice/voice-config", () => ({
-  readVoiceConfigOrNull: () => ({ twilioPhoneNumber: "+15555550100" }),
+  readVoiceConfigOrNull: () => ({
+    twilioPhoneNumber: "+15555550100",
+    twilioAccountSid: "test-account",
+    twilioAuthToken: "test-token",
+    publicBaseUrl: "https://practice.example.test",
+  }),
+}));
+vi.mock("../../lib/voice/pending-sessions", () => ({
+  getPendingSessions: () => ({
+    register: mocks.pendingRegister,
+    attachCallSid: mocks.pendingAttach,
+  }),
 }));
 
 vi.mock("../../lib/logger", () => ({
@@ -75,6 +115,105 @@ let database: PGlite;
 const patientId = "11111111-1111-4111-8111-111111111111";
 const episodeId = "22222222-2222-4222-8222-222222222222";
 const orgId = "33333333-3333-4333-8333-333333333333";
+type FixtureRow = Record<string, unknown>;
+let conversations: FixtureRow[] = [];
+let messages: FixtureRow[] = [];
+const readFailures = new Map<string, Error>();
+
+// Real send helpers exercise their preparation and provider boundary against
+// synthetic entity rows. Only claim contention requires the PostgreSQL engine.
+function entityQuery(table: string) {
+  let operation = "select";
+  let columns = "";
+  let payload: FixtureRow = {};
+  const filters = new Map<string, unknown>();
+  const matches = (row: FixtureRow) =>
+    [...filters].every(([key, value]) => (row[key] ?? null) === value);
+  const run = (single: boolean) => {
+    const failureKey = `${table}:${operation}`;
+    const failure =
+      columns === "timezone" ? undefined : readFailures.get(failureKey);
+    if (failure) {
+      readFailures.delete(failureKey);
+      return { data: null, error: failure };
+    }
+    let rows: FixtureRow[];
+    if (table === "patients") {
+      rows = [
+        {
+          id: patientId,
+          org_id: orgId,
+          status: "active",
+          phone_e164: "+15555550101",
+          email: "fixture@example.test",
+          legal_first_name: "Fixture",
+          timezone: "America/New_York",
+        },
+      ];
+    } else if (table === "episodes") {
+      rows = [
+        {
+          id: episodeId,
+          org_id: orgId,
+          patient_id: patientId,
+          prescription_id: "fixture-rx",
+        },
+      ];
+    } else if (table === "prescriptions") {
+      rows = [{ id: "fixture-rx", org_id: orgId, item_sku: "FILTER-DISP" }];
+    } else if (table === "conversations" || table === "messages") {
+      const stored = table === "conversations" ? conversations : messages;
+      if (operation === "insert") {
+        const inserted = { ...payload, id: randomUUID() };
+        stored.push(inserted);
+        rows = [inserted];
+      } else if (operation === "update") {
+        rows = stored.filter(matches);
+        rows.forEach((row) => Object.assign(row, payload));
+      } else if (operation === "delete") {
+        rows = stored.filter(matches);
+        if (table === "conversations")
+          conversations = stored.filter((row) => !matches(row));
+        else messages = stored.filter((row) => !matches(row));
+      } else rows = stored.filter(matches);
+    } else throw new Error(`Unexpected fixture table: ${table}`);
+    if (operation === "select") rows = rows.filter(matches);
+    return { data: single ? (rows[0] ?? null) : rows, error: null };
+  };
+  const query = {
+    select: (value: string) => {
+      columns = value;
+      return query;
+    },
+    eq: (column: string, value: unknown) => {
+      filters.set(column, value);
+      return query;
+    },
+    is: (column: string, value: unknown) => {
+      filters.set(column, value);
+      return query;
+    },
+    limit: () => query,
+    insert: (value: FixtureRow) => {
+      operation = "insert";
+      payload = value;
+      return query;
+    },
+    update: (value: FixtureRow) => {
+      operation = "update";
+      payload = value;
+      return query;
+    },
+    delete: () => {
+      operation = "delete";
+      return query;
+    },
+    maybeSingle: async () => run(true),
+    then: <T>(resolve: (value: ReturnType<typeof run>) => T | PromiseLike<T>) =>
+      Promise.resolve(run(false)).then(resolve),
+  };
+  return query;
+}
 
 // PostgreSQL, not a scripted conflict response, decides which claims collide.
 // This catches a different channel/episode accidentally changing a patient key.
@@ -82,25 +221,18 @@ function createRaw() {
   const raw = {
     schema: () => ({
       from: (table: string) => {
-        if (table === "patients") {
-          const query = {
-            select: () => query,
-            eq: () => query,
-            limit: () => query,
-            maybeSingle: async () => ({
-              data: { timezone: "America/New_York" },
-              error: null,
-            }),
-          };
-          return query;
-        }
-        if (table !== "worker_dedup_keys") throw new Error("Unexpected table");
+        if (table !== "worker_dedup_keys") return entityQuery(table);
         return {
-          insert: async (row: { key: string; expires_at: string }) => {
+          insert: async (
+            input:
+              | { key: string; expires_at: string }
+              | { key: string; expires_at: string }[],
+          ) => {
+            const rows = Array.isArray(input) ? input : [input];
             try {
               await database.query(
-                "INSERT INTO worker_dedup_keys (key, expires_at) VALUES ($1, $2)",
-                [row.key, row.expires_at],
+                `INSERT INTO worker_dedup_keys (key, expires_at) VALUES ${rows.map((_, index) => `($${index * 2 + 1}, $${index * 2 + 2})`).join(", ")}`,
+                rows.flatMap((row) => [row.key, row.expires_at]),
               );
               return { error: null };
             } catch (error) {
@@ -108,11 +240,15 @@ function createRaw() {
             }
           },
           delete: () => {
-            let key: string;
+            let keys: string[];
             let expiredAt: string | undefined;
             const query = {
               eq: (_column: string, value: string) => {
-                key = value;
+                keys = [value];
+                return query;
+              },
+              in: (_column: string, values: string[]) => {
+                keys = values;
                 return query;
               },
               lte: (_column: string, value: string) => {
@@ -124,8 +260,8 @@ function createRaw() {
               ) =>
                 database
                   .query(
-                    `DELETE FROM worker_dedup_keys WHERE key = $1${expiredAt ? " AND expires_at <= $2" : ""}`,
-                    expiredAt ? [key, expiredAt] : [key],
+                    `DELETE FROM worker_dedup_keys WHERE key = ANY($1::text[])${expiredAt ? " AND expires_at <= $2" : ""}`,
+                    expiredAt ? [keys, expiredAt] : [keys],
                   )
                   .then(() => resolve({ error: null })),
             };
@@ -163,16 +299,32 @@ const handlers = new Map<
     }[],
   ) => Promise<void>
 >();
-function dispatch(channel: Channel, cycle = episodeId) {
+function dispatch(channel: Channel, cycle = episodeId, csrRequested = true) {
   return handlers.get(queues[channel])!([
     {
-      id: `job-${channel}`,
-      data: { orgId, patientId, episodeId: cycle, csrRequested: true },
+      id: `job-${csrRequested ? "csr" : "scheduled"}-${channel}`,
+      data: { orgId, patientId, episodeId: cycle, csrRequested },
     },
   ]);
 }
 const nextChannel = (channel: Channel): Channel =>
   channel === "sms" ? "email" : "sms";
+const providers = {
+  sms: mocks.smsProvider,
+  email: mocks.emailProvider,
+  voice: mocks.voiceProvider,
+};
+async function useRealSenders() {
+  const text = await vi.importActual<
+    typeof import("@workspace/resupply-reminders")
+  >("@workspace/resupply-reminders");
+  const voice = await vi.importActual<
+    typeof import("../../lib/voice/place-outbound-call")
+  >("../../lib/voice/place-outbound-call");
+  mocks.sms.mockImplementation(text.sendReminderSms);
+  mocks.email.mockImplementation(text.sendReminderEmail);
+  mocks.voice.mockImplementation(voice.placeOutboundReorderCall);
+}
 
 beforeAll(async () => {
   database = new PGlite();
@@ -192,6 +344,16 @@ beforeAll(async () => {
 }, 30_000);
 beforeEach(() => {
   vi.clearAllMocks();
+  conversations = [];
+  messages = [];
+  readFailures.clear();
+  mocks.smsProvider.mockReset().mockResolvedValue({ messageSid: "SM-fixture" });
+  mocks.emailProvider
+    .mockReset()
+    .mockResolvedValue({ messageId: "email-fixture" });
+  mocks.voiceProvider.mockReset().mockResolvedValue({ sid: "CA-fixture" });
+  mocks.pendingRegister.mockReset().mockResolvedValue(undefined);
+  mocks.pendingAttach.mockReset().mockResolvedValue(true);
   vi.useFakeTimers({ now: new Date("2026-09-11T17:00:00Z"), toFake: ["Date"] });
   for (const channel of ["sms", "email", "voice"] as const)
     mocks[channel].mockReset().mockResolvedValue({
@@ -208,6 +370,10 @@ beforeEach(() => {
   vi.stubEnv("RESUPPLY_VOICE_PUBLIC_BASE_URL", "https://practice.example.test");
   vi.stubEnv("SENDGRID_API_KEY", "test-key");
   vi.stubEnv("SENDGRID_FROM_NAME", "Test Practice");
+  vi.stubEnv(
+    "RESUPPLY_LINK_HMAC_KEY",
+    "fixture-signing-key-for-local-tests-only",
+  );
 });
 afterEach(async () => {
   vi.useRealTimers();
@@ -233,14 +399,19 @@ describe("CSR outreach dispatch deduplication", () => {
       ),
     );
     expect(claims.filter((claim) => claim.proceed)).toHaveLength(1);
-    expect(new Set(claims.map((claim) => claim.key)).size).toBe(1);
-    const stored = await database.query<{ expires_at: Date }>(
-      "SELECT expires_at FROM worker_dedup_keys",
-    );
-    const remaining =
-      new Date(stored.rows[0]!.expires_at).getTime() - Date.now();
-    expect(remaining).toBeGreaterThan(47 * 3600000);
-    expect(remaining).toBeLessThanOrEqual(48 * 3600000);
+    vi.setSystemTime(new Date(Date.now() + 47 * 3600000));
+    expect(
+      (
+        await tryClaimReminderDedupKey(
+          scoped(),
+          "email",
+          patientId,
+          "later-cycle",
+          "later-job",
+          { csrRequested: true },
+        )
+      ).proceed,
+    ).toBe(false);
   });
 
   it("deduplicates different cycles for one patient and isolates tenants", async () => {
@@ -263,8 +434,8 @@ describe("CSR outreach dispatch deduplication", () => {
     const otherOrg = await tryClaimReminderDedupKey(
       scoped("44444444-4444-4444-8444-444444444444"),
       "sms",
-      patientId,
-      episodeId,
+      "55555555-5555-4555-8555-555555555555",
+      "66666666-6666-4666-8666-666666666666",
       "three",
       { csrRequested: true },
     );
@@ -282,7 +453,7 @@ describe("CSR outreach dispatch deduplication", () => {
       "one",
       { csrRequested: true },
     );
-    await releaseReminderDedupKey(scoped(), first.key, "one");
+    await releaseReminderDedupKey(scoped(), first.keys, "one");
     expect(
       (
         await tryClaimReminderDedupKey(
@@ -298,7 +469,7 @@ describe("CSR outreach dispatch deduplication", () => {
   });
 
   it("reclaims an expired cooldown without waiting for the daily pruning job", async () => {
-    const first = await tryClaimReminderDedupKey(
+    await tryClaimReminderDedupKey(
       scoped(),
       "sms",
       patientId,
@@ -306,10 +477,7 @@ describe("CSR outreach dispatch deduplication", () => {
       "one",
       { csrRequested: true },
     );
-    await database.query(
-      "UPDATE worker_dedup_keys SET expires_at = $2 WHERE key = $1",
-      [first.key, new Date(Date.now() - 1000).toISOString()],
-    );
+    vi.setSystemTime(new Date(Date.now() + 49 * 3600000));
     expect(
       (
         await tryClaimReminderDedupKey(
@@ -341,7 +509,97 @@ describe("CSR outreach dispatch deduplication", () => {
     );
     expect(first.proceed).toBe(true);
     expect(second.proceed).toBe(true);
-    expect(first.key).not.toBe(second.key);
+  });
+});
+
+describe("CSR dispatch through real send helpers", () => {
+  for (const channel of ["sms", "email", "voice"] as const) {
+    it.each(["CSR first", "scheduled first", "concurrent"] as const)(
+      `${channel} shares dispatch exclusion with a queued scheduled job: %s`,
+      async (order) => {
+        await useRealSenders();
+        // Both jobs target the same cycle and were queued before either sent.
+        const csr = () => dispatch(channel);
+        const scheduled = () => dispatch(channel, episodeId, false);
+        if (order === "concurrent") await Promise.all([csr(), scheduled()]);
+        else if (order === "CSR first") {
+          await csr();
+          await scheduled();
+        } else {
+          await scheduled();
+          await csr();
+        }
+        expect(providers[channel]).toHaveBeenCalledTimes(1);
+        expect(conversations).toHaveLength(1);
+        expect(messages).toHaveLength(channel === "voice" ? 0 : 1);
+      },
+    );
+
+    for (const failedOperation of [
+      "patients:select",
+      "conversations:insert",
+    ] as const) {
+      it.each(["same channel", "another channel"] as const)(
+        `${channel} recovers from ${failedOperation} before provider contact using %s`,
+        async (retry) => {
+          await useRealSenders();
+          const failure = new Error(`fixture ${failedOperation} unavailable`);
+          readFailures.set(failedOperation, failure);
+          await expect(dispatch(channel)).rejects.toThrow(failure.message);
+          expect(providers[channel]).not.toHaveBeenCalled();
+          expect(conversations).toHaveLength(0);
+          const retryChannel =
+            retry === "same channel" ? channel : nextChannel(channel);
+          await dispatch(retryChannel);
+          expect(providers[retryChannel]).toHaveBeenCalledTimes(1);
+          expect(conversations).toHaveLength(1);
+        },
+      );
+    }
+
+    it(`${channel} retains exclusion after an unknown provider failure`, async () => {
+      await useRealSenders();
+      providers[channel].mockRejectedValueOnce(
+        new Error("fixture provider connection lost"),
+      );
+      await expect(dispatch(channel)).rejects.toThrow(
+        "fixture provider connection lost",
+      );
+      expect(providers[channel]).toHaveBeenCalledTimes(1);
+      await dispatch(channel);
+      await dispatch(channel, episodeId, false);
+      await dispatch(nextChannel(channel));
+      expect(providers[channel]).toHaveBeenCalledTimes(1);
+      expect(providers[nextChannel(channel)]).not.toHaveBeenCalled();
+    });
+  }
+
+  it.each(["voice", "sms"] as const)(
+    "recovers from a pending voice-session registration failure through %s",
+    async (retryChannel) => {
+      await useRealSenders();
+      mocks.pendingRegister.mockRejectedValueOnce(
+        new Error("fixture pending session unavailable"),
+      );
+      await expect(dispatch("voice")).rejects.toThrow(
+        "fixture pending session unavailable",
+      );
+      expect(providers.voice).not.toHaveBeenCalled();
+      expect(conversations[0]?.last_message_at).toBeNull();
+      await dispatch(retryChannel);
+      expect(providers[retryChannel]).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it("a scheduled-key conflict leaves no partial patient claim blocking another CSR channel", async () => {
+    await useRealSenders();
+    await dispatch("sms", episodeId, false);
+    await dispatch("sms");
+    expect(providers.sms).toHaveBeenCalledTimes(1);
+    // Eligibility is stubbed so this isolates atomic claim rollback from the
+    // separate recent-contact policy: a losing claim must own no other keys.
+    await dispatch("email");
+    expect(providers.email).toHaveBeenCalledTimes(1);
   });
 });
 

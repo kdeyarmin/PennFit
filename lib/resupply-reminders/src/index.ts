@@ -30,6 +30,8 @@ export type { SendReminderSmsInput } from "./send-sms";
 export type { ReminderVariant } from "@workspace/resupply-messaging";
 export { sendReminderEmail } from "./send-email";
 export type { SendReminderEmailInput } from "./send-email";
+export { isReminderPreSendError, withReminderSendStage } from "./send-stage";
+export type { ReminderSendStage } from "./send-stage";
 export { replyInConversation } from "./reply";
 export type {
   ReplyInConversationInput,

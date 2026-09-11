@@ -30,6 +30,7 @@ import {
 } from "@workspace/resupply-telecom";
 
 import { safeAuditFromActor } from "./safe-audit";
+import { withReminderSendStage, type ReminderSendStage } from "./send-stage";
 import type { SendActor, SendReminderOutcome, SmsSendConfig } from "./types";
 
 export interface SendReminderSmsInput {
@@ -119,6 +120,13 @@ export function smsAsksRefillAttestation(body: string): boolean {
 
 export async function sendReminderSms(
   input: SendReminderSmsInput,
+): Promise<SendReminderOutcome> {
+  return withReminderSendStage((stage) => sendReminderSmsAttempt(input, stage));
+}
+
+async function sendReminderSmsAttempt(
+  input: SendReminderSmsInput,
+  stage: ReminderSendStage,
 ): Promise<SendReminderOutcome> {
   const { supabase, cfg, patientId, actor } = input;
   // Tenant isolation chokepoint: scope every read/write to orgId.
@@ -237,26 +245,36 @@ export async function sendReminderSms(
   const conversationId = insertedConv?.id;
   if (!conversationId) return { status: "conversation_create_failed" };
 
-  // Best-effort orphan-row teardown shared by every post-insert
-  // failure exit (vendor error AND unexpected throw) — see the
-  // quiet-period rationale above.
+  // Best-effort orphan-row teardown for failed preparation and explicit
+  // vendor errors. Unknown transport outcomes retain the attempt below.
   const deleteOrphanConversation = async (): Promise<void> => {
-    const { error: deleteConvErr } = await db
-      .from("conversations")
-      .delete()
-      .eq("id", conversationId);
-    if (deleteConvErr) {
-      // Same structured-stderr convention as the post-send DB-write
-      // failure below (this lib must not import pino directly).
-      // Leave the row; ops can reconcile from the audit row.
+    try {
+      const { error: deleteConvErr } = await db
+        .from("conversations")
+        .delete()
+        .eq("id", conversationId);
+      if (deleteConvErr) {
+        // Same structured-stderr convention as the post-send DB-write
+        // failure below (this lib must not import pino directly).
+        // Leave the row; ops can reconcile from the audit row.
+        process.stderr.write(
+          JSON.stringify({
+            level: 40,
+            event: "send_sms_orphan_conversation_delete_failed",
+            conversationId,
+            errCode: deleteConvErr.code ?? null,
+            errMessage: deleteConvErr.message,
+            msg: "orphan conversation row not deleted after send failure (non-fatal)",
+          }) + "\n",
+        );
+      }
+    } catch {
+      // Do not replace the original send failure if cleanup also fails.
       process.stderr.write(
         JSON.stringify({
           level: 40,
           event: "send_sms_orphan_conversation_delete_failed",
           conversationId,
-          errCode: deleteConvErr.code ?? null,
-          errMessage: deleteConvErr.message,
-          msg: "orphan conversation row not deleted after send failure (non-fatal)",
         }) + "\n",
       );
     }
@@ -279,6 +297,7 @@ export async function sendReminderSms(
 
   let messageSid: string;
   try {
+    stage.markProviderAttempted();
     const r = await sms.sendSms({
       to: normalizedPhone,
       body: messageBody,
@@ -314,9 +333,9 @@ export async function sendReminderSms(
         vendorCode: err.code != null ? String(err.code) : null,
       };
     }
-    // Unexpected throw — nothing was delivered, so the orphan row has
-    // the same quiet-period side effect as the vendor-error path.
-    await deleteOrphanConversation();
+    // An unexpected transport failure can follow acceptance. Keep evidence
+    // of that attempt; only a failure before provider invocation is unsent.
+    if (!stage.providerAttempted) await deleteOrphanConversation();
     throw err;
   }
 

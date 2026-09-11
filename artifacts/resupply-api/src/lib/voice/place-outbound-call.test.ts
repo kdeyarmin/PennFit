@@ -8,6 +8,7 @@
 // stubbed so we never dial, and @workspace/resupply-audit is observable.
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { isReminderPreSendError } from "@workspace/resupply-reminders";
 
 import {
   installSupabaseMock,
@@ -24,6 +25,10 @@ vi.mock("@workspace/resupply-audit", () => ({
 }));
 
 const placeCallMock = vi.fn();
+const voiceFromMock = vi.fn();
+vi.mock("../messaging/tenant-telecom", () => ({
+  resolveTenantVoiceFrom: (...args: unknown[]) => voiceFromMock(...args),
+}));
 vi.mock("@workspace/resupply-telecom", async () => {
   const actual = await vi.importActual<
     typeof import("@workspace/resupply-telecom")
@@ -66,6 +71,7 @@ describe("placeOutboundReorderCall (system actor)", () => {
   beforeEach(() => {
     supabaseMock.reset();
     placeCallMock.mockReset();
+    voiceFromMock.mockReset().mockResolvedValue(null);
     logAuditMock.mockReset().mockResolvedValue(undefined);
     __resetPendingSessionsForTests();
   });
@@ -211,9 +217,8 @@ describe("placeOutboundReorderCall (system actor)", () => {
     stageSupabaseResponse("conversations", "insert", {
       data: { id: CONVERSATION_ID },
     });
-    vi.spyOn(getPendingSessions(), "register").mockRejectedValueOnce(
-      new Error("pending session unavailable"),
-    );
+    const failure = new Error("pending session unavailable");
+    vi.spyOn(getPendingSessions(), "register").mockRejectedValueOnce(failure);
 
     await expect(
       placeOutboundReorderCall({
@@ -224,6 +229,7 @@ describe("placeOutboundReorderCall (system actor)", () => {
         actor: systemActor(),
       }),
     ).rejects.toThrow("pending session unavailable");
+    expect(isReminderPreSendError(failure)).toBe(true);
     expect(placeCallMock).not.toHaveBeenCalled();
     expect(getSupabaseWritePayloads("conversations", "update")).toEqual([
       expect.objectContaining({ last_message_at: null }),
@@ -236,6 +242,78 @@ describe("placeOutboundReorderCall (system actor)", () => {
         { verb: "is", args: ["external_ref", null] },
       ]),
     );
+  });
+
+  it("preserves and marks a failed patient read before any provider attempt", async () => {
+    const error = { code: "08006", message: "Patient read unavailable" };
+    stageSupabaseResponse("patients", "select", { error });
+    await expect(
+      placeOutboundReorderCall({
+        orgId: ORG_ID,
+        patientId: PATIENT_ID,
+        episodeId: EPISODE_ID,
+        config: CONFIG,
+        actor: systemActor(),
+      }),
+    ).rejects.toBe(error);
+    expect(isReminderPreSendError(error)).toBe(true);
+    expect(placeCallMock).not.toHaveBeenCalled();
+  });
+
+  it("clears an unsent caller-ID failure while preserving the original error if cleanup fails", async () => {
+    stageSupabaseResponse("patients", "select", {
+      data: { id: PATIENT_ID, phone_e164: "+12155551212", status: "active" },
+    });
+    stageSupabaseResponse("episodes", "select", {
+      data: { id: EPISODE_ID, patient_id: PATIENT_ID },
+    });
+    stageSupabaseResponse("conversations", "insert", {
+      data: { id: CONVERSATION_ID },
+    });
+    stageSupabaseResponse("conversations", "update", {
+      error: new Error("Cleanup unavailable"),
+    });
+    const error = new Error("Caller-ID resolution unavailable");
+    voiceFromMock.mockRejectedValueOnce(error);
+    await expect(
+      placeOutboundReorderCall({
+        orgId: ORG_ID,
+        patientId: PATIENT_ID,
+        episodeId: EPISODE_ID,
+        config: CONFIG,
+        actor: systemActor(),
+      }),
+    ).rejects.toBe(error);
+    expect(isReminderPreSendError(error)).toBe(true);
+    expect(placeCallMock).not.toHaveBeenCalled();
+    expect(getSupabaseWritePayloads("conversations", "update")).toEqual([
+      expect.objectContaining({ last_message_at: null }),
+    ]);
+  });
+
+  it("does not mark unknown transport failure or erase its contact evidence", async () => {
+    stageSupabaseResponse("patients", "select", {
+      data: { id: PATIENT_ID, phone_e164: "+12155551212", status: "active" },
+    });
+    stageSupabaseResponse("episodes", "select", {
+      data: { id: EPISODE_ID, patient_id: PATIENT_ID },
+    });
+    stageSupabaseResponse("conversations", "insert", {
+      data: { id: CONVERSATION_ID },
+    });
+    const error = new Error("Connection reset after request");
+    placeCallMock.mockRejectedValueOnce(error);
+    await expect(
+      placeOutboundReorderCall({
+        orgId: ORG_ID,
+        patientId: PATIENT_ID,
+        episodeId: EPISODE_ID,
+        config: CONFIG,
+        actor: systemActor(),
+      }),
+    ).rejects.toBe(error);
+    expect(isReminderPreSendError(error)).toBe(false);
+    expect(getSupabaseWritePayloads("conversations", "update")).toEqual([]);
   });
 
   it("audits twilio_error and returns a retryable twilio_api_error outcome", async () => {

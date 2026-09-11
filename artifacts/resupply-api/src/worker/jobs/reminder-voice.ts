@@ -28,6 +28,7 @@ import type PgBoss from "pg-boss";
 import { checkCsrOutreach } from "../../lib/resupply/csr-outreach.js";
 
 import { getOrgScopedClient } from "@workspace/resupply-db";
+import { isReminderPreSendError } from "@workspace/resupply-reminders";
 
 import { logger } from "../../lib/logger.js";
 import { markEpisodeAwaitingResponse } from "../../lib/episodes/mark-awaiting-response.js";
@@ -136,7 +137,7 @@ export async function registerReminderVoiceJob(boss: PgBoss): Promise<void> {
 
     // Idempotency: short-circuit if another attempt already dialed (or is
     // dialing). CSR requests share a patient claim across all channels.
-    const { proceed, key: dedupKey } = await tryClaimReminderDedupKey(
+    const { proceed, keys: dedupKeys } = await tryClaimReminderDedupKey(
       supabase,
       "voice",
       j.data.patientId,
@@ -156,11 +157,11 @@ export async function registerReminderVoiceJob(boss: PgBoss): Promise<void> {
         actor: { kind: "system", jobId: j.id },
       });
     } catch (err) {
-      // An unexpected failure can follow provider acceptance. Retain the
-      // CSR claim; scheduled reminders keep their existing retry behavior.
-      if (!j.data.csrRequested) {
+      // Unknown failures can follow provider acceptance; only definite
+      // pre-send failures release CSR protection for a safe retry.
+      if (!j.data.csrRequested || isReminderPreSendError(err)) {
         try {
-          await releaseReminderDedupKey(supabase, dedupKey, j.id);
+          await releaseReminderDedupKey(supabase, dedupKeys, j.id);
         } catch {
           // best-effort release; surface the original failure regardless
         }
@@ -190,7 +191,7 @@ export async function registerReminderVoiceJob(boss: PgBoss): Promise<void> {
         outcome.status === "twilio_api_error" &&
         !isDefiniteReminderRejection(outcome.twilioStatus);
       if (!uncertainDelivery && (j.data.csrRequested || retryable))
-        await releaseReminderDedupKey(supabase, dedupKey, j.id);
+        await releaseReminderDedupKey(supabase, dedupKeys, j.id);
       if (retryable) {
         throw new Error(
           `reminders.place-call: retryable failure: ${outcome.status}`,

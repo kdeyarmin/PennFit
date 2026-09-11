@@ -66,6 +66,7 @@ vi.mock("./safe-audit", () => ({
 }));
 
 import { sendReminderSms } from "./send-sms";
+import { isReminderPreSendError } from "./send-stage";
 
 // ---------------------------------------------------------------------------
 // Supabase stub factory — fully chainable (table, op) dispatcher.
@@ -264,5 +265,43 @@ describe("sendReminderSms — early exits", () => {
     expect(safeAuditMock.mock.calls[0][0].action).toBe(
       "messaging.phone_lookup.conflict",
     );
+  });
+});
+
+describe("sendReminderSms — delivery stage", () => {
+  it("preserves and marks a database error before any provider attempt", async () => {
+    const error = { code: "08006", message: "Patient read unavailable" };
+    patientReadMock.mockResolvedValue({ data: null, error });
+    await expect(sendReminderSms(makeInput())).rejects.toBe(error);
+    expect(isReminderPreSendError(error)).toBe(true);
+    expect(sendSmsMock).not.toHaveBeenCalled();
+  });
+
+  it("does not mark an unknown provider transport failure or erase its attempt", async () => {
+    stageHappyPath();
+    const error = new Error("Connection reset after request");
+    sendSmsMock.mockRejectedValue(error);
+    await expect(sendReminderSms(makeInput())).rejects.toBe(error);
+    expect(isReminderPreSendError(error)).toBe(false);
+    expect(convDeleteMock).not.toHaveBeenCalled();
+  });
+
+  it("never marks an unexpected post-acceptance projection failure as unsent", async () => {
+    stageHappyPath();
+    const error = new Error("Projection unexpectedly threw");
+    tryUpsertMock.mockRejectedValue(error);
+    await expect(sendReminderSms(makeInput())).rejects.toBe(error);
+    expect(isReminderPreSendError(error)).toBe(false);
+    expect(sendSmsMock).toHaveBeenCalledOnce();
+  });
+
+  it("keeps an accepted SMS successful when its message write fails", async () => {
+    stageHappyPath();
+    msgInsertMock.mockRejectedValue(new Error("Message write failed"));
+    await expect(sendReminderSms(makeInput())).resolves.toMatchObject({
+      status: "ok",
+      vendorRef: "SM_TEST_1",
+    });
+    expect(convDeleteMock).not.toHaveBeenCalled();
   });
 });

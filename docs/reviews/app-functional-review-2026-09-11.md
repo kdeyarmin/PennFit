@@ -121,7 +121,45 @@ environment.
   allowance intact. Four failing-before cases were reproduced through real
   PostgreSQL/PostgREST writes and now pass.
 
+## Outreach review fixes
+
+Review of `c755694` reproduced two dispatch regressions: CSR sends no longer
+shared a claim with a previously queued scheduled send on the same channel and
+cycle, and database failures before contacting a provider retained a 48-hour
+CSR claim despite no message being sent.
+
+- CSR dispatch now inserts its patient cooldown and the existing channel/day
+  claim in one atomic request. A conflict rolls back both rows. Scheduled and
+  CSR jobs for the same cycle/channel cannot both send, while scheduled
+  escalation retains its existing independent-channel timing.
+- SMS, email, and voice preserve the original exception and mark failures that
+  occurred before provider invocation. Workers release every owned claim for
+  definite pre-send failures; uncertain delivery and post-acceptance failures
+  retain protection. Failed email rendering/signing and voice preparation also
+  clean up unsent contact records without masking the original error.
+- Permanent worker tests invoke the actual send helpers with mocked delivery and
+  PostgreSQL-backed claims. They cover both dispatch orders, concurrent jobs,
+  same/alternate-channel retries, pending voice-session failures, uncertain
+  delivery, and rollback of conflicting multi-key inserts. A separate local
+  PostgREST suite verifies the API transaction behavior and runs in hosted CI.
+- Preview investigation confirmed that connector authentication does not supply
+  the missing CLI credentials and that the existing dry-run branch is incomplete.
+  The [preview isolation runbook](../runbooks/pr-preview-isolation.md) records the
+  required dedicated target, credentials, configuration, and verification. No
+  production variables, database rows, or delivery providers were changed.
+
 ## Verification
+
+- The outreach review fixes passed **56 registered-worker tests**, including
+  27 added regression cases, **68 reminder-library tests**, **17 voice helper/
+  route tests**, and **7 new tests through real local PostgREST/PostgreSQL**.
+  The complete workspace test run passed, including **8,829 backend tests in 747
+  files** (24 opt-in tests skipped without their external setup) and **4,771
+  frontend tests in 289 files** plus 16 model-setup tests. The new seven-test
+  PostgREST suite was run separately with its local database setup enabled.
+  Production build, workspace typecheck, full lint, architecture/route/
+  tenant checks, and formatting passed. The root formatter now excludes
+  Playwright's generated sign-in state, which is already ignored by Git.
 
 - The fourth-pass complete frontend suite passed **4,766 tests in 288 files**,
   plus 16 model-setup tests. The frontend production bundle passed.
