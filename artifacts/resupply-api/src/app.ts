@@ -7,6 +7,7 @@ import express, { type Express, type Request, type Response } from "express";
 import compression from "compression";
 import cors from "cors";
 import pinoHttp from "pino-http";
+import { createCentralAdminRouter } from "./routes/central-admin";
 import expressRateLimit, { ipKeyGenerator } from "express-rate-limit";
 import { makeAuthRouter, type AuthDeps } from "@workspace/resupply-auth";
 import { registerAuditRequestIdResolver } from "@workspace/resupply-audit";
@@ -374,6 +375,10 @@ app.use(
   "/resupply-api/admin/payer-fee-schedules/import-cms",
   express.json({ limit: "30mb" }),
 );
+
+// Central Hub reads have their own bearer boundary and strict 2 KB parser.
+// Mount before the general parser so oversized requests cannot enter the adapter.
+app.use("/resupply-api/central-admin", createCentralAdminRouter());
 
 app.use(express.json({ limit: "100kb" }));
 app.use(express.urlencoded({ extended: true, limit: "100kb" }));

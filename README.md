@@ -23,6 +23,11 @@ section of [`CLAUDE.md`](./CLAUDE.md) for the developer-facing rules.
 
 ## Hosting
 
+The optional [CareMetric Hub administration adapter](./docs/runbooks/central-admin-hub.md)
+provides read-only organization, staff, and SaaS subscription metadata through
+the Hub. It is disabled by default and requires explicit identity mappings plus
+fresh Hub and native platform authorization on every call.
+
 The app is designed to run on **Railway**. The repo ships with
 `railway.json` at the root, so connecting the GitHub repo to a Railway
 project and pointing it at the `main` branch is enough to build +
