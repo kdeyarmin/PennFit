@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { createHash } from "node:crypto";
 import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 const HUB_ORIGIN = "https://xgauehtwksmnoqhgqegm.supabase.co";
@@ -19,6 +20,7 @@ const operations = [
   "users.list",
   "billing.overview",
   "billing.subscriptions.list",
+  "support.identity.resolve",
 ] as const;
 const uuid = z.string().uuid();
 // In-house auth IDs are TEXT, including legacy IDs. Preserve native case.
@@ -46,6 +48,13 @@ const page = {
   offset: z.number().int().min(0).max(10000).default(0),
 };
 const operationSchema = z.discriminatedUnion("operation", [
+  z
+    .object({
+      operation: z.literal("support.identity.resolve"),
+      sourceUserId: nativeUserId,
+      sourceAccountId: uuid,
+    })
+    .strict(),
   z.object({ operation: z.literal("capabilities") }).strict(),
   z.object({ operation: z.literal("overview") }).strict(),
   z.object({ operation: z.literal("billing.overview") }).strict(),
@@ -398,6 +407,104 @@ export function createCentralAdminHandler({
           apiVersion: 1,
           operations,
           sourceRevision: config.sourceRevision,
+        };
+      } else if (operation.operation === "support.identity.resolve") {
+        if (!appSms) throw new CentralAdminError(401, "unauthenticated");
+        const { sourceUserId, sourceAccountId } = operation;
+        const [target, link, account] = await Promise.all([
+          raw
+            .schema("resupply_auth")
+            .from("users")
+            .select("id,role,status,email_verified_at,updated_at")
+            .eq("id", sourceUserId)
+            .limit(2)
+            .abortSignal(signal),
+          raw
+            .schema("resupply")
+            .from("admin_users")
+            .select("id,auth_user_id,org_id,role,status,revoked_at,updated_at")
+            .eq("auth_user_id", sourceUserId)
+            .eq("org_id", sourceAccountId)
+            .limit(2)
+            .abortSignal(signal),
+          raw
+            .schema("resupply")
+            .from("organizations")
+            .select("id,status,updated_at")
+            .eq("id", sourceAccountId)
+            .limit(2)
+            .abortSignal(signal),
+        ]);
+        if (target.error || link.error || account.error)
+          throw new CentralAdminError(503, "upstream");
+        const date = z
+          .string()
+          .refine((value) => Number.isFinite(Date.parse(value)));
+        const targetProof = z
+          .array(
+            z.object({
+              id: z.literal(sourceUserId),
+              role: z.enum(staffRoles),
+              status: z.literal("active"),
+              email_verified_at: date,
+              updated_at: date,
+            }),
+          )
+          .length(1)
+          .safeParse(target.data);
+        const linkProof = z
+          .array(
+            z.object({
+              id: uuid,
+              auth_user_id: z.literal(sourceUserId),
+              org_id: z.literal(sourceAccountId),
+              role: z.enum([
+                "admin",
+                "supervisor",
+                "csr",
+                "fitter",
+                "fulfillment",
+                "compliance_officer",
+                "agent",
+                "rt",
+                "biller",
+              ]),
+              status: z.literal("active"),
+              revoked_at: z.null(),
+              updated_at: date,
+            }),
+          )
+          .length(1)
+          .safeParse(link.data);
+        const accountProof = z
+          .array(
+            z.object({
+              id: z.literal(sourceAccountId),
+              status: z.literal("active"),
+              updated_at: date,
+            }),
+          )
+          .length(1)
+          .safeParse(account.data);
+        if (!targetProof.success || !linkProof.success || !accountProof.success)
+          throw new CentralAdminError(403, "forbidden");
+        const revision = createHash("sha256")
+          .update(
+            JSON.stringify([
+              "breathe",
+              targetProof.data[0],
+              linkProof.data[0],
+              accountProof.data[0],
+            ]),
+          )
+          .digest("hex");
+        data = {
+          product: "breathe",
+          sourceUserId,
+          sourceAccountId,
+          accountKind: "organization",
+          relationship: "organization_member",
+          revision,
         };
       } else if (operation.operation === "overview") {
         const [orgs, users, subs] = await Promise.all([

@@ -45,6 +45,27 @@ function fixture(nativeId = NATIVE_ID) {
       email_verified_at: NOW,
     },
     membership: { auth_user_id: nativeId } as { auth_user_id: string } | null,
+    supportUsers: [
+      {
+        id: nativeId,
+        role: "agent",
+        status: "active",
+        email_verified_at: NOW,
+        updated_at: NOW,
+      },
+    ],
+    supportLinks: [
+      {
+        id: SUB_ID,
+        auth_user_id: nativeId,
+        org_id: ORG_ID,
+        role: "csr",
+        status: "active",
+        revoked_at: null as string | null,
+        updated_at: NOW,
+      },
+    ],
+    supportAccounts: [{ id: ORG_ID, status: "active", updated_at: NOW }],
     organizations: [
       {
         id: ORG_ID,
@@ -120,6 +141,35 @@ function fixture(nativeId = NATIVE_ID) {
       return Response.json({ message: "MUST_NOT_LEAK" }, { status: 500 });
     const table = url.pathname.slice("/rest/v1/".length);
     const schema = headers.get("accept-profile");
+    if (table === "admin_users") {
+      expect(schema).toBe("resupply");
+      expect(url.searchParams.get("auth_user_id")).toBe(`eq.${nativeId}`);
+      expect(url.searchParams.get("org_id")).toBe(`eq.${ORG_ID}`);
+      expect(url.searchParams.get("select")).toBe(
+        "id,auth_user_id,org_id,role,status,revoked_at,updated_at",
+      );
+      expect(url.searchParams.get("limit")).toBe("2");
+      return Response.json(state.supportLinks);
+    }
+    if (
+      table === "users" &&
+      url.searchParams.get("select") ===
+        "id,role,status,email_verified_at,updated_at"
+    ) {
+      expect(schema).toBe("resupply_auth");
+      expect(url.searchParams.get("id")).toBe(`eq.${nativeId}`);
+      expect(url.searchParams.get("limit")).toBe("2");
+      return Response.json(state.supportUsers);
+    }
+    if (
+      table === "organizations" &&
+      url.searchParams.get("select") === "id,status,updated_at"
+    ) {
+      expect(schema).toBe("resupply");
+      expect(url.searchParams.get("id")).toBe(`eq.${ORG_ID}`);
+      expect(url.searchParams.get("limit")).toBe("2");
+      return Response.json(state.supportAccounts);
+    }
     if (table === "platform_admins") {
       expect(schema).toBe("resupply");
       expect(url.searchParams.get("auth_user_id")).toBe(`eq.${nativeId}`);
@@ -218,6 +268,77 @@ function fixture(nativeId = NATIVE_ID) {
   };
   return { options, state, env, calls, getClient, read, fetcher };
 }
+
+describe("Breathe protected support account resolution", () => {
+  const legacy = "CasePreserved_NativeUser";
+  const op = {
+    operation: "support.identity.resolve",
+    sourceUserId: legacy,
+    sourceAccountId: ORG_ID,
+  };
+  const headers = {
+    Authorization: "Bearer cmh_" + "a".repeat(43),
+    "Content-Type": "application/json",
+  };
+  const setup = () => {
+    const f = fixture(legacy);
+    f.state.actor = {
+      user_id: HUB_ID,
+      role: "platform_admin",
+      method: "sms",
+      operation: op,
+    };
+    return f;
+  };
+  it("resolves verified staff through protected organization membership, preserving native case", async () => {
+    const f = setup(),
+      result = await f.read(op, { headers });
+    expect(result.status).toBe(200);
+    expect(result.payload.data).toEqual({
+      product: "breathe",
+      sourceUserId: legacy,
+      sourceAccountId: ORG_ID,
+      accountKind: "organization",
+      relationship: "organization_member",
+      revision: expect.stringMatching(/^[0-9a-f]{64}$/),
+    });
+    const before = result.payload.data.revision;
+    f.state.supportLinks[0].updated_at = "2026-09-11T19:00:00Z";
+    expect((await f.read(op, { headers })).payload.data.revision).not.toBe(
+      before,
+    );
+  });
+  it.each([
+    "inactive-user",
+    "unverified-user",
+    "patient",
+    "revoked-membership",
+    "wrong-org",
+    "suspended-org",
+    "missing-member",
+    "duplicate-member",
+  ])("rejects %s", async (change) => {
+    const f = setup();
+    if (change === "inactive-user")
+      f.state.supportUsers[0].status = "suspended";
+    if (change === "unverified-user")
+      f.state.supportUsers[0].email_verified_at = "";
+    if (change === "patient") f.state.supportUsers[0].role = "patient";
+    if (change === "revoked-membership")
+      f.state.supportLinks[0].revoked_at = NOW;
+    if (change === "wrong-org") f.state.supportLinks[0].org_id = SUB_ID;
+    if (change === "suspended-org")
+      f.state.supportAccounts[0].status = "suspended";
+    if (change === "missing-member") f.state.supportLinks = [];
+    if (change === "duplicate-member")
+      f.state.supportLinks.push({ ...f.state.supportLinks[0], id: ORG_ID });
+    expect((await f.read(op, { headers })).status).toBe(403);
+  });
+  it("does not admit legacy JWTs to customer onboarding", async () => {
+    const f = fixture(legacy);
+    expect((await f.read(op)).status).toBe(401);
+  });
+});
 
 describe("central Hub to Breathe native adapter", () => {
   it("accepts operation-bound SMS delegation while preserving native membership checks", async () => {
@@ -336,6 +457,7 @@ describe("central Hub to Breathe native adapter", () => {
           "users.list",
           "billing.overview",
           "billing.subscriptions.list",
+          "support.identity.resolve",
         ],
         sourceRevision: "a".repeat(40),
       },
