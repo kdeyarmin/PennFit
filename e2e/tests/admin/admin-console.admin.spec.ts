@@ -11,7 +11,7 @@
 // this same pattern — add them under e2e/tests/admin/*.admin.spec.ts on
 // their feature branch and they inherit this project's auth + stack.
 
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures";
 
 test("authenticated admin reaches the console (not sign-in)", async ({
   page,
@@ -22,10 +22,10 @@ test("authenticated admin reaches the console (not sign-in)", async ({
   await expect(page).toHaveURL(/\/admin(?!\/sign-in)/, { timeout: 15_000 });
   await expect(page).not.toHaveURL(/\/admin\/sign-in/);
 
-  // The admin shell wraps its surfaces in `.admin-root` (the scoped
-  // theme container every admin page mounts). Its presence proves the
-  // gated console actually rendered rather than an error/redirect.
-  await expect(page.locator(".admin-root").first()).toBeVisible({
+  // Onboarding shares the shell's CSS scope; require the real dashboard.
+  await expect(
+    page.getByRole("heading", { name: "Home", exact: true }),
+  ).toBeVisible({
     timeout: 15_000,
   });
 

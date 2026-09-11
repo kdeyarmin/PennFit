@@ -91,6 +91,7 @@ async function resolveOpenPacket(token: string): Promise<
   | {
       ok: false;
       code: "invalid" | "not_found" | "expired" | "voided" | "completed";
+      completedAt?: string | null;
     }
 > {
   const verified = verifyPatientPacketToken(token);
@@ -118,8 +119,12 @@ async function resolveOpenPacket(token: string): Promise<
     return { ok: false, code: "invalid" };
   }
   if (packet.status === "voided") return { ok: false, code: "voided" };
-  if (packet.status === "completed") return { ok: false, code: "completed" };
-  if (packet.expires_at && new Date(packet.expires_at).getTime() < Date.now()) {
+  if (packet.status === "completed")
+    return { ok: false, code: "completed", completedAt: packet.completed_at };
+  if (
+    packet.expires_at &&
+    new Date(packet.expires_at).getTime() <= Date.now()
+  ) {
     return { ok: false, code: "expired" };
   }
   return {
@@ -263,7 +268,7 @@ const signBody = z
     // equipment (YYYY-MM-DD), distinct from the signing date.
     dateReceived: z
       .string()
-      .regex(/^\d{4}-\d{2}-\d{2}$/u, "Must be a YYYY-MM-DD date")
+      .date("Must be a valid YYYY-MM-DD date")
       .optional()
       .nullable(),
     consentEsign: z.literal(true),
@@ -299,6 +304,10 @@ router.post("/patient-packets/sign", signLimiter, async (req, res) => {
   const resolved = await resolveOpenPacket(b.token);
   if (!resolved.ok) {
     if (resolved.code === "completed") {
+      if (resolved.completedAt) {
+        res.json({ status: "completed", completedAt: resolved.completedAt });
+        return;
+      }
       res.status(409).json({ error: "already_completed" });
       return;
     }
@@ -365,53 +374,51 @@ router.post("/patient-packets/sign", signLimiter, async (req, res) => {
     return;
   }
 
-  const nowIso = new Date().toISOString();
   const ip = req.ip ?? null;
   const userAgent = (req.get("user-agent") ?? "").slice(0, 500) || null;
 
-  const { error: sigErr } = await supabase
-    .from("patient_packet_signatures")
-    .insert({
-      packet_id: packet.id,
-      signer_name: b.signerName,
-      signer_relationship: b.signerRelationship,
-      signature_image: b.signatureImage ?? null,
-      consent_esign: true,
-      acknowledged_document_keys: [...requiredKeys],
-      signed_at: nowIso,
-      signer_ip: ip,
-      signer_user_agent: userAgent,
-      signer_reason: signerReason,
-      date_received: b.dateReceived ?? null,
-      document_choices:
-        Object.keys(documentChoices).length > 0 ? documentChoices : null,
-    });
-  if (sigErr) throw sigErr;
-
-  // Mark documents acknowledged.
-  const { error: docUpdErr } = await supabase
-    .from("patient_packet_documents")
-    .update({ acknowledged: true, acknowledged_at: nowIso })
-    .eq("packet_id", packet.id);
-  if (docUpdErr) throw docUpdErr;
-
-  // Finalize: complete + invalidate the link (bump version high).
+  // One transaction owns the signature and all completion writes. The RPC
+  // rechecks the scoped packet under a row lock so revocation, another
+  // signature, or a failed final write cannot leave a partial signature.
   const { data: finalized, error: finErr } = await supabase
-    .from("patient_packets")
-    .update({
-      status: "completed",
-      completed_at: nowIso,
-      link_version: packet.link_version + 1,
-      updated_at: nowIso,
-    })
-    .eq("id", packet.id)
-    .eq("status", packet.status) // optimistic guard against a double-submit
-    .select("id");
+    .raw()
+    .schema("resupply")
+    .rpc("finalize_patient_packet", {
+      p_org_id: resolved.orgId,
+      p_packet_id: packet.id,
+      p_link_version: packet.link_version,
+      p_document_keys: [...requiredKeys],
+      p_signature: {
+        signer_name: b.signerName,
+        signer_relationship: b.signerRelationship,
+        signature_image: b.signatureImage ?? null,
+        signer_ip: ip,
+        signer_user_agent: userAgent,
+        signer_reason: signerReason,
+        date_received: b.dateReceived ?? null,
+        document_choices:
+          Object.keys(documentChoices).length > 0 ? documentChoices : null,
+      },
+    });
   if (finErr) throw finErr;
-  if (!finalized || finalized.length === 0) {
-    res.status(409).json({ error: "concurrent_modification" });
+  if (!finalized) throw new Error("Packet finalization returned no result");
+  if (finalized.status === "already_completed" && finalized.completed_at) {
+    res.json({ status: "completed", completedAt: finalized.completed_at });
     return;
   }
+  if (finalized.status !== "completed") {
+    const code = finalized.status;
+    const status =
+      code === "not_found"
+        ? 404
+        : ["invalid", "expired", "voided"].includes(code)
+          ? 410
+          : 409;
+    res.status(status).json({ error: code });
+    return;
+  }
+  if (!finalized.completed_at)
+    throw new Error("Packet completion missing timestamp");
 
   await logAudit({
     action: "patient_packet.signed",
@@ -439,7 +446,7 @@ router.post("/patient-packets/sign", signLimiter, async (req, res) => {
   // pass the unscoped client (recipe-2 §B).
   void autofileSignedPacketPdf(supabase, packet.id);
 
-  res.json({ status: "completed", completedAt: nowIso });
+  res.json({ status: "completed", completedAt: finalized.completed_at });
 });
 
 export default router;

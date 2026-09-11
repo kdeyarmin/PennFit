@@ -1267,10 +1267,12 @@ function PacketDetailPanel({
   const voidPacket = useVoidPatientPacket();
   const [actionMsg, setActionMsg] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
+  const [invalidatedLink, setInvalidatedLink] = useState<string | null>(null);
 
   useEffect(() => {
     setEditing(false);
     setActionMsg(null);
+    setInvalidatedLink(null);
   }, [packetId]);
 
   const refresh = () => {
@@ -1351,7 +1353,7 @@ function PacketDetailPanel({
         </div>
 
         {/* Signing link */}
-        {signingLink && (
+        {signingLink && signingLink !== invalidatedLink && (
           <div>
             <Label htmlFor="detailLink">Secure signing link</Label>
             <div className="flex gap-2">
@@ -1373,7 +1375,10 @@ function PacketDetailPanel({
             packetId={packetId}
             onSaved={() => {
               setEditing(false);
-              setActionMsg("Packet updated.");
+              setInvalidatedLink(signingLink ?? null);
+              setActionMsg(
+                "Packet updated. Resend the packet or copy the updated signing link for the patient.",
+              );
               refresh();
             }}
             onCancel={() => setEditing(false)}

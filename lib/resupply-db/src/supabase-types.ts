@@ -7399,6 +7399,32 @@ export interface Database {
       };
     };
     Functions: {
+      // Mig 0545 — atomic patient packet signature and completion.
+      finalize_patient_packet: {
+        Args: {
+          p_org_id: string;
+          p_packet_id: string;
+          p_link_version: number;
+          p_document_keys: string[];
+          p_signature: Json;
+        };
+        Returns: { status: string; completed_at?: string | null };
+      };
+      update_patient_packet: {
+        Args: {
+          p_org_id: string;
+          p_packet_id: string;
+          p_link_version: number;
+          p_document_keys: string[] | null;
+          p_documents: Json;
+          p_patch: Json;
+        };
+        Returns: { status: string };
+      };
+      create_patient_packet: {
+        Args: { p_org_id: string; p_packet: Json; p_documents: Json };
+        Returns: { id: string; link_version: number };
+      };
       // Mig 0520 — atomic stock movement. Serializes concurrent callers
       // per (org, sku) with a txn-scoped advisory lock, then updates the
       // on-hand count and appends the ledger row in one unit. Returns the

@@ -32,8 +32,12 @@ vi.mock("@/lib/admin/resupply-calendar-api", async () => ({
 }));
 import { AdminResupplyCalendarPage } from "./admin-resupply-calendar";
 import { PatientSupplyOverview } from "@/components/admin/PatientSupplyOverview";
-const date = new Date();
-date.setHours(12, 0, 0, 0);
+import {
+  formatAppDate,
+  parseAppDateTimeLocalInput,
+  todayAppDateIso,
+} from "@/lib/utils";
+const date = parseAppDateTimeLocalInput(`${todayAppDateIso()}T12:00`)!;
 const row = {
   id: "e1",
   patientId: "p1",
@@ -109,7 +113,7 @@ describe("CSR resupply workflow", () => {
     expect(screen.getAllByLabelText("Select Jane Example")).toHaveLength(1);
     expect(
       screen.getByRole("button", {
-        name: `${date.toLocaleDateString()}, 2 patients due`,
+        name: `${formatAppDate(date)}, 2 patients due`,
       }),
     ).toBeTruthy();
   });
@@ -127,6 +131,88 @@ describe("CSR resupply workflow", () => {
     fireEvent.click(screen.getByLabelText("Select Sam Example"));
     fireEvent.click(screen.getByRole("button", { name: "Next month" }));
     expect(await screen.findByText(/0 selected/)).toBeTruthy();
+  });
+  it("counts only search matches on each calendar day", async () => {
+    mount();
+    await screen.findByText("Jane Example");
+    fireEvent.change(
+      screen.getByLabelText("Search resupply patients or supplies"),
+      {
+        target: { value: "Tubing" },
+      },
+    );
+    expect(screen.getByText("1 patients · 1 supply cycles")).toBeTruthy();
+    expect(
+      screen.getByRole("button", {
+        name: `${formatAppDate(date)}, 1 patients due`,
+      }),
+    ).toBeTruthy();
+  });
+  it.each([
+    [
+      "2026-03-15T12:00:00Z",
+      "2026-03-01T05:00:00.000Z",
+      "2026-04-01T04:00:00.000Z",
+    ],
+    [
+      "2026-11-15T12:00:00Z",
+      "2026-11-01T04:00:00.000Z",
+      "2026-12-01T05:00:00.000Z",
+    ],
+  ])(
+    "requests the practice's complete month across daylight-saving changes at %s",
+    async (now, from, to) => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(new Date(now));
+      calendar.mockResolvedValue({ items: [] });
+      mount();
+      await waitFor(() =>
+        expect(calendar).toHaveBeenCalledWith(from, to, false),
+      );
+    },
+  );
+  it("uses the displayed practice date for the current month and calendar day", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-09-01T02:00:00Z"));
+    calendar.mockResolvedValue({
+      items: [{ ...row, dueAt: "2026-09-01T02:00:00Z" }],
+    });
+    mount();
+    await screen.findByText("Jane Example");
+    expect(screen.getByRole("heading", { name: "August 2026" })).toBeTruthy();
+    const dueDay = screen.getByRole("button", {
+      name: "8/31/2026, 1 patients due",
+    });
+    fireEvent.click(dueDay);
+    expect(screen.getByText("Jane Example")).toBeTruthy();
+    expect(screen.getByText("· Aug 31, 2026")).toBeTruthy();
+    expect(dueDay.getAttribute("aria-pressed")).toBe("true");
+  });
+  it("does not silently reselect a patient who disappears and returns after refresh", async () => {
+    const { client } = mount();
+    await screen.findByText("Jane Example");
+    fireEvent.click(screen.getByLabelText("Select Jane Example"));
+    calendar.mockResolvedValue({
+      items: [
+        { ...row, id: "e3", patientId: "p2", patientName: "Sam Example" },
+      ],
+    });
+    await act(() =>
+      client.refetchQueries({ queryKey: ["admin", "resupply-calendar"] }),
+    );
+    await waitFor(() => expect(screen.queryByText("Jane Example")).toBeNull());
+    calendar.mockResolvedValue({ items: [row] });
+    await act(() =>
+      client.refetchQueries({ queryKey: ["admin", "resupply-calendar"] }),
+    );
+    expect(
+      (
+        (await screen.findByLabelText(
+          "Select Jane Example",
+        )) as HTMLInputElement
+      ).checked,
+    ).toBe(false);
+    expect(screen.getByText(/^0 selected/)).toBeTruthy();
   });
   it.each([
     ["Email", "email"],
@@ -301,6 +387,44 @@ describe("CSR resupply workflow", () => {
     expect(screen.queryByText("Recent mask")).toBeNull();
     expect(screen.getByText("26–26 of 26")).toBeTruthy();
   });
+  it("keeps newer-history recovery available when a refresh removes the last page", async () => {
+    const summary = {
+      supplies: [],
+      linkedOrders: [],
+      totalOrders: 26,
+      orders: [
+        {
+          id: "o1",
+          itemSku: "MASK",
+          itemName: "Recorded mask",
+          quantity: 1,
+          status: "shipped",
+          orderedAt: "2026-09-01T12:00:00Z",
+        },
+      ],
+    };
+    overview.mockResolvedValue(summary);
+    const { client } = mount(<PatientSupplyOverview patientId="p1" />);
+    await screen.findByText("Recorded mask");
+    fireEvent.click(screen.getByRole("button", { name: "Older" }));
+    await screen.findByText("26–26 of 26");
+    overview.mockImplementation(async (_patientId, offset) => ({
+      ...summary,
+      totalOrders: 25,
+      orders: offset ? [] : summary.orders,
+    }));
+    await act(() =>
+      client.refetchQueries({
+        queryKey: ["admin", "supply-overview", "p1", 25],
+      }),
+    );
+    await screen.findByText("25 recorded supply order lines · newest first");
+    expect(
+      screen.queryByText("No supply orders recorded for this patient."),
+    ).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Newer" }));
+    expect(await screen.findByText("Recorded mask")).toBeTruthy();
+  });
   it("reports a calendar request failure and recovers through Retry", async () => {
     calendar.mockRejectedValueOnce(new Error("Calendar unavailable"));
     mount();
@@ -316,7 +440,7 @@ describe("CSR resupply workflow", () => {
   });
   it("filters by calendar day, clears selection, and returns to the whole month", async () => {
     const otherDay = new Date(date);
-    otherDay.setDate(date.getDate() === 1 ? 2 : 1);
+    otherDay.setUTCDate(date.getUTCDate() === 1 ? 2 : 1);
     calendar.mockResolvedValue({
       items: [
         row,
@@ -333,7 +457,7 @@ describe("CSR resupply workflow", () => {
     await screen.findByText("Jane Example");
     fireEvent.click(screen.getByLabelText("Select visible patients"));
     const dayButton = screen.getByRole("button", {
-      name: `${date.toLocaleDateString()}, 1 patients due`,
+      name: `${formatAppDate(date)}, 1 patients due`,
     });
     fireEvent.click(dayButton);
     expect(dayButton.getAttribute("aria-pressed")).toBe("true");

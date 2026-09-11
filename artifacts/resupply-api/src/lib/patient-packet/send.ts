@@ -606,59 +606,40 @@ async function buildAndDeliverPacket(
   // snapshotted per document so later template edits never rewrite a
   // sent packet.
   const templateOverrides = await loadTemplateOverrides(supabase);
-  const packetOverrideByKey = new Map(
-    (input.documentOverrides ?? []).map((o) => [o.documentKey, o]),
+  const docRows = preparePacketDocumentSnapshots(
+    [],
+    uniqueKeys,
+    templateOverrides,
+    input.documentOverrides,
   );
-
   const { data: packet, error: insertErr } = await supabase
-    .from("patient_packets")
-    .insert({
-      patient_id: input.patientId,
-      // A standalone single-document send (e.g. the refill confirmation)
-      // is titled after its document — calling it a "New Patient" packet
-      // would mislabel the signing page and every reminder.
-      title:
-        input.title ??
-        (isStandaloneSelection(input.uniqueKeys)
-          ? input.uniqueKeys.length === 1
-            ? getPacketTemplate(input.uniqueKeys[0]!)!.title
-            : "Document Signature Request"
-          : "New Patient Document Packet"),
-      status: "sent",
-      recipient_name: input.recipientName,
-      recipient_email: input.recipientEmail,
-      recipient_phone: input.recipientPhone,
-      link_version: 1,
-      sent_at: nowIso,
-      expires_at: expiresAt,
-      created_by_email: input.createdByEmail ?? null,
-      delivery_details: input.deliveryDetails
-        ? (input.deliveryDetails as unknown as Json)
-        : null,
-    })
-    .select("id, link_version")
-    .single();
+    .raw()
+    .schema("resupply")
+    .rpc("create_patient_packet", {
+      p_org_id: supabase.orgId,
+      p_packet: {
+        patient_id: input.patientId,
+        title:
+          input.title ??
+          (isStandaloneSelection(input.uniqueKeys)
+            ? input.uniqueKeys.length === 1
+              ? getPacketTemplate(input.uniqueKeys[0]!)!.title
+              : "Document Signature Request"
+            : "New Patient Document Packet"),
+        recipient_name: input.recipientName,
+        recipient_email: input.recipientEmail,
+        recipient_phone: input.recipientPhone,
+        sent_at: nowIso,
+        expires_at: expiresAt,
+        created_by_email: input.createdByEmail ?? null,
+        delivery_details: input.deliveryDetails
+          ? (input.deliveryDetails as unknown as Json)
+          : null,
+      },
+      p_documents: docRows,
+    });
   if (insertErr) throw insertErr;
-
-  const docRows = uniqueKeys.map((key, i) => {
-    const t = getPacketTemplate(key)!;
-    const snapshot = snapshotDocumentContent(
-      key,
-      templateOverrides,
-      packetOverrideByKey.get(key),
-    );
-    return {
-      packet_id: packet.id,
-      document_key: key,
-      ...snapshot,
-      sort_order: i,
-      requires_signature: t.requiresSignature,
-    };
-  });
-  const { error: docsErr } = await supabase
-    .from("patient_packet_documents")
-    .insert(docRows);
-  if (docsErr) throw docsErr;
+  if (!packet) throw new Error("Packet creation returned no result");
 
   const token = signPatientPacketToken(
     packet.id,
@@ -690,112 +671,29 @@ async function buildAndDeliverPacket(
   };
 }
 
-/**
- * Reconcile an existing packet's document snapshot to a new, already
- * validated + catalog-ordered key set (see resolveDocumentKeys). Used by
- * the "edit an open packet" admin route: removes documents no longer
- * included, inserts newly added ones with a fresh template snapshot, and
- * re-stamps sort_order on the survivors so the on-screen + PDF order
- * matches the catalog. Kept rows retain their acknowledged state.
- *
- * Safe only on packets that have not been signed (the caller gates on
- * status) — rewriting the document set of a completed packet would
- * desynchronise it from the captured signature.
- */
-export async function reconcilePacketDocuments(
-  supabase: SupabaseClient,
-  packetId: string,
-  orderedKeys: string[],
-): Promise<void> {
-  const { data: existing, error: existErr } = await supabase
-    .from("patient_packet_documents")
-    .select("document_key")
-    .eq("packet_id", packetId);
-  if (existErr) throw existErr;
-
-  const existingKeys = new Set(
-    ((existing ?? []) as Array<{ document_key: string }>).map(
-      (d) => d.document_key,
-    ),
+/** Prepare new/explicitly edited snapshots without writing an open packet. */
+export function preparePacketDocumentSnapshots(
+  existingKeys: readonly string[],
+  orderedKeys: readonly string[],
+  templateOverrides: Map<string, TemplateOverrideRow>,
+  overrides: PacketDocumentOverride[] = [],
+) {
+  const existing = new Set(existingKeys);
+  const overrideByKey = new Map(
+    overrides.map((override) => [override.documentKey, override]),
   );
-  const nextKeys = new Set(orderedKeys);
-
-  const toRemove = [...existingKeys].filter((k) => !nextKeys.has(k));
-  const toAdd = orderedKeys.filter((k) => !existingKeys.has(k));
-
-  if (toRemove.length > 0) {
-    const { error } = await supabase
-      .from("patient_packet_documents")
-      .delete()
-      .eq("packet_id", packetId)
-      .in("document_key", toRemove);
-    if (error) throw error;
-  }
-
-  if (toAdd.length > 0) {
-    const templateOverrides = await loadTemplateOverrides(supabase);
-    const addRows = toAdd.map((key) => {
-      const t = getPacketTemplate(key)!;
-      const snapshot = snapshotDocumentContent(
-        key,
-        templateOverrides,
-        undefined,
-      );
-      return {
-        packet_id: packetId,
+  return orderedKeys.flatMap((key, index) => {
+    const override = overrideByKey.get(key);
+    if (existing.has(key) && !override) return [];
+    return [
+      {
         document_key: key,
-        ...snapshot,
-        // Final sort_order is restamped below for every row.
-        sort_order: orderedKeys.indexOf(key),
-        requires_signature: t.requiresSignature,
-      };
-    });
-    const { error } = await supabase
-      .from("patient_packet_documents")
-      .insert(addRows);
-    if (error) throw error;
-  }
-
-  // Restamp sort_order on the survivors so order follows the catalog
-  // regardless of when each document was added.
-  for (let i = 0; i < orderedKeys.length; i++) {
-    const key = orderedKeys[i]!;
-    if (!existingKeys.has(key)) continue; // freshly inserted with correct order
-    const { error } = await supabase
-      .from("patient_packet_documents")
-      .update({ sort_order: i })
-      .eq("packet_id", packetId)
-      .eq("document_key", key);
-    if (error) throw error;
-  }
-}
-
-/**
- * Apply one-off content edits to an OPEN packet's existing documents
- * (the caller gates on status and validates the override shapes + keys).
- * Each edit re-snapshots that document's content for this packet alone;
- * the template and every other packet are untouched.
- */
-export async function applyPacketDocumentOverrides(
-  supabase: SupabaseClient,
-  packetId: string,
-  overrides: PacketDocumentOverride[],
-): Promise<void> {
-  if (overrides.length === 0) return;
-  const templateOverrides = await loadTemplateOverrides(supabase);
-  for (const override of overrides) {
-    const snapshot = snapshotDocumentContent(
-      override.documentKey,
-      templateOverrides,
-      override,
-    );
-    const { error } = await supabase
-      .from("patient_packet_documents")
-      .update(snapshot)
-      .eq("packet_id", packetId)
-      .eq("document_key", override.documentKey);
-    if (error) throw error;
-  }
+        ...snapshotDocumentContent(key, templateOverrides, override),
+        sort_order: index,
+        requires_signature: getPacketTemplate(key)!.requiresSignature,
+      },
+    ];
+  });
 }
 
 export interface DeliverPacketLinkInput {

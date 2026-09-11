@@ -84,7 +84,82 @@ reproduced workflow gaps:
   evidence without releasing the retry guard and redialling the patient. A failure
   registering the call before dialing no longer counts as patient contact.
 
+## Calendar and database concurrency follow-up
+
+The fourth pass merged main through `82490e1` and brought up a fresh, isolated
+PostgreSQL 17 database with the existing PostgREST 12.2.3 test harness. The full
+524-migration baseline replayed successfully. All accounts, patients, and packets
+used in this stack are synthetic; vendor credentials are excluded from its
+environment.
+
+- The calendar uses the practice's America/New_York dates for month boundaries,
+  day grouping, and labels, including daylight-saving transitions. Search also
+  updates the day counts. Refreshed-away selections stay cleared, and a shrinking
+  history retains a route back from an empty older page.
+- Calendar and patient overview queries exclude expired cycles. Immutable ID
+  cursors prevent an earlier cycle closing during pagination from hiding a later
+  patient.
+- CSR SMS, email, and voice workers share a tenant/patient claim across channels
+  and episodes for a rolling 48-hour window. Definite non-send failures release
+  it; uncertain provider outcomes retain it to avoid duplicate contact. Existing
+  automated reminder scheduling keeps its previous keys.
+- Provider signing resets consent and in-flight state when the document changes,
+  blocks double submissions and conflicting actions, and offers load recovery.
+- Packet editing reports load failures with retry controls and suppresses late
+  save continuations after an account change. Saved edits clear stale signing
+  links and direct the CSR to resend or copy the replacement link.
+- Patient packet completion locks the packet and documents and commits the
+  signature, acknowledgements, and completed status together. A retry of an
+  already-completed valid link returns its existing result. Expired, revoked, or
+  mismatched links remain rejected.
+- Packet creation commits its envelope and document snapshots together. Edits
+  share the signing lock and advance the link version: whichever action commits
+  first prevents the other from signing or altering a stale revision. Resend and
+  void also check the current lifecycle during their final write.
+- Packet reminder claims and rollback updates cannot reopen completed or voided
+  packets. A missing tenant signing domain leaves the prior link and reminder
+  allowance intact. Four failing-before cases were reproduced through real
+  PostgreSQL/PostgREST writes and now pass.
+
 ## Verification
+
+- The fourth-pass complete frontend suite passed **4,766 tests in 288 files**,
+  plus 16 model-setup tests. The frontend production bundle passed.
+- The calendar/outreach worker follow-up passed **142 tests in ten files**,
+  including actual PostgreSQL claim collisions across the registered SMS, email,
+  and voice handlers, ambiguous provider responses, and mutable pagination.
+- All **14 PostgREST integration tests in seven files** passed against the
+  isolated local database, with external delivery stubbed. The packet reminder
+  integration and unit checks also passed together (**8 tests**).
+- All **six authenticated admin browser scenarios** reached their intended
+  screens and passed, including the CSR calendar in a Tokyo browser with Eastern
+  practice dates, known/unknown eligibility, order quantities and pagination, and
+  retained selection after review. The local fixture supplies synthetic
+  onboarding state and cleans up its own rows; no outreach request was sent.
+- The final admin suite also passed with **two parallel browser workers** against
+  the rebuilt backend. Packet editor recovery and stale-link checks passed
+  together (**7 rendered tests**), including four failures reproduced before
+  correction.
+- The backend suite passed **8,779 tests**; its app-import smoke suite exceeded
+  the existing 60-second setup limit under concurrent test/build/lint load.
+  That unchanged suite passed **20 tests** in its isolated rerun. Database-gated
+  integration suites were verified separately against the local stack.
+- The final PostgreSQL suite passed **303 tests in 15 files**, with five existing
+  opt-in skips. This includes **13 new real-database packet tests**, concurrent
+  edit/sign ordering, document removal, rollback, empty packets, role permissions,
+  and retry recovery. Fresh replay applied **all 525 migrations**; idempotency and
+  from-scratch replay also passed within the database suite.
+- Packet API checks passed **78 tests**, and provider signing passed **21 tests**.
+  Production build, workspace typecheck, full lint, architecture/tenant/route
+  checks, migration-prefix/immutability checks, source-grep test checks, and
+  formatting passed. Final editor changes also passed targeted lint/typecheck.
+
+Migration `0545_finalize_patient_packet.sql` must be applied before this API
+release. It adds service-role-only, SECURITY INVOKER transaction functions and
+does not rewrite historical migrations. Existing partial signature artifacts
+remain blocked for staff review; previously revoked historical links are not
+reactivated. Queue acceptance remains distinct from delivery; actual delivery
+and replies are viewed in Conversations.
 
 - The third-pass production build and workspace typecheck passed. The complete
   frontend suite passed **4,755 tests in 287 files**, plus 16 model-setup checks.
@@ -154,9 +229,10 @@ must remain enabled. No infrastructure changes were made in this follow-up.
    live delivery, manufacturer connectors, physical-device fitting, tenant voice
    routing, clearinghouse round trip, and lifecycle cutover still require the
    documented external evidence. Automated fixtures do not establish delivery.
-2. Add a persistent isolated database environment for the authenticated admin
-   browser suite and migration replay. Docker Desktop's daemon was unavailable
-   locally, so database-dependent tests remain skipped by their existing gates.
+2. Complete the isolated hosted preview configuration. Docker Desktop's daemon
+   was unavailable locally, but the fourth pass used a standalone local
+   PostgreSQL/PostgREST stack to exercise database-dependent tests and browser
+   flows. This does not resolve the hosted preview's database identity.
 3. Review long-running Windows test subprocesses and animation-sensitive browser
    helpers. This pass encountered timeout-only failures that need isolated reruns;
    assertions and application safeguards were not weakened to silence them.

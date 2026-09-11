@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import express from "express";
 import request from "supertest";
 import {
@@ -30,6 +30,7 @@ const URL =
   "/admin/resupply-calendar?from=2026-09-01T04:00:00.000Z&to=2026-10-01T04:00:00.000Z";
 const app = () => express().use(router);
 beforeEach(() => {
+  vi.useFakeTimers({ now: new Date("2026-09-11T17:00:00Z"), toFake: ["Date"] });
   db.reset();
   admin.current = { userId: "csr", email: "csr@example.test", role: "agent" };
   entitlement.mockReset().mockResolvedValue({
@@ -39,6 +40,7 @@ beforeEach(() => {
   });
   authoritative.mockReset().mockResolvedValue(true);
 });
+afterEach(() => vi.useRealTimers());
 describe("resupply calendar", () => {
   it("filters legacy dates after applying overrides and shipment baselines", async () => {
     authoritative.mockResolvedValue(false);
@@ -186,7 +188,9 @@ describe("resupply calendar", () => {
     const result = await request(app()).get(URL);
     expect(result.status).toBe(200);
     expect(result.body.items).toHaveLength(201);
-    expect(result.body.items[200]).toMatchObject({
+    expect(
+      result.body.items.find((item: { id: string }) => item.id === E),
+    ).toMatchObject({
       id: E,
       patientName: "Jane Example",
       hasPhone: true,
@@ -194,8 +198,8 @@ describe("resupply calendar", () => {
     });
     expect(JSON.stringify(result.body)).not.toContain("private@example.test");
     expect(getSupabaseFilterCalls("episodes", "select")).toContainEqual({
-      verb: "range",
-      args: [200, 399],
+      verb: "gt",
+      args: ["id", "e-199"],
     });
     for (const table of ["episodes", "patients", "prescriptions"])
       expect(getSupabaseFilterCalls(table, "select")).toContainEqual({
@@ -212,6 +216,55 @@ describe("resupply calendar", () => {
       data: [{ id: RX, patient_id: P, status: "active" }],
     });
     expect((await request(app()).get(URL)).body.items).toEqual([]);
+  });
+  it("excludes expired cycles even while their stored status still awaits outreach", async () => {
+    const live = "44444444-4444-4444-8444-444444444444";
+    stage("episodes", "select", {
+      data: [
+        {
+          id: E,
+          patient_id: P,
+          prescription_id: RX,
+          status: "outreach_pending",
+          due_at: "2026-09-01T12:00:00Z",
+          expires_at: "2026-09-02T12:00:00Z",
+        },
+        {
+          id: live,
+          patient_id: P,
+          prescription_id: RX,
+          status: "outreach_pending",
+          due_at: "2026-09-10T12:00:00Z",
+          expires_at: null,
+        },
+      ],
+    });
+    stage("patients", "select", {
+      data: [
+        {
+          id: P,
+          status: "active",
+          legal_first_name: "Jane",
+          legal_last_name: "Example",
+        },
+      ],
+    });
+    stage("prescriptions", "select", {
+      data: [
+        {
+          id: RX,
+          patient_id: P,
+          item_sku: "MASK",
+          status: "active",
+          cadence_days: 30,
+        },
+      ],
+    });
+    const result = await request(app()).get(URL);
+    expect(result.status).toBe(200);
+    expect(result.body.items.map((item: { id: string }) => item.id)).toEqual([
+      live,
+    ]);
   });
   it("checks patient ownership before resolving order eligibility", async () => {
     expect(
@@ -259,6 +312,39 @@ describe("resupply calendar", () => {
     expect(getSupabaseFilterCalls("fulfillments", "select")).toContainEqual({
       verb: "range",
       args: [25, 49],
+    });
+  });
+  it("chooses a current cycle instead of an older expired cycle for the patient overview", async () => {
+    const live = "44444444-4444-4444-8444-444444444444";
+    stage("patients", "select", { data: { id: P } });
+    stage("prescriptions", "select", {
+      data: [{ id: RX, item_sku: "CUSTOM", cadence_days: 30 }],
+    });
+    stage("episodes", "select", {
+      data: [
+        {
+          id: E,
+          prescription_id: RX,
+          due_at: "2026-09-01T12:00:00Z",
+          expires_at: "2026-09-02T12:00:00Z",
+        },
+        {
+          id: live,
+          prescription_id: RX,
+          due_at: "2026-09-10T12:00:00Z",
+          expires_at: null,
+        },
+      ],
+    });
+    stage("fulfillments", "select", { data: [], count: 0 });
+    stage("products", "select", { data: [] });
+    const result = await request(app()).get(
+      `/admin/patients/${P}/supply-overview`,
+    );
+    expect(result.status).toBe(200);
+    expect(result.body.supplies[0]).toMatchObject({
+      episodeId: live,
+      scheduledDueAt: "2026-09-10T12:00:00.000Z",
     });
   });
 });

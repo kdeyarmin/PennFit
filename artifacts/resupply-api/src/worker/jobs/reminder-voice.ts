@@ -39,6 +39,7 @@ import {
   VENDOR_SEND_QUEUE_OPTS,
 } from "../lib/queue-options.js";
 import {
+  isDefiniteReminderRejection,
   isWithinQuietHours,
   releaseReminderDedupKey,
   tryClaimReminderDedupKey,
@@ -134,14 +135,14 @@ export async function registerReminderVoiceJob(boss: PgBoss): Promise<void> {
     }
 
     // Idempotency: short-circuit if another attempt already dialed (or is
-    // dialing) for this (patient, episode, day). Same posture as the text
-    // send jobs (a degraded dedup table never blocks the call).
+    // dialing). CSR requests share a patient claim across all channels.
     const { proceed, key: dedupKey } = await tryClaimReminderDedupKey(
       supabase,
       "voice",
       j.data.patientId,
       j.data.episodeId,
       j.id,
+      { csrRequested: j.data.csrRequested },
     );
     if (!proceed) return;
 
@@ -155,14 +156,14 @@ export async function registerReminderVoiceJob(boss: PgBoss): Promise<void> {
         actor: { kind: "system", jobId: j.id },
       });
     } catch (err) {
-      // placeOutboundReorderCall threw (e.g. a Supabase read rejected).
-      // Release the dedup claim before the throw propagates so pg-boss's
-      // retry can re-claim; otherwise the key stays held for its full TTL
-      // and this call is silently dropped for the whole window.
-      try {
-        await releaseReminderDedupKey(supabase, dedupKey, j.id);
-      } catch {
-        // best-effort release; surface the original failure regardless
+      // An unexpected failure can follow provider acceptance. Retain the
+      // CSR claim; scheduled reminders keep their existing retry behavior.
+      if (!j.data.csrRequested) {
+        try {
+          await releaseReminderDedupKey(supabase, dedupKey, j.id);
+        } catch {
+          // best-effort release; surface the original failure regardless
+        }
       }
       throw err;
     }
@@ -181,11 +182,16 @@ export async function registerReminderVoiceJob(boss: PgBoss): Promise<void> {
       // or a failed conversation insert may succeed on retry; the other
       // outcomes (patient inactive / missing phone / episode mismatch) are
       // terminal — warn only, don't burn the retry budget.
-      if (
+      const retryable =
         outcome.status === "twilio_api_error" ||
-        outcome.status === "conversation_create_failed"
-      ) {
+        outcome.status === "conversation_create_failed";
+      const uncertainDelivery =
+        j.data.csrRequested &&
+        outcome.status === "twilio_api_error" &&
+        !isDefiniteReminderRejection(outcome.twilioStatus);
+      if (!uncertainDelivery && (j.data.csrRequested || retryable))
         await releaseReminderDedupKey(supabase, dedupKey, j.id);
+      if (retryable) {
         throw new Error(
           `reminders.place-call: retryable failure: ${outcome.status}`,
         );

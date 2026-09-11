@@ -18,6 +18,8 @@ type Patient = Tables["patients"]["Row"];
 type Product = Tables["products"]["Row"];
 type Fill = Tables["fulfillments"]["Row"];
 const router: IRouter = Router();
+const isUnexpiredCycle = (episode: Pick<Episode, "expires_at">, now: Date) =>
+  !episode.expires_at || Date.parse(episode.expires_at) > now.getTime();
 const windowQuery = z
   .object({
     from: z.string().datetime(),
@@ -50,22 +52,22 @@ router.get(
     const scheduleContext = await loadCsrScheduleContext(db, req.orgId);
     const now = new Date();
     const items = [];
-    // Walk every page, including large overdue queues. Never silently truncate
-    // a month at PostgREST's default row cap. Child lookups stay page-bounded.
-    for (let offset = 0; ; offset += 200) {
+    // Use an immutable cursor: a worker may close or reschedule an earlier
+    // cycle while later pages load. OFFSET would then skip or repeat patients.
+    let afterId: string | undefined;
+    for (;;) {
       let query = db
         .from("episodes")
         .select("id, patient_id, prescription_id, status, due_at, expires_at")
-        .in("status", ["outreach_pending", "awaiting_response"]);
+        .in("status", ["outreach_pending", "awaiting_response"])
+        .or(`expires_at.is.null,expires_at.gt.${now.toISOString()}`);
+      if (afterId) query = query.gt("id", afterId);
       if (scheduleContext.dueAtAuthoritative)
         query =
           overdue === "true"
             ? query.lt("due_at", from)
             : query.gte("due_at", from).lt("due_at", to);
-      const { data, error } = await query
-        .order("due_at")
-        .order("id")
-        .range(offset, offset + 199);
+      const { data, error } = await query.order("id").limit(200);
       if (error) throw error;
       const episodes = (data ?? []) as Episode[];
       if (!episodes.length) break;
@@ -91,6 +93,7 @@ router.get(
         ? new Map<string, string>()
         : await loadLastSupplyDates(db, [...pts.keys()]);
       for (const e of episodes) {
+        if (!isUnexpiredCycle(e, now)) continue;
         const p = pts.get(e.patient_id);
         const rx = rxs.get(e.prescription_id);
         if (
@@ -133,7 +136,15 @@ router.get(
         });
       }
       if (episodes.length < 200) break;
+      const nextId = episodes[episodes.length - 1]?.id;
+      if (!nextId || (afterId && nextId <= afterId))
+        throw new Error("Resupply calendar cursor did not advance");
+      afterId = nextId;
     }
+    items.sort(
+      (a, b) =>
+        Date.parse(a.dueAt) - Date.parse(b.dueAt) || a.id.localeCompare(b.id),
+    );
     res.json({ items });
   },
 );
@@ -170,6 +181,7 @@ router.get(
       return;
     }
     const scheduleContext = await loadCsrScheduleContext(db, req.orgId);
+    const now = new Date();
     const [prescriptions, fills, episodes, drafts] = await Promise.all([
       db
         .from("prescriptions")
@@ -191,9 +203,10 @@ router.get(
         .range(page.data.offset, page.data.offset + 24),
       db
         .from("episodes")
-        .select("id, prescription_id, due_at, status")
+        .select("id, prescription_id, due_at, status, expires_at")
         .eq("patient_id", id.data)
         .in("status", ["outreach_pending", "awaiting_response"])
+        .or(`expires_at.is.null,expires_at.gt.${now.toISOString()}`)
         .order("due_at"),
       db
         .from("resupply_order_drafts")
@@ -249,7 +262,6 @@ router.get(
       (products.data as Product[]).map((p) => [p.sku, p.name]),
     );
     const supplies = [];
-    const now = new Date();
     const summary = await loadPatientSupplySummary(
       db,
       id.data,
@@ -259,7 +271,7 @@ router.get(
     for (const rx of rxs) {
       const entitlement = summary.entitlements.get(rx.item_sku);
       const episode = (episodes.data as Episode[]).find(
-        (e) => e.prescription_id === rx.id,
+        (e) => e.prescription_id === rx.id && isUnexpiredCycle(e, now),
       );
       const schedule = episode
         ? resolveCsrSchedule(

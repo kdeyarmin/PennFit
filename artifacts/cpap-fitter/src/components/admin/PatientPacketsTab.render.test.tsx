@@ -30,6 +30,7 @@ const { api } = vi.hoisted(() => ({
     sendPatientPacket: vi.fn(),
     resendPatientPacket: vi.fn(),
     voidPatientPacket: vi.fn(),
+    updatePatientPacket: vi.fn(),
   },
 }));
 
@@ -46,6 +47,19 @@ vi.mock("@workspace/api-client-react/admin", () => ({
     isError: false,
     error: null,
   }),
+  usePatientPacket: () => ({
+    data: {
+      packet: { title: "New Patient Packet", delivery_details: null },
+      documents: [{ document_key: "onboarding-consent" }],
+    },
+    isPending: false,
+    isError: false,
+  }),
+  useUpdatePatientPacket: () => ({
+    mutateAsync: api.updatePatientPacket,
+    isPending: false,
+  }),
+  getPatientPacketQueryKey: (packetId: string) => ["patient-packet", packetId],
   useSendPatientPacket: () => ({
     mutateAsync: api.sendPatientPacket,
     isPending: false,
@@ -103,6 +117,7 @@ beforeEach(() => {
   api.sendPatientPacket.mockReset();
   api.resendPatientPacket.mockReset();
   api.voidPatientPacket.mockReset();
+  api.updatePatientPacket.mockReset();
 });
 
 afterEach(() => {
@@ -110,6 +125,76 @@ afterEach(() => {
 });
 
 describe("PatientPacketsTab", () => {
+  it("removes the old signing link after editing and guides staff to issue a fresh link", async () => {
+    api.packets = [
+      {
+        id: "packet-1",
+        patient_id: "patient-1",
+        title: "New Patient Packet",
+        status: "sent",
+        recipient_name: "Jordan Smith",
+        recipient_email: null,
+        sent_at: "2026-06-10T12:00:00Z",
+        completed_at: null,
+        expires_at: null,
+        created_at: "2026-06-10T12:00:00Z",
+      },
+    ];
+    api.resendPatientPacket
+      .mockResolvedValueOnce({
+        signingLink: "https://example.test/old",
+        emailSent: false,
+        smsSent: false,
+      })
+      .mockResolvedValueOnce({
+        signingLink: "https://example.test/updated",
+        emailSent: false,
+        smsSent: false,
+      });
+    api.updatePatientPacket.mockResolvedValue({ ok: true });
+    renderTab();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Resend", exact: true }),
+    );
+    expect(
+      (
+        (await screen.findByLabelText(
+          "Secure signing link",
+        )) as HTMLInputElement
+      ).value,
+    ).toBe("https://example.test/old");
+    fireEvent.click(screen.getByRole("button", { name: "Edit", exact: true }));
+    expect(
+      await screen.findByText(/Saving replaces the signing link/),
+    ).toBeTruthy();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Save changes", exact: true }),
+    );
+    expect(
+      await screen.findByText(
+        "Packet updated. Use Resend to send or copy a fresh signing link for the patient.",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByLabelText("Secure signing link")).toBeNull();
+    expect(api.updatePatientPacket).toHaveBeenCalledWith({
+      packetId: "packet-1",
+      data: {
+        title: "New Patient Packet",
+        documentKeys: ["onboarding-consent"],
+        deliveryDetails: null,
+      },
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Resend", exact: true }),
+    );
+    expect(
+      (
+        (await screen.findByLabelText(
+          "Secure signing link",
+        )) as HTMLInputElement
+      ).value,
+    ).toBe("https://example.test/updated");
+  });
   it("keeps the quick sender scoped to onboarding templates", async () => {
     renderTab();
 

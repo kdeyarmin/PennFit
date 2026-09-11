@@ -24,6 +24,8 @@ import {
   installSupabaseMock,
   stageSupabaseResponse,
   getSupabaseWritePayloads,
+  getSupabaseRpcArgs,
+  stageSupabaseRpcResponse,
 } from "../../test-helpers/supabase-mock";
 
 const supabaseMock = installSupabaseMock();
@@ -422,6 +424,68 @@ describe("POST /admin/patient-packets (send-to-contact)", () => {
 describe("PATCH /admin/packets/:packetId", () => {
   const url = `/admin/packets/${PACKET}`;
 
+  it("does not edit snapshots if signing completed after the initial read", async () => {
+    mockAdmin.current = ADMIN;
+    stageSupabaseResponse("patient_packets", "select", {
+      data: { id: PACKET, status: "sent", link_version: 1 },
+    });
+    stageSupabaseResponse("patient_packet_documents", "select", {
+      data: [{ document_key: "proof_of_delivery" }],
+    });
+    stageSupabaseRpcResponse("update_patient_packet", {
+      data: { status: "packet_closed" },
+    });
+    const res = await request(makeApp())
+      .patch(url)
+      .send({
+        title: "Revised",
+        documentOverrides: [
+          {
+            documentKey: "proof_of_delivery",
+            sections: [{ paragraphs: ["Revised fixture content"] }],
+          },
+        ],
+      });
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe("packet_closed");
+    expect(reconcileMock).not.toHaveBeenCalled();
+    expect(applyOverridesMock).not.toHaveBeenCalled();
+    expect(getSupabaseWritePayloads("patient_packets", "update")).toHaveLength(
+      0,
+    );
+  });
+
+  it("passes the original version with same-key content revisions to the atomic editor", async () => {
+    mockAdmin.current = ADMIN;
+    stageSupabaseResponse("patient_packets", "select", {
+      data: { id: PACKET, status: "viewed", link_version: 4 },
+    });
+    stageSupabaseResponse("patient_packet_documents", "select", {
+      data: [{ document_key: "proof_of_delivery" }],
+    });
+    stageSupabaseRpcResponse("update_patient_packet", {
+      data: { status: "updated" },
+    });
+    const sections = [{ paragraphs: ["Revised fixture content"] }];
+    const res = await request(makeApp())
+      .patch(url)
+      .send({
+        documentOverrides: [{ documentKey: "proof_of_delivery", sections }],
+      });
+    expect(res.status).toBe(200);
+    expect(getSupabaseRpcArgs("update_patient_packet")[0]).toMatchObject({
+      p_packet_id: PACKET,
+      p_link_version: 4,
+      p_documents: [
+        expect.objectContaining({
+          document_key: "proof_of_delivery",
+          content_sections: sections,
+        }),
+      ],
+    });
+    expect(applyOverridesMock).not.toHaveBeenCalled();
+  });
+
   it("404 when the packet is missing", async () => {
     mockAdmin.current = ADMIN;
     stageSupabaseResponse("patient_packets", "select", { data: null });
@@ -443,19 +507,20 @@ describe("PATCH /admin/packets/:packetId", () => {
   it("reconciles documents + applies the scalar patch on an open packet", async () => {
     mockAdmin.current = ADMIN;
     stageSupabaseResponse("patient_packets", "select", {
-      data: { id: PACKET, status: "sent" },
+      data: { id: PACKET, status: "sent", link_version: 1 },
     });
-    stageSupabaseResponse("patient_packets", "update", { data: null });
+    stageSupabaseRpcResponse("update_patient_packet", {
+      data: { status: "updated" },
+    });
     const res = await request(makeApp())
       .patch(url)
       .send({ documentKeys: ["proof_of_delivery"], title: "Updated" });
     expect(res.status).toBe(200);
-    expect(reconcileMock).toHaveBeenCalledTimes(1);
-    const patch = getSupabaseWritePayloads(
-      "patient_packets",
-      "update",
-    )[0] as Record<string, unknown>;
-    expect(patch.title).toBe("Updated");
+    expect(reconcileMock).not.toHaveBeenCalled();
+    expect(getSupabaseRpcArgs("update_patient_packet")[0]).toMatchObject({
+      p_patch: { title: "Updated" },
+      p_link_version: 1,
+    });
   });
 });
 
@@ -492,7 +557,9 @@ describe("POST /admin/packets/:packetId/resend", () => {
         expires_at: null,
       },
     });
-    stageSupabaseResponse("patient_packets", "update", { data: null });
+    stageSupabaseResponse("patient_packets", "update", {
+      data: [{ id: PACKET }],
+    });
     const res = await request(makeApp()).post(url).send({});
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({
@@ -506,6 +573,17 @@ describe("POST /admin/packets/:packetId/resend", () => {
     )[0] as Record<string, unknown>;
     expect(patch.link_version).toBe(2);
     expect(deliverPacketLinkMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not send a new link when signing won the resend race", async () => {
+    mockAdmin.current = ADMIN;
+    stageSupabaseResponse("patient_packets", "select", {
+      data: { id: PACKET, status: "sent", link_version: 1 },
+    });
+    stageSupabaseResponse("patient_packets", "update", { data: [] });
+    const res = await request(makeApp()).post(url).send({});
+    expect(res.status).toBe(409);
+    expect(deliverPacketLinkMock).not.toHaveBeenCalled();
   });
 });
 
@@ -531,7 +609,9 @@ describe("POST /admin/packets/:packetId/void", () => {
     stageSupabaseResponse("patient_packets", "select", {
       data: { id: PACKET, status: "sent" },
     });
-    stageSupabaseResponse("patient_packets", "update", { data: null });
+    stageSupabaseResponse("patient_packets", "update", {
+      data: [{ id: PACKET }],
+    });
     const res = await request(makeApp())
       .post(url)
       .send({ reason: "wrong patient" });

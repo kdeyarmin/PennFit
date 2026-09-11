@@ -355,7 +355,10 @@ export function PatientPacketsTab({
           packetId={editingId}
           onSaved={() => {
             setEditingId(null);
-            setFeedback("Packet updated.");
+            setLinkResult(null);
+            setFeedback(
+              "Packet updated. Use Resend to send or copy a fresh signing link for the patient.",
+            );
             refresh();
           }}
           onCancel={() => setEditingId(null)}
