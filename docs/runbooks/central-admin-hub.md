@@ -126,3 +126,7 @@ Errors are `{ "error": { "code": "…" } }`:
 The repository includes fixture-based authorization/contract tests using the real
 Supabase client HTTP query generation, plus Express ingress tests. These checks
 do not establish a completed production login or a live Stripe reconciliation.
+
+## App-owned Hub SMS sessions
+
+The adapter also accepts opaque, one-use Hub SMS delegations. It calls the fixed Hub application authorization endpoint for the Breathe audience, checks the exact operation and SMS method, then retains the existing explicit identity mapping, active native administrator and platform-admin membership checks. No new Breathe variables or native sign-in session are created. Legacy Hub AAL2 tokens retain their original verification path. Deploy this adapter before the paired Hub SMS release; real SMS and administrator reads still require production validation.

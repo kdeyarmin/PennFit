@@ -2,6 +2,8 @@ import { z } from "zod";
 import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 const HUB_ORIGIN = "https://xgauehtwksmnoqhgqegm.supabase.co";
+const HUB_APP_AUTHORIZE =
+  "https://support-hub-web-production.up.railway.app/api/internal/admin/breathe/authorize";
 const SOURCE = "application_database" as const;
 const staffRoles = ["admin", "agent"] as const;
 const subscriptionStatuses = [
@@ -280,10 +282,12 @@ export function createCentralAdminHandler({
       )
         throw new CentralAdminError(415, "unsupported_content_type");
       const authorization = request.headers.get("authorization") ?? "";
+      const appSms = /^Bearer cmh_[A-Za-z0-9_-]{43}$/.test(authorization);
       if (
-        !/^Bearer [A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(
-          authorization,
-        ) ||
+        (!appSms &&
+          !/^Bearer [A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(
+            authorization,
+          )) ||
         authorization.length > 8192
       )
         throw new CentralAdminError(401, "unauthenticated");
@@ -300,14 +304,17 @@ export function createCentralAdminHandler({
         throw new CentralAdminError(400, "invalid_request");
       }
       const authResponse = await fetcher(
-        `${HUB_ORIGIN}/rest/v1/rpc/authorize_platform_admin`,
+        appSms
+          ? HUB_APP_AUTHORIZE
+          : `${HUB_ORIGIN}/rest/v1/rpc/authorize_platform_admin`,
         {
           method: "POST",
           headers: {
-            apikey: config.hubKey!,
+            ...(appSms
+              ? {}
+              : { apikey: config.hubKey!, "Content-Profile": "hub" }),
             Authorization: authorization,
             "Content-Type": "application/json",
-            "Content-Profile": "hub",
           },
           body: "{}",
           redirect: "error",
@@ -327,14 +334,28 @@ export function createCentralAdminHandler({
               ? "forbidden"
               : "upstream",
         );
+      const rawActor = await boundedJson(authResponse, 4096, signal);
       const actor = z
         .object({
           user_id: uuid,
           role: z.literal("platform_admin"),
-          aal: z.literal("aal2"),
         })
-        .safeParse(await boundedJson(authResponse, 4096, signal));
+        .safeParse(rawActor);
       if (!actor.success) throw new CentralAdminError(403, "forbidden");
+      if (appSms) {
+        const proof = z
+          .object({ method: z.literal("sms"), operation: operationSchema })
+          .safeParse(rawActor);
+        if (
+          !proof.success ||
+          JSON.stringify(proof.data.operation) !== JSON.stringify(operation)
+        )
+          throw new CentralAdminError(403, "forbidden");
+      } else if (
+        !z.object({ aal: z.literal("aal2") }).safeParse(rawActor).success
+      ) {
+        throw new CentralAdminError(403, "forbidden");
+      }
       const nativeId = config.identities!.get(actor.data.user_id.toLowerCase());
       if (!nativeId) throw new CentralAdminError(403, "forbidden");
       const raw = await untilAbort(getClient(), signal);
