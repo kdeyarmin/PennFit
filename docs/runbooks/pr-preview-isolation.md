@@ -32,12 +32,31 @@ port 5432. The equivalent connection URL with the default port omitted hashes to
 `9b7fdb5b3be3`; the preview configuration pins both spellings of that endpoint.
 
 The new branch has `with_data=false`; read-only checks found zero patients and
-zero Supabase Auth users. Its automatic Supabase migration replay stopped after
-35 platform migrations, leaving 85 application relations, no `organizations` or
-`patient_packets` table, and no application migration ledger. The branch reports
-`MIGRATIONS_FAILED` even though the database itself is `ACTIVE_HEALTHY`. It needs
-initialization from the repository's authoritative application migrations before
-Railway can use it. No preview deployment has passed readiness yet.
+zero Supabase Auth users. Its initial automatic Supabase replay stopped after
+35 platform migrations, leaving an incomplete application schema and no
+application migration ledger. After re-verifying the disposable project identity,
+the branch was reset using only the local bootstrap; application object count
+was then zero. The application migrator applied through 0058 before the historical
+0059 helper hit Supabase's managed `auth` schema CREATE restriction.
+
+The compatibility fix described below passed a complete, isolated PostgreSQL 17
+replay of all 526 application migrations under equivalent restricted permissions.
+The hosted retry applied all 462 remaining migrations, completing the 526-migration
+chain; a second run applied zero migrations. The initializer applied runtime
+grants and reported `READY`, with 526 expected/applied migrations and no missing
+or unknown ledger entries. All schema/table/sequence/function/default privilege
+checks passed. CLI authentication is complete, and
+the actual preview Storage API passed signed upload/download and rejection of
+public access to a private object. Both buckets were verified again and all probe
+objects removed. The Data API already exposes `graphql_public`, `public`,
+`resupply`, and `resupply_auth`; no settings change was needed. Railway readiness
+and hosted CSR browser verification remain pending; no preview deployment has
+passed readiness yet.
+
+Actual Data API requests to `resupply.patients` and `resupply_auth.users` returned
+HTTP 200 for `service_role`; anonymous requests to both returned HTTP 401 with
+code `42501`. These database, permission, and storage checks do not establish
+application readiness.
 
 The older `bucket-b-dryrun` branch (`cgddjicbfhfsttnumwyi`) also has an incomplete
 schema and belongs to another task. Do not repurpose or reset it. Production and
@@ -46,9 +65,10 @@ that older branch were not modified during this setup.
 Railway's connected OAuth tool returns variable names with values redacted. The
 available Supabase connector retrieves publishable keys, but has no operation to
 retrieve a branch's database password or server `service_role` key. The installed
-CLI supports `supabase branches get`, but its read-only credential request failed
-because the CLI has no access token. Connector authentication is separate from
-CLI authentication.
+CLI supports `supabase branches get`; its initial request failed because CLI
+authentication was missing. The account owner has since completed CLI login,
+and preview credentials are available through the authenticated CLI without
+printing them. Connector authentication remains separate from CLI authentication.
 
 ## Prepare the target and credentials
 
@@ -92,7 +112,7 @@ containing this repository's `supabase/config.toml` and bootstrap migration,
 explicitly link it to the verified new project reference, and re-check the
 linked reference immediately before reset. This drops that branch's existing
 user-created database entities and replays the local bootstrap. It does not
-apply the 525 application migrations. Never run it against the parent project
+apply the 526 application migrations. Never run it against the parent project
 or an older branch containing someone else's work.
 
 After reset, verify the app schemas contain no application tables, views,
@@ -101,6 +121,32 @@ isolated connection and production fingerprint guards, without baseline or
 break-glass arguments. A second run must report no pending migrations. Supabase's
 platform migration ledger and `migrations.resupply_migrations` serve different
 purposes; neither can substitute for the other.
+
+### Historical managed-auth compatibility
+
+Supabase prohibits creating custom functions in its managed `auth` schema. The
+preview's `postgres` role has USAGE but not CREATE there. Migrations 0059 and 0060
+historically create or reference `auth.set_updated_at()` for application tables
+that already live in `resupply_auth`; no managed Auth table needs modification.
+
+The application migrator preserves both historical SQL files and ledger hashes.
+For pending 0059/0060 only, it verifies the exact reviewed file hashes and adapts
+the helper references to `resupply_auth.set_updated_at()`. Pending 0060 also
+creates the owned helper inside its transaction, covering a database where 0059
+is already recorded. Each adapted execution logs the namespace change and states
+that the historical ledger hash is unchanged. An unexpected historical edit
+fails instead of being adapted silently.
+
+New application migration
+[`0546_auth_updated_at_owned_schema.sql`](../../lib/resupply-db/migrations/0546_auth_updated_at_owned_schema.sql)
+creates the owned helper and repoints the users/password-credentials triggers for
+existing deployments. It leaves the legacy managed-schema function untouched.
+Already-applied historical migrations are skipped normally. Do not grant CREATE
+on `auth`, elevate a managed role, edit old migration files, or stamp ledger rows
+to work around this restriction.
+
+See Supabase's
+[managed-schema restriction notice](https://supabase.com/changelog/34270-restricting-access-on-auth-storage-and-realtime-schemas-on-april-21-2025).
 
 ## Configure only the selected Railway preview
 
@@ -138,8 +184,9 @@ empty preview overrides when deletion would expose a shared parent value. Set
 all specific public/callback URL aliases as well as `PUBLIC_BASE_URL`; an
 inherited alias can otherwise keep generating production links.
 
-On a fresh database, explicitly grant `service_role` usage of the application
-schemas and access to their tables, sequences, and functions. Set corresponding
+On a fresh database, explicitly grant `service_role` usage of `public`,
+`resupply`, and `resupply_auth` and access to their application tables, sequences,
+and functions. Exclude extension-owned objects. Set corresponding
 default privileges **FOR ROLE postgres**, the application migration creator.
 Expose `resupply` and `resupply_auth` through managed PostgREST and preserve
 anonymous/authenticated restrictions and RLS. Verify packet RPC permissions with
@@ -223,14 +270,24 @@ The concrete fixture and no-delivery browser checklist is in
 [PR1373 hosted-preview verification](../reviews/pr1373-preview-verification.md).
 
 Local setup validation on 2026-09-11 passed 52 helper regressions and eight checks
-against PostgreSQL 17, including the complete 525-migration ledger, incomplete
+against PostgreSQL 17, including complete migration-ledger verification, incomplete
 table/sequence/default-grant rejection, public storefront table permissions,
 packet RPC restrictions, and outbound flags preserving navigation. SQL fixtures
 and permission changes were rolled back. The existing app also booted with the
 preview override manifest and isolated local database/PostgREST credentials;
 readiness reported `db=ok` and `queue=ok`. Those helper processes were stopped.
-Hosted migration, storage, authentication, and CSR browser verification remain
-pending; local readiness does not establish a working hosted preview.
+
+Managed-auth compatibility added eight focused regressions; the related migration
+and deploy-guard suite passed 61 tests (16 live-database cases skipped in that
+unit run). A separate native PostgreSQL 17 run applied all 526 migrations as a
+non-superuser with no CREATE on `auth`, verified both timestamp triggers and the
+original ledger hashes, and applied zero migrations on rerun. The managed-auth
+sentinel remained unchanged. The isolated cluster was stopped after validation.
+
+Actual hosted migration, runtime-grant, Data API, and Storage verification is
+complete as described above. Railway health/readiness, app authentication, and
+CSR browser verification remain pending. Infrastructure checks do not establish
+that the hosted application is ready.
 
 Supabase references: [branch troubleshooting](https://supabase.com/docs/guides/deployment/branching/troubleshooting)
 [incomplete branch migrations](https://supabase.com/docs/guides/troubleshooting/branch-in-migrations-failed-status),

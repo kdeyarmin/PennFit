@@ -2,10 +2,43 @@
 
 ## Status and scope
 
-Hosted verification has **not run**. CLI login is pending. The preview origin,
-deployed commit, and disposable database identity must be verified before applying
-migrations or synthetic fixtures. Local PostgreSQL/PostgREST and browser results
-do not establish that the hosted preview works.
+Hosted CSR verification and Railway readiness remain **pending**. CLI login is
+complete. The dedicated Supabase preview is `dfwwhqeebadwpbzjnxuj`, branch
+`pennfit-pr-1373` (`4baf93dc-fb0e-4b33-bef5-0b1c2916d8dc`), created without
+production data. The deployed preview origin and commit still need verification
+before app/browser tests. Local PostgreSQL/PostgREST results do not establish
+that the hosted preview works.
+
+Verified setup evidence on 2026-09-11:
+
+- The new disposable branch was positively identified and reset to the local
+  bootstrap; application object count was zero before application migrations.
+- The initial hosted replay reached 0059, where the managed `auth` schema rejects
+  custom-function CREATE. The fix preserves the 0059/0060 files and ledger hashes,
+  adapts their pending executions to the owned `resupply_auth` helper, and appends
+  migration 0546 to repoint existing application triggers. The hosted retry
+  applied all 462 remaining migrations, completing the 526-migration chain;
+  a second run applied zero migrations.
+- All 526 migrations passed a separate native PostgreSQL 17 replay as a
+  non-superuser without CREATE on `auth`. Both timestamp triggers updated real
+  fixture rows, the managed-auth sentinel remained unchanged, and rerun applied
+  zero migrations. Eight focused compatibility regressions and the broader
+  61-test migration/guard suite passed (16 live-database tests skipped in that
+  unit run).
+- The preview Data API already exposes `graphql_public`, `public`, `resupply`,
+  and `resupply_auth`; no settings change was needed.
+- The preview initializer applied runtime grants and reported `READY`, with
+  526 expected/applied migrations, no missing or unknown ledger entries, and
+  schema/table/sequence/function/default privileges all verified. Actual Data API
+  requests to `resupply.patients` and `resupply_auth.users` returned HTTP 200 for
+  `service_role`; anonymous requests returned HTTP 401 with code `42501`.
+- The actual preview Storage API passed signed upload and download checks and
+  rejected public access to a private object. Both required buckets were verified
+  again, and all probe objects were removed. These checks establish storage
+  behavior only; they do not establish app authentication or CSR readiness.
+
+See the [preview isolation runbook](../runbooks/pr-preview-isolation.md) for target
+guards, credential handling, and managed-auth compatibility details.
 
 Run against the approved preview only, after its migrations succeed. Keep real
 vendor credentials absent and outbound automation disabled through the preview
