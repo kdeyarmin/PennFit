@@ -345,7 +345,14 @@ jobs:
       - name: Apply migrations (from scratch)
         run: node lib/resupply-db/scripts/migrate.mjs
 
+      # The lifecycle writer is gated through the real service-role HTTP path,
+      # in addition to transaction/concurrency/privilege tests below.
+      - name: Start PostgREST for governed tenant lifecycle
+        run: bash scripts/ci/start-test-postgrest.sh
+
       - name: Run DB-backed migration tests
+        env:
+          BREATHE_LIFECYCLE_HTTP_REQUIRED: "true"
         run: pnpm --filter @workspace/resupply-db test
 
   integration:

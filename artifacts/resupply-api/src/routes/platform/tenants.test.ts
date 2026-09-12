@@ -14,6 +14,8 @@ import {
 import {
   installSupabaseMock,
   stageSupabaseResponse,
+  stageSupabaseRpcResponse,
+  getSupabaseRpcArgs,
 } from "../../test-helpers/supabase-mock";
 
 const supabaseMock = installSupabaseMock();
@@ -120,11 +122,7 @@ describe("POST /platform/tenants/:id/suspend", () => {
 
   it("suspends a non-seed tenant", async () => {
     mockPlatformAdmin.current = { userId: "u_p", email: "ops@cm" };
-    // Read (slug = acme, not the seed) then the status update.
-    stageSupabaseResponse("organizations", "select", {
-      data: { id: TENANT_ID, slug: "acme-dme", status: "active" },
-    });
-    stageSupabaseResponse("organizations", "update", {
+    stageSupabaseRpcResponse("set_tenant_lifecycle_status", {
       data: {
         id: TENANT_ID,
         slug: "acme-dme",
@@ -144,12 +142,20 @@ describe("POST /platform/tenants/:id/suspend", () => {
       id: TENANT_ID,
       status: "suspended",
     });
+    expect(getSupabaseRpcArgs("set_tenant_lifecycle_status")).toEqual([
+      {
+        p_native_user_id: "u_p",
+        p_target_id: TENANT_ID,
+        p_next_status: "suspended",
+      },
+    ]);
+    expect(supabaseMock.callCount("organizations", "update")).toBe(0);
   });
 
   it("refuses to suspend the seed tenant (400)", async () => {
     mockPlatformAdmin.current = { userId: "u_p", email: "ops@cm" };
-    stageSupabaseResponse("organizations", "select", {
-      data: { id: TENANT_ID, slug: "penn-home-medical", status: "active" },
+    stageSupabaseRpcResponse("set_tenant_lifecycle_status", {
+      error: { code: "22023" },
     });
     const res = await request(makeApp()).post(
       `/platform/tenants/${TENANT_ID}/suspend`,
@@ -162,7 +168,9 @@ describe("POST /platform/tenants/:id/suspend", () => {
 
   it("404s when the tenant id does not exist", async () => {
     mockPlatformAdmin.current = { userId: "u_p", email: "ops@cm" };
-    stageSupabaseResponse("organizations", "select", { data: null });
+    stageSupabaseRpcResponse("set_tenant_lifecycle_status", {
+      error: { code: "P0002" },
+    });
     const res = await request(makeApp()).post(
       `/platform/tenants/${TENANT_ID}/suspend`,
     );
@@ -173,10 +181,7 @@ describe("POST /platform/tenants/:id/suspend", () => {
 describe("POST /platform/tenants/:id/reactivate", () => {
   it("reactivates a suspended tenant (and may target the seed org)", async () => {
     mockPlatformAdmin.current = { userId: "u_p", email: "ops@cm" };
-    stageSupabaseResponse("organizations", "select", {
-      data: { id: TENANT_ID, slug: "acme-dme", status: "suspended" },
-    });
-    stageSupabaseResponse("organizations", "update", {
+    stageSupabaseRpcResponse("set_tenant_lifecycle_status", {
       data: {
         id: TENANT_ID,
         slug: "acme-dme",

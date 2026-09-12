@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { createHash } from "node:crypto";
 import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
+import { tenantLifecycleCapabilities } from "./tenant-lifecycle-protocol";
 
 const HUB_ORIGIN = "https://xgauehtwksmnoqhgqegm.supabase.co";
 const HUB_APP_AUTHORIZE =
@@ -96,7 +97,7 @@ export interface CentralAdminOptions {
   now?: () => Date;
 }
 
-class CentralAdminError extends Error {
+export class CentralAdminError extends Error {
   constructor(
     readonly status: number,
     readonly code: string,
@@ -150,7 +151,7 @@ export function readCentralAdminConfig(
   };
 }
 
-async function nativeClient(): Promise<RawClient> {
+export async function centralAdminNativeClient(): Promise<RawClient> {
   // These directories are global by design. Acquire the native client through
   // the same scoped chokepoint used by existing platform administration routes.
   const seedOrgId = await resolveSeedOrgId();
@@ -158,7 +159,7 @@ async function nativeClient(): Promise<RawClient> {
   return getOrgScopedClient(seedOrgId).raw();
 }
 
-async function untilAbort<T>(
+export async function untilAbort<T>(
   pending: Promise<T>,
   signal: AbortSignal,
 ): Promise<T> {
@@ -178,7 +179,7 @@ async function untilAbort<T>(
   }
 }
 
-async function boundedJson(
+export async function boundedJson(
   source: Request | Response,
   max: number,
   signal: AbortSignal,
@@ -259,10 +260,49 @@ function rows<T>(
 
 const contains = (value: string) => `%${value.replace(/[\\%_]/g, "\\$&")}%`;
 
+export async function assertNativePlatformAdministrator(
+  raw: RawClient,
+  nativeId: string,
+  signal: AbortSignal,
+): Promise<void> {
+  const [user, membership] = await Promise.all([
+    raw
+      .schema("resupply_auth")
+      .from("users")
+      .select("id,role,status,email_verified_at")
+      .eq("id", nativeId)
+      .limit(1)
+      .abortSignal(signal)
+      .maybeSingle(),
+    raw
+      .schema("resupply")
+      .from("platform_admins")
+      .select("auth_user_id")
+      .eq("auth_user_id", nativeId)
+      .limit(1)
+      .abortSignal(signal)
+      .maybeSingle(),
+  ]);
+  if (user.error || membership.error)
+    throw new CentralAdminError(503, "upstream");
+  const verifiedUser = z
+    .object({
+      id: z.literal(nativeId),
+      role: z.literal("admin"),
+      status: z.literal("active"),
+      email_verified_at: z
+        .string()
+        .refine((value) => Number.isFinite(Date.parse(value))),
+    })
+    .safeParse(user.data);
+  if (!verifiedUser.success || membership.data?.auth_user_id !== nativeId)
+    throw new CentralAdminError(403, "forbidden");
+}
+
 /** Read-only issuer-to-native adapter. Native customer/clinical tables are never queried. */
 export function createCentralAdminHandler({
   getEnv,
-  getClient = nativeClient,
+  getClient = centralAdminNativeClient,
   fetcher = fetch,
   now = () => new Date(),
 }: CentralAdminOptions = {}) {
@@ -368,44 +408,20 @@ export function createCentralAdminHandler({
       const nativeId = config.identities!.get(actor.data.user_id.toLowerCase());
       if (!nativeId) throw new CentralAdminError(403, "forbidden");
       const raw = await untilAbort(getClient(), signal);
-      const [user, membership] = await Promise.all([
-        raw
-          .schema("resupply_auth")
-          .from("users")
-          .select("id,role,status,email_verified_at")
-          .eq("id", nativeId)
-          .limit(1)
-          .abortSignal(signal)
-          .maybeSingle(),
-        raw
-          .schema("resupply")
-          .from("platform_admins")
-          .select("auth_user_id")
-          .eq("auth_user_id", nativeId)
-          .limit(1)
-          .abortSignal(signal)
-          .maybeSingle(),
-      ]);
-      if (user.error || membership.error)
-        throw new CentralAdminError(503, "upstream");
-      const verifiedUser = z
-        .object({
-          id: z.literal(nativeId),
-          role: z.literal("admin"),
-          status: z.literal("active"),
-          email_verified_at: z
-            .string()
-            .refine((value) => Number.isFinite(Date.parse(value))),
-        })
-        .safeParse(user.data);
-      if (!verifiedUser.success || membership.data?.auth_user_id !== nativeId)
-        throw new CentralAdminError(403, "forbidden");
+      await assertNativePlatformAdministrator(raw, nativeId, signal);
 
       let data: unknown;
       if (operation.operation === "capabilities") {
         data = {
           apiVersion: 1,
-          operations,
+          operations: [
+            ...operations,
+            ...((getEnv ?? ((name) => process.env[name]))(
+              "CAREMETRIC_ADMIN_TENANT_COMMANDS_ENABLED",
+            ) === "true"
+              ? tenantLifecycleCapabilities
+              : []),
+          ],
           sourceRevision: config.sourceRevision,
         };
       } else if (operation.operation === "support.identity.resolve") {
