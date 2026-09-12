@@ -64,7 +64,7 @@ or outbound messages are part of this contract.
 
 ## Deployment and verification
 
-Migration `0546_governed_tenant_lifecycle.sql` belongs to Breathe's sequential
+Migration `0547_governed_tenant_lifecycle.sql` belongs to Breathe's sequential
 `lib/resupply-db` migration system. It creates private intents/immutable receipts
 and the shared native writer. Only service_role may execute the two exposed
 native RPCs; private tables/helpers are not exposed to browser database roles.
