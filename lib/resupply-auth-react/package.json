@@ -24,6 +24,6 @@
     "@types/react": "catalog:",
     "jsdom": "^29.1.1",
     "react": "catalog:",
-    "vitest": "^4.1.6"
+    "vitest": "^5.0.0"
   }
 }
