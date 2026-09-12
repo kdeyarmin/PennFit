@@ -26,11 +26,7 @@ import { z } from "zod";
 import { logAudit } from "@workspace/resupply-audit";
 import { inviteTeamMember } from "@workspace/resupply-auth";
 import { createSendgridClient } from "@workspace/resupply-email";
-import {
-  getOrgScopedClient,
-  resolveSeedOrgId,
-  SEED_ORG_SLUG,
-} from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import {
   FEATURE_FLAG_KEYS,

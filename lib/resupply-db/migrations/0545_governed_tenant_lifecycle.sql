@@ -156,7 +156,7 @@ BEGIN
       OR p_operation-ARRAY['domain','operation','requestId','targetId','action','parameters','expectedRevision','reason']<>'{}'::jsonb
       OR p_operation->>'action' IS DISTINCT FROM 'organizations.setSuspension'
       OR jsonb_typeof(p_operation->'parameters') IS DISTINCT FROM 'object'
-      OR p_operation->'parameters'-ARRAY['suspended']<>'{}'::jsonb
+      OR (p_operation->'parameters')-ARRAY['suspended']<>'{}'::jsonb
       OR jsonb_typeof(p_operation->'parameters'->'suspended') IS DISTINCT FROM 'boolean'
       OR jsonb_typeof(p_operation->'reason') IS DISTINCT FROM 'string'
       OR coalesce(p_operation->>'expectedRevision','') !~ '^[0-9a-f]{64}$' THEN
