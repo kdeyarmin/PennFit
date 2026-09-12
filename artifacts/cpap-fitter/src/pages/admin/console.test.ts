@@ -112,6 +112,8 @@ describe("ConsoleRoute — structural checks", () => {
     // 3. return <AdminConsole />
     // Assert that mustChangePassword is absent (already covered) and
     // that AdminConsole is the terminal return.
-    expect(SRC).toContain("return <AdminConsole />");
+    expect(SRC).toContain(
+      "return <AdminConsole key={`${data.id}:${data.role}`} />",
+    );
   });
 });

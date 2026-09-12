@@ -11,7 +11,7 @@
 // public twin: /order-sign (token-gated).
 
 import { useMemo, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useQueryClient } from "@tanstack/react-query";
 import { ClipboardCopy, Loader2, Plus, Send, Trash2, X } from "lucide-react";
 
 import {
@@ -31,6 +31,7 @@ import {
   Skeleton,
 } from "@/components/admin/ui-shims";
 import { AdminModal } from "@/components/admin/AdminModal";
+import { Pagination } from "@/components/admin/Pagination";
 import { useConfirmDialog } from "@/hooks/use-confirm-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { formatAppDateTime } from "@/lib/utils";
@@ -103,8 +104,13 @@ export function CsrOrderRequestsPanel() {
   const [confirm, ConfirmDialogEl] = useConfirmDialog();
   const queryClient = useQueryClient();
   const [showCreate, setShowCreate] = useState(false);
+  const [page, setPage] = useState(1);
+  const pageSize = 25;
 
-  const { data, isLoading, error } = useCsrOrderRequests({ pageSize: 25 });
+  const { data, isLoading, isFetching, error, refetch } = useCsrOrderRequests(
+    { page, pageSize },
+    { query: { placeholderData: keepPreviousData } },
+  );
   const resend = useResendCsrOrderRequest();
   const cancel = useCancelCsrOrderRequest();
 
@@ -224,7 +230,7 @@ export function CsrOrderRequestsPanel() {
                       </td>
                     </tr>
                   )}
-                  {!isLoading && requests.length === 0 && (
+                  {!isLoading && !error && requests.length === 0 && (
                     <tr>
                       <td
                         colSpan={7}
@@ -240,8 +246,6 @@ export function CsrOrderRequestsPanel() {
                     const open =
                       status === "sent" ||
                       status === "viewed" ||
-                      status === "signed" ||
-                      status === "signed_needs_followup" ||
                       status === "expired";
                     return (
                       <tr key={r.id} className="border-t border-border/40">
@@ -284,7 +288,11 @@ export function CsrOrderRequestsPanel() {
                                 variant="outline"
                                 size="sm"
                                 className="mr-2"
-                                disabled={resend.isPending}
+                                disabled={
+                                  resend.isPending ||
+                                  isFetching ||
+                                  Boolean(error)
+                                }
                                 onClick={() => handleResend(r)}
                                 data-testid={`button-resend-${r.orderReference}`}
                               >
@@ -293,7 +301,11 @@ export function CsrOrderRequestsPanel() {
                               <Button
                                 variant="outline"
                                 size="sm"
-                                disabled={cancel.isPending}
+                                disabled={
+                                  cancel.isPending ||
+                                  isFetching ||
+                                  Boolean(error)
+                                }
                                 onClick={() => handleCancel(r)}
                                 data-testid={`button-cancel-${r.orderReference}`}
                               >
@@ -311,7 +323,36 @@ export function CsrOrderRequestsPanel() {
             {error && (
               <div className="p-4 text-sm text-destructive border-t border-border/40">
                 Could not load signature orders: {error.message}
+                <div className="flex gap-2 mt-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => void refetch()}
+                  >
+                    Retry
+                  </Button>
+                  {page > 1 && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setPage(page - 1)}
+                    >
+                      Previous page
+                    </Button>
+                  )}
+                </div>
               </div>
+            )}
+            {data && data.total > pageSize && (
+              <Pagination
+                total={data.total}
+                limit={pageSize}
+                offset={(page - 1) * pageSize}
+                onChange={(offset) =>
+                  setPage(Math.floor(offset / pageSize) + 1)
+                }
+                isLoading={isFetching}
+              />
             )}
           </CardContent>
         </Card>
@@ -319,7 +360,10 @@ export function CsrOrderRequestsPanel() {
         {showCreate && (
           <CreateCsrOrderModal
             onClose={() => setShowCreate(false)}
-            onCreated={() => void invalidate()}
+            onCreated={() => {
+              setPage(1);
+              void invalidate();
+            }}
           />
         )}
       </div>

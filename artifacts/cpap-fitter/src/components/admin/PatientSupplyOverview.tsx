@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { Card } from "./Card";
 import { Button } from "./Button";
@@ -21,12 +21,25 @@ export function PatientSupplyOverview({
   const query = useQuery({
     queryKey: ["admin", "supply-overview", patientId, offset],
     queryFn: () => getSupplyOverview(patientId, offset),
+    placeholderData: keepPreviousData,
   });
   if (query.isPending)
     return <Spinner label="Loading orders and supply dates…" />;
   if (query.isError)
     return (
-      <ErrorPanel error={query.error} onRetry={() => void query.refetch()} />
+      <div className="space-y-3">
+        <ErrorPanel error={query.error} onRetry={() => void query.refetch()} />
+        {offset > 0 && (
+          <Button
+            intent="secondary"
+            size="sm"
+            disabled={query.isFetching}
+            onClick={() => setOffset((previous) => Math.max(0, previous - 25))}
+          >
+            Newer
+          </Button>
+        )}
+      </div>
     );
   const { supplies, orders, totalOrders, linkedOrders = [] } = query.data;
   const due = supplies
@@ -174,7 +187,11 @@ export function PatientSupplyOverview({
         subtitle={`${totalOrders} recorded supply order lines · newest first`}
       >
         {!orders.length ? (
-          <p>No supply orders recorded for this patient.</p>
+          <p>
+            {totalOrders > 0
+              ? "No order lines on this page. Return to newer history."
+              : "No supply orders recorded for this patient."}
+          </p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm text-left">
@@ -221,23 +238,27 @@ export function PatientSupplyOverview({
             </table>
           </div>
         )}
-        {totalOrders > 25 && (
+        {(totalOrders > 25 || offset > 0) && (
           <div className="mt-3 flex items-center gap-3">
             <Button
               intent="secondary"
               size="sm"
-              disabled={offset === 0}
+              disabled={offset === 0 || query.isFetching}
               onClick={() => setOffset(offset - 25)}
             >
               Newer
             </Button>
             <span>
-              {offset + 1}–{Math.min(offset + 25, totalOrders)} of {totalOrders}
+              {query.isFetching
+                ? "Loading order history…"
+                : orders.length
+                  ? `${offset + 1}–${Math.min(offset + orders.length, totalOrders)} of ${totalOrders}`
+                  : `0 shown of ${totalOrders}`}
             </span>
             <Button
               intent="secondary"
               size="sm"
-              disabled={offset + 25 >= totalOrders}
+              disabled={offset + 25 >= totalOrders || query.isFetching}
               onClick={() => setOffset(offset + 25)}
             >
               Older

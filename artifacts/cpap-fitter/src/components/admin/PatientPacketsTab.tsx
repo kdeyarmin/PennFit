@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { captureSessionCacheGuard } from "@workspace/resupply-auth-react";
 import { Link } from "wouter";
 
 import {
@@ -85,6 +86,7 @@ export function PatientPacketsTab({
   };
 
   const handleSend = async () => {
+    const isCurrentSession = captureSessionCacheGuard(qc);
     setError(null);
     setFeedback(null);
     setLinkResult(null);
@@ -108,6 +110,7 @@ export function PatientPacketsTab({
           deliveryDetails,
         },
       });
+      if (!isCurrentSession()) return;
       setLinkResult(res.signingLink);
       setFeedback(
         res.emailSent && res.smsSent
@@ -121,6 +124,7 @@ export function PatientPacketsTab({
       setShowSend(false);
       refresh();
     } catch (err) {
+      if (!isCurrentSession()) return;
       setError(describeError(err).detail ?? "Failed to send packet.");
     }
   };
@@ -351,7 +355,10 @@ export function PatientPacketsTab({
           packetId={editingId}
           onSaved={() => {
             setEditingId(null);
-            setFeedback("Packet updated.");
+            setLinkResult(null);
+            setFeedback(
+              "Packet updated. Use Resend to send or copy a fresh signing link for the patient.",
+            );
             refresh();
           }}
           onCancel={() => setEditingId(null)}
@@ -440,12 +447,15 @@ export function PatientPacketsTab({
                           size="sm"
                           isLoading={resend.isPending}
                           onClick={async () => {
+                            const isCurrentSession =
+                              captureSessionCacheGuard(qc);
                             setError(null);
                             setFeedback(null);
                             try {
                               const res = await resend.mutateAsync({
                                 packetId: p.id,
                               });
+                              if (!isCurrentSession()) return;
                               setLinkResult(res.signingLink);
                               setFeedback(
                                 res.emailSent || res.smsSent
@@ -454,6 +464,7 @@ export function PatientPacketsTab({
                               );
                               refresh();
                             } catch (err) {
+                              if (!isCurrentSession()) return;
                               setError(
                                 describeError(err).detail ?? "Resend failed.",
                               );
@@ -469,12 +480,16 @@ export function PatientPacketsTab({
                           size="sm"
                           isLoading={voidPacket.isPending}
                           onClick={async () => {
+                            const isCurrentSession =
+                              captureSessionCacheGuard(qc);
                             setError(null);
                             try {
                               await voidPacket.mutateAsync({ packetId: p.id });
+                              if (!isCurrentSession()) return;
                               setFeedback("Packet voided.");
                               refresh();
                             } catch (err) {
+                              if (!isCurrentSession()) return;
                               setError(
                                 describeError(err).detail ?? "Void failed.",
                               );

@@ -7,6 +7,7 @@
 
 import type * as React from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { clearSessionCache } from "@workspace/resupply-auth-react";
 
 import { authClient, authHooks, SESSION_QUERY_KEY } from "./auth-hooks";
 import { csrfHeader } from "./csrf";
@@ -21,14 +22,17 @@ export interface ShopIdentity {
 }
 
 export function useShopIdentity(): ShopIdentity {
-  const { data, isPending } = authHooks.useSession();
+  const { data, isPending, isFetching } = authHooks.useSession();
   const queryClient = useQueryClient();
   return {
     email: data?.email ?? null,
     userId: data?.id ?? null,
     displayName: data?.displayName ?? null,
     isSignedIn: Boolean(data),
-    isLoaded: !isPending,
+    // A prior signed-out result can remain cached after another tab signs
+    // in. Let protected routes await the confirming /me request instead of
+    // redirecting back to sign-in before that request resolves.
+    isLoaded: !isPending && !(data === null && isFetching),
     signOut: async () => {
       // Push subscriptions persist past localStorage clears — the
       // browser holds them in the SW registration, and the SERVER
@@ -120,6 +124,8 @@ export function useShopIdentity(): ShopIdentity {
       // shared device kept rendering &lt;SignedIn&gt; gates with the
       // prior user's identity for up to a minute.
       try {
+        if (!serverSignOutError && !(await clearSessionCache(queryClient)))
+          return;
         await queryClient.invalidateQueries({ queryKey: SESSION_QUERY_KEY });
       } catch {
         /* best-effort */

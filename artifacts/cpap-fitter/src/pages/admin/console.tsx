@@ -1447,8 +1447,8 @@ function AdminConsole() {
 // Probes /resupply-api/auth/me; redirects to /admin/sign-in when no
 // session is present.
 export function ConsoleRoute() {
-  const { data, isPending } = authHooks.useSession();
-  if (isPending)
+  const { data, isPending, isFetching } = authHooks.useSession();
+  if (isPending || (data === null && isFetching))
     return (
       // admin-root scopes the admin theme tokens (hard rule R7) — even
       // this transient spinner must not render with storefront tokens.
@@ -1459,5 +1459,5 @@ export function ConsoleRoute() {
   // Preserve the deep link (e.g. /admin/patients/123) so signing in returns
   // them to the page they asked for rather than the dashboard.
   if (!data) return <Redirect to={buildAdminSignInHref()} />;
-  return <AdminConsole />;
+  return <AdminConsole key={`${data.id}:${data.role}`} />;
 }

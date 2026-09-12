@@ -35,6 +35,7 @@ import {
 } from "@workspace/resupply-messaging";
 
 import { safeAuditFromActor } from "./safe-audit";
+import { withReminderSendStage, type ReminderSendStage } from "./send-stage";
 import type { EmailSendConfig, SendActor, SendReminderOutcome } from "./types";
 
 export interface SendReminderEmailInput {
@@ -104,6 +105,15 @@ const LINK_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 export async function sendReminderEmail(
   input: SendReminderEmailInput,
+): Promise<SendReminderOutcome> {
+  return withReminderSendStage((stage) =>
+    sendReminderEmailAttempt(input, stage),
+  );
+}
+
+async function sendReminderEmailAttempt(
+  input: SendReminderEmailInput,
+  stage: ReminderSendStage,
 ): Promise<SendReminderOutcome> {
   const { supabase, cfg, patientId, actor } = input;
   // Tenant isolation chokepoint: scope every read/write to orgId.
@@ -193,71 +203,82 @@ export async function sendReminderEmail(
   const conversationId = insertedConv?.id;
   if (!conversationId) return { status: "conversation_create_failed" };
 
-  // Best-effort orphan-row teardown shared by every post-insert
-  // failure exit (vendor error, send-time config error, unexpected
-  // throw) — see the quiet-period rationale above.
+  // Best-effort orphan-row teardown for failed preparation and explicit
+  // vendor errors. Unknown transport outcomes retain the attempt below.
   const deleteOrphanConversation = async (): Promise<void> => {
-    const { error: deleteConvErr } = await db
-      .from("conversations")
-      .delete()
-      .eq("id", conversationId);
-    if (deleteConvErr) {
-      // Same structured-stderr convention as the post-send DB-write
-      // failure below (this lib must not import pino directly).
-      // Leave the row; ops can reconcile from the audit row.
+    try {
+      const { error: deleteConvErr } = await db
+        .from("conversations")
+        .delete()
+        .eq("id", conversationId);
+      if (deleteConvErr) {
+        // Same structured-stderr convention as the post-send DB-write
+        // failure below (this lib must not import pino directly).
+        // Leave the row; ops can reconcile from the audit row.
+        process.stderr.write(
+          JSON.stringify({
+            level: 40,
+            event: "send_email_orphan_conversation_delete_failed",
+            conversationId,
+            errCode: deleteConvErr.code ?? null,
+            errMessage: deleteConvErr.message,
+            msg: "orphan conversation row not deleted after send failure (non-fatal)",
+          }) + "\n",
+        );
+      }
+    } catch {
+      // Do not replace the original send failure if cleanup also fails.
       process.stderr.write(
         JSON.stringify({
           level: 40,
           event: "send_email_orphan_conversation_delete_failed",
           conversationId,
-          errCode: deleteConvErr.code ?? null,
-          errMessage: deleteConvErr.message,
-          msg: "orphan conversation row not deleted after send failure (non-fatal)",
         }) + "\n",
       );
     }
   };
 
-  const expiresAt = Date.now() + LINK_TOKEN_TTL_MS;
-  const baseClick = `${cfg.publicBaseUrl}/resupply-api/email/click`;
-  const stopUrl = `${baseClick}?t=${encodeURIComponent(
-    signLinkToken({ conversationId, action: "stop", expiresAt }),
-  )}`;
-
   let rendered: { subject: string; html: string; text: string };
-  if (input.content) {
-    rendered = renderCustomContent({
-      practiceName: cfg.practiceName,
-      subject: input.content.subject,
-      bodyText: input.content.bodyText,
-      stopUrl,
-    });
-  } else {
-    const confirmUrl = `${baseClick}?t=${encodeURIComponent(
-      signLinkToken({ conversationId, action: "confirm", expiresAt }),
-    )}`;
-    const editUrl = `${baseClick}?t=${encodeURIComponent(
-      signLinkToken({ conversationId, action: "edit", expiresAt }),
-    )}`;
-    // Same expiry as the other CTAs: all four actions live and die with
-    // the reminder they were sent on.
-    const declineUrl = `${baseClick}?t=${encodeURIComponent(
-      signLinkToken({ conversationId, action: "decline", expiresAt }),
-    )}`;
-    rendered = renderResupplyReminder({
-      practiceName: cfg.practiceName,
-      firstName: patient.legal_first_name ?? "there",
-      items,
-      confirmUrl,
-      editUrl,
-      declineUrl,
-      stopUrl,
-      variant: input.variant ?? "initial",
-    });
-  }
-
   let messageId: string;
   try {
+    const expiresAt = Date.now() + LINK_TOKEN_TTL_MS;
+    const baseClick = `${cfg.publicBaseUrl}/resupply-api/email/click`;
+    const stopUrl = `${baseClick}?t=${encodeURIComponent(
+      signLinkToken({ conversationId, action: "stop", expiresAt }),
+    )}`;
+
+    if (input.content) {
+      rendered = renderCustomContent({
+        practiceName: cfg.practiceName,
+        subject: input.content.subject,
+        bodyText: input.content.bodyText,
+        stopUrl,
+      });
+    } else {
+      const confirmUrl = `${baseClick}?t=${encodeURIComponent(
+        signLinkToken({ conversationId, action: "confirm", expiresAt }),
+      )}`;
+      const editUrl = `${baseClick}?t=${encodeURIComponent(
+        signLinkToken({ conversationId, action: "edit", expiresAt }),
+      )}`;
+      // Same expiry as the other CTAs: all four actions live and die with
+      // the reminder they were sent on.
+      const declineUrl = `${baseClick}?t=${encodeURIComponent(
+        signLinkToken({ conversationId, action: "decline", expiresAt }),
+      )}`;
+      rendered = renderResupplyReminder({
+        practiceName: cfg.practiceName,
+        firstName: patient.legal_first_name ?? "there",
+        items,
+        confirmUrl,
+        editUrl,
+        declineUrl,
+        stopUrl,
+        variant: input.variant ?? "initial",
+      });
+    }
+
+    stage.markProviderAttempted();
     const r = await sg.sendEmail({
       to: patient.email,
       subject: rendered.subject,
@@ -272,6 +293,8 @@ export async function sendReminderEmail(
     messageId = r.messageId;
   } catch (err) {
     if (err instanceof EmailConfigError) {
+      // createSendgridClient validates headers before calling its SDK.
+      stage.markProviderNotAttempted();
       // Surface to caller — see send-sms for rationale. Nothing was
       // sent, so clean up the orphan row first (a send-time config
       // error like a CR/LF subject would otherwise orphan one row per
@@ -306,9 +329,9 @@ export async function sendReminderEmail(
         vendorCode: null,
       };
     }
-    // Unexpected throw — nothing was delivered, so the orphan row has
-    // the same quiet-period side effect as the vendor-error path.
-    await deleteOrphanConversation();
+    // A preparation error is unsent. A transport throw after invocation
+    // leaves delivery uncertain, so retain the attempt's contact evidence.
+    if (!stage.providerAttempted) await deleteOrphanConversation();
     throw err;
   }
 

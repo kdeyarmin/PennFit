@@ -12,6 +12,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { captureSessionCacheGuard } from "@workspace/resupply-auth-react";
 import { Globe, ImageUp, Sparkles, Store } from "lucide-react";
 
 import { Card } from "@/components/admin/Card";
@@ -109,22 +110,30 @@ export function AdminStorefrontBrandingPage() {
   function applyResult(next: StorefrontBrandingView): void {
     queryClient.setQueryData(QUERY_KEY, next);
   }
+  function captureMutationSession() {
+    return { isCurrentSession: captureSessionCacheGuard(queryClient) };
+  }
 
   const saveBrand = useMutation({
+    onMutate: captureMutationSession,
     mutationFn: () => saveStorefrontBranding({ storefrontName, tagline }),
-    onSuccess: (next) => {
+    onSuccess: (next, _variables, ctx) => {
+      if (!ctx?.isCurrentSession()) return;
       setSavedBrand(true);
       applyResult(next);
     },
   });
 
   const logoUpload = useMutation({
+    onMutate: captureMutationSession,
     mutationFn: (file: File) => uploadStorefrontLogo(file),
-    onSuccess: (next) => {
+    onSuccess: (next, _variables, ctx) => {
+      if (!ctx?.isCurrentSession()) return;
       setLogoError(null);
       applyResult(next);
     },
-    onError: (err) => {
+    onError: (err, _variables, ctx) => {
+      if (!ctx?.isCurrentSession()) return;
       setLogoError(
         err instanceof PublicStorageUnavailableError
           ? "Logo uploads aren't available in this environment (no public storage bucket configured). You can still set your storefront name and tagline."
@@ -136,13 +145,18 @@ export function AdminStorefrontBrandingPage() {
   });
 
   const logoRemove = useMutation({
+    onMutate: captureMutationSession,
     mutationFn: removeStorefrontLogo,
-    onSuccess: applyResult,
+    onSuccess: (next, _variables, ctx) => {
+      if (ctx?.isCurrentSession()) applyResult(next);
+    },
   });
 
   const domainSet = useMutation({
+    onMutate: captureMutationSession,
     mutationFn: (domain: string) => setCustomDomain(domain),
-    onSuccess: (next) => {
+    onSuccess: (next, _variables, ctx) => {
+      if (!ctx?.isCurrentSession()) return;
       setVerifyMsg(null);
       setDomainInput("");
       applyResult(next);
@@ -150,8 +164,10 @@ export function AdminStorefrontBrandingPage() {
   });
 
   const domainVerify = useMutation({
+    onMutate: captureMutationSession,
     mutationFn: verifyCustomDomain,
-    onSuccess: (next) => {
+    onSuccess: (next, _variables, ctx) => {
+      if (!ctx?.isCurrentSession()) return;
       applyResult(next);
       setVerifyMsg(
         next.verified
@@ -162,8 +178,10 @@ export function AdminStorefrontBrandingPage() {
   });
 
   const domainRemove = useMutation({
+    onMutate: captureMutationSession,
     mutationFn: removeCustomDomain,
-    onSuccess: (next) => {
+    onSuccess: (next, _variables, ctx) => {
+      if (!ctx?.isCurrentSession()) return;
       setVerifyMsg(null);
       applyResult(next);
     },
@@ -181,7 +199,8 @@ export function AdminStorefrontBrandingPage() {
       return;
     }
     logoUpload.mutate(file, {
-      onSettled: () => {
+      onSettled: (_data, _err, _variables, ctx) => {
+        if (!ctx?.isCurrentSession()) return;
         if (fileRef.current) fileRef.current.value = "";
       },
     });

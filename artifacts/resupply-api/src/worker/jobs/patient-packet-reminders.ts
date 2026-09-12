@@ -177,6 +177,21 @@ async function patientPacketReminderSweepForOrg(
 
   for (const c of rows) {
     const nextVersion = (c.link_version ?? 1) + 1;
+    // Resolve the tenant link before changing the packet: a missing domain
+    // must not revoke the last delivered link or consume a reminder slot.
+    const link = await buildPacketSigningLink(
+      c.id,
+      nextVersion,
+      undefined,
+      orgId,
+    );
+    if (!link) {
+      logger.info(
+        { packet_id: c.id, org_id: orgId },
+        "patient-packet.reminders: skipped (no tenant domain)",
+      );
+      continue;
+    }
     const newExpiry = new Date(
       now + DEFAULT_PACKET_TTL_DAYS * 24 * 60 * 60 * 1000,
     ).toISOString();
@@ -197,6 +212,8 @@ async function patientPacketReminderSweepForOrg(
       .eq("id", c.id)
       .eq("reminder_count", c.reminder_count ?? 0)
       .eq("link_version", c.link_version)
+      .in("status", ["sent", "viewed"])
+      .gt("expires_at", new Date().toISOString())
       .select("id")
       .maybeSingle();
     if (claimErr) {
@@ -208,19 +225,6 @@ async function patientPacketReminderSweepForOrg(
     }
     if (!claimed) continue; // raced — another run took it
 
-    const link = await buildPacketSigningLink(
-      c.id,
-      nextVersion,
-      undefined,
-      orgId,
-    );
-    if (!link) {
-      logger.info(
-        { packet_id: c.id, org_id: orgId },
-        "patient-packet.reminders: skipped (no tenant domain)",
-      );
-      continue;
-    }
     // Automated cron text — withhold the phone (email still goes out)
     // when the patient's local time is outside the 9am–8pm TCPA send
     // window. The 19:33 UTC default cron makes this a backstop for
@@ -285,6 +289,7 @@ async function patientPacketReminderSweepForOrg(
         })
         .eq("id", c.id)
         .eq("link_version", nextVersion)
+        .in("status", ["sent", "viewed"])
         .eq("reminder_count", (c.reminder_count ?? 0) + 1);
       if (rollbackErr) {
         logger.warn(

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { captureSessionCacheGuard } from "@workspace/resupply-auth-react";
 
 import {
   usePatientPacket,
@@ -66,6 +67,20 @@ export function PacketEditForm({
     setSeeded(true);
   }, [detailQuery.data, templatesQuery.data, seeded, packetId]);
 
+  if (detailQuery.isError || templatesQuery.isError) {
+    const failedQuery = detailQuery.isError ? detailQuery : templatesQuery;
+    return (
+      <div
+        className="rounded-md border p-4"
+        style={{ borderColor: "hsl(var(--penn-navy) / 0.30)" }}
+      >
+        <ErrorPanel
+          error={failedQuery.error}
+          onRetry={() => void failedQuery.refetch()}
+        />
+      </div>
+    );
+  }
   if (detailQuery.isPending || templatesQuery.isPending || !seeded) {
     return (
       <div
@@ -73,16 +88,6 @@ export function PacketEditForm({
         style={{ borderColor: "hsl(var(--penn-navy) / 0.30)" }}
       >
         <Spinner label="Loading packet…" />
-      </div>
-    );
-  }
-  if (detailQuery.isError) {
-    return (
-      <div
-        className="rounded-md border p-4"
-        style={{ borderColor: "hsl(var(--penn-navy) / 0.30)" }}
-      >
-        <ErrorPanel error={detailQuery.error} />
       </div>
     );
   }
@@ -97,6 +102,7 @@ export function PacketEditForm({
       setError("Select at least one document.");
       return;
     }
+    const isCurrentSession = captureSessionCacheGuard(qc);
     try {
       await update.mutateAsync({
         packetId,
@@ -106,11 +112,13 @@ export function PacketEditForm({
           deliveryDetails: delivery,
         },
       });
+      if (!isCurrentSession()) return;
       void qc.invalidateQueries({
         queryKey: getPatientPacketQueryKey(packetId),
       });
       onSaved();
     } catch (err) {
+      if (!isCurrentSession()) return;
       setError(describeError(err).detail ?? "Failed to update packet.");
     }
   };
@@ -187,6 +195,10 @@ export function PacketEditForm({
         </div>
       )}
 
+      <p className="text-sm" style={{ color: "hsl(var(--ink-2))" }}>
+        Saving replaces the signing link. After saving, resend the packet or
+        copy the updated signing link for the patient.
+      </p>
       <div className="flex gap-2">
         <Button onClick={save} isLoading={update.isPending}>
           Save changes

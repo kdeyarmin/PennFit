@@ -62,6 +62,18 @@ export function ProviderSignDocument({
   id: string;
   providerName?: string | null;
 }) {
+  // The router can replace :id without unmounting this page. Consent,
+  // signature drafts, and late results belong to exactly one document.
+  return <DocumentSigningForm key={id} id={id} providerName={providerName} />;
+}
+
+function DocumentSigningForm({
+  id,
+  providerName,
+}: {
+  id: string;
+  providerName?: string | null;
+}) {
   const [, setLocation] = useLocation();
   const returnTo = safeReturnTo(window.location.search);
   const [signerName, setSignerName] = useState("");
@@ -72,6 +84,7 @@ export function ProviderSignDocument({
   const [declining, setDeclining] = useState(false);
   const [declineReason, setDeclineReason] = useState("");
   const [done, setDone] = useState<"signed" | "declined" | null>(null);
+  const actionInFlight = useRef(false);
 
   const query = useQuery({
     queryKey: ["provider", "queue", "item", id],
@@ -93,6 +106,9 @@ export function ProviderSignDocument({
       }),
     onSuccess: () => setDone("signed"),
     onError: (err: Error) => setError(err.message),
+    onSettled: () => {
+      actionInFlight.current = false;
+    },
   });
 
   const declineMut = useMutation({
@@ -100,7 +116,11 @@ export function ProviderSignDocument({
       declineProviderDocument(id, declineReason.trim() || undefined),
     onSuccess: () => setDone("declined"),
     onError: (err: Error) => setError(err.message),
+    onSettled: () => {
+      actionInFlight.current = false;
+    },
   });
+  const busy = signMut.isPending || declineMut.isPending;
 
   if (done) {
     // With a return target the signature is a STEP, not the end: say what
@@ -147,7 +167,16 @@ export function ProviderSignDocument({
       {query.isPending ? (
         <Spinner label="Loading document…" />
       ) : query.isError ? (
-        <ErrorNote>This document could not be loaded.</ErrorNote>
+        <div className="space-y-3">
+          <ErrorNote>This document could not be loaded.</ErrorNote>
+          <Button
+            variant="secondary"
+            disabled={query.isFetching}
+            onClick={() => void query.refetch()}
+          >
+            {query.isFetching ? "Trying again…" : "Try again"}
+          </Button>
+        </div>
       ) : query.data.status !== "pending" ? (
         <Card className="p-6">
           <p className="text-sm text-slate-600">
@@ -233,12 +262,21 @@ export function ProviderSignDocument({
               <div className="mt-4 flex gap-3">
                 <Button
                   variant="danger"
-                  onClick={() => declineMut.mutate()}
-                  disabled={declineMut.isPending}
+                  onClick={() => {
+                    if (actionInFlight.current) return;
+                    actionInFlight.current = true;
+                    setError(null);
+                    declineMut.mutate();
+                  }}
+                  disabled={busy}
                 >
                   {declineMut.isPending ? "Submitting…" : "Confirm decline"}
                 </Button>
-                <Button variant="ghost" onClick={() => setDeclining(false)}>
+                <Button
+                  variant="ghost"
+                  disabled={busy}
+                  onClick={() => setDeclining(false)}
+                >
                   Cancel
                 </Button>
               </div>
@@ -252,7 +290,14 @@ export function ProviderSignDocument({
                 className="mt-4 space-y-4"
                 onSubmit={(e: FormEvent) => {
                   e.preventDefault();
-                  if (!consent || signerName.trim().length < 2) return;
+                  if (
+                    actionInFlight.current ||
+                    !consent ||
+                    signerName.trim().length < 2
+                  )
+                    return;
+                  actionInFlight.current = true;
+                  setError(null);
                   signMut.mutate();
                 }}
               >
@@ -310,17 +355,14 @@ export function ProviderSignDocument({
                 <div className="flex gap-3">
                   <Button
                     type="submit"
-                    disabled={
-                      signMut.isPending ||
-                      !consent ||
-                      signerName.trim().length < 2
-                    }
+                    disabled={busy || !consent || signerName.trim().length < 2}
                   >
                     {signMut.isPending ? "Signing…" : "Sign document"}
                   </Button>
                   <Button
                     type="button"
                     variant="ghost"
+                    disabled={busy}
                     onClick={() => setDeclining(true)}
                   >
                     Decline

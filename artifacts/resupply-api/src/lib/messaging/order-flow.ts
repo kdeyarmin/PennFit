@@ -297,7 +297,7 @@ export async function placeResupplyOrderForConversation(
   let resolvedEntitlement: SkuEntitlement | null = null;
   if (await isFeatureEnabled("resupply.entitlement_enforcement", orgId)) {
     try {
-      const entitlement = await resolveSkuEntitlement(supabase.raw(), {
+      const entitlement = await resolveSkuEntitlement(supabase, {
         patientId: episode.patient_id,
         itemSku: rx.item_sku,
       });
@@ -440,7 +440,7 @@ export async function placeResupplyOrderForConversation(
     try {
       const entitlement =
         resolvedEntitlement ??
-        (await resolveSkuEntitlement(supabase.raw(), {
+        (await resolveSkuEntitlement(supabase, {
           patientId: episode.patient_id,
           itemSku: rx.item_sku,
         }));
@@ -542,7 +542,7 @@ export async function placeResupplyOrderForConversation(
     );
     if (captureAffirmation && !resolvedEntitlement) {
       try {
-        resolvedEntitlement = await resolveSkuEntitlement(supabase.raw(), {
+        resolvedEntitlement = await resolveSkuEntitlement(supabase, {
           patientId: episode.patient_id,
           itemSku: rx.item_sku,
         });

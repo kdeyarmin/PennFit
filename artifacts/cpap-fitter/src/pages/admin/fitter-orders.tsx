@@ -21,7 +21,7 @@ import { formatAppDateTime } from "@/lib/utils";
 
 const STATUS_LABEL: Record<string, string> = {
   pending: "Pending",
-  sent: "Delivered",
+  sent: "Email sent",
   failed: "Failed",
   skipped: "Skipped",
 };
@@ -123,7 +123,7 @@ export function AdminOrders() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All statuses</SelectItem>
-              <SelectItem value="sent">Delivered</SelectItem>
+              <SelectItem value="sent">Email sent</SelectItem>
               <SelectItem value="failed">Failed</SelectItem>
               <SelectItem value="pending">Pending</SelectItem>
               <SelectItem value="skipped">Skipped</SelectItem>

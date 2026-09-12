@@ -4986,8 +4986,8 @@ function PlatformConsole() {
 // session is present (platform admins authenticate through the shared
 // in-house admin auth).
 export function PlatformConsoleRoute() {
-  const { data, isPending } = authHooks.useSession();
-  if (isPending) {
+  const { data, isPending, isFetching } = authHooks.useSession();
+  if (isPending || (data === null && isFetching)) {
     return (
       <div className="admin-root min-h-screen flex items-center justify-center">
         <Spinner label="Checking sign-in…" />
@@ -4998,5 +4998,5 @@ export function PlatformConsoleRoute() {
   // sign-in returns them HERE. Without it the Breathe footer's "Super admin
   // login" link landed operators in the tenant console instead.
   if (!data) return <Redirect to={buildAdminSignInHref()} />;
-  return <PlatformConsole />;
+  return <PlatformConsole key={`${data.id}:${data.role}`} />;
 }

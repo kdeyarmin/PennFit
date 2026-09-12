@@ -1,6 +1,7 @@
 import { Fragment, useState } from "react";
-import { Link, useLocation } from "wouter";
+import { Link, useLocation, useSearchParams } from "wouter";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { captureSessionCacheGuard } from "@workspace/resupply-auth-react";
 import {
   ApiError,
   getListPatientNotesQueryKey,
@@ -105,16 +106,6 @@ export function pickPatientTab(raw: string | null | undefined): Tab {
     : "timeline";
 }
 
-function initialTab(): Tab {
-  try {
-    return pickPatientTab(
-      new URLSearchParams(window.location.search).get("tab"),
-    );
-  } catch {
-    return "timeline";
-  }
-}
-
 // Display label per tab (count-bearing tabs append their count at render).
 const TAB_LABELS: Record<Tab, string> = {
   timeline: "Timeline",
@@ -188,7 +179,19 @@ export { PATIENT_TABS };
  */
 export function PatientDetailPage({ id }: { id: string }) {
   const [, setLocation] = useLocation();
-  const [tab, setTab] = useState<Tab>(initialTab);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tab = pickPatientTab(searchParams.get("tab"));
+  // Keep tab clicks and incoming deep links on the same source of truth,
+  // including navigation that reuses this mounted patient page.
+  const setTab = (next: Tab) =>
+    setSearchParams(
+      (previous) => {
+        const params = new URLSearchParams(previous);
+        params.set("tab", next);
+        return params;
+      },
+      { replace: true },
+    );
   const { data, isPending, isError, error, refetch } = useGetPatient(id);
   // Show the audit-packet shortcut only when the ADR/audit feature is on.
   const auditPacketEnabled = useQuery({
@@ -235,8 +238,11 @@ export function PatientDetailPage({ id }: { id: string }) {
       ? `${TAB_LABELS[t]} (${tabCounts[t]})`
       : TAB_LABELS[t];
 
+  // Cached patient-to-patient navigation skips the loading branch. Remount
+  // every patient-owned form, including the header editors and settings,
+  // so a previous patient's unsaved draft cannot be saved onto this record.
   return (
-    <div className="space-y-6 max-w-5xl">
+    <div key={id} className="space-y-6 max-w-5xl">
       <BackLink />
 
       <Card>
@@ -420,16 +426,7 @@ export function PatientDetailPage({ id }: { id: string }) {
         ))}
       </div>
 
-      {/*
-        Keyed on the patient id: this page receives a NEW `id` prop
-        without remounting when the operator jumps patient→patient
-        (global lookup, back/forward), and a cached target skips the
-        spinner branch — so stateful tab bodies (e.g. FaxOutreachTab's
-        physician/cover-letter compose fields) would otherwise carry the
-        PREVIOUS patient's draft and submit it under the new patient.
-        The key remounts the active tab with fresh state on switch.
-      */}
-      <Card key={id}>
+      <Card>
         {tab === "timeline" && (
           <TimelineTab
             patientId={id}
@@ -586,6 +583,7 @@ function NotesTab({ patientId }: { patientId: string }) {
 
   async function onAdd() {
     if (!canSubmit) return;
+    const isCurrentSession = captureSessionCacheGuard(queryClient);
     setSubmitError(null);
     // Optimistic prepend: show the note (and clear the composer)
     // immediately instead of blocking the UI on the round-trip +
@@ -593,6 +591,7 @@ function NotesTab({ patientId }: { patientId: string }) {
     // composer text is restored so nothing the admin typed is lost.
     const notesKey = getListPatientNotesQueryKey(patientId);
     await queryClient.cancelQueries({ queryKey: notesKey });
+    if (!isCurrentSession()) return;
     const previous = queryClient.getQueryData<PatientNotesPage>(notesKey);
     if (previous) {
       const optimistic: PatientNote = {
@@ -609,10 +608,13 @@ function NotesTab({ patientId }: { patientId: string }) {
     setBody("");
     try {
       await create.mutateAsync({ id: patientId, data: { body: trimmed } });
+      if (!isCurrentSession()) return;
       // Re-sync so the optimistic row picks up its server id/timestamp.
       await queryClient.invalidateQueries({ queryKey: notesKey });
+      if (!isCurrentSession()) return;
       void refetch();
     } catch (err) {
+      if (!isCurrentSession()) return;
       if (previous) queryClient.setQueryData(notesKey, previous);
       setBody(trimmed);
       const msg =

@@ -24,7 +24,7 @@ import { formatAppDateTime } from "@/lib/utils";
 
 const STATUS_LABEL: Record<string, string> = {
   pending: "Pending send",
-  sent: "Delivered",
+  sent: "Email sent",
   failed: "Delivery failed",
   skipped: "Skipped (email not configured)",
 };
@@ -150,7 +150,9 @@ export function AdminOrderDetail() {
           </Badge>
           {o.emailDeliveredAt && (
             <div className="text-xs text-muted-foreground mt-1">
-              Delivered {formatAppDateTime(o.emailDeliveredAt)}
+              {/* This legacy field records the successful send attempt,
+                  not a provider delivery webhook or physical shipment. */}
+              Email sent {formatAppDateTime(o.emailDeliveredAt)}
             </div>
           )}
         </div>

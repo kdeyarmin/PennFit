@@ -9,26 +9,35 @@
 // before axe runs, then we fail on serious/critical violations only —
 // the same gate the public sweep uses.
 
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures";
 
 import { expectNoSeriousAxeViolations } from "../axe.helper";
 
-const ADMIN_ROUTES: ReadonlyArray<{ path: string; label: string }> = [
-  { path: "/admin", label: "admin console" },
-  { path: "/admin/patients", label: "admin patients" },
-  { path: "/admin/operations", label: "admin operations" },
+const ADMIN_ROUTES: ReadonlyArray<{
+  path: string;
+  label: string;
+  heading: string;
+}> = [
+  { path: "/admin", label: "admin console", heading: "Home" },
+  { path: "/admin/patients", label: "admin patients", heading: "Patients" },
+  {
+    path: "/admin/operations",
+    label: "admin operations",
+    heading: "Operations",
+  },
 ];
 
-for (const { path, label } of ADMIN_ROUTES) {
+for (const { path, label, heading } of ADMIN_ROUTES) {
   test(`${label} (${path}) has no serious/critical axe violations`, async ({
     page,
   }) => {
     await page.goto(path, { waitUntil: "domcontentloaded" });
     // A valid session must NOT bounce us to sign-in.
     await expect(page).not.toHaveURL(/\/admin\/sign-in/, { timeout: 15_000 });
-    // The admin shell wraps its surfaces in `.admin-root`; wait for it so
-    // axe scans the rendered console, not a loading shell.
-    await expect(page.locator(".admin-root").first()).toBeVisible({
+    // Onboarding also has .admin-root, so require the requested page itself.
+    await expect(
+      page.getByRole("heading", { name: heading, exact: true }),
+    ).toBeVisible({
       timeout: 15_000,
     });
 

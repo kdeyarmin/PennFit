@@ -11,6 +11,7 @@
 
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { captureSessionCacheGuard } from "@workspace/resupply-auth-react";
 import { Link } from "wouter";
 import {
   ArrowLeft,
@@ -334,9 +335,13 @@ function StatementDeliverySection() {
     staleTime: 30_000,
   });
   const update = useMutation({
+    onMutate: () => ({ isCurrentSession: captureSessionCacheGuard(qc) }),
     mutationFn: (method: StatementDeliveryMethod) =>
       updateStatementPreference(method),
-    onSuccess: (data) => qc.setQueryData(["me-statement-preference"], data),
+    onSuccess: (data, _method, ctx) => {
+      if (ctx?.isCurrentSession())
+        qc.setQueryData(["me-statement-preference"], data);
+    },
   });
 
   if (pref.isPending || pref.isError || !pref.data) return null;

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "wouter";
+import { captureSessionCacheGuard } from "@workspace/resupply-auth-react";
 import {
   keepPreviousData,
   useQuery,
@@ -241,6 +242,7 @@ export function PatientsPage() {
   async function runBulk(
     targetStatus: BulkPatientStatusRequestStatus,
   ): Promise<void> {
+    const isCurrentSession = captureSessionCacheGuard(queryClient);
     const ids = Array.from(selectedIds);
     if (ids.length === 0) return;
     const verb =
@@ -263,11 +265,13 @@ export function PatientsPage() {
       }))
     )
       return;
+    if (!isCurrentSession()) return;
     setBulkFeedback(null);
     try {
       const res = await bulkMut.mutateAsync({
         data: { ids, status: targetStatus },
       });
+      if (!isCurrentSession()) return;
       const updatedCount = res.updated.length;
       const failedCount = res.failed.length;
       // Group failures by reason for the toast — currently the only
@@ -292,6 +296,7 @@ export function PatientsPage() {
       await queryClient.invalidateQueries({
         queryKey: getListPatientsQueryKey(params),
       });
+      if (!isCurrentSession()) return;
       // Clear selection only on full success — partial failures
       // leave the failed ids checked so the admin can see what
       // didn't go through.
@@ -301,6 +306,7 @@ export function PatientsPage() {
         setSelection(failedSet);
       }
     } catch (err) {
+      if (!isCurrentSession()) return;
       const msg =
         err instanceof ApiError
           ? ((err.data as { message?: string; error?: string } | undefined)
@@ -322,6 +328,7 @@ export function PatientsPage() {
   // friendly error message on 401/5xx instead of a downloaded
   // error page.
   async function downloadCsv(): Promise<void> {
+    const isCurrentSession = captureSessionCacheGuard(queryClient);
     setExportError(null);
     setBulkExporting(true);
     try {
@@ -340,6 +347,7 @@ export function PatientsPage() {
       const headers: Record<string, string> = { Accept: "text/csv" };
 
       const res = await fetch(url.toString(), { headers });
+      if (!isCurrentSession()) return;
       if (!res.ok) {
         throw new Error(
           res.status === 401
@@ -349,6 +357,7 @@ export function PatientsPage() {
       }
       const truncated = res.headers.get("X-Truncated") === "true";
       const blob = await res.blob();
+      if (!isCurrentSession()) return;
       const blobUrl = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = blobUrl;
@@ -367,6 +376,7 @@ export function PatientsPage() {
         });
       }
     } catch (err) {
+      if (!isCurrentSession()) return;
       setExportError(err instanceof Error ? err.message : "Export failed.");
     } finally {
       setBulkExporting(false);
@@ -884,6 +894,7 @@ function NewCustomerModal({
   }
 
   async function onSubmit(e: React.FormEvent) {
+    const isCurrentSession = captureSessionCacheGuard(queryClient);
     e.preventDefault();
     setError(null);
     const { body, error: validationError } = buildCreatePatientBody(form);
@@ -893,14 +904,17 @@ function NewCustomerModal({
     }
     try {
       const res = await createMut.mutateAsync({ data: body });
+      if (!isCurrentSession()) return;
       // Invalidate every list-patients query (across filters / pages)
       // so the new row shows up regardless of which view the admin
       // returns to.
       await queryClient.invalidateQueries({
         queryKey: getListPatientsQueryKey(),
       });
+      if (!isCurrentSession()) return;
       onCreated(res.id);
     } catch (err) {
+      if (!isCurrentSession()) return;
       setError(describeCreateError(err));
     }
   }
@@ -1313,6 +1327,7 @@ function ImportCsvModal({
   onComplete: () => void;
 }) {
   const importMut = useImportPatientsCsv();
+  const queryClient = useQueryClient();
   const [parsing, setParsing] = useState(false);
   const [rows, setRows] = useState<ParsedRow[]>([]);
   const [parseError, setParseError] = useState<string | null>(null);
@@ -1394,6 +1409,7 @@ function ImportCsvModal({
   const invalidRows = rows.filter((r) => r.error !== null);
 
   async function onSubmit() {
+    const isCurrentSession = captureSessionCacheGuard(queryClient);
     if (validRows.length === 0) return;
     setSubmitting(true);
     setSubmitError(null);
@@ -1418,6 +1434,7 @@ function ImportCsvModal({
         const res = await importMut.mutateAsync({
           data: { rows: batches[i] },
         });
+        if (!isCurrentSession()) return;
         agg.created += res.created;
         agg.skippedDuplicates += res.skippedDuplicates;
         // Re-base server's row indexes to the original CSV row number
@@ -1438,6 +1455,7 @@ function ImportCsvModal({
           });
         }
       } catch (err) {
+        if (!isCurrentSession()) return;
         const msg =
           err instanceof ApiError
             ? ((err.data as { message?: string } | undefined)?.message ??

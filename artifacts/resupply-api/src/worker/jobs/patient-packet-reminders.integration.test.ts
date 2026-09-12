@@ -29,7 +29,15 @@ import {
 
 // Stub link-signing + delivery (auth-deps / vendor creds), keep the rest.
 const deliverMock = vi.hoisted(() =>
-  vi.fn(async () => ({ emailSent: true, smsSent: false })),
+  vi.fn(async (_options: { packetId: string }) => ({
+    emailSent: true,
+    smsSent: false,
+  })),
+);
+const linkMock = vi.hoisted(() =>
+  vi.fn(
+    async (): Promise<string | null> => "https://test.example/sign?token=stub",
+  ),
 );
 vi.mock("../../lib/patient-packet/send", async () => {
   const actual = await vi.importActual<
@@ -37,7 +45,7 @@ vi.mock("../../lib/patient-packet/send", async () => {
   >("../../lib/patient-packet/send");
   return {
     ...actual,
-    buildPacketSigningLink: () => "https://test.example/sign?token=stub",
+    buildPacketSigningLink: linkMock,
     deliverPacketLink: deliverMock,
   };
 });
@@ -135,7 +143,22 @@ describeIfDb("patient-packet-reminders fan-out (live db)", () => {
     }
   });
 
-  beforeEach(() => deliverMock.mockClear());
+  beforeEach(async () => {
+    deliverMock
+      .mockReset()
+      .mockResolvedValue({ emailSent: true, smsSent: false });
+    linkMock
+      .mockReset()
+      .mockResolvedValue("https://test.example/sign?token=stub");
+    if (migrationsReady)
+      await getDbPool().query(
+        `UPDATE resupply.patient_packets SET status = 'sent', link_version = 1,
+         reminder_count = 0, last_reminded_at = NULL, completed_at = NULL,
+         sent_at = now() - interval '4 days', expires_at = now() + interval '7 days'
+       WHERE id = ANY($1)`,
+        [[a.packetId, b.packetId]],
+      );
+  });
 
   afterAll(async () => {
     if (migrationsReady) {
@@ -201,5 +224,91 @@ describeIfDb("patient-packet-reminders fan-out (live db)", () => {
     );
     expect(bById.get(b.packetId)).toBe(1);
     expect(bById.has(a.packetId)).toBe(false);
+  });
+
+  it.for(["completed", "voided"])(
+    "does not reopen a packet %s after the scan",
+    async (status, ctx) => {
+      if (!migrationsReady) return ctx.skip();
+      const client = await getDbPool().connect();
+      let sweep: ReturnType<typeof runPatientPacketReminderSweep> | undefined;
+      try {
+        await client.query("BEGIN");
+        const { rows } = await client.query("SELECT pg_backend_pid() AS pid");
+        await client.query(
+          "SELECT id FROM resupply.patient_packets WHERE id = $1 FOR UPDATE",
+          [a.packetId],
+        );
+        sweep = runPatientPacketReminderSweep();
+        // Wait until the real PostgREST claim is blocked on this row, then
+        // finish signing/voiding before it can acquire the packet lock.
+        let blocked = false;
+        for (let attempt = 0; attempt < 100; attempt += 1) {
+          const result = await getDbPool().query(
+            "SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE $1 = ANY(pg_blocking_pids(pid))) AS blocked",
+            [rows[0].pid],
+          );
+          if (result.rows[0].blocked) {
+            blocked = true;
+            break;
+          }
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+        expect(blocked).toBe(true);
+        await client.query(
+          "UPDATE resupply.patient_packets SET status = $2 WHERE id = $1",
+          [a.packetId, status],
+        );
+        await client.query("COMMIT");
+        await sweep;
+        const result = await client.query(
+          "SELECT status, link_version, reminder_count FROM resupply.patient_packets WHERE id = $1",
+          [a.packetId],
+        );
+        expect(result.rows[0]).toEqual({
+          status,
+          link_version: 1,
+          reminder_count: 0,
+        });
+        expect(
+          deliverMock.mock.calls.some(
+            ([options]) => options.packetId === a.packetId,
+          ),
+        ).toBe(false);
+      } finally {
+        await client.query("ROLLBACK");
+        client.release();
+        await sweep;
+      }
+    },
+  );
+
+  it("does not roll a completed packet back after unsuccessful delivery", async (ctx) => {
+    if (!migrationsReady) return ctx.skip();
+    deliverMock.mockImplementation(async ({ packetId }) => {
+      await getDbPool().query(
+        "UPDATE resupply.patient_packets SET status = 'completed', completed_at = now() WHERE id = $1",
+        [packetId],
+      );
+      return { emailSent: false, smsSent: false };
+    });
+    await runPatientPacketReminderSweep();
+    const { rows } = await getDbPool().query(
+      "SELECT status, link_version FROM resupply.patient_packets WHERE id = $1",
+      [a.packetId],
+    );
+    expect(rows[0]).toEqual({ status: "completed", link_version: 2 });
+  });
+
+  it("keeps the previous link and reminder allowance when no domain is available", async (ctx) => {
+    if (!migrationsReady) return ctx.skip();
+    linkMock.mockResolvedValue(null);
+    await runPatientPacketReminderSweep();
+    const { rows } = await getDbPool().query(
+      "SELECT link_version, reminder_count FROM resupply.patient_packets WHERE id = $1",
+      [a.packetId],
+    );
+    expect(rows[0]).toEqual({ link_version: 1, reminder_count: 0 });
+    expect(deliverMock).not.toHaveBeenCalled();
   });
 });

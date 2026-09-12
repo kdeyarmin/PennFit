@@ -8,6 +8,7 @@
 
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { captureSessionCacheGuard } from "@workspace/resupply-auth-react";
 import { Copy, Plus, Send, Video, XCircle, CheckCircle2 } from "lucide-react";
 
 import { Badge } from "@/components/admin/Badge";
@@ -131,7 +132,9 @@ export function AdminVideoVisitsPage() {
   const copyLink = useMutation({
     mutationFn: joinVideoVisit,
     onSuccess: async (info) => {
+      const isCurrentSession = captureSessionCacheGuard(queryClient);
       const ok = await copyToClipboard(info.patientJoinUrl);
+      if (!isCurrentSession()) return;
       toast(
         ok
           ? { title: "Patient link copied to clipboard" }

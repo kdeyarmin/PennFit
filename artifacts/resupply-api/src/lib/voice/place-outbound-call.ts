@@ -29,6 +29,10 @@
 import { logAudit } from "@workspace/resupply-audit";
 import { getOrgScopedClient } from "@workspace/resupply-db";
 import {
+  withReminderSendStage,
+  type ReminderSendStage,
+} from "@workspace/resupply-reminders";
+import {
   createTwilioClient,
   TwilioApiError,
   TwilioConfigError,
@@ -94,6 +98,15 @@ export interface PlaceOutboundReorderCallInput {
 export async function placeOutboundReorderCall(
   input: PlaceOutboundReorderCallInput,
 ): Promise<PlaceCallOutcome> {
+  return withReminderSendStage((stage) =>
+    placeOutboundReorderCallAttempt(input, stage),
+  );
+}
+
+async function placeOutboundReorderCallAttempt(
+  input: PlaceOutboundReorderCallInput,
+  stage: ReminderSendStage,
+): Promise<PlaceCallOutcome> {
   const { orgId, patientId, episodeId, config, actor } = input;
   const supabase = getOrgScopedClient(orgId);
 
@@ -147,15 +160,40 @@ export async function placeOutboundReorderCall(
   const conversationId = inserted?.id;
   if (!conversationId) return { status: "conversation_create_failed" };
 
+  // Keep the attempt in the timeline without letting an unsent attempt
+  // suppress the CSR worker's retry as "contacted within 48 hours".
+  // A callback that already attached a CallSid keeps its timestamp.
+  const clearUnsentAttempt = async () => {
+    try {
+      const { error } = await supabase
+        .from("conversations")
+        .update({ last_message_at: null, updated_at: new Date().toISOString() })
+        .eq("id", conversationId)
+        .is("external_ref", null);
+      if (error) throw error;
+    } catch {
+      // Preserve the actual send/preparation failure for the caller.
+      logger.warn(
+        { event: "voice.place-call.unsent_cleanup_failed", conversationId },
+        "voice.place-call: unsent conversation timestamp could not be cleared",
+      );
+    }
+  };
+
   // Register pending session BEFORE Twilio dials so the WS upgrade — which
   // can race the API response — sees the entry the moment Twilio connects
   // its socket back.
-  await getPendingSessions().register({
-    conversationId,
-    patientId,
-    episodeId,
-    orgId,
-  });
+  try {
+    await getPendingSessions().register({
+      conversationId,
+      patientId,
+      episodeId,
+      orgId,
+    });
+  } catch (err) {
+    await clearUnsentAttempt();
+    throw err;
+  }
 
   const baseUrl = config.publicBaseUrl;
   const twimlUrl = `${baseUrl}/resupply-api/voice/twiml-connect?conversationId=${encodeURIComponent(
@@ -167,15 +205,15 @@ export async function placeOutboundReorderCall(
 
   // Place the call from the tenant's own voice caller-id when it has one
   // (G7), else the platform default. Fails soft to the default.
-  const callerId =
-    (await resolveTenantVoiceFrom(orgId)) ?? config.twilioPhoneNumber;
-
   let callSid: string;
   try {
+    const callerId =
+      (await resolveTenantVoiceFrom(orgId)) ?? config.twilioPhoneNumber;
     const twilio = createTwilioClient({
       accountSid: config.twilioAccountSid,
       authToken: config.twilioAuthToken,
     });
+    stage.markProviderAttempted();
     const result = await twilio.placeCall({
       to: patient.phone_e164,
       from: callerId,
@@ -190,17 +228,12 @@ export async function placeOutboundReorderCall(
     });
     callSid = result.sid;
   } catch (err) {
-    if (err instanceof TwilioConfigError || err instanceof TwilioApiError) {
-      // Keep the failed-attempt timeline/audit row, but do not count a
-      // rejected dial as patient contact. Otherwise the CSR worker's
-      // 48-hour check would suppress the retry after a provider rejection.
-      // A callback that already attached a CallSid keeps its timestamp.
-      const { error: rejectedAttemptErr } = await supabase
-        .from("conversations")
-        .update({ last_message_at: null, updated_at: new Date().toISOString() })
-        .eq("id", conversationId)
-        .is("external_ref", null);
-      if (rejectedAttemptErr) throw rejectedAttemptErr;
+    if (
+      !stage.providerAttempted ||
+      err instanceof TwilioConfigError ||
+      err instanceof TwilioApiError
+    ) {
+      await clearUnsentAttempt();
     }
     if (err instanceof TwilioConfigError) {
       logger.error(
@@ -241,24 +274,50 @@ export async function placeOutboundReorderCall(
   // stamped — the WS handler then runs with twilioCallSid=null until the
   // `start` frame lands. We can't fail the call over it (the dial already
   // succeeded), but a silent miss made the binding window invisible, so log it.
-  const callSidAttached = await getPendingSessions().attachCallSid(
-    conversationId,
-    callSid,
-  );
-  if (!callSidAttached) {
-    logger.warn(
-      { event: "voice.place-call.attach_callsid_miss", conversationId },
-      "voice.place-call: attachCallSid did not stamp the pending session (claimed/expired?); WS will bind from the start frame",
+  try {
+    const callSidAttached = await getPendingSessions().attachCallSid(
+      conversationId,
+      callSid,
+    );
+    if (!callSidAttached) {
+      logger.warn(
+        { event: "voice.place-call.attach_callsid_miss", conversationId },
+        "voice.place-call: attachCallSid did not stamp the pending session (claimed/expired?); WS will bind from the start frame",
+      );
+    }
+  } catch {
+    // The provider accepted the call. A bookkeeping failure must not make
+    // the worker release its dedup key or make an operator retry the dial.
+    logger.error(
+      {
+        event: "voice.place-call.attach_callsid_failed",
+        conversationId,
+        callSid,
+      },
+      "voice.place-call: accepted call SID was not attached to the pending session; reconciliation required",
     );
   }
-  const { error: updateErr } = await supabase
-    .from("conversations")
-    .update({
-      external_ref: callSid,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", conversationId);
-  if (updateErr) throw updateErr;
+  // Keep this write independent: if the pending store is unavailable, the
+  // conversation can still retain the provider reference (and vice versa).
+  try {
+    const { error: updateErr } = await supabase
+      .from("conversations")
+      .update({
+        external_ref: callSid,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", conversationId);
+    if (updateErr) throw updateErr;
+  } catch {
+    logger.error(
+      {
+        event: "voice.place-call.conversation_sid_failed",
+        conversationId,
+        callSid,
+      },
+      "voice.place-call: accepted call SID was not saved on the conversation; reconciliation required",
+    );
+  }
 
   await safeAudit(actor, {
     targetId: conversationId,

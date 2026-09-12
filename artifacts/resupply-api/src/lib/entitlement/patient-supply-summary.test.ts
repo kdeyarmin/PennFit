@@ -16,6 +16,7 @@ function references() {
     data: [
       { sku_prefix: "MASK", hcpcs_code: "A7034" },
       { sku_prefix: "MASK-FULL", hcpcs_code: "A7030" },
+      { sku_prefix: "NASAL-INTERFACE", hcpcs_code: "A7034" },
       { sku_prefix: "CUSHION", hcpcs_code: "A7032" },
     ],
   });
@@ -47,6 +48,53 @@ function references() {
 }
 beforeEach(() => db.reset());
 describe("batched patient supply review", () => {
+  it("keeps overlapping SKU prefixes in their own HCPCS families", async () => {
+    references();
+    stage("fulfillments", "select", {
+      data: [
+        {
+          item_sku: "MASK-FULL-L",
+          quantity: 1,
+          created_at: ago(1),
+          shipped_at: null,
+        },
+      ],
+    });
+    const result = await loadPatientSupplySummary(
+      getOrgScopedClient("org"),
+      "patient",
+      ["MASK-M"],
+      now,
+    );
+    expect(result.entitlements.get("MASK-M")).toMatchObject({
+      eligible: true,
+      hcpcsCode: "A7034",
+    });
+  });
+  it("counts a dispense under another SKU prefix in the same HCPCS family", async () => {
+    references();
+    stage("fulfillments", "select", {
+      data: [
+        {
+          item_sku: "NASAL-INTERFACE-L",
+          quantity: 1,
+          created_at: ago(1),
+          shipped_at: null,
+        },
+      ],
+    });
+    const result = await loadPatientSupplySummary(
+      getOrgScopedClient("org"),
+      "patient",
+      ["MASK-M"],
+      now,
+    );
+    expect(result.entitlements.get("MASK-M")).toMatchObject({
+      eligible: false,
+      status: "too_soon",
+      hcpcsCode: "A7034",
+    });
+  });
   it("calculates multiple supplies with one shared set of reads", async () => {
     references();
     stage("fulfillments", "select", {

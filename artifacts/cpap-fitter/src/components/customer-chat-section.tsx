@@ -27,6 +27,8 @@ import React, {
   useRef,
   useState,
 } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { captureSessionCacheGuard } from "@workspace/resupply-auth-react";
 import {
   Bot,
   Loader2,
@@ -102,20 +104,25 @@ interface DisplayMessage extends CustomerChatMessage {
   streaming?: boolean;
 }
 
-function readPersistedMessages(): DisplayMessage[] {
+function readPersistedMessages(ownerId: string): DisplayMessage[] {
   if (typeof window === "undefined") return [];
   try {
     const raw = window.sessionStorage.getItem(SESSION_STORAGE_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    return parsed
+    if (parsed?.ownerId !== ownerId || !Array.isArray(parsed.messages))
+      return [];
+    const messages: unknown[] = parsed.messages;
+    return messages
       .filter(
         (m): m is DisplayMessage =>
-          m &&
+          !!m &&
           typeof m === "object" &&
+          "role" in m &&
           (m.role === "user" || m.role === "assistant") &&
+          "content" in m &&
           typeof m.content === "string" &&
+          "id" in m &&
           typeof m.id === "string",
       )
       .map((m) => ({ ...m, streaming: false }));
@@ -124,13 +131,16 @@ function readPersistedMessages(): DisplayMessage[] {
   }
 }
 
-function persistMessages(messages: DisplayMessage[]): void {
+function persistMessages(ownerId: string, messages: DisplayMessage[]): void {
   if (typeof window === "undefined") return;
   // Persist only finalized (non-streaming) turns so a refresh during
   // a stream doesn't replay a half-rendered assistant message.
   const stable = messages.filter((m) => !m.streaming).slice(-PERSIST_TURNS_CAP);
   try {
-    window.sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(stable));
+    window.sessionStorage.setItem(
+      SESSION_STORAGE_KEY,
+      JSON.stringify({ ownerId, messages: stable }),
+    );
   } catch {
     // sessionStorage full / disabled — ignore; chat still works in-memory.
   }
@@ -209,29 +219,48 @@ class ChatErrorBoundary extends React.Component<
 }
 
 export function CustomerChatSection(): React.JSX.Element | null {
+  const { isSignedIn, isLoaded, userId, displayName } = useShopIdentity();
+  if (!isLoaded) {
+    return (
+      <section className="glass-card rounded-2xl p-6">
+        <div className="flex items-center gap-2 text-muted-foreground text-sm">
+          <Loader2 className="w-4 h-4 animate-spin" />
+          Loading account assistant…
+        </div>
+      </section>
+    );
+  }
+  if (!isSignedIn || !userId) return null;
   return (
-    <ChatErrorBoundary>
-      <CustomerChatSectionInner />
+    <ChatErrorBoundary key={userId}>
+      <CustomerChatSectionInner ownerId={userId} displayName={displayName} />
     </ChatErrorBoundary>
   );
 }
 
-function CustomerChatSectionInner(): React.JSX.Element | null {
+function CustomerChatSectionInner({
+  ownerId,
+  displayName,
+}: {
+  ownerId: string;
+  displayName: string | null;
+}): React.JSX.Element {
   const contact = useCompanyContact();
-  const { isSignedIn, isLoaded, displayName } = useShopIdentity();
+  const queryClient = useQueryClient();
   const { toast } = useToast();
   const [messages, setMessages] = useState<DisplayMessage[]>(() =>
-    readPersistedMessages(),
+    readPersistedMessages(ownerId),
   );
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
+  const mountedRef = useRef(true);
   const listRef = useRef<HTMLDivElement | null>(null);
 
   // Persist whenever the conversation changes.
   useEffect(() => {
-    persistMessages(messages);
-  }, [messages]);
+    persistMessages(ownerId, messages);
+  }, [ownerId, messages]);
 
   // Keep the latest message visible.
   useEffect(() => {
@@ -243,7 +272,11 @@ function CustomerChatSectionInner(): React.JSX.Element | null {
   // Cancel any in-flight stream on unmount so an abandoned tab
   // doesn't keep an open SSE connection alive.
   useEffect(() => {
-    return () => abortRef.current?.abort();
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      abortRef.current?.abort();
+    };
   }, []);
 
   const greeting = useMemo(() => {
@@ -292,11 +325,14 @@ function CustomerChatSectionInner(): React.JSX.Element | null {
 
       const ctrl = new AbortController();
       abortRef.current = ctrl;
+      const isCurrentSession = captureSessionCacheGuard(queryClient);
+      const isCurrent = () => mountedRef.current && isCurrentSession();
 
       try {
         const finalMeta = await streamCustomerChatMessage(
           wireHistory,
           (chunk) => {
+            if (!isCurrent() || ctrl.signal.aborted) return;
             setMessages((prev) => {
               const next = prev.slice();
               const last = next[next.length - 1];
@@ -311,6 +347,7 @@ function CustomerChatSectionInner(): React.JSX.Element | null {
           },
           ctrl.signal,
         );
+        if (!isCurrent() || ctrl.signal.aborted) return;
         // Finalize the streaming flag on the assistant turn.
         setMessages((prev) =>
           prev.map((m) =>
@@ -337,16 +374,15 @@ function CustomerChatSectionInner(): React.JSX.Element | null {
           });
         }
       } catch (err) {
+        if (!isCurrent()) return;
         if ((err as { name?: string })?.name === "AbortError") {
           // User-initiated cancel — nothing to surface.
           setMessages((prev) =>
-            prev.map((m) =>
+            prev.flatMap((m) =>
               m.id === assistantMsg.id
-                ? {
-                    ...m,
-                    streaming: false,
-                    content: m.content || "(Canceled)",
-                  }
+                ? m.content
+                  ? [{ ...m, streaming: false }]
+                  : []
                 : m,
             ),
           );
@@ -385,7 +421,7 @@ function CustomerChatSectionInner(): React.JSX.Element | null {
         abortRef.current = null;
       }
     },
-    [busy, messages, toast, contact.phoneDisplay],
+    [busy, messages, toast, contact.phoneDisplay, queryClient],
   );
 
   const handleSubmit = useCallback(
@@ -408,24 +444,6 @@ function CustomerChatSectionInner(): React.JSX.Element | null {
     setMessages([]);
     clearPersistedMessages();
   }, []);
-
-  // Hide the section entirely until we know whether the user is
-  // signed in (avoids a flash of "please sign in" while auth probes).
-  if (!isLoaded) {
-    return (
-      <section className="glass-card rounded-2xl p-6">
-        <div className="flex items-center gap-2 text-muted-foreground text-sm">
-          <Loader2 className="w-4 h-4 animate-spin" />
-          Loading account assistant…
-        </div>
-      </section>
-    );
-  }
-
-  // Belt-and-suspenders: the account page already gates behind
-  // <SignedIn>, but render a graceful empty state if a future caller
-  // mounts us elsewhere.
-  if (!isSignedIn) return null;
 
   const hasMessages = messages.length > 0;
 

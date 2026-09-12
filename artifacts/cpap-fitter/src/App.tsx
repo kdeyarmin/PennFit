@@ -7,6 +7,10 @@ import {
   useLocation,
 } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import {
+  SessionMutationCache,
+  connectSessionCacheAcrossTabs,
+} from "@workspace/resupply-auth-react";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/not-found";
@@ -679,6 +683,7 @@ function RouteFallback() {
 // is already server-cached ~60s, so a 60s client staleTime keeps the two in
 // lockstep; one retry absorbs a transient blip without hammering the API.
 const queryClient = new QueryClient({
+  mutationCache: new SessionMutationCache(),
   defaultOptions: {
     queries: {
       staleTime: 60_000,
@@ -1088,17 +1093,17 @@ function GuardedOrderSuccess() {
 }
 
 function GuardedAccount() {
-  const { isSignedIn, isLoaded } = useShopIdentity();
+  const { isSignedIn, isLoaded, userId } = useShopIdentity();
   if (!isLoaded) return <RouteFallback />;
   if (!isSignedIn) return <Redirect to="/sign-in" />;
-  return <AccountPage />;
+  return <AccountPage key={userId} />;
 }
 
 function GuardedAccountBilling() {
-  const { isSignedIn, isLoaded } = useShopIdentity();
+  const { isSignedIn, isLoaded, userId } = useShopIdentity();
   if (!isLoaded) return <RouteFallback />;
   if (!isSignedIn) return <Redirect to="/sign-in" />;
-  return <AccountBillingPage />;
+  return <AccountBillingPage key={userId} />;
 }
 
 /**
@@ -1559,6 +1564,7 @@ function TopRouter() {
 // All components below this point use the identity shim
 // in `@/lib/identity` for auth state.
 function AppInner() {
+  useEffect(() => connectSessionCacheAcrossTabs(queryClient), []);
   return (
     <DemoModeProvider>
       <QueryClientProvider client={queryClient}>

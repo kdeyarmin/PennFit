@@ -22,6 +22,7 @@ import {
 } from "@tanstack/react-query";
 
 import type { AuthClient, AuthError, AuthMe, SignInResult } from "./client";
+import { clearSessionCache, readSession } from "./session-cache";
 
 export const SESSION_QUERY_KEY = ["auth", "me"] as const;
 
@@ -102,26 +103,37 @@ export function createAuthHooks(
 
   return {
     useSession() {
+      const qc = useQueryClient();
       return useQuery({
         queryKey: sessionQueryKey,
-        queryFn: () => client.fetchMe(),
+        queryFn: ({ signal }) =>
+          readSession(qc, sessionQueryKey, () => client.fetchMe(), signal),
         staleTime,
-        refetchOnWindowFocus: false,
+        refetchOnWindowFocus: "always",
+        refetchOnReconnect: "always",
+        // Revalidate visible signed-in sessions even when the tab stays open.
+        refetchInterval: (query) => (query.state.data ? 60_000 : false),
       });
     },
 
     useSignIn() {
       const qc = useQueryClient();
       return useMutation({
-        mutationFn: (input) => client.signIn(input),
-        onSuccess: (result) => {
+        // The execution context preserves only this auth completion during cleanup.
+        meta: { sessionTransition: true },
+        onMutate: (_input, context) => context,
+        mutationFn: async (input, context) => {
+          const result = await client.signIn(input);
+          // A dispatched response can change the cookie after another transition
+          // detached its callbacks, so cleanup must remain inside the request.
           // Only invalidate /me on the single-step path — the
           // mfaRequired branch hasn't set a session cookie yet,
           // and invalidating would trigger a /me probe that
           // returns 401 and confuses any session-watching gates.
           if (!result.mfaRequired) {
-            invalidateMe(qc);
+            if (await clearSessionCache(qc, context)) invalidateMe(qc);
           }
+          return result;
         },
       });
     },
@@ -129,8 +141,12 @@ export function createAuthHooks(
     useVerifySignInMfa() {
       const qc = useQueryClient();
       return useMutation({
-        mutationFn: (input) => client.verifySignInMfa(input),
-        onSuccess: () => invalidateMe(qc),
+        meta: { sessionTransition: true },
+        onMutate: (_input, context) => context,
+        mutationFn: async (input, context) => {
+          await client.verifySignInMfa(input);
+          if (await clearSessionCache(qc, context)) invalidateMe(qc);
+        },
       });
     },
 
@@ -145,8 +161,11 @@ export function createAuthHooks(
     useSignOut() {
       const qc = useQueryClient();
       return useMutation({
-        mutationFn: () => client.signOut(),
-        onSuccess: () => {
+        meta: { sessionTransition: true },
+        onMutate: (_input, context) => context,
+        mutationFn: async (_input, context) => {
+          await client.signOut();
+          if (!(await clearSessionCache(qc, context))) return;
           // Reset to null immediately so any gate watching
           // useSession redirects without a flicker.
           qc.setQueryData(sessionQueryKey, null);
@@ -164,8 +183,11 @@ export function createAuthHooks(
     useResetPassword() {
       const qc = useQueryClient();
       return useMutation({
-        mutationFn: (input) => client.resetPassword(input),
-        onSuccess: () => {
+        meta: { sessionTransition: true },
+        onMutate: (_input, context) => context,
+        mutationFn: async (input, context) => {
+          await client.resetPassword(input);
+          if (!(await clearSessionCache(qc, context))) return;
           // Server revoked all sessions for this user. Force the
           // SPA to re-fetch; it'll get null and route to sign-in.
           qc.setQueryData(sessionQueryKey, null);

@@ -47,12 +47,11 @@ import {
 } from "../../lib/patient-packet/content";
 import { buildSignedPacketPdf } from "../../lib/patient-packet/signed-pdf";
 import {
-  applyPacketDocumentOverrides,
   createAndSendPatientPacket,
   createAndSendPatientPacketToContact,
   deliverPacketLink,
   findInvalidOverrideKeys,
-  reconcilePacketDocuments,
+  preparePacketDocumentSnapshots,
   resolveDocumentKeys,
   PACKET_CHANNELS,
 } from "../../lib/patient-packet/send";
@@ -1029,10 +1028,9 @@ router.get(
 //
 // Only packets that have not been signed (draft | sent | viewed) are
 // editable; a completed or voided packet is immutable so the captured
-// signature always matches the documents it was applied to. The signing
-// link stays valid — the patient-facing signing UI loads the document
-// set and delivery details fresh on every view, so edits are reflected
-// the next time the patient opens the link.
+// signature always matches the documents it was applied to. Editing
+// revokes the old signing revision; staff can copy or resend the updated
+// signing link from packet detail after saving.
 router.patch(
   "/admin/packets/:packetId",
   requirePermission("patients.update"),
@@ -1064,7 +1062,7 @@ router.patch(
     const supabase = getOrgScopedClient(orgId);
     const { data: packet, error } = await supabase
       .from("patient_packets")
-      .select("id, status")
+      .select("id, status, link_version")
       .eq("id", parsed.data.packetId)
       .limit(1)
       .maybeSingle();
@@ -1088,9 +1086,9 @@ router.patch(
       return;
     }
 
-    // Reconcile the document set first so an invalid key fails before any
-    // write — the same validation + required-folding the send paths use.
-    let documentCount: number | null = null;
+    // Capture the version before reading snapshots. The transaction checks
+    // it again under the signing lock before making any document changes.
+    let orderedKeys: string[] | null = null;
     if (b.documentKeys !== undefined) {
       const docs = resolveDocumentKeys(b.documentKeys, undefined);
       if (!docs.ok) {
@@ -1100,54 +1098,54 @@ router.patch(
         });
         return;
       }
-      await reconcilePacketDocuments(supabase, packet.id, docs.uniqueKeys);
-      documentCount = docs.uniqueKeys.length;
+      orderedKeys = docs.uniqueKeys;
     }
-
-    // One-off content edits for this packet's documents. Validated
-    // against the packet's CURRENT document set (post-reconcile).
-    if (b.documentOverrides !== undefined && b.documentOverrides.length > 0) {
-      const { data: currentDocs, error: curErr } = await supabase
-        .from("patient_packet_documents")
-        .select("document_key")
-        .eq("packet_id", packet.id);
-      if (curErr) throw curErr;
-      const invalidKeys = findInvalidOverrideKeys(
-        b.documentOverrides,
-        (currentDocs ?? []).map(
-          (d: { document_key: string }) => d.document_key,
-        ),
-      );
-      if (invalidKeys.length > 0) {
-        res
-          .status(400)
-          .json({ error: "invalid_document_overrides", invalidKeys });
-        return;
-      }
-      await applyPacketDocumentOverrides(
-        supabase,
-        packet.id,
-        b.documentOverrides,
-      );
+    const { data: currentDocs, error: docsErr } = await supabase
+      .from("patient_packet_documents")
+      .select("document_key")
+      .eq("packet_id", packet.id);
+    if (docsErr) throw docsErr;
+    const existingKeys = (currentDocs ?? []).map(
+      (doc: { document_key: string }) => doc.document_key,
+    );
+    const finalKeys = orderedKeys ?? existingKeys;
+    const invalidKeys = findInvalidOverrideKeys(b.documentOverrides, finalKeys);
+    if (invalidKeys.length > 0) {
+      res
+        .status(400)
+        .json({ error: "invalid_document_overrides", invalidKeys });
+      return;
     }
-
-    // Apply the scalar/JSONB column edits.
-    const patch: {
-      updated_at: string;
-      title?: string;
-      delivery_details?: Json | null;
-    } = { updated_at: new Date().toISOString() };
+    const snapshots = preparePacketDocumentSnapshots(
+      existingKeys,
+      finalKeys,
+      await loadTemplateOverrides(supabase),
+      b.documentOverrides,
+    );
+    const patch: { title?: string; delivery_details?: Json | null } = {};
     if (b.title !== undefined) patch.title = b.title;
-    if (b.deliveryDetails !== undefined) {
-      patch.delivery_details = b.deliveryDetails
-        ? (b.deliveryDetails as unknown as Json)
-        : null;
-    }
-    const { error: updErr } = await supabase
-      .from("patient_packets")
-      .update(patch)
-      .eq("id", packet.id);
+    if (b.deliveryDetails !== undefined)
+      patch.delivery_details = b.deliveryDetails as unknown as Json | null;
+    const { data: updated, error: updErr } = await supabase
+      .raw()
+      .schema("resupply")
+      .rpc("update_patient_packet", {
+        p_org_id: orgId,
+        p_packet_id: packet.id,
+        p_link_version: packet.link_version,
+        p_document_keys: orderedKeys,
+        p_documents: snapshots,
+        p_patch: patch,
+      });
     if (updErr) throw updErr;
+    if (!updated) throw new Error("Packet update returned no result");
+    if (updated.status !== "updated") {
+      res
+        .status(updated.status === "not_found" ? 404 : 409)
+        .json({ error: updated.status });
+      return;
+    }
+    const documentCount = orderedKeys?.length ?? null;
 
     await logAudit({
       action: "patient_packet.updated",
@@ -1238,7 +1236,7 @@ router.post(
     const newExpiry = new Date(
       Date.now() + DEFAULT_TTL_DAYS * 24 * 60 * 60 * 1000,
     ).toISOString();
-    const { error: updErr } = await supabase
+    const { data: claimed, error: updErr } = await supabase
       .from("patient_packets")
       .update({
         link_version: nextVersion,
@@ -1247,8 +1245,15 @@ router.post(
         expires_at: newExpiry,
         updated_at: nowIso,
       })
-      .eq("id", packet.id);
+      .eq("id", packet.id)
+      .eq("link_version", packet.link_version)
+      .not("status", "in", "(completed,voided)")
+      .select("id");
     if (updErr) throw updErr;
+    if (!claimed?.length) {
+      res.status(409).json({ error: "concurrent_modification" });
+      return;
+    }
 
     // Prefer the phone snapshotted on the packet at send time. Older
     // packets (created before recipient_phone existed) didn't snapshot
@@ -1343,7 +1348,7 @@ router.post(
       return;
     }
     const nowIso = new Date().toISOString();
-    const { error: updErr } = await supabase
+    const { data: voided, error: updErr } = await supabase
       .from("patient_packets")
       .update({
         status: "voided",
@@ -1353,8 +1358,14 @@ router.post(
         link_version: 999_999,
         updated_at: nowIso,
       })
-      .eq("id", packet.id);
+      .eq("id", packet.id)
+      .neq("status", "completed")
+      .select("id");
     if (updErr) throw updErr;
+    if (!voided?.length) {
+      res.status(409).json({ error: "already_completed" });
+      return;
+    }
 
     await logAudit({
       action: "patient_packet.voided",

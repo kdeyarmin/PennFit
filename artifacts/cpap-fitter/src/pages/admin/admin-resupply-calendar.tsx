@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
@@ -11,9 +11,14 @@ import { ResupplyOutreachActions } from "@/components/admin/ResupplyOutreachActi
 import {
   getResupplyCalendar,
   groupResupplyPatients,
-  localDayKey,
 } from "@/lib/admin/resupply-calendar-api";
 import { formatDate } from "@/lib/admin/format";
+import {
+  APP_TIME_ZONE,
+  formatAppDate,
+  parseAppDateTimeLocalInput,
+  todayAppDateIso,
+} from "@/lib/utils";
 import {
   Dialog,
   DialogContent,
@@ -22,10 +27,13 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 
+function currentMonth() {
+  return new Date(`${todayAppDateIso().slice(0, 7)}-01T12:00:00Z`);
+}
+
 export function AdminResupplyCalendarPage() {
-  const [month, setMonth] = useState(
-    () => new Date(new Date().getFullYear(), new Date().getMonth(), 1),
-  );
+  // UTC noon represents a calendar date; request boundaries use practice midnight.
+  const [month, setMonth] = useState(currentMonth);
   const [mode, setMode] = useState<"month" | "due">("month");
   const [day, setDay] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -33,50 +41,94 @@ export function AdminResupplyCalendarPage() {
   const [patient, setPatient] = useState<{ id: string; name: string } | null>(
     null,
   );
-  const nextMonth = new Date(month.getFullYear(), month.getMonth() + 1, 1);
-  const from =
-    mode === "month" ? month.toISOString() : new Date().toISOString();
-  const to =
-    mode === "month"
-      ? nextMonth.toISOString()
-      : new Date(Date.now() + 86400000).toISOString();
+  const nextMonth = new Date(
+    Date.UTC(month.getUTCFullYear(), month.getUTCMonth() + 1, 1, 12),
+  );
   // A date-stable key prevents a request loop in the due-now view.
   const query = useQuery({
     queryKey: [
       "admin",
       "resupply-calendar",
       mode,
-      localDayKey(month),
-      localDayKey(new Date()),
+      todayAppDateIso(month),
+      todayAppDateIso(),
     ],
-    queryFn: () => getResupplyCalendar(from, to, mode === "due"),
+    queryFn: () => {
+      // Refresh the due-now cutoff on every fetch, including window focus.
+      const from =
+        mode === "month"
+          ? parseAppDateTimeLocalInput(`${todayAppDateIso(month)}T00:00`)!
+          : new Date();
+      const to =
+        mode === "month"
+          ? parseAppDateTimeLocalInput(`${todayAppDateIso(nextMonth)}T00:00`)!
+          : new Date(from.getTime() + 86400000);
+      return getResupplyCalendar(
+        from.toISOString(),
+        to.toISOString(),
+        mode === "due",
+      );
+    },
     refetchOnWindowFocus: true,
   });
-  const items = query.data?.items ?? [];
-  const visible = items.filter(
-    (i) =>
-      (!day || mode !== "month" || localDayKey(i.dueAt) === day) &&
-      `${i.patientName} ${i.itemSku}`
-        .toLowerCase()
-        .includes(search.toLowerCase().trim()),
+  const matchingItems = useMemo(
+    () =>
+      (query.data?.items ?? []).filter((i) =>
+        `${i.patientName} ${i.itemSku}`
+          .toLowerCase()
+          .includes(search.toLowerCase().trim()),
+      ),
+    [query.data, search],
   );
+  const patientsByDay = new Map<string, Set<string>>();
+  for (const item of matchingItems) {
+    const key = todayAppDateIso(new Date(item.dueAt));
+    const patients = patientsByDay.get(key) ?? new Set<string>();
+    patients.add(item.patientId);
+    patientsByDay.set(key, patients);
+  }
+  const visible = useMemo(
+    () =>
+      day && mode === "month"
+        ? matchingItems.filter(
+            (i) => todayAppDateIso(new Date(i.dueAt)) === day,
+          )
+        : matchingItems,
+    [matchingItems, day, mode],
+  );
+  useEffect(() => {
+    const currentPatients = new Set(visible.map((item) => item.patientId));
+    setSelected((previous) => {
+      const next = new Set(
+        [...previous].filter((id) => currentPatients.has(id)),
+      );
+      return next.size === previous.size ? previous : next;
+    });
+  }, [visible]);
   const groups = groupResupplyPatients(visible);
+  const visiblePatientIds = new Set(groups.map((g) => g[0]!.patientId));
   const recipients = groups
     .filter((g) => selected.has(g[0]!.patientId))
     .map((g) => ({ id: g[0]!.id, patientName: g[0]!.patientName }));
-  const monthLabel = month.toLocaleDateString(undefined, {
+  const monthLabel = formatAppDate(month, {
     month: "long",
     year: "numeric",
   });
   function moveMonth(delta: number) {
-    setMonth(new Date(month.getFullYear(), month.getMonth() + delta, 1));
+    setMonth(
+      new Date(
+        Date.UTC(month.getUTCFullYear(), month.getUTCMonth() + delta, 1, 12),
+      ),
+    );
     setDay(null);
     setSelected(new Set());
     setMode("month");
   }
   function toggle(id: string) {
     setSelected((previous) => {
-      const next = new Set(previous);
+      const next = new Set(
+        [...previous].filter((patientId) => visiblePatientIds.has(patientId)),
+      );
       if (next.has(id)) next.delete(id);
       else if (next.size < 50) next.add(id);
       return next;
@@ -137,13 +189,7 @@ export function AdminResupplyCalendarPage() {
                 intent="secondary"
                 size="sm"
                 onClick={() => {
-                  setMonth(
-                    new Date(
-                      new Date().getFullYear(),
-                      new Date().getMonth(),
-                      1,
-                    ),
-                  );
+                  setMonth(currentMonth());
                   setDay(null);
                   setSelected(new Set());
                 }}
@@ -166,33 +212,30 @@ export function AdminResupplyCalendarPage() {
                 {d}
               </div>
             ))}
-            {Array.from({ length: month.getDay() }, (_, i) => (
+            {Array.from({ length: month.getUTCDay() }, (_, i) => (
               <div key={`blank-${i}`} />
             ))}
             {Array.from(
               {
                 length: new Date(
-                  month.getFullYear(),
-                  month.getMonth() + 1,
-                  0,
-                ).getDate(),
+                  Date.UTC(month.getUTCFullYear(), month.getUTCMonth() + 1, 0),
+                ).getUTCDate(),
               },
               (_, i) => {
                 const date = new Date(
-                  month.getFullYear(),
-                  month.getMonth(),
-                  i + 1,
+                  Date.UTC(
+                    month.getUTCFullYear(),
+                    month.getUTCMonth(),
+                    i + 1,
+                    12,
+                  ),
                 );
-                const key = localDayKey(date);
-                const count = new Set(
-                  items
-                    .filter((row) => localDayKey(row.dueAt) === key)
-                    .map((row) => row.patientId),
-                ).size;
+                const key = todayAppDateIso(date);
+                const count = patientsByDay.get(key)?.size ?? 0;
                 return (
                   <button
                     key={key}
-                    aria-label={`${date.toLocaleDateString()}, ${count} patients due`}
+                    aria-label={`${formatAppDate(date)}, ${count} patients due`}
                     aria-pressed={day === key}
                     onClick={() => {
                       setDay(day === key ? null : key);
@@ -202,7 +245,7 @@ export function AdminResupplyCalendarPage() {
                   >
                     <span
                       className={
-                        key === localDayKey(new Date())
+                        key === todayAppDateIso()
                           ? "font-bold underline"
                           : "font-medium"
                       }
@@ -223,9 +266,9 @@ export function AdminResupplyCalendarPage() {
             )}
           </div>
           <p className="text-xs text-muted-foreground mt-3">
-            Dates follow the tenant's resupply schedule and your browser's
-            timezone. Open a patient to check replacement eligibility and order
-            history. Calendar dates alone do not confirm insurance coverage.
+            Dates follow the tenant's resupply schedule and use {APP_TIME_ZONE}.
+            Open a patient to check replacement eligibility and order history.
+            Calendar dates alone do not confirm insurance coverage.
           </p>
         </Card>
       )}
@@ -298,7 +341,7 @@ export function AdminResupplyCalendarPage() {
                 Select visible patients (up to 50)
               </label>
               <ResupplyOutreachActions
-                key={`${mode}-${localDayKey(month)}-${day ?? "all"}-${search}`}
+                key={`${mode}-${todayAppDateIso(month)}-${day ?? "all"}-${search}`}
                 recipients={recipients}
               />
             </div>
@@ -339,7 +382,7 @@ export function AdminResupplyCalendarPage() {
                               checked={selected.has(first.patientId)}
                               disabled={
                                 !selected.has(first.patientId) &&
-                                selected.size >= 50
+                                recipients.length >= 50
                               }
                               onChange={() => toggle(first.patientId)}
                             />
@@ -389,7 +432,6 @@ export function AdminResupplyCalendarPage() {
                                   id: first.patientId,
                                   name: first.patientName,
                                 });
-                                setSelected(new Set([first.patientId]));
                               }}
                             >
                               Orders & eligibility

@@ -82,6 +82,7 @@ import {
 } from "@workspace/resupply-db";
 import { DEFAULT_SENDGRID_FROM_EMAIL } from "@workspace/resupply-email";
 import {
+  isReminderPreSendError,
   sendReminderEmail,
   sendReminderSms,
   type ReminderVariant,
@@ -118,7 +119,7 @@ export const SEND_EMAIL_JOB = "reminders.send-email";
 export { IN_PROGRESS_EPISODE_STATUSES };
 
 /**
- * Pre-vendor idempotency guard. Returns true if this is the first
+ * Pre-vendor idempotency guard. Returns proceed=true if this is the first
  * attempt to send a reminder for the (patient, episode, channel)
  * within the TTL window; returns false if a prior attempt already
  * holds the lock (caller MUST short-circuit before calling Twilio /
@@ -133,14 +134,13 @@ export { IN_PROGRESS_EPISODE_STATUSES };
  *     if the 8am send hasn't finished by 9am. Without this guard the
  *     patient gets two reminders within an hour.
  *
- * Posture: the dedup table failing to insert (Supabase down, table
- * missing, permission error) does NOT block the send. A degraded
- * dedup table is preferable to a degraded reminder pipeline; the
- * worst case becomes "Twilio receives two API calls" not "patient
- * gets zero reminders". The failure is logged so ops can investigate.
+ * A failed dedup read or write fails the job for retry; sending without
+ * an exclusive claim could contact the same patient more than once.
  *
- * TTL = 22h (intentionally less than 24h so the next-day scan can
- * resend cleanly when a patient's cadence is daily).
+ * The channel/day claim lasts 22h so the next-day scan can resend when
+ * cadence is daily. CSR dispatch also claims a rolling 48h patient key;
+ * both are inserted atomically. Scheduled escalation channels keep their
+ * separate keys so first-channel re-pings cannot starve later steps.
  */
 export async function tryClaimReminderDedupKey(
   supabase: OrgScopedClient,
@@ -148,7 +148,8 @@ export async function tryClaimReminderDedupKey(
   patientId: string,
   episodeId: string,
   jobId: string,
-): Promise<{ proceed: boolean; key: string }> {
+  options: { csrRequested?: boolean } = {},
+): Promise<{ proceed: boolean; key: string; keys: string[] }> {
   // Key dedup by PATIENT-LOCAL date, not UTC. Previously the dedup
   // key used the UTC date; a West-Coast patient processed at
   // 16:30-PT and again at 17:30-PT (same local day) crossed UTC
@@ -185,13 +186,43 @@ export async function tryClaimReminderDedupKey(
   }
   const key = `reminder-${channel}:${patientId}:${episodeId}:${todayLocal}`;
   const expiresAt = new Date(Date.now() + 22 * 60 * 60 * 1000).toISOString();
+  const claims = [{ key, expires_at: expiresAt }];
+  let primaryKey = key;
+  if (options.csrRequested) {
+    // Keep the scheduled channel/day claim as well as the CSR cooldown:
+    // a scheduled job may already be queued when staff request outreach.
+    // Claim both in ONE insert so a conflict rolls back the entire request
+    // and never leaves a partial cooldown for a contact that cannot send.
+    primaryKey = `csr-resupply:${supabase.orgId}:${patientId}`;
+    const { error: expiryError } = await supabase
+      .raw()
+      .schema("resupply")
+      .from("worker_dedup_keys")
+      .delete()
+      .eq("key", primaryKey)
+      .lte("expires_at", new Date().toISOString());
+    if (expiryError) {
+      throw new Error(
+        `reminder_dedup_expiry_failed: ${expiryError.message} (job_id=${jobId})`,
+      );
+    }
+    claims.push({
+      key: primaryKey,
+      expires_at: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString(),
+    });
+  }
   const { error } = await supabase
     .raw()
     .schema("resupply")
     .from("worker_dedup_keys")
-    .insert({ key, expires_at: expiresAt });
+    .insert(options.csrRequested ? claims : claims[0]!);
   if (!error) {
-    return { proceed: true, key }; // won the race — caller may proceed
+    // Won the race — return only keys owned by this dispatch for release.
+    return {
+      proceed: true,
+      key: primaryKey,
+      keys: claims.map((row) => row.key),
+    };
   }
   // Postgres UNIQUE violation = 23505 on the PK ("key"). Surfaces
   // through PostgREST as code '23505' on the PostgrestError.
@@ -207,7 +238,7 @@ export async function tryClaimReminderDedupKey(
       },
       "reminders: dedup key already claimed — skipping (prior attempt won)",
     );
-    return { proceed: false, key };
+    return { proceed: false, key: primaryKey, keys: [] };
   }
   // Any other error: fail the job so pg-boss retries it rather than
   // sending a duplicate reminder without idempotency protection.
@@ -229,9 +260,25 @@ export async function tryClaimReminderDedupKey(
 
 export async function releaseReminderDedupKey(
   supabase: OrgScopedClient,
-  key: string,
+  key: string | readonly string[],
   jobId: string,
 ): Promise<void> {
+  if (typeof key !== "string") {
+    // Attempt every release even if one request throws. Release the daily
+    // claim first so another CSR channel cannot race its cleanup.
+    let failed = false;
+    let failure: unknown;
+    for (const ownedKey of key) {
+      try {
+        await releaseReminderDedupKey(supabase, ownedKey, jobId);
+      } catch (err) {
+        failed = true;
+        failure ??= err;
+      }
+    }
+    if (failed) throw failure;
+    return;
+  }
   const { error } = await supabase
     .raw()
     .schema("resupply")
@@ -249,6 +296,11 @@ export async function releaseReminderDedupKey(
       "reminders: failed to release dedup key before retry",
     );
   }
+}
+
+/** A timeout or server failure can follow an accepted provider request. */
+export function isDefiniteReminderRejection(status: number | null): boolean {
+  return status !== null && status >= 400 && status < 500 && status !== 408;
 }
 
 /**
@@ -1083,15 +1135,20 @@ export async function registerReminderJobs(boss: PgBoss): Promise<void> {
       );
       return;
     }
+    const smsCfg = {
+      ...(await applyTenantSmsFrom(orgId, cfg.sms)),
+      practiceName: (await getCompanyInfo(orgId)).name,
+    };
     // Idempotency: short-circuit if another attempt already sent (or
     // is sending) for this (patient, episode, channel, day). See
     // tryClaimReminderDedupKey for posture.
-    const { proceed, key: dedupKey } = await tryClaimReminderDedupKey(
+    const { proceed, keys: dedupKeys } = await tryClaimReminderDedupKey(
       supabase,
       "sms",
       j.data.patientId,
       j.data.episodeId,
       j.id,
+      { csrRequested: j.data.csrRequested },
     );
     if (!proceed) return;
     const actor: SendActor = { kind: "system", jobId: j.id };
@@ -1106,25 +1163,21 @@ export async function registerReminderJobs(boss: PgBoss): Promise<void> {
         // the process-global RESUPPLY_PRACTICE_NAME (seed brand); for the seed
         // org getCompanyInfo(orgId).name resolves to the same value, so
         // single-tenant copy is unchanged.
-        cfg: {
-          ...(await applyTenantSmsFrom(orgId, cfg.sms)),
-          practiceName: (await getCompanyInfo(orgId)).name,
-        },
+        cfg: smsCfg,
         patientId: j.data.patientId,
         episodeId: j.data.episodeId,
         variant: j.data.variant,
         actor,
       });
     } catch (err) {
-      // sendReminderSms threw instead of returning a non-ok outcome (e.g.
-      // a Supabase read inside it rejected). Release the dedup claim before
-      // the throw propagates so pg-boss's retry can re-claim; otherwise the
-      // key stays held for its full TTL and this reminder is silently
-      // dropped for the whole 22h window.
-      try {
-        await releaseReminderDedupKey(supabase, dedupKey, j.id);
-      } catch {
-        // best-effort release; surface the original failure regardless
+      // Known pre-send failures can retry without consuming either claim.
+      // Unknown failures may follow acceptance, so retain CSR protection.
+      if (!j.data.csrRequested || isReminderPreSendError(err)) {
+        try {
+          await releaseReminderDedupKey(supabase, dedupKeys, j.id);
+        } catch {
+          // best-effort release; surface the original failure regardless
+        }
       }
       throw err;
     }
@@ -1140,11 +1193,16 @@ export async function registerReminderJobs(boss: PgBoss): Promise<void> {
       );
       // Transient failures should be retried by pg-boss. Non-retryable
       // outcomes (patient inactive, missing phone, etc.) are warnings only.
-      if (
+      const retryable =
         outcome.status === "vendor_api_error" ||
-        outcome.status === "conversation_create_failed"
-      ) {
-        await releaseReminderDedupKey(supabase, dedupKey, j.id);
+        outcome.status === "conversation_create_failed";
+      const uncertainDelivery =
+        j.data.csrRequested &&
+        outcome.status === "vendor_api_error" &&
+        !isDefiniteReminderRejection(outcome.vendorStatus);
+      if (!uncertainDelivery && (j.data.csrRequested || retryable))
+        await releaseReminderDedupKey(supabase, dedupKeys, j.id);
+      if (retryable) {
         throw new Error(
           `reminders.send-sms: retryable failure: ${outcome.status}`,
         );
@@ -1189,17 +1247,6 @@ export async function registerReminderJobs(boss: PgBoss): Promise<void> {
       (await checkCsrOutreach(orgId, j.data.episodeId, "email")).reason
     )
       return;
-    // Idempotency: short-circuit if another attempt already sent (or
-    // is sending) for this (patient, episode, channel, day).
-    const { proceed, key: dedupKey } = await tryClaimReminderDedupKey(
-      supabase,
-      "email",
-      j.data.patientId,
-      j.data.episodeId,
-      j.id,
-    );
-    if (!proceed) return;
-    const actor: SendActor = { kind: "system", jobId: j.id };
     const emailCfg = {
       ...(await applyTenantEmailSender(orgId, cfg.email)),
       practiceName: (await getCompanyInfo(orgId)).name,
@@ -1213,9 +1260,20 @@ export async function registerReminderJobs(boss: PgBoss): Promise<void> {
         },
         "reminders.send-email: skipped (no tenant domain for click links)",
       );
-      await releaseReminderDedupKey(supabase, dedupKey, j.id);
       return;
     }
+    // Resolve sender configuration before claiming so a configuration
+    // failure cannot hold the patient's other contact channels.
+    const { proceed, keys: dedupKeys } = await tryClaimReminderDedupKey(
+      supabase,
+      "email",
+      j.data.patientId,
+      j.data.episodeId,
+      j.id,
+      { csrRequested: j.data.csrRequested },
+    );
+    if (!proceed) return;
+    const actor: SendActor = { kind: "system", jobId: j.id };
 
     let outcome: Awaited<ReturnType<typeof sendReminderEmail>>;
     try {
@@ -1233,14 +1291,14 @@ export async function registerReminderJobs(boss: PgBoss): Promise<void> {
         actor,
       });
     } catch (err) {
-      // sendReminderEmail threw instead of returning a non-ok outcome.
-      // Release the dedup claim before the throw propagates so pg-boss's
-      // retry can re-claim; otherwise the key stays held for its full TTL
-      // and this reminder is silently dropped for the whole 22h window.
-      try {
-        await releaseReminderDedupKey(supabase, dedupKey, j.id);
-      } catch {
-        // best-effort release; surface the original failure regardless
+      // Unknown failures can follow provider acceptance; only definite
+      // pre-send failures release CSR protection for a safe retry.
+      if (!j.data.csrRequested || isReminderPreSendError(err)) {
+        try {
+          await releaseReminderDedupKey(supabase, dedupKeys, j.id);
+        } catch {
+          // best-effort release; surface the original failure regardless
+        }
       }
       throw err;
     }
@@ -1255,11 +1313,16 @@ export async function registerReminderJobs(boss: PgBoss): Promise<void> {
         "reminders.send-email: non-ok outcome",
       );
       // Transient failures should be retried by pg-boss.
-      if (
+      const retryable =
         outcome.status === "vendor_api_error" ||
-        outcome.status === "conversation_create_failed"
-      ) {
-        await releaseReminderDedupKey(supabase, dedupKey, j.id);
+        outcome.status === "conversation_create_failed";
+      const uncertainDelivery =
+        j.data.csrRequested &&
+        outcome.status === "vendor_api_error" &&
+        !isDefiniteReminderRejection(outcome.vendorStatus);
+      if (!uncertainDelivery && (j.data.csrRequested || retryable))
+        await releaseReminderDedupKey(supabase, dedupKeys, j.id);
+      if (retryable) {
         throw new Error(
           `reminders.send-email: retryable failure: ${outcome.status}`,
         );
