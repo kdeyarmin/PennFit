@@ -1,3 +1,5 @@
+import { setNativeTenantStatus } from "../../lib/tenant-lifecycle";
+import { CentralAdminError } from "../../lib/central-admin";
 // Platform super-admin: tenant directory + lifecycle (G4).
 //
 // GET  /resupply-api/platform/tenants                  — list every tenant
@@ -24,11 +26,7 @@ import { z } from "zod";
 import { logAudit } from "@workspace/resupply-audit";
 import { inviteTeamMember } from "@workspace/resupply-auth";
 import { createSendgridClient } from "@workspace/resupply-email";
-import {
-  getOrgScopedClient,
-  resolveSeedOrgId,
-  SEED_ORG_SLUG,
-} from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import {
   FEATURE_FLAG_KEYS,
@@ -259,12 +257,8 @@ router.get(
   },
 );
 
-/**
- * Flip a tenant's lifecycle status. Shared by suspend / reactivate.
- * Refuses to suspend the seed tenant (the platform's own org). Returns
- * the updated tenant, invalidates the host→brand/org caches so the change
- * takes effect immediately, and writes an audit row.
- */
+/** Use the same atomic native status writer as reviewed Hub commands.
+ * Local routing caches refresh after success; other instances retain their TTL. */
 async function setTenantStatus(
   req: Request,
   res: Response,
@@ -275,84 +269,35 @@ async function setTenantStatus(
     res.status(400).json({ error: "invalid_tenant_id" });
     return;
   }
-  const id = parsed.data.id;
-
-  const seedOrgId = await resolveSeedOrgId();
-  if (!seedOrgId) {
-    res.status(503).json({ error: "tenant_directory_unavailable" });
+  if (!req.platformAdminUserId) {
+    res.status(403).json({ error: "forbidden" });
     return;
   }
-  const supabase = getOrgScopedClient(seedOrgId).raw();
-
-  // Load the target so we can 404 a missing id and refuse the seed org.
-  const { data: existing, error: readErr } = await supabase
-    .schema("resupply")
-    .from("organizations")
-    .select("id, slug, status")
-    .eq("id", id)
-    .limit(1)
-    .maybeSingle();
-  if (readErr) {
-    logger.error(
-      { event: "platform_tenant_read_failed", err: readErr },
-      "platform: tenant read failed",
+  try {
+    const updated = await setNativeTenantStatus(
+      req.platformAdminUserId,
+      parsed.data.id,
+      nextStatus,
     );
-    res.status(500).json({ error: "tenant_read_failed" });
-    return;
-  }
-  if (!existing) {
-    res.status(404).json({ error: "tenant_not_found" });
-    return;
-  }
-  if (nextStatus === "suspended" && existing.slug === SEED_ORG_SLUG) {
-    // The seed org is the platform's own tenant and the home of the
-    // platform admins — suspending it would break the platform itself.
-    res.status(400).json({ error: "cannot_suspend_seed_tenant" });
-    return;
-  }
-
-  const { data: updated, error: updErr } = await supabase
-    .schema("resupply")
-    .from("organizations")
-    .update({ status: nextStatus, updated_at: new Date().toISOString() })
-    .eq("id", id)
-    .select(TENANT_SELECT)
-    .limit(1)
-    .maybeSingle();
-  if (updErr || !updated) {
-    logger.error(
-      { event: "platform_tenant_status_update_failed", err: updErr },
+    res.json({ tenant: toTenantView(updated as OrgRow) });
+  } catch (error) {
+    const status = error instanceof CentralAdminError ? error.status : 500;
+    const code =
+      status === 404
+        ? "tenant_not_found"
+        : status === 400 && nextStatus === "suspended"
+          ? "cannot_suspend_seed_tenant"
+          : status === 403
+            ? "forbidden"
+            : status === 503
+              ? "tenant_directory_unavailable"
+              : "tenant_update_failed";
+    logger.warn(
+      { event: "platform_tenant_status_update_failed", status },
       "platform: tenant status update failed",
     );
-    res.status(500).json({ error: "tenant_update_failed" });
-    return;
+    res.status(status).json({ error: code });
   }
-
-  // The host→brand and host→org caches key off status='active'; drop them
-  // so a suspend/reactivate is visible on the next request, not after the
-  // ~60s TTL.
-  invalidateBrandingCache();
-
-  await logAudit({
-    action:
-      nextStatus === "suspended"
-        ? "platform.tenant.suspended"
-        : "platform.tenant.reactivated",
-    adminEmail: req.platformAdminEmail ?? "platform-admin",
-    adminUserId: req.platformAdminUserId ?? null,
-    targetTable: "organizations",
-    targetId: id,
-    metadata: { slug: (existing as { slug: string }).slug, status: nextStatus },
-    ip: req.ip ?? null,
-    userAgent: req.get("user-agent") ?? null,
-  }).catch((err) => {
-    logger.warn(
-      { err: redactDbErr(err) },
-      "platform: tenant status audit write failed",
-    );
-  });
-
-  res.json({ tenant: toTenantView(updated as OrgRow) });
 }
 
 router.post(

@@ -1,0 +1,37 @@
+name: Review source snapshot
+on:
+  push:
+    branches: [codex/breathe-tenant-lifecycle-20260911]
+    paths: [.github/workflows/review-source-snapshot.yml]
+permissions:
+  contents: read
+  issues: read
+  pull-requests: read
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Read current PR versions and archived source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/review-sources
+          for pr in 1368 1377; do
+            root="/tmp/review-sources/pennfit$pr"
+            gh api "repos/$GITHUB_REPOSITORY/pulls/$pr" > "$root-pr.json"
+            sha=$(jq -r .head.sha "$root-pr.json")
+            base=$(jq -r .base.sha "$root-pr.json")
+            gh api "repos/$GITHUB_REPOSITORY/tarball/$sha" > "$root.tar.gz"
+            gh api "repos/$GITHUB_REPOSITORY/issues/$pr/comments" --paginate --slurp > "$root-comments.json"
+            gh api "repos/$GITHUB_REPOSITORY/pulls/$pr/comments" --paginate --slurp > "$root-review.json"
+            gh api "repos/$GITHUB_REPOSITORY/compare/$base...$sha" > "$root-compare.json"
+          done
+          gh api "repos/$GITHUB_REPOSITORY/tarball/$base" > /tmp/review-sources/pennfit-main.tar.gz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: review-source-snapshots
+          path: /tmp/review-sources/
+          retention-days: 1
+          if-no-files-found: error

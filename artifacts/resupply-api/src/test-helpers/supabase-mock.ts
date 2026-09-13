@@ -302,10 +302,10 @@ function makeMockServiceClient() {
         argList.push(args);
         rpcCallArgs.set(fnName, argList);
         const queue = rpcQueues.get(fnName);
-        if (!queue || queue.length === 0) {
-          return Promise.resolve({ data: null, error: null });
-        }
-        return Promise.resolve(queue.shift()!);
+        const response = Promise.resolve(
+          queue?.shift() ?? { data: null, error: null },
+        );
+        return Object.assign(response, { abortSignal: () => response });
       },
     }),
   };

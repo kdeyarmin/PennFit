@@ -4,6 +4,64 @@ import { describe, expect, it, vi } from "vitest";
 import { createCentralAdminRouter } from "./central-admin";
 
 describe("central administration HTTP ingress", () => {
+  it("bounds tenant commands and rejects browser, query and legacy-token ingress", async () => {
+    const getClient = vi.fn();
+    const fetcher = vi.fn();
+    const app = express();
+    app.use(
+      "/resupply-api/central-admin",
+      createCentralAdminRouter({
+        getClient,
+        fetcher,
+        getEnv: (name) =>
+          ({
+            CAREMETRIC_ADMIN_ENABLED: "true",
+            CAREMETRIC_ADMIN_TENANT_COMMANDS_ENABLED: "true",
+            HUB_SUPABASE_PUBLISHABLE_KEY: "sb_publishable_fixture",
+            CAREMETRIC_ADMIN_IDENTITY_MAP_JSON:
+              '{"11111111-1111-4111-8111-111111111111":"Native_admin-1"}',
+          })[name],
+      }),
+    );
+    const path = "/resupply-api/central-admin/tenant-lifecycle";
+    expect(
+      (
+        await request(app)
+          .post(path)
+          .send({ padding: "x".repeat(16384) })
+      ).status,
+    ).toBe(413);
+    expect(
+      (
+        await request(app)
+          .post(path)
+          .set("Origin", "https://cmbreathe.com")
+          .send({})
+      ).status,
+    ).toBe(403);
+    expect(
+      (await request(app).post(path).set("Cookie", "pf_session=x").send({}))
+        .status,
+    ).toBe(403);
+    expect(
+      (
+        await request(app)
+          .post(path + "?target=arbitrary")
+          .send({})
+      ).status,
+    ).toBe(400);
+    expect(
+      (
+        await request(app)
+          .post(path)
+          .set("Authorization", "Bearer legacy.jwt.token")
+          .send({})
+      ).status,
+    ).toBe(401);
+    expect((await request(app).get(path)).status).toBe(405);
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(getClient).not.toHaveBeenCalled();
+  });
   it("bounds bodies and refuses unsupported transport before native reads", async () => {
     const getClient = vi.fn();
     const app = express();
