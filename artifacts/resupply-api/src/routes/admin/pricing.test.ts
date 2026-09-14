@@ -123,8 +123,8 @@ describe("pricing HTTP boundary", () => {
       "/admin/pricing/policies/00000000-0000-4000-8000-000000000002/publish",
     ],
   ] as const)("keeps management authority on %s %s", async (method, path) => {
-    const response = await request(app)
-      [method](path)
+    const pending = request(app)[method](path);
+    const response = await pending
       .set("x-fixture-actor", "csr-a")
       .set("x-fixture-role", "csr");
     expect(response.status).toBe(403);
