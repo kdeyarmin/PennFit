@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { captureSessionCacheGuard } from "@workspace/resupply-auth-react";
+import { ApiError } from "@workspace/api-client-react/admin";
 import { Button } from "../Button";
 import { ErrorPanel } from "../ErrorPanel";
 import { useConfirmDialog } from "@/hooks/use-confirm-dialog";
@@ -10,12 +11,12 @@ import {
   schedulePricingBatch,
   approvePricingQuote,
   closePricingActuals,
-  getActivePricingPrices,
   getPricingActuals,
   getPricingBatches,
   getPricingQuotes,
   getPricingSummary,
   previewPricingBatch,
+  recommendPricingScenario,
   pricingKey,
   savePricingActual,
   type ActualEvent,
@@ -27,9 +28,11 @@ import {
 import {
   formatPricingMoney,
   parsePricingMoney,
+  pricingMoneyInput,
 } from "@/lib/admin/pricing-input";
 import { PricingEvaluationResult } from "./PricingItemReview";
 import { PricingVolumeScenarios } from "./PricingVolumeScenarios";
+import { PricingPortfolioPanel } from "./PricingPortfolioPanel";
 import {
   PricingField,
   PricingMetric,
@@ -646,11 +649,15 @@ export function PricingBatchesPanel({
   onClear,
   state,
   canPublish,
+  onReviewItem,
+  canManage = false,
 }: {
   scenarios: Scenario[];
   onClear: () => void;
   state: PricingState;
   canPublish: boolean;
+  onReviewItem?: (item: { sku: string; name: string }) => void;
+  canManage?: boolean;
 }) {
   const qc = useQueryClient();
   const [confirm, dialog] = useConfirmDialog();
@@ -659,10 +666,121 @@ export function PricingBatchesPanel({
     [notice, setNotice] = useState("");
   const [scheduledAt, setScheduledAt] = useState("");
   const [selectedEntries, setSelectedEntries] = useState<number[]>([]);
-  const activePrices = useQuery({
-    queryKey: [...pricingKey, "active-prices"],
-    queryFn: getActivePricingPrices,
+  const [portfolioScenarios, setPortfolioScenarios] = useState<Scenario[]>([]);
+  const [amounts, setAmounts] = useState<Record<string, string>>({});
+  const [recommendedLines, setRecommendedLines] = useState<
+    Record<string, string>
+  >({});
+  const [workingError, setWorkingError] = useState("");
+  const [excluded, setExcluded] = useState<Record<string, boolean>>({});
+  const [portfolioVersion, setPortfolioVersion] = useState(0);
+  const working = [...scenarios, ...portfolioScenarios];
+  const occurrences = new Map<string, number>();
+  const workingKeys = working.map((scenario) => {
+    const value = JSON.stringify(scenario),
+      occurrence = occurrences.get(value) ?? 0;
+    occurrences.set(value, occurrence + 1);
+    return `${value}:${occurrence}`;
   });
+  const workingKey = (_scenario: Scenario, index: number) => workingKeys[index];
+  const includedCount = working.filter(
+    (_, index) => !excluded[workingKeys[index]],
+  ).length;
+  const editedScenario = (scenario: Scenario, index: number): Scenario => ({
+    ...scenario,
+    lines: scenario.lines.map((line) => {
+      const key = `${workingKey(scenario, index)}:${line.id}`;
+      const amount =
+        amounts[key] === undefined
+          ? line.unitAmountCents
+          : parsePricingMoney(amounts[key]);
+      if (amount === null)
+        throw new Error(`Enter a valid dollar amount for ${line.description}.`);
+      return { ...line, unitAmountCents: amount };
+    }),
+  });
+  const recommendation = useMutation({
+    mutationFn: ({
+      scenario,
+      lineId,
+    }: {
+      scenario: Scenario;
+      lineId: string;
+      key: string;
+    }) => recommendPricingScenario(scenario, lineId),
+    onSuccess: (data, request) => {
+      const result = data.recommendation;
+      if (
+        result.status !== "recommended" ||
+        result.recommendedUnitPriceCents == null
+      ) {
+        setWorkingError(
+          `Recommendation unavailable: ${result.status.replaceAll("_", " ")}. Review this scenario's costs and assumptions.`,
+        );
+        return;
+      }
+      setAmounts((old) => ({
+        ...old,
+        [`${request.key}:${request.lineId}`]: pricingMoneyInput(
+          result.recommendedUnitPriceCents,
+        ),
+      }));
+      setWorkingError("");
+    },
+  });
+  const bulkRecommendation = useMutation({
+    mutationFn: async (
+      entries: Array<{ scenario: Scenario; lineId: string; key: string }>,
+    ) => {
+      const current = captureSessionCacheGuard(qc);
+      const updated: Record<string, string> = {},
+        failures: string[] = [];
+      for (let index = 0; index < entries.length; index += 4) {
+        if (!current())
+          throw new Error(
+            "The session changed. Review the selected scenarios again.",
+          );
+        const group = entries.slice(index, index + 4);
+        const results = await Promise.allSettled(
+          group.map((request) =>
+            recommendPricingScenario(request.scenario, request.lineId),
+          ),
+        );
+        if (!current())
+          throw new Error(
+            "The session changed. Review the selected scenarios again.",
+          );
+        results.forEach((result, offset) => {
+          const request = group[offset];
+          if (
+            result.status === "fulfilled" &&
+            result.value.recommendation.status === "recommended" &&
+            result.value.recommendation.recommendedUnitPriceCents != null
+          )
+            updated[`${request.key}:${request.lineId}`] = pricingMoneyInput(
+              result.value.recommendation.recommendedUnitPriceCents,
+            );
+          else
+            failures.push(
+              `${request.scenario.lines.map((line) => line.sku).join(", ")}: ${result.status === "rejected" ? (result.reason instanceof Error ? result.reason.message : "Recommendation failed") : result.value.recommendation.status.replaceAll("_", " ")}`,
+            );
+        });
+      }
+      if (failures.length)
+        throw new Error(
+          `No amounts were changed. Review these scenarios or explicitly exclude them: ${failures.join("; ")}`,
+        );
+      return updated;
+    },
+    onSuccess: (updated, entries) => {
+      setAmounts((old) => ({ ...old, ...updated }));
+      setNotice(
+        `Target prices applied to ${entries.length} selected self-pay scenarios. Insurance collection assumptions were preserved. Create a frozen preview to verify the full change.`,
+      );
+      setWorkingError("");
+    },
+  });
+  const recommending = recommendation.isPending || bulkRecommendation.isPending;
   const subset = useMutation({
     mutationFn: () =>
       previewPricingBatch({
@@ -698,7 +816,8 @@ export function PricingBatchesPanel({
     queryFn: getPricingBatches,
   });
   const makePreview = useMutation({
-    mutationFn: () => previewPricingBatch({ name: name.trim(), scenarios }),
+    mutationFn: (snapshot: { name: string; scenarios: Scenario[] }) =>
+      previewPricingBatch(snapshot),
     onSuccess: (data) => {
       setPreview(data);
       setSelectedEntries([]);
@@ -712,16 +831,25 @@ export function PricingBatchesPanel({
         "Internal price list activated for future quotes. Existing order terms were preserved.",
       );
       setPreview(null);
+      setPortfolioScenarios([]);
+      setAmounts({});
+      setExcluded({});
+      setPortfolioVersion((old) => old + 1);
       onClear();
       void qc.invalidateQueries({ queryKey: pricingKey });
     },
   });
   const publish = async (batch: PriceBatch) => {
     const current = captureSessionCacheGuard(qc);
+    const changedPrices = batch.entries.some(
+      (entry) =>
+        entry.comparison &&
+        entry.comparison.previousPriceListId !== state.activePriceListId,
+    );
     if (
       (await confirm({
         title: "Activate internal price list?",
-        description: `Activate the saved snapshot “${batch.name}” with ${batch.entries.length} reviewed scenarios? Supplier versions and policy validity will be checked again.`,
+        description: `Activate the saved snapshot “${batch.name}” with ${batch.entries.length} reviewed scenarios${batch.retainedEntryCount != null ? ` (${batch.selectedEntryCount} selected updates and ${batch.retainedEntryCount} retained published contexts)` : ""}? ${changedPrices ? "The active price list has changed since this comparison was frozen. This explicitly restores the saved amounts rather than recalculating a change from today's prices. " : ""}Supplier versions and policy validity will be checked again.`,
         confirmLabel: "Activate price list",
       })) &&
       current()
@@ -732,9 +860,17 @@ export function PricingBatchesPanel({
     <div className="space-y-5">
       {dialog}
       {notice && <PricingNotice>{notice}</PricingNotice>}
+      {canManage && (
+        <PricingPortfolioPanel
+          key={portfolioVersion}
+          remainingCapacity={Math.max(0, 100 - working.length)}
+          onReviewItem={onReviewItem}
+          onAdd={(added) => setPortfolioScenarios((old) => [...old, ...added])}
+        />
+      )}
       <PricingSection
         title="Preview a bulk price change"
-        description="Add evaluated scenarios from Item review. The preview records your selection and rechecks its cost sources before activating all selected prices together."
+        description="Review the working selection from the portfolio or Item review. Edit each unit price or request a target price, then freeze this exact selection for approval."
       >
         <PricingField label="Price list name">
           <input
@@ -747,8 +883,25 @@ export function PricingBatchesPanel({
           />
         </PricingField>
         <ul className="mt-3 space-y-2 text-sm">
-          {scenarios.map((scenario, index) => (
-            <li key={index} className="rounded border border-slate-200 p-3">
+          {working.map((scenario, index) => (
+            <li
+              key={workingKey(scenario, index)}
+              className="rounded border border-slate-200 p-3"
+            >
+              <label className="mb-3 flex items-center gap-2 text-sm font-medium">
+                <input
+                  type="checkbox"
+                  checked={!excluded[workingKey(scenario, index)]}
+                  disabled={makePreview.isPending || recommending}
+                  onChange={(event) =>
+                    setExcluded((old) => ({
+                      ...old,
+                      [workingKey(scenario, index)]: !event.target.checked,
+                    }))
+                  }
+                />
+                Include scenario {index + 1} in frozen preview
+              </label>
               {scenario.lines
                 .map((l) => `${l.description} × ${l.quantity}`)
                 .join(", ")}{" "}
@@ -756,36 +909,241 @@ export function PricingBatchesPanel({
               {scenario.revenue.mode === "insurance"
                 ? "Insurance review"
                 : "Self-pay scenario"}
+              <p className="mt-1 text-xs text-slate-500">
+                Valid through {new Date(scenario.validUntil).toLocaleString()} ·{" "}
+                {scenario.delivery?.service || "Delivery service not recorded"}.
+                Quantities, supplier and collection assumptions stay fixed.
+              </p>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                {scenario.lines.map((line) => (
+                  <PricingField
+                    key={line.id}
+                    label={`Scenario ${index + 1} ${line.sku} new unit amount ($)`}
+                  >
+                    <input
+                      className={pricingControl}
+                      inputMode="decimal"
+                      disabled={
+                        makePreview.isPending ||
+                        recommending ||
+                        !!excluded[workingKey(scenario, index)]
+                      }
+                      value={
+                        amounts[`${workingKey(scenario, index)}:${line.id}`] ??
+                        pricingMoneyInput(line.unitAmountCents)
+                      }
+                      onChange={(event) =>
+                        setAmounts((old) => ({
+                          ...old,
+                          [`${workingKey(scenario, index)}:${line.id}`]:
+                            event.target.value,
+                        }))
+                      }
+                    />
+                  </PricingField>
+                ))}
+              </div>
+              {scenario.revenue.mode === "self_pay" && (
+                <div className="mt-3 flex flex-wrap items-end gap-3">
+                  {scenario.lines.length > 1 && (
+                    <PricingField
+                      label={`Scenario ${index + 1} item to recommend`}
+                    >
+                      <select
+                        className={pricingControl}
+                        value={
+                          recommendedLines[workingKey(scenario, index)] ?? ""
+                        }
+                        onChange={(event) =>
+                          setRecommendedLines((old) => ({
+                            ...old,
+                            [workingKey(scenario, index)]: event.target.value,
+                          }))
+                        }
+                      >
+                        <option value="">Choose an item</option>
+                        {scenario.lines.map((line) => (
+                          <option key={line.id} value={line.id}>
+                            {line.description}
+                          </option>
+                        ))}
+                      </select>
+                    </PricingField>
+                  )}
+                  <Button
+                    intent="secondary"
+                    size="sm"
+                    disabled={
+                      makePreview.isPending ||
+                      recommending ||
+                      !!excluded[workingKey(scenario, index)] ||
+                      (scenario.lines.length > 1 &&
+                        !recommendedLines[workingKey(scenario, index)])
+                    }
+                    onClick={() => {
+                      try {
+                        recommendation.mutate({
+                          scenario: editedScenario(scenario, index),
+                          key: workingKey(scenario, index),
+                          lineId:
+                            scenario.lines.length === 1
+                              ? scenario.lines[0].id
+                              : recommendedLines[workingKey(scenario, index)],
+                        });
+                      } catch (cause) {
+                        setWorkingError(
+                          cause instanceof Error
+                            ? cause.message
+                            : "Check the selected amounts.",
+                        );
+                      }
+                    }}
+                  >
+                    Recommend target price for scenario {index + 1}
+                  </Button>
+                </div>
+              )}
+              {scenario.revenue.mode === "insurance" && (
+                <p className="mt-2 text-xs text-slate-600">
+                  Changing billed prices does not increase the verified expected
+                  collections.
+                </p>
+              )}
             </li>
           ))}
         </ul>
-        {scenarios.length === 0 && (
+        {working.length === 0 && (
           <p className="mt-3 text-sm text-slate-500">
-            No scenarios selected. Evaluate an item and choose “Add to bulk
-            preview”.
+            No working scenarios selected. Choose published scenarios above or
+            evaluate an item and choose “Add to bulk preview”.
           </p>
         )}
         <div className="mt-3 flex gap-3">
           <Button
-            disabled={!scenarios.length || !name.trim()}
+            disabled={
+              !includedCount ||
+              includedCount > 100 ||
+              !name.trim() ||
+              recommending
+            }
             isLoading={makePreview.isPending}
-            onClick={() => makePreview.mutate()}
+            onClick={() => {
+              try {
+                setWorkingError("");
+                makePreview.mutate({
+                  name: name.trim(),
+                  scenarios: working.flatMap((scenario, index) =>
+                    excluded[workingKey(scenario, index)]
+                      ? []
+                      : [editedScenario(scenario, index)],
+                  ),
+                });
+              } catch (cause) {
+                setWorkingError(
+                  cause instanceof Error
+                    ? cause.message
+                    : "Check the selected amounts.",
+                );
+              }
+            }}
           >
             Create frozen preview
           </Button>
           <Button
             intent="ghost"
-            disabled={!scenarios.length || makePreview.isPending}
+            disabled={!working.length || makePreview.isPending || recommending}
             onClick={() => {
               onClear();
+              setPortfolioScenarios([]);
+              setAmounts({});
+              setExcluded({});
+              setPortfolioVersion((old) => old + 1);
               setPreview(null);
             }}
           >
             Clear selection
           </Button>
         </div>
-        {makePreview.error && (
+        <Button
+          className="mt-3"
+          intent="secondary"
+          isLoading={bulkRecommendation.isPending}
+          disabled={
+            makePreview.isPending ||
+            recommending ||
+            !working.some(
+              (scenario, index) =>
+                !excluded[workingKey(scenario, index)] &&
+                scenario.revenue.mode === "self_pay",
+            )
+          }
+          onClick={() => {
+            try {
+              const entries = working.flatMap((scenario, index) => {
+                if (
+                  excluded[workingKey(scenario, index)] ||
+                  scenario.revenue.mode !== "self_pay"
+                )
+                  return [];
+                const lineId =
+                  scenario.lines.length === 1
+                    ? scenario.lines[0].id
+                    : recommendedLines[workingKey(scenario, index)];
+                if (!lineId)
+                  throw new Error(
+                    `Choose the item to recommend for scenario ${index + 1}. Other bundle prices stay fixed.`,
+                  );
+                return [
+                  {
+                    scenario: editedScenario(scenario, index),
+                    key: workingKey(scenario, index),
+                    lineId,
+                  },
+                ];
+              });
+              setWorkingError("");
+              bulkRecommendation.mutate(entries);
+            } catch (cause) {
+              setWorkingError(
+                cause instanceof Error
+                  ? cause.message
+                  : "Check the selected assumptions.",
+              );
+            }
+          }}
+        >
+          Recommend target prices for selected self-pay scenarios
+        </Button>
+        {bulkRecommendation.error && (
           <ErrorPanel
+            error={bulkRecommendation.error}
+            onRetry={() => bulkRecommendation.reset()}
+          />
+        )}
+        <p className="mt-3 text-xs text-slate-600">
+          {includedCount} of {working.length} working scenarios will be frozen.
+          Excluded scenarios remain visible and are not included in the new
+          preview.
+        </p>
+        {includedCount > 100 && (
+          <p role="alert" className="mt-3 text-sm text-red-700">
+            A price preview supports up to 100 scenarios. Clear this working
+            selection and select a smaller group.
+          </p>
+        )}
+        {workingError && (
+          <p role="alert" className="mt-3 text-sm text-red-700">
+            {workingError}
+          </p>
+        )}
+        {recommendation.error && (
+          <ErrorPanel
+            error={recommendation.error}
+            onRetry={() => recommendation.reset()}
+          />
+        )}
+        {makePreview.error && (
+          <PricingBatchError
             error={makePreview.error}
             onRetry={() => makePreview.reset()}
           />
@@ -794,29 +1152,50 @@ export function PricingBatchesPanel({
       {preview && (
         <PricingSection
           title={`Frozen preview: ${preview.name}`}
-          description="Changing your working selection does not change this saved snapshot."
+          description={`${preview.selectedEntryCount ?? preview.entries.length} selected updates and ${preview.retainedEntryCount ?? 0} retained published contexts; ${preview.entries.length} scenarios in the complete price list. Changing your working selection does not change this saved snapshot.`}
         >
+          {preview.entries.some(
+            (entry) =>
+              entry.comparison &&
+              entry.comparison.previousPriceListId !== state.activePriceListId,
+          ) && (
+            <p
+              role="status"
+              className="mb-4 rounded border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"
+            >
+              The active price list has changed since this comparison was
+              frozen. Create a fresh preview to compare against today's prices.
+              Activating this snapshot explicitly restores its saved amounts.
+            </p>
+          )}
           <div className="space-y-4">
             {preview.entries.map((entry, index) => (
               <div
                 className="rounded-lg border border-slate-200 p-4"
                 key={index}
               >
-                <label className="mb-3 flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={selectedEntries.includes(index)}
-                    disabled={entry.evaluation.state !== "meets_target"}
-                    onChange={(event) =>
-                      setSelectedEntries((old) =>
-                        event.target.checked
-                          ? [...old, index]
-                          : old.filter((i) => i !== index),
-                      )
-                    }
-                  />
-                  Include this eligible entry in a new subset preview
-                </label>
+                {entry.changeKind === "retained" ? (
+                  <p className="mb-3 rounded bg-slate-100 p-2 text-xs font-semibold text-slate-700">
+                    Retained published context · original amounts preserved and
+                    current costs checked
+                  </p>
+                ) : (
+                  <label className="mb-3 flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={selectedEntries.includes(index)}
+                      disabled={entry.evaluation.state !== "meets_target"}
+                      onChange={(event) =>
+                        setSelectedEntries((old) =>
+                          event.target.checked
+                            ? [...old, index]
+                            : old.filter((i) => i !== index),
+                        )
+                      }
+                    />
+                    Include this eligible change in a new subset preview
+                  </label>
+                )}
                 <p className="mb-3 font-medium">
                   {entry.scenario.lines.map((l) => l.description).join(", ")}
                 </p>
@@ -825,21 +1204,15 @@ export function PricingBatchesPanel({
                     <thead>
                       <tr>
                         <th className="p-2">Item</th>
-                        <th className="p-2">Current unit amount</th>
+                        <th className="p-2">Previous amount at preview</th>
                         <th className="p-2">New unit amount</th>
                         <th className="p-2">Change</th>
                       </tr>
                     </thead>
                     <tbody>
                       {entry.scenario.lines.map((line) => {
-                        const previous = activePrices.data?.batch?.entries
-                          .filter(
-                            (e) =>
-                              e.scenario.revenue.mode ===
-                              entry.scenario.revenue.mode,
-                          )
-                          .flatMap((e) => e.scenario.lines)
-                          .find(
+                        const previous =
+                          entry.comparison?.previousUnitAmounts.find(
                             (l) =>
                               l.sku === line.sku &&
                               l.quantity === line.quantity,
@@ -867,6 +1240,60 @@ export function PricingBatchesPanel({
                     </tbody>
                   </table>
                 </div>
+                <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                  <p className="text-sm font-semibold">
+                    Comparable price projections
+                  </p>
+                  <p className="mt-1 text-xs text-slate-600">
+                    Previous and new prices use the same current quantities,
+                    supplier costs, delivery and collection assumptions. These
+                    are projected economics, not historical realized margins.
+                  </p>
+                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                    <PricingMetric
+                      label="Previous-price projected margin"
+                      value={
+                        entry.comparison?.status === "comparable" &&
+                        entry.comparison.previousEvaluation
+                          ?.selectedBasisMarginBps != null
+                          ? `${(entry.comparison.previousEvaluation.selectedBasisMarginBps / 100).toFixed(2)}%`
+                          : "Not available"
+                      }
+                      detail={
+                        entry.comparison?.status === "comparable"
+                          ? `Contribution ${formatPricingMoney(entry.comparison.previousEvaluation?.contributionCents)}`
+                          : undefined
+                      }
+                    />
+                    <PricingMetric
+                      label="New-price projected margin"
+                      value={
+                        entry.evaluation.selectedBasisMarginBps == null
+                          ? "Not available"
+                          : `${(entry.evaluation.selectedBasisMarginBps / 100).toFixed(2)}%`
+                      }
+                      detail={`Contribution ${formatPricingMoney(entry.evaluation.contributionCents)}`}
+                    />
+                  </div>
+                  {entry.comparison?.status !== "comparable" && (
+                    <p className="mt-2 text-xs text-amber-800">
+                      {entry.comparison?.reason ||
+                        (entry.comparison?.status ===
+                        "ambiguous_published_price"
+                          ? "Several published price contexts match. A reliable previous-price comparison is unavailable."
+                          : "No comparable published-price calculation was recorded for this snapshot.")}
+                    </p>
+                  )}
+                  {entry.comparison && (
+                    <p className="mt-2 text-xs text-slate-500">
+                      Comparison frozen{" "}
+                      {new Date(entry.comparison.evaluatedAt).toLocaleString()}
+                      {entry.comparison.previousPriceListId
+                        ? ` · prior price list ${entry.comparison.previousPriceListId} · scenario(s) ${entry.comparison.previousEntryIndexes.map((index) => index + 1).join(", ")}`
+                        : ""}
+                    </p>
+                  )}
+                </div>
                 <PricingStatus state={entry.evaluation.state} />
                 <div className="mt-3">
                   <PricingEvaluationResult result={entry} />
@@ -882,16 +1309,24 @@ export function PricingBatchesPanel({
               isLoading={subset.isPending}
               onClick={() => subset.mutate()}
             >
-              Preview selected eligible entries ({selectedEntries.length} of{" "}
-              {preview.entries.length})
+              Preview selected eligible changes ({selectedEntries.length} of{" "}
+              {preview.selectedEntryCount ??
+                preview.entries.filter(
+                  (entry) => entry.changeKind !== "retained",
+                ).length}
+              )
             </Button>
             <p className="text-xs text-slate-600">
-              Unselected entries remain in this original snapshot. Only the new
-              subset can be activated separately.
+              The new preview keeps other active published contexts at their
+              original amounts. It does not remove prices outside the selected
+              changes.
             </p>
           </div>
           {subset.error && (
-            <ErrorPanel error={subset.error} onRetry={() => subset.reset()} />
+            <PricingBatchError
+              error={subset.error}
+              onRetry={() => subset.reset()}
+            />
           )}
           {canPublish && (
             <Button
@@ -933,7 +1368,7 @@ export function PricingBatchesPanel({
             </div>
           )}
           {schedule.error && (
-            <ErrorPanel
+            <PricingBatchError
               error={schedule.error}
               onRetry={() =>
                 void qc.invalidateQueries({ queryKey: pricingKey })
@@ -977,7 +1412,7 @@ export function PricingBatchesPanel({
                       Activation {new Date(batch.scheduledAt).toLocaleString()}{" "}
                       · {batch.scheduleStatus}
                       {batch.scheduleError
-                        ? ` · ${batch.scheduleError.replaceAll("_", " ")}`
+                        ? ` · ${describePricingBatchConflict(batch.scheduleError) ?? batch.scheduleError.replaceAll("_", " ")}`
                         : ""}
                     </p>
                   )}
@@ -1007,12 +1442,76 @@ export function PricingBatchesPanel({
           </div>
         )}
         {activate.error && (
-          <ErrorPanel
+          <PricingBatchError
             error={activate.error}
             onRetry={() => void qc.invalidateQueries({ queryKey: pricingKey })}
           />
         )}
       </PricingSection>
+    </div>
+  );
+}
+
+function describePricingBatchConflict(code: string): string | null {
+  const explanations: Record<string, string> = {
+    retained_context_requires_review:
+      "Existing published scenarios need updated evidence before this change can preserve the complete price list. Review the listed scenarios and include the required updates in a new preview.",
+    price_list_contexts_changed:
+      "Published item groups or retained prices changed after this snapshot was prepared. Create a fresh preview so the current prices outside your selected changes are preserved before activation.",
+    price_list_context_limit:
+      "The selected updates and retained published scenarios exceed the 100-scenario price-list limit. Review the complete portfolio before creating this price list.",
+    duplicate_price_context:
+      "The same item and quantity context was selected more than once. Keep one explicit price for each context, then create a new preview.",
+  };
+  return explanations[code] ?? null;
+}
+
+function PricingBatchError({
+  error,
+  onRetry,
+}: {
+  error: unknown;
+  onRetry: () => void;
+}) {
+  const data =
+    error instanceof ApiError
+      ? (error.data as {
+          error?: string;
+          issues?: Array<{ path?: string; message?: string }>;
+        } | null)
+      : null;
+  const explanation = data?.error && describePricingBatchConflict(data.error);
+  if (!explanation) return <ErrorPanel error={error} onRetry={onRetry} />;
+  return (
+    <div
+      role="alert"
+      className="mt-3 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-900"
+    >
+      <p className="font-semibold">The price list needs another review</p>
+      <p className="mt-1">{explanation}</p>
+      {Array.isArray(data?.issues) && (
+        <ul className="mt-3 list-disc space-y-1 pl-5">
+          {data.issues.map((issue, index) => (
+            <li key={index}>
+              <span className="font-semibold">
+                {typeof issue.path === "string"
+                  ? issue.path
+                      .replace(/^self_pay:/, "Self-pay · ")
+                      .replace(/^insurance:/, "Insurance · ")
+                      .replaceAll("|", ", ")
+                  : "Published scenario"}
+              </span>{" "}
+              —{" "}
+              {typeof issue.message === "string"
+                ? issue.message.replaceAll("_", " ")
+                : "Evidence needs review"}
+            </li>
+          ))}
+        </ul>
+      )}
+      <Button className="mt-3" intent="secondary" size="sm" onClick={onRetry}>
+        Review again
+      </Button>
     </div>
   );
 }

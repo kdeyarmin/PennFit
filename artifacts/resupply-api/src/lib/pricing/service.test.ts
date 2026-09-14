@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import type { OrgScopedClient } from "@workspace/resupply-db";
+import { preparePortfolioBatch, refreshPortfolioScenario } from "./portfolio";
 import {
   approvalClass,
+  mutatePricing,
   assertPublishedAmounts,
   prepareCsrPricing,
   resolvedPolicyRules,
@@ -122,16 +124,24 @@ function fixture() {
       },
     ],
   };
-  const rpc = vi.fn(async (operation: string, args: { p_ids?: string[] }) => {
-    if (operation === "pricing_current_offers")
-      return {
-        data: tables.pricing_offers.filter(
-          (row) => !args.p_ids || args.p_ids.includes(row.id as string),
-        ),
-        error: null,
-      };
-    return { data: null, error: null };
-  });
+  const rpc = vi.fn(
+    async (
+      operation: string,
+      args: { p_ids?: string[] },
+    ): Promise<{
+      data: Array<Record<string, unknown>> | null;
+      error: { code: string; message: string } | null;
+    }> => {
+      if (operation === "pricing_current_offers")
+        return {
+          data: tables.pricing_offers.filter(
+            (row) => !args.p_ids || args.p_ids.includes(row.id as string),
+          ),
+          error: null,
+        };
+      return { data: null, error: null };
+    },
+  );
   const scoped = {
     orgId: id(9),
     raw: () => ({ schema: () => ({ rpc }) }),
@@ -537,6 +547,27 @@ describe("pricing financial authority", () => {
   });
 });
 describe("pricing request validation", () => {
+  it.each([
+    "price_list_contexts_changed",
+    "revision_conflict",
+    "stale_dependencies",
+    "schedule_exists",
+  ])(
+    "maps deterministic %s to409 without serialization retry semantics",
+    async (message) => {
+      const { scoped, rpc } = fixture();
+      rpc.mockResolvedValueOnce({
+        data: null,
+        error: { code: "PT409", message },
+      });
+      await expect(
+        mutatePricing(scoped, "fixture", "activate", {}),
+      ).rejects.toMatchObject({
+        code: message,
+        status: 409,
+      });
+    },
+  );
   it("does not invent a margin policy or accept fractional cents", () => {
     expect(policyRulesSchema.safeParse({}).success).toBe(false);
     expect(
@@ -576,5 +607,131 @@ describe("pricing request validation", () => {
         occurredAt: now.toISOString(),
       }).success,
     ).toBe(false);
+  });
+});
+describe("explicit portfolio refresh", () => {
+  const catalogScenario = (): Scenario => ({
+    ...structuredClone(scenario),
+    patientId: undefined,
+    delivery: { country: "US", postalCode: "19000", service: "Ground" },
+    validUntil: "2026-01-01T00:00:00Z",
+  });
+  it("refreshes the same supplier to its current version and respects the new expiry", async () => {
+    const { scoped, tables } = fixture();
+    tables.pricing_offers[0].version = 2;
+    const offer = tables.pricing_offers[0].data as Record<string, unknown>;
+    offer.unitCostCents = 4500;
+    offer.expiresAt = "2026-09-14T12:05:00Z";
+    const result = await refreshPortfolioScenario(
+      scoped,
+      catalogScenario(),
+      now,
+    );
+    expect(result.scenario.lines[0]).toMatchObject({
+      offerId: id(2),
+      offerVersion: 2,
+      unitAmountCents: 10000,
+    });
+    expect(result.input.lines[0].unitCostCents).toBe(4500);
+    expect(result.scenario.validUntil).toBe("2026-09-14T12:05:00.000Z");
+    expect(result.scenario.revenue).toEqual(scenario.revenue);
+  });
+  it("never renews expired manual evidence", async () => {
+    const { scoped } = fixture();
+    const submitted = catalogScenario();
+    submitted.revenue = {
+      mode: "insurance",
+      expectedCollectibleCents: 10000,
+      status: "verified",
+      source: "Old benefit",
+      expiresAt: "2026-09-14T11:59:00Z",
+    };
+    await expect(
+      refreshPortfolioScenario(scoped, submitted, now),
+    ).rejects.toMatchObject({ code: "stale_dependencies" });
+  });
+  it("rejects missing current offers and patient-linked reviews", async () => {
+    const { scoped, tables } = fixture();
+    tables.pricing_offers = [];
+    await expect(
+      refreshPortfolioScenario(scoped, catalogScenario(), now),
+    ).rejects.toMatchObject({ code: "stale_dependencies" });
+    await expect(
+      refreshPortfolioScenario(scoped, scenario, now),
+    ).rejects.toMatchObject({ code: "catalog_batch_cannot_link_patient" });
+  });
+  it("preserves unselected bundle prices while refreshing their costs and retaining paused-list coverage", async () => {
+    const { scoped, tables } = fixture();
+    const old = { ...catalogScenario(), validUntil: "2026-09-15T12:00:00Z" };
+    const bundle = structuredClone(old);
+    bundle.lines[0].unitAmountCents = 9000;
+    bundle.lines.push({
+      ...bundle.lines[0],
+      id: id(10),
+      sku: "TUBE",
+      offerId: id(11),
+      unitAmountCents: 5000,
+    });
+    bundle.revenue = {
+      ...scenario.revenue,
+      expectedCollectibleCents: 20000,
+    } as Scenario["revenue"];
+    tables.products.push({ sku: "TUBE", active: true });
+    tables.pricing_offers.push({
+      ...tables.pricing_offers[0],
+      id: id(11),
+      data: {
+        ...(tables.pricing_offers[0].data as object),
+        sku: "TUBE",
+        unitCostCents: 1000,
+      },
+    });
+    tables.pricing_state[0].active_price_list_id = id(12);
+    tables.pricing_state[0].enabled = false;
+    tables.pricing_price_lists = [
+      { id: id(12), entries: [{ scenario: old }, { scenario: bundle }] },
+    ];
+    const selected = structuredClone(old);
+    selected.lines[0].unitAmountCents = 11000;
+    const result = await preparePortfolioBatch(scoped, [selected], true);
+    expect(result.expectedActivePriceListId).toBe(id(12));
+    expect(result.entries).toHaveLength(2);
+    expect(result.entries.map((entry) => entry.changeKind)).toEqual([
+      "selected",
+      "retained",
+    ]);
+    expect(
+      result.entries[1].scenario.lines.map((line) => line.unitAmountCents),
+    ).toEqual([9000, 5000]);
+    expect(
+      result.entries[1].input.lines.map((line) => line.unitCostCents),
+    ).toEqual([4000, 1000]);
+    expect(result.entries[1].approvalClass).toBe("firm");
+  });
+  it("reports exact retained contexts that need renewed evidence instead of dropping them", async () => {
+    const { scoped, tables } = fixture();
+    const selected = {
+      ...catalogScenario(),
+      validUntil: "2026-09-15T12:00:00Z",
+    };
+    const retained = structuredClone(selected);
+    retained.lines[0].quantity = 2;
+    retained.revenue = {
+      mode: "insurance",
+      expectedCollectibleCents: 20000,
+      status: "verified",
+      source: "Old evidence",
+      expiresAt: "2020-01-01T00:00:00Z",
+    };
+    tables.pricing_state[0].active_price_list_id = id(12);
+    tables.pricing_price_lists = [
+      { id: id(12), entries: [{ scenario: selected }, { scenario: retained }] },
+    ];
+    await expect(
+      preparePortfolioBatch(scoped, [selected], true),
+    ).rejects.toMatchObject({
+      code: "retained_context_requires_review",
+      issues: [{ path: "insurance:MASK:2", message: "stale_dependencies" }],
+    });
   });
 });

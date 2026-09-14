@@ -63,9 +63,50 @@ exact composition. An already published SKU with an unrepresented quantity/bundl
 requires a reviewed price context. Evaluation and batch preview remain available to
 prepare that change. Already approved/bound snapshots are not repriced automatically.
 
+`GET /portfolio` is a manager catalog view with `q` (literal SKU/name substring),
+`category` (exact), `supplier` (current supplier-name substring), `offset` and `limit`.
+Filters run before pagination; `items` contains only the tenant's active canonical
+products. Responses have `hasMore`, at most 100 items, and at most 100 current offers
+per item with `hasMoreOffers`. `activeEntries` carries published scenario contexts;
+supplier filters match their actual selected offer IDs even outside the displayed
+offer cap. Each entry's `suppliers` describes this row's SKU, not every bundle item.
+Unpriced items have no invented baseline and must first be reviewed in the calculator.
+
+`POST /portfolio/refresh` accepts `{scenario}` under `pricing.manage`. It refreshes
+the same selected supplier IDs to their newest effective versions and the current
+company policy, preserving quantities, billed amounts, destination and manual
+evidence. It rejects patient-linked scenarios and expired evidence; it does not renew
+old verification. New review validity is at most 30 minutes and respects source and
+policy expiry/boundaries. Supplier, quantity and delivery constraints still apply.
+
+Each batch preview entry includes an immutable `comparison`. A prior published
+price requires an unambiguous revenue-mode/SKU/quantity match. The server substitutes
+only those unit amounts into the newly resolved input, so `previousEvaluation` is
+the **previous-price margin under current assumptions**, not a historical profit.
+The snapshot retains previous list ID, entry indexes, exact unit amounts and input.
+No matching price, ambiguity, or incompatible fixed captures yields an explicit
+status and no fabricated evaluation. Insurance collections remain fixed and are
+never added to billed amounts.
+
 `/batches/preview` saves immutable reviewed scenarios; `/batches/:id/activate` changes
 the complete active pointer atomically. Activating a still-valid earlier batch is
 rollback for future quotes. Stale sources cannot be rolled back into use silently.
+Previewing selected items preserves every unselected published context, refreshes
+its costs and policy at the original unit amounts, and includes it as
+`changeKind:retained`. The response counts selected and retained entries. The limit
+of 100 contexts applies to their combined complete list. Distinct standalone and
+bundle prices remain distinct; duplicate canonical contexts are rejected. A retained
+context that can no longer qualify blocks the preview with exact context/reason
+`issues`, so it can be selected and reviewed explicitly. Nothing silently disappears.
+Saving also checks the source active-list ID under lock. Manual, rollback and
+scheduled activation all reject a snapshot that omits a context added by an
+intervening publication or restores a retained amount changed by a later manager
+(`price_list_contexts_changed`); re-preview against the current list. Explicit policy
+resets to no active list remain separate operations.
+Deterministic revision/source conflicts use SQLSTATE `PT409` through migration
+0553. They return an actionable HTTP 409 without triggering the transaction retry
+behavior of affected PostgREST versions. Actual database serialization errors
+retain their normal SQLSTATE and behavior.
 `/schedule` and `/cancel-schedule` use the state revision. The scheduler and pricing
 reads call `pricing_apply_scheduled`; activation is rechecked at execution, once,
 and stale schedules enter a review alert without partially changing prices. Only
@@ -116,12 +157,25 @@ revisioned decision. `/proposals` is a separate sourcing queue with item identit
 pack, source, estimated costs, terms and expiry; exact duplicates reuse a proposal.
 Resolving a proposal requires a real tenant catalog SKU.
 
+Proposal `comparison` optionally retains one to five unpriced supplier candidates,
+quantity, destination, service, purchase-pack costs, minimum packs, availability,
+lead time, terms, evidence expiry and six categories of delivery charges. Costs are
+provisional: required purchase packs round up, surplus units are disclosed, and
+included-in-pack fees are not counted again. Missing inputs stay unknown; expired
+evidence is marked expired. `comparisonResult` is derived on the server at read time
+and cannot be submitted by clients. Persisting only evidence preserves exact-repeat
+deduplication while expiration remains current. No provisional result grants quote
+approval or writes a catalog SKU.
+
 ## Validation
 
 `service.test.ts` covers calculation authority and scope; `persistence.test.ts`
-executes migration 0548 and its transactional operations on PGlite by default.
+executes migrations 0548/0552 and their transactional/search operations on PGlite by default.
 It also accepts `PRICING_TEST_DATABASE_URL` only for a positively identified
 loopback database whose name starts `pricing_test_`; this mode recreates its test
 schema and has been exercised on PostgreSQL 17. `routes/admin/pricing.test.ts`
 checks role/validation boundaries and the reviewed import rate-limit ordering.
+`portfolio.test.ts` verifies previous-price comparisons under identical current
+inputs and proposal expiry re-derivation. Portfolio filtering tests include an
+actual selected supplier beyond the response cap and another tenant sharing a SKU.
 No test invokes a vendor, sends communications or collects a payment.

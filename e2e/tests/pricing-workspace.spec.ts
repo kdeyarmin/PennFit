@@ -65,6 +65,41 @@ async function pricingFixture(context: BrowserContext, manager: boolean) {
       return send({ policies: [policy], hasMore: false });
     if (url.pathname.endsWith("/pricing/active-prices"))
       return send({ batch: null });
+    if (url.pathname.endsWith("/pricing/portfolio"))
+      return send({
+        items: [
+          {
+            sku: "FIXTURE-MASK",
+            name: "Fixture mask",
+            category: "mask",
+            offers: [],
+            hasMoreOffers: false,
+            activeEntries: [],
+          },
+        ],
+        hasMore: false,
+      });
+    if (url.pathname.endsWith("/admin/catalog/products"))
+      return send({
+        products: [
+          {
+            sku: "FIXTURE-MASK",
+            name: "Fixture mask",
+            description: null,
+            category: "mask",
+            manufacturer: null,
+            modelNumber: null,
+            unitOfMeasure: "each",
+            stockCount: null,
+            lowStockThreshold: null,
+            lowStock: false,
+            active: true,
+            updatedAt: "2026-09-14T00:00:00Z",
+          },
+        ],
+        total: 1,
+        categories: ["mask"],
+      });
     if (url.pathname.endsWith("/pricing/offers"))
       return send({ offers: [], hasMore: false });
     if (url.pathname.endsWith("/pricing/revenue-profiles"))
@@ -102,6 +137,15 @@ test("pricing workspace stays within a narrow viewport with usable named control
     page.getByRole("heading", { name: "Pricing & Profitability", exact: true }),
   ).toBeVisible();
   await expect(
+    page.getByRole("heading", { name: "Pricing portfolio", exact: true }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Review FIXTURE-MASK", exact: true })
+    .click();
+  await expect(page.getByLabel("Item 1 description")).toHaveValue(
+    "Fixture mask",
+  );
+  await expect(
     page.getByLabel("Item 1 billed / scenario unit amount ($)"),
   ).toBeVisible();
   const width = await page.evaluate(() => ({
@@ -121,6 +165,39 @@ test("pricing workspace stays within a narrow viewport with usable named control
   await expect(
     page.getByRole("button", { name: "Save draft policy", exact: true }),
   ).toBeVisible();
+  for (const [tab, heading] of [
+    ["New items", "Propose a new item"],
+    ["Bulk prices", "Preview a bulk price change"],
+  ]) {
+    await page.getByRole("button", { name: tab, exact: true }).click();
+    await expect(
+      page.getByRole("heading", { name: heading, exact: true }),
+    ).toBeVisible();
+    if (tab === "New items") {
+      await page
+        .getByRole("button", { name: "Compare provisional supplier costs" })
+        .click();
+      await page.getByLabel("Comparison requested units").fill("7");
+      await page.getByLabel("Supplier 1 units per pack").fill("6");
+      await page.getByLabel("Supplier 1 purchase pack cost ($)").fill("12.00");
+      await expect(
+        page.getByText("Known subtotal $24.00", { exact: true }),
+      ).toBeVisible();
+      await expect(
+        page.getByText("Buy 2 packs · 12 purchased units · 5 surplus units"),
+      ).toBeVisible();
+      await expect(
+        page
+          .getByLabel("Comparison for supplier 1", { exact: true })
+          .getByText("Cost information needed", { exact: true }),
+      ).toBeVisible();
+    }
+    const panelWidth = await page.evaluate(() => ({
+      document: document.documentElement.scrollWidth,
+      viewport: innerWidth,
+    }));
+    expect(panelWidth.document).toBeLessThanOrEqual(panelWidth.viewport + 1);
+  }
 });
 
 test("CSR pricing access provides review without manager publishing controls", async ({

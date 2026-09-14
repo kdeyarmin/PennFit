@@ -89,6 +89,68 @@ describe("pricing persistence transactions", () => {
         "utf8",
       ),
     );
+    await db.exec(
+      "ALTER TABLE resupply.products ADD COLUMN name text NOT NULL DEFAULT 'Fixture product', ADD COLUMN category text",
+    );
+    await db.exec(
+      await readFile(
+        new URL(
+          "../../../../../lib/resupply-db/migrations/0552_pricing_portfolio.sql",
+          import.meta.url,
+        ),
+        "utf8",
+      ),
+    );
+    // Preserve the actual order/delivery routine definitions while keeping this
+    // fixture focused on pricing tables. Their full relation/body validation and
+    // behavior run in the dedicated order/delivery tests and full migration replay.
+    await db.exec("SET check_function_bodies=off");
+    for (const [file, name, signature] of [
+      [
+        "0549_csr_pricing_order_integrity.sql",
+        "create_csr_priced_order",
+        "uuid,uuid,integer,uuid,jsonb",
+      ],
+      [
+        "0550_csr_delivery_reviews.sql",
+        "save_csr_delivery_review",
+        "uuid,uuid,text,jsonb",
+      ],
+      [
+        "0550_csr_delivery_reviews.sql",
+        "approve_csr_delivery_review",
+        "uuid,uuid,uuid,text,integer,text,boolean",
+      ],
+    ]) {
+      const source = await readFile(
+        new URL(
+          `../../../../../lib/resupply-db/migrations/${file}`,
+          import.meta.url,
+        ),
+        "utf8",
+      );
+      const definition = source.match(
+        new RegExp(
+          `CREATE (?:OR REPLACE )?FUNCTION resupply\\.${name}\\([\\s\\S]*?\\$\\$;`,
+        ),
+      );
+      if (!definition)
+        throw new Error(`Missing actual fixture routine ${name}`);
+      await db.exec(definition[0]);
+      await db.exec(
+        `REVOKE ALL ON FUNCTION resupply.${name}(${signature}) FROM PUBLIC,anon,authenticated; GRANT EXECUTE ON FUNCTION resupply.${name}(${signature}) TO service_role`,
+      );
+    }
+    await db.exec(
+      await readFile(
+        new URL(
+          "../../../../../lib/resupply-db/migrations/0553_pricing_business_conflicts.sql",
+          import.meta.url,
+        ),
+        "utf8",
+      ),
+    );
+    await db.exec("SET check_function_bodies=on");
   }, 30_000);
   afterAll(async () => {
     await db?.close();
@@ -139,6 +201,45 @@ describe("pricing persistence transactions", () => {
       current_policy_id: null,
     });
   });
+  it("uses nonretrying409 signals for stale offers and reviews, preserving grants and unrelated serialization failures", async () => {
+    await expect(
+      mutate("offer", { ...offer, expectedVersion: 99 }),
+    ).rejects.toMatchObject({ code: "PT409", message: "revision_conflict" });
+    const saved = await quote();
+    await expect(
+      db.query("SELECT resupply.pricing_assert_quote_current($1,$2,99)", [
+        org,
+        saved.id,
+      ]),
+    ).rejects.toMatchObject({ code: "PT409", message: "revision_conflict" });
+    await expect(
+      db.query("SELECT resupply.pricing_assert_dependencies($1,$2)", [
+        org,
+        JSON.stringify([{ offerId, version: 99 }]),
+      ]),
+    ).rejects.toMatchObject({ code: "PT409", message: "stale_dependencies" });
+    const grants = await db.query<{
+      name: string;
+      security: boolean;
+      public: boolean;
+      service: boolean;
+    }>(
+      "SELECT p.proname name,p.prosecdef security,has_function_privilege('anon',p.oid,'EXECUTE') public,has_function_privilege('service_role',p.oid,'EXECUTE') service FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='resupply' AND p.proname IN ('pricing_assert_dependencies','pricing_assert_quote_current','pricing_mutate','create_csr_priced_order','save_csr_delivery_review','approve_csr_delivery_review')",
+    );
+    expect(grants.rows).toHaveLength(6);
+    for (const row of grants.rows)
+      expect(row).toMatchObject({
+        security: false,
+        public: false,
+        service: true,
+      });
+    // The migration does not intercept or convert actual PostgreSQL serialization errors.
+    await expect(
+      db.exec(
+        "DO $$ BEGIN RAISE SQLSTATE '40001' USING MESSAGE='unrelated serialization failure'; END $$",
+      ),
+    ).rejects.toMatchObject({ code: "40001" });
+  });
   it("keeps old supplier versions immutable and rejects lost updates", async () => {
     await mutate("offer", {
       ...offer,
@@ -175,10 +276,29 @@ describe("pricing persistence transactions", () => {
       packDescription: "One",
       source: "Supplier quote",
       notes: "Synthetic",
+      comparison: {
+        currency: "USD",
+        quantity: 3,
+        destination: "19000",
+        service: "Ground",
+        suppliers: [
+          {
+            id: "candidate",
+            supplierName: "Candidate",
+            source: "Quote",
+            expiresAt: "2099-01-01T00:00:00Z",
+            packCostCents: 501,
+            unitsPerPack: 2,
+            minimumPacks: 1,
+            fees: [],
+          },
+        ],
+      },
     };
     const first = await mutate("proposal", proposal);
     const repeat = await mutate("proposal", proposal);
     expect(repeat.id).toBe(first.id);
+    expect(repeat.data).toEqual(proposal);
     const { id: _id, ...imported } = offer;
     void _id;
     const importedResult = await mutate("offer", {
@@ -331,8 +451,19 @@ describe("pricing persistence transactions", () => {
       scenario: { validUntil: offer.expiresAt },
       dependencies: [{ offerId, version: 1 }],
       approvalClass: "firm",
+      comparison: {
+        previousPriceListId: id(22),
+        previousEntryIndexes: [0],
+        previousUnitAmounts: [
+          { sku: "MASK", quantity: 1, unitAmountCents: 12000 },
+        ],
+        previousEvaluation: { contributionCents: 7000 },
+      },
     };
     const first = await mutate("batch", { name: "First", entries: [entry] });
+    expect((first.entries as (typeof entry)[])[0].comparison).toEqual(
+      entry.comparison,
+    );
     const second = await mutate("batch", { name: "Second", entries: [entry] });
     await mutate("activate", { id: first.id, expectedStateRevision: 1 });
     await mutate("activate", { id: second.id, expectedStateRevision: 2 });
@@ -387,7 +518,7 @@ describe("pricing persistence transactions", () => {
     expect(
       (
         await db.query(
-          "SELECT schedule_status FROM resupply.pricing_price_lists WHERE id=$1",
+          "SELECT schedule_status,schedule_error FROM resupply.pricing_price_lists WHERE id=$1",
           [batch.id],
         )
       ).rows[0],
@@ -414,11 +545,14 @@ describe("pricing persistence transactions", () => {
     expect(
       (
         await db.query(
-          "SELECT schedule_status FROM resupply.pricing_price_lists WHERE id=$1",
+          "SELECT schedule_status,schedule_error FROM resupply.pricing_price_lists WHERE id=$1",
           [second.id],
         )
       ).rows[0],
-    ).toMatchObject({ schedule_status: "blocked" });
+    ).toMatchObject({
+      schedule_status: "blocked",
+      schedule_error: "stale_dependencies",
+    });
     expect(
       (
         await db.query(
@@ -427,6 +561,151 @@ describe("pricing persistence transactions", () => {
         )
       ).rows[0],
     ).toMatchObject({ active_price_list_id: batch.id });
+  });
+  it("protects newly published contexts at preview save, activation and scheduled activation", async () => {
+    const entry = (sku: string) => ({
+      policyId,
+      approvalClass: "firm",
+      dependencies: [{ offerId, version: 1 }],
+      scenario: {
+        validUntil: offer.expiresAt,
+        revenue: { mode: "self_pay" },
+        lines: [{ sku, quantity: 1, unitAmountCents: 10000 }],
+      },
+    });
+    const first = await mutate("batch", {
+      name: "A and B",
+      entries: [entry("A"), entry("B")],
+    });
+    await mutate("activate", { id: first.id, expectedStateRevision: 1 });
+    const stale = await db.query<{ result: { id: string } }>(
+      "SELECT resupply.pricing_save_portfolio_batch($1,'fixture',$2,$3) result",
+      [
+        org,
+        first.id,
+        JSON.stringify({
+          name: "Reviewed A and B",
+          entries: [entry("A"), entry("B")],
+        }),
+      ],
+    );
+    const expanded = await mutate("batch", {
+      name: "Added C",
+      entries: [entry("A"), entry("B"), entry("C")],
+    });
+    await mutate("activate", { id: expanded.id, expectedStateRevision: 2 });
+    await expect(
+      db.query(
+        "SELECT resupply.pricing_save_portfolio_batch($1,'fixture',$2,$3)",
+        [
+          org,
+          first.id,
+          JSON.stringify({
+            name: "Outdated source",
+            entries: [entry("A"), entry("B")],
+          }),
+        ],
+      ),
+    ).rejects.toThrow("price_list_contexts_changed");
+    await expect(
+      mutate("activate", {
+        id: stale.rows[0].result.id,
+        expectedStateRevision: 3,
+      }),
+    ).rejects.toThrow("price_list_contexts_changed");
+    await mutate("schedule", {
+      id: stale.rows[0].result.id,
+      expectedStateRevision: 3,
+      scheduledAt: new Date(Date.now() + 60000).toISOString(),
+    });
+    await db.query(
+      "UPDATE resupply.pricing_price_lists SET scheduled_at=now()-interval '1 minute' WHERE id=$1",
+      [stale.rows[0].result.id],
+    );
+    await db.query("SELECT resupply.pricing_apply_scheduled($1)", [org]);
+    expect(
+      (
+        await db.query(
+          "SELECT active_price_list_id FROM resupply.pricing_state WHERE org_id=$1",
+          [org],
+        )
+      ).rows[0].active_price_list_id,
+    ).toBe(expanded.id);
+    expect(
+      (
+        await db.query(
+          "SELECT schedule_status,schedule_error FROM resupply.pricing_price_lists WHERE id=$1",
+          [stale.rows[0].result.id],
+        )
+      ).rows[0],
+    ).toMatchObject({
+      schedule_status: "blocked",
+      schedule_error: "price_list_contexts_changed",
+    });
+    // Explicit policy publication resetting the pointer remains a separate allowed operation.
+    await db.query(
+      "UPDATE resupply.pricing_state SET active_price_list_id=NULL WHERE org_id=$1",
+      [org],
+    );
+  });
+  it("does not restore an unselected retained price after a later manager changes its amount", async () => {
+    const entry = (sku: string, amount: number, changeKind = "selected") => ({
+      policyId,
+      approvalClass: "firm",
+      changeKind,
+      dependencies: [{ offerId, version: 1 }],
+      scenario: {
+        validUntil: offer.expiresAt,
+        revenue: { mode: "self_pay" },
+        lines: [{ sku, quantity: 1, unitAmountCents: amount }],
+      },
+    });
+    const first = await mutate("batch", {
+      name: "A and B",
+      entries: [entry("A", 10000), entry("B", 20000)],
+    });
+    await mutate("activate", { id: first.id, expectedStateRevision: 1 });
+    const pending = await mutate("batch", {
+      name: "Update A only",
+      entries: [entry("A", 11000), entry("B", 20000, "retained")],
+    });
+    await mutate("schedule", {
+      id: pending.id,
+      expectedStateRevision: 2,
+      scheduledAt: new Date(Date.now() + 60000).toISOString(),
+    });
+    const later = await mutate("batch", {
+      name: "Manager updates B",
+      entries: [entry("A", 10000), entry("B", 22000)],
+    });
+    await mutate("activate", { id: later.id, expectedStateRevision: 3 });
+    await expect(
+      mutate("activate", { id: pending.id, expectedStateRevision: 4 }),
+    ).rejects.toMatchObject({
+      code: "PT409",
+      message: "price_list_contexts_changed",
+    });
+    await db.query(
+      "UPDATE resupply.pricing_price_lists SET scheduled_at=now()-interval '1 minute' WHERE id=$1",
+      [pending.id],
+    );
+    await db.query("SELECT resupply.pricing_apply_scheduled($1)", [org]);
+    expect(
+      (
+        await db.query(
+          "SELECT active_price_list_id FROM resupply.pricing_state WHERE org_id=$1",
+          [org],
+        )
+      ).rows[0].active_price_list_id,
+    ).toBe(later.id);
+    expect(
+      (
+        await db.query(
+          "SELECT schedule_status FROM resupply.pricing_price_lists WHERE id=$1",
+          [pending.id],
+        )
+      ).rows[0].schedule_status,
+    ).toBe("blocked");
   });
   it("rejects changed address and verified revenue profile revisions before approval", async () => {
     const profile = await mutate("revenue_profile", {
@@ -536,8 +815,105 @@ describe("pricing persistence transactions", () => {
           org,
         ]),
       ).rejects.toThrow(/permission denied/i);
+      await expect(
+        db.query("SELECT * FROM resupply.pricing_portfolio($1)", [org]),
+      ).rejects.toThrow(/permission denied/i);
       await db.exec("RESET ROLE");
     }
+  });
+  it("filters the full canonical portfolio before pagination and excludes other tenants/inactive products", async () => {
+    await db.query(
+      "INSERT INTO resupply.products(org_id,sku,name,category,active) VALUES ($1,'AAA','Other category','filter',true),($1,'BBB','Second mask','mask',true),($1,'CCC','Third mask','mask',true),($1,'DDD','Hidden mask','mask',false),($2,'ZZZ','Other tenant mask','mask',true)",
+      [org, otherOrg],
+    );
+    await db.query(
+      "UPDATE resupply.products SET category='mask',name='First mask' WHERE org_id=$1 AND sku='MASK'",
+      [org],
+    );
+    const page = await db.query(
+      "SELECT sku FROM resupply.pricing_portfolio($1,'mask','mask',NULL,1,1)",
+      [org],
+    );
+    expect(page.rows).toEqual([{ sku: "CCC" }]);
+    const all = await db.query(
+      "SELECT sku FROM resupply.pricing_portfolio($1,'mask','mask')",
+      [org],
+    );
+    expect(all.rows).toEqual([{ sku: "BBB" }, { sku: "CCC" }, { sku: "MASK" }]);
+    const literalWildcard = await db.query(
+      "SELECT sku FROM resupply.pricing_portfolio($1,'%')",
+      [org],
+    );
+    expect(literalWildcard.rows).toEqual([]);
+  });
+  it("uses latest effective supplier identity for filtering and does not leak offers sharing a SKU across tenants", async () => {
+    await mutate("offer", {
+      ...offer,
+      expectedVersion: 1,
+      supplierName: "Future supplier",
+      effectiveFrom: "2090-01-01T00:00:00Z",
+    });
+    await db.query(
+      "INSERT INTO resupply.products(org_id,sku) VALUES($1,'MASK')",
+      [otherOrg],
+    );
+    await mutate(
+      "offer",
+      {
+        ...offer,
+        id: id(40),
+        expectedVersion: 0,
+        supplierName: "Other tenant supplier",
+      },
+      otherOrg,
+    );
+    const result = await db.query<{
+      offers: Array<{ org_id: string; version: number }>;
+    }>(
+      "SELECT offers FROM resupply.pricing_portfolio($1,NULL,NULL,'test supplier')",
+      [org],
+    );
+    expect(result.rows[0].offers).toHaveLength(1);
+    expect(result.rows[0].offers[0]).toMatchObject({ org_id: org, version: 1 });
+    expect(
+      (
+        await db.query(
+          "SELECT * FROM resupply.pricing_portfolio($1,NULL,NULL,'future supplier')",
+          [org],
+        )
+      ).rows,
+    ).toEqual([]);
+    expect(
+      (
+        await db.query(
+          "SELECT * FROM resupply.pricing_portfolio($1,NULL,NULL,'other tenant')",
+          [org],
+        )
+      ).rows,
+    ).toEqual([]);
+  });
+  it("bounds offer payloads while disclosing truncation and keeps overflow suppliers searchable", async () => {
+    await db.query(
+      "INSERT INTO resupply.pricing_offers(id,org_id,version,sku,data,effective_from,expires_at,is_current,created_by) SELECT ('00000000-0000-4000-8000-' || lpad((100+g)::text,12,'0'))::uuid,$1,1,'MASK',jsonb_build_object('supplierName',CASE WHEN g=101 THEN 'Last supplier' ELSE 'Other' END),'2020-01-01','2099-01-01',true,'fixture' FROM generate_series(1,101) g",
+      [org],
+    );
+    const result = await db.query<{
+      offers: unknown[];
+      has_more_offers: boolean;
+      matching_offer_ids: string[];
+      active_suppliers: Array<{ offerId: string; supplierName: string }>;
+    }>(
+      "SELECT offers,has_more_offers,matching_offer_ids,active_suppliers FROM resupply.pricing_portfolio($1,NULL,NULL,'last supplier',0,51,$2)",
+      [org, [id(201), offerId]],
+    );
+    expect(result.rows[0].offers).toHaveLength(100);
+    expect(result.rows[0].has_more_offers).toBe(true);
+    expect(result.rows[0].matching_offer_ids).toEqual([id(201)]);
+    expect(result.rows[0].active_suppliers).toEqual(
+      expect.arrayContaining([
+        { sku: "MASK", offerId: id(201), supplierName: "Last supplier" },
+      ]),
+    );
   });
   it("returns atomic actual snapshots, stable alert review keys and weighted financial totals", async () => {
     const saved = await quote();

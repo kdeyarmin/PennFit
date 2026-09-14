@@ -4,6 +4,12 @@ import {
   pricingExpiry,
 } from "@/lib/admin/pricing-input";
 import { useState } from "react";
+import {
+  PricingProvisionalComparison,
+  ProvisionalComparisonSummary,
+  readProvisionalComparison,
+  type ProvisionalComparisonDraft,
+} from "./PricingProvisionalComparison";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "../Button";
 import { ErrorPanel } from "../ErrorPanel";
@@ -32,6 +38,8 @@ const blank: PricingProposalInput = {
   notes: "",
 };
 export function PricingProposalsPanel({ canManage }: { canManage: boolean }) {
+  const [comparisonDraft, setComparisonDraft] =
+    useState<ProvisionalComparisonDraft | null>(null);
   const qc = useQueryClient(),
     [offset, setOffset] = useState(0),
     [form, setForm] = useState(blank),
@@ -59,6 +67,7 @@ export function PricingProposalsPanel({ canManage }: { canManage: boolean }) {
       setDropship("");
       setExpires("");
       setTerms("");
+      setComparisonDraft(null);
       setNotice(
         "Item proposal submitted. A pricing manager will verify the item and supplier costs before quoting.",
       );
@@ -88,111 +97,132 @@ export function PricingProposalsPanel({ canManage }: { canManage: boolean }) {
         title="Propose a new item"
         description="Capture the exact model, size and sellable unit. The item must be matched to a canonical catalog SKU and verified supplier offer before it can become a firm quote."
       >
-        <div className="grid gap-4 md:grid-cols-3">
-          {(
-            [
-              ["name", "Item name"],
-              ["manufacturer", "Manufacturer"],
-              ["model", "Model / part number"],
-              ["size", "Size / variant"],
-              ["packDescription", "Pack and sellable unit"],
-              ["source", "Supplier quote / evidence reference"],
-            ] as const
-          ).map(([key, label]) => (
-            <PricingField key={key} label={label}>
+        <fieldset disabled={save.isPending} className="min-w-0">
+          <div className="grid gap-4 md:grid-cols-3">
+            {(
+              [
+                ["name", "Item name"],
+                ["manufacturer", "Manufacturer"],
+                ["model", "Model / part number"],
+                ["size", "Size / variant"],
+                ["packDescription", "Pack and sellable unit"],
+                ["source", "Supplier quote / evidence reference"],
+              ] as const
+            ).map(([key, label]) => (
+              <PricingField key={key} label={label}>
+                <input
+                  className={pricingControl}
+                  value={form[key]}
+                  onChange={(e) =>
+                    setForm((old) => ({ ...old, [key]: e.target.value }))
+                  }
+                />
+              </PricingField>
+            ))}
+          </div>
+          <div className="mt-4 grid gap-4 md:grid-cols-3">
+            <PricingField label="Proposed unit cost ($)">
               <input
                 className={pricingControl}
-                value={form[key]}
-                onChange={(e) =>
-                  setForm((old) => ({ ...old, [key]: e.target.value }))
-                }
+                inputMode="decimal"
+                value={cost}
+                onChange={(e) => setCost(e.target.value)}
               />
             </PricingField>
-          ))}
-        </div>
-        <div className="mt-4 grid gap-4 md:grid-cols-3">
-          <PricingField label="Proposed unit cost ($)">
-            <input
-              className={pricingControl}
-              inputMode="decimal"
-              value={cost}
-              onChange={(e) => setCost(e.target.value)}
-            />
-          </PricingField>
-          <PricingField label="Proposed dropship fee ($)">
-            <input
-              className={pricingControl}
-              inputMode="decimal"
-              value={dropship}
-              onChange={(e) => setDropship(e.target.value)}
-            />
-          </PricingField>
-          <PricingField label="Supplier evidence valid through (UTC)">
-            <input
-              className={pricingControl}
-              type="date"
-              value={expires}
-              onChange={(e) => setExpires(e.target.value)}
-            />
-          </PricingField>
-          <PricingField label="Supplier delivery and return terms">
+            <PricingField label="Proposed dropship fee ($)">
+              <input
+                className={pricingControl}
+                inputMode="decimal"
+                value={dropship}
+                onChange={(e) => setDropship(e.target.value)}
+              />
+            </PricingField>
+            <PricingField label="Supplier evidence valid through (UTC)">
+              <input
+                className={pricingControl}
+                type="date"
+                value={expires}
+                onChange={(e) => setExpires(e.target.value)}
+              />
+            </PricingField>
+            <PricingField label="Supplier delivery and return terms">
+              <textarea
+                className={pricingControl}
+                value={terms}
+                onChange={(e) => setTerms(e.target.value)}
+                rows={2}
+              />
+            </PricingField>
+          </div>
+          {entryError && (
+            <p role="alert" className="mt-2 text-sm text-red-700">
+              {entryError}
+            </p>
+          )}
+          <PricingField label="Delivery terms, lead time and notes">
             <textarea
               className={pricingControl}
-              value={terms}
-              onChange={(e) => setTerms(e.target.value)}
-              rows={2}
+              rows={3}
+              value={form.notes}
+              onChange={(e) =>
+                setForm((old) => ({ ...old, notes: e.target.value }))
+              }
             />
           </PricingField>
-        </div>
-        {entryError && (
-          <p role="alert" className="mt-2 text-sm text-red-700">
-            {entryError}
-          </p>
-        )}
-        <PricingField label="Delivery terms, lead time and notes">
-          <textarea
-            className={pricingControl}
-            rows={3}
-            value={form.notes}
-            onChange={(e) =>
-              setForm((old) => ({ ...old, notes: e.target.value }))
-            }
+          <PricingProvisionalComparison
+            draft={comparisonDraft}
+            onChange={setComparisonDraft}
+            disabled={save.isPending}
           />
-        </PricingField>
-        <Button
-          className="mt-4"
-          disabled={
-            !form.name.trim() ||
-            !form.packDescription.trim() ||
-            !form.source.trim()
-          }
-          isLoading={save.isPending}
-          onClick={() => {
-            setEntryError("");
-            if (
-              (cost.trim() && parsePricingMoney(cost) === null) ||
-              (dropship.trim() && parsePricingMoney(dropship) === null) ||
-              (expires && !pricingExpiry(expires))
-            ) {
-              setEntryError(
-                "Enter valid dollar amounts and an evidence expiry date.",
-              );
-              return;
+          <Button
+            className="mt-4"
+            disabled={
+              !form.name.trim() ||
+              !form.packDescription.trim() ||
+              !form.source.trim()
             }
-            save.mutate({
-              ...form,
-              estimatedUnitCostCents: parsePricingMoney(cost),
-              estimatedDropshipFeeCents: parsePricingMoney(dropship),
-              terms,
-              expiresAt: expires ? pricingExpiry(expires) : null,
-            });
-          }}
-        >
-          Submit item proposal
-        </Button>
-        {save.error && (
-          <ErrorPanel error={save.error} onRetry={() => save.reset()} />
-        )}
+            isLoading={save.isPending}
+            onClick={() => {
+              setEntryError("");
+              if (
+                (cost.trim() && parsePricingMoney(cost) === null) ||
+                (dropship.trim() && parsePricingMoney(dropship) === null) ||
+                (expires && !pricingExpiry(expires))
+              ) {
+                setEntryError(
+                  "Enter valid dollar amounts and an evidence expiry date.",
+                );
+                return;
+              }
+              let comparison: PricingProposalInput["comparison"];
+              try {
+                comparison = comparisonDraft
+                  ? readProvisionalComparison(comparisonDraft).input
+                  : undefined;
+              } catch (error) {
+                setEntryError(
+                  error instanceof Error
+                    ? error.message
+                    : "Check the comparison inputs.",
+                );
+                return;
+              }
+              save.mutate({
+                ...form,
+                ...(comparison ? { comparison } : {}),
+                estimatedUnitCostCents: parsePricingMoney(cost),
+                estimatedDropshipFeeCents: parsePricingMoney(dropship),
+                terms,
+                expiresAt: expires ? pricingExpiry(expires) : null,
+              });
+            }}
+          >
+            Submit item proposal
+          </Button>
+          {save.error && (
+            <ErrorPanel error={save.error} onRetry={() => save.reset()} />
+          )}
+        </fieldset>
       </PricingSection>
       <PricingSection
         title="Item sourcing queue"
@@ -255,6 +285,14 @@ export function PricingProposalsPanel({ canManage }: { canManage: boolean }) {
                   <p className="mt-1 text-sm text-slate-600">
                     {proposal.terms}
                   </p>
+                )}
+                {proposal.comparison && (
+                  <div className="mt-4">
+                    <ProvisionalComparisonSummary
+                      comparison={proposal.comparison}
+                      result={proposal.comparisonResult}
+                    />
+                  </div>
                 )}
                 {proposal.reviewNotes && (
                   <p className="mt-2 text-sm">Review: {proposal.reviewNotes}</p>

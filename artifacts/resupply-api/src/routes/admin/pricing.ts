@@ -12,7 +12,16 @@ import {
   type Database,
   type ResupplyTable,
 } from "@workspace/resupply-db";
-import { PricingValidationError } from "@workspace/resupply-domain";
+import {
+  compareProposedSupplierCosts,
+  PricingValidationError,
+} from "@workspace/resupply-domain";
+import {
+  preparePortfolioBatch,
+  PortfolioReviewError,
+  listPricingPortfolio,
+  refreshPortfolioScenario,
+} from "../../lib/pricing/portfolio";
 import { calculateDiscountHeadroom } from "../../lib/pricing/discount-headroom";
 import { requirePermission } from "../../middlewares/requireAdmin";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
@@ -35,7 +44,6 @@ import {
   skuSchema,
 } from "../../lib/pricing/contracts";
 import {
-  approvalClass,
   batchDto,
   getActivePrices,
   getPricingState,
@@ -73,6 +81,13 @@ const pagination = z.object({
   status: z.enum(["draft", "pending_approval", "approved", "bound"]).optional(),
   view: z.enum(["current", "latest", "history"]).default("current"),
 });
+const portfolioQuery = z.object({
+  offset: z.coerce.number().int().min(0).max(100_000).default(0),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+  q: z.string().trim().max(200).optional(),
+  category: z.string().trim().max(200).optional(),
+  supplier: z.string().trim().max(200).optional(),
+});
 type TableRow<T extends ResupplyTable> =
   Database["resupply"]["Tables"][T]["Row"];
 function context(req: Request) {
@@ -94,6 +109,12 @@ function endpoint(action: (req: Request, res: Response) => Promise<void>) {
       try {
         await action(req, res);
       } catch (error) {
+        if (error instanceof PortfolioReviewError) {
+          res
+            .status(error.status)
+            .json({ error: error.code, issues: error.issues });
+          return;
+        }
         if (error instanceof z.ZodError) {
           res.status(400).json({
             error: "invalid_body",
@@ -124,6 +145,29 @@ function endpoint(action: (req: Request, res: Response) => Promise<void>) {
     },
   ];
 }
+router.get(
+  "/admin/pricing/portfolio",
+  requirePermission("pricing.manage"),
+  ...endpoint(async (req, res) => {
+    res.json(
+      await listPricingPortfolio(
+        context(req).scoped,
+        portfolioQuery.parse(req.query),
+      ),
+    );
+  }),
+);
+router.post(
+  "/admin/pricing/portfolio/refresh",
+  requirePermission("pricing.manage"),
+  ...endpoint(async (req, res) => {
+    const { scenario } = z
+      .object({ scenario: scenarioSchema })
+      .strict()
+      .parse(req.body);
+    res.json(await refreshPortfolioScenario(context(req).scoped, scenario));
+  }),
+);
 router.get(
   "/admin/pricing/state",
   requirePermission("pricing.evaluate"),
@@ -488,7 +532,9 @@ router.get(
       .range(offset, offset + limit);
     if (error) throw new PricingError("pricing_unavailable", 503);
     res.json({
-      proposals: (data ?? []).slice(0, limit).map(proposalDto),
+      proposals: (data ?? [])
+        .slice(0, limit)
+        .map((row: TableRow<"pricing_proposals">) => proposalDto(row)),
       hasMore: (data?.length ?? 0) > limit,
     });
   }),
@@ -498,6 +544,12 @@ router.post(
   requirePermission("pricing.evaluate"),
   ...endpoint(async (req, res) => {
     const { scoped, actor } = context(req);
+    const payload = proposalSchema.parse(req.body);
+    if (payload.comparison)
+      compareProposedSupplierCosts(
+        payload.comparison,
+        new Date().toISOString(),
+      );
     res
       .status(201)
       .json(
@@ -506,7 +558,7 @@ router.post(
             scoped,
             actor,
             "proposal",
-            proposalSchema.parse(req.body),
+            payload,
           )) as unknown as TableRow<"pricing_proposals">,
         ),
       );
@@ -533,23 +585,14 @@ router.post(
   ...endpoint(async (req, res) => {
     const { scoped, actor, mayVerify } = context(req);
     const payload = batchSchema.parse(req.body);
-    const entries = [];
-    const contexts = new Set<string>();
-    for (const scenario of payload.scenarios) {
-      if (scenario.patientId)
-        throw new PricingError("catalog_batch_cannot_link_patient");
-      const key = `${scenario.revenue.mode}:${scenario.lines
-        .map((line) => `${line.sku}:${line.quantity}`)
-        .sort()
-        .join("|")}`;
-      if (contexts.has(key)) throw new PricingError("duplicate_price_context");
-      contexts.add(key);
-      const resolved = await resolveScenario(scoped, scenario, { mayVerify });
-      entries.push({ ...resolved, approvalClass: approvalClass(resolved) });
-    }
-    const row = await mutatePricing(scoped, actor, "batch", {
+    const prepared = await preparePortfolioBatch(
+      scoped,
+      payload.scenarios,
+      mayVerify,
+    );
+    const row = await mutatePricing(scoped, actor, "portfolio_batch", {
       name: payload.name,
-      entries,
+      ...prepared,
     });
     res
       .status(201)

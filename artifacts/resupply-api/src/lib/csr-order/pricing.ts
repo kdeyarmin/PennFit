@@ -65,7 +65,7 @@ export function orderPricingFailure(error: unknown): Failure {
   if (code)
     return {
       ok: false,
-      status: db?.code === "40001" ? 409 : 422,
+      status: db?.code === "40001" || db?.code === "PT409" ? 409 : 422,
       body: { error: code, message: MESSAGES[code] },
     };
   return {

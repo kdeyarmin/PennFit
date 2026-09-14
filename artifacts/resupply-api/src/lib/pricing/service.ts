@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import {
   evaluatePricing,
+  compareProposedSupplierCosts,
   PricingValidationError,
   recommendPricing,
   type PricingCostComponent,
@@ -49,13 +50,17 @@ function dbError(error: { message?: string; code?: string } | null) {
     "invalid_line",
     "invalid_sku",
     "invalid_body",
+    "price_list_contexts_changed",
+    "schedule_exists",
   ];
   const code = known.find((name) => error.message?.includes(name));
   throw new PricingError(
     code ?? "pricing_unavailable",
     code === "not_found"
       ? 404
-      : error.code === "40001"
+      : error.code === "40001" ||
+          error.code === "PT409" ||
+          code === "price_list_contexts_changed"
         ? 409
         : code
           ? 422
@@ -101,9 +106,21 @@ export function quoteDto(row: Row<"pricing_quotes">): Quote {
     updatedAt: row.updated_at,
   };
 }
-export function proposalDto(row: Row<"pricing_proposals">): Proposal {
+export function proposalDto(
+  row: Row<"pricing_proposals">,
+  now = new Date(),
+): Proposal {
+  const data = row.data as unknown as Proposal;
   return {
-    ...(row.data as unknown as Proposal),
+    ...data,
+    ...(data.comparison
+      ? {
+          comparisonResult: compareProposedSupplierCosts(
+            data.comparison,
+            now.toISOString(),
+          ),
+        }
+      : {}),
     id: row.id,
     revision: row.revision,
     status: row.status,
@@ -120,6 +137,12 @@ export function batchDto(
     id: row.id,
     name: row.name,
     entries: row.entries as unknown as ResolvedScenario[],
+    selectedEntryCount: (
+      row.entries as unknown as PriceBatch["entries"]
+    ).filter((entry) => entry.changeKind !== "retained").length,
+    retainedEntryCount: (
+      row.entries as unknown as PriceBatch["entries"]
+    ).filter((entry) => entry.changeKind === "retained").length,
     createdAt: row.created_at,
     active: row.id === activeId,
     scheduledAt: row.scheduled_at,
@@ -143,15 +166,26 @@ export async function mutatePricing(
   operation: string,
   payload: unknown,
 ) {
-  const { data, error } = await scoped
-    .raw()
-    .schema("resupply")
-    .rpc("pricing_mutate", {
-      p_org_id: scoped.orgId,
-      p_actor: actor,
-      p_operation: operation,
-      p_payload: JSON.parse(JSON.stringify(payload)) as Json,
-    });
+  const serialized = JSON.parse(JSON.stringify(payload)) as Json;
+  const { data, error } =
+    operation === "portfolio_batch"
+      ? await scoped
+          .raw()
+          .schema("resupply")
+          .rpc("pricing_save_portfolio_batch", {
+            p_org_id: scoped.orgId,
+            p_actor: actor,
+            p_expected_active_price_list_id: (
+              payload as { expectedActivePriceListId: string | null }
+            ).expectedActivePriceListId,
+            p_payload: serialized,
+          })
+      : await scoped.raw().schema("resupply").rpc("pricing_mutate", {
+          p_org_id: scoped.orgId,
+          p_actor: actor,
+          p_operation: operation,
+          p_payload: serialized,
+        });
   dbError(error);
   if (!data || typeof data !== "object" || Array.isArray(data))
     throw new PricingError("pricing_unavailable", 503);
@@ -200,9 +234,11 @@ export async function getPricingState(
 export async function getActivePrices(
   scoped: OrgScopedClient,
   state?: PricingState,
+  includePaused = false,
 ): Promise<PriceBatch | null> {
   const current = state ?? (await getPricingState(scoped));
-  if (!current.enabled || !current.activePriceListId) return null;
+  if ((!current.enabled && !includePaused) || !current.activePriceListId)
+    return null;
   const { data, error } = await scoped
     .from("pricing_price_lists")
     .select("*")

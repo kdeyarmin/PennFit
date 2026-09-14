@@ -7442,6 +7442,35 @@ export interface Database {
         };
         Returns: PricingTables["pricing_offers"]["Row"][];
       };
+      pricing_portfolio: {
+        Args: {
+          p_org_id: string;
+          p_q?: string;
+          p_category?: string;
+          p_supplier?: string;
+          p_offset?: number;
+          p_limit?: number;
+          p_active_offer_ids?: string[];
+        };
+        Returns: Array<{
+          sku: string;
+          name: string;
+          category: string | null;
+          offers: Json;
+          has_more_offers: boolean;
+          matching_offer_ids: string[];
+          active_suppliers: Json;
+        }>;
+      };
+      pricing_save_portfolio_batch: {
+        Args: {
+          p_org_id: string;
+          p_actor: string;
+          p_expected_active_price_list_id: string | null;
+          p_payload: Json;
+        };
+        Returns: Json;
+      };
       pricing_current_revenue_profiles: {
         Args: {
           p_org_id: string;

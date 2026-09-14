@@ -65,9 +65,16 @@ export function AdminPricingPage() {
   );
 }
 function PricingWorkspace({ permissions }: { permissions: string[] }) {
-  const [tab, setTab] = useState<(typeof tabs)[number]["id"]>("review"),
+  const [tab, setTab] = useState<(typeof tabs)[number]["id"]>(
+      permissions.includes("pricing.manage") ? "batches" : "review",
+    ),
     [scenarios, setScenarios] = useState<Scenario[]>([]),
     [batchNotice, setBatchNotice] = useState("");
+  const [reviewItem, setReviewItem] = useState<{
+    key: number;
+    sku: string;
+    name: string;
+  } | null>(null);
   const state = useQuery({
     queryKey: [...pricingKey, "state"],
     queryFn: getPricingState,
@@ -174,6 +181,19 @@ function PricingWorkspace({ permissions }: { permissions: string[] }) {
           {
             <div hidden={tab !== "review"}>
               <PricingItemReview
+                key={reviewItem?.key ?? "initial"}
+                initialLines={
+                  reviewItem
+                    ? [
+                        {
+                          sku: reviewItem.sku,
+                          description: reviewItem.name,
+                          quantity: 1,
+                          unitAmountCents: null,
+                        },
+                      ]
+                    : undefined
+                }
                 canVerify={canManage}
                 onAddToBatch={
                   canManage || canPublish
@@ -202,16 +222,26 @@ function PricingWorkspace({ permissions }: { permissions: string[] }) {
           {tab === "quotes" && (
             <PricingQuotesPanel canManage={canManage} canApprove={canApprove} />
           )}
-          {tab === "batches" && (canManage || canPublish) && (
-            <PricingBatchesPanel
-              scenarios={scenarios}
-              onClear={() => {
-                setScenarios([]);
-                setBatchNotice("");
-              }}
-              state={state.data}
-              canPublish={canPublish}
-            />
+          {(canManage || canPublish) && (
+            <div hidden={tab !== "batches"}>
+              <PricingBatchesPanel
+                scenarios={scenarios}
+                onClear={() => {
+                  setScenarios([]);
+                  setBatchNotice("");
+                }}
+                state={state.data}
+                canPublish={canPublish}
+                canManage={canManage}
+                onReviewItem={(item) => {
+                  setReviewItem((old) => ({
+                    ...item,
+                    key: (old?.key ?? 0) + 1,
+                  }));
+                  setTab("review");
+                }}
+              />
+            </div>
           )}
           {tab === "policy" && (
             <PricingPolicyPanel

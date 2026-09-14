@@ -133,6 +133,7 @@ describe("delivery review preserves the accepted CSR commitment", () => {
     for (const name of [
       "0549_csr_pricing_order_integrity.sql",
       "0550_csr_delivery_reviews.sql",
+      "0553_pricing_business_conflicts.sql",
     ])
       await db.exec(
         await readFile(
@@ -344,7 +345,10 @@ describe("delivery review preserves the accepted CSR commitment", () => {
     await db.query("UPDATE resupply.patients SET address=$1", [
       JSON.stringify({ ...address, zip: "19000" }),
     ]);
-    await expect(approve(review)).rejects.toThrow("delivery_snapshot_changed");
+    await expect(approve(review)).rejects.toMatchObject({
+      message: "delivery_snapshot_changed",
+      code: "PT409",
+    });
     expect(
       (await db.query("SELECT * FROM resupply.fulfillments")).rows,
     ).toHaveLength(0);
@@ -375,7 +379,10 @@ describe("delivery review preserves the accepted CSR commitment", () => {
   it("rejects stale dependencies and expired reviews before releasing work", async () => {
     const review = await save();
     await db.exec("UPDATE resupply.pricing_offers SET expires_at='2021-01-01'");
-    await expect(approve(review)).rejects.toThrow("stale_dependencies");
+    await expect(approve(review)).rejects.toMatchObject({
+      message: "stale_dependencies",
+      code: "PT409",
+    });
     await db.exec(
       "UPDATE resupply.csr_delivery_reviews SET valid_until='2021-01-01'",
     );

@@ -27,6 +27,13 @@ describe("pricing entry", () => {
     expect(pricingQuantity("2.9")).toBeNull();
     expect(pricingQuantity("0")).toBeNull();
   });
+  it("keeps patient quantities capped while allowing explicitly bounded internal simulations", () => {
+    expect(pricingQuantity("99")).toBe(99);
+    expect(pricingQuantity("100")).toBeNull();
+    expect(pricingQuantity("10000", 10_000)).toBe(10_000);
+    expect(pricingQuantity("10001", 10_000)).toBeNull();
+    expect(pricingQuantity("1.5", 10_000)).toBeNull();
+  });
   it("refuses rolled-over calendar dates", () => {
     expect(pricingExpiry("2026-02-30")).toBeNull();
     expect(pricingExpiry("2026-02-28")).toBe("2026-02-28T23:59:59.999Z");

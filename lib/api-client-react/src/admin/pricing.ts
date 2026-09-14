@@ -186,11 +186,54 @@ export type PriceBatch = {
   id: string;
   name: string;
   createdAt: string;
-  entries: ResolvedScenario[];
+  entries: Array<
+    ResolvedScenario & {
+      comparison?: PricingPriceComparison;
+      changeKind?: "selected" | "retained";
+    }
+  >;
+  selectedEntryCount?: number;
+  retainedEntryCount?: number;
   active: boolean;
   scheduledAt: string | null;
   scheduleStatus: "pending" | "applied" | "cancelled" | "blocked" | null;
   scheduleError: string | null;
+};
+export type PricingPriceComparison = {
+  status:
+    | "comparable"
+    | "no_published_price"
+    | "ambiguous_published_price"
+    | "comparison_unavailable";
+  reason: string | null;
+  evaluatedAt: string;
+  previousPriceListId: string | null;
+  previousEntryIndexes: number[];
+  previousUnitAmounts: Array<{
+    sku: string;
+    quantity: number;
+    unitAmountCents: number;
+  }>;
+  previousInput: PricingInput | null;
+  previousEvaluation: PricingEvaluation | null;
+};
+export type PricingPortfolioEntry = {
+  batchId: string;
+  entryIndex: number;
+  entry: ResolvedScenario;
+  suppliers?: Array<{ sku: string; offerId: string; supplierName: string }>;
+};
+export type PricingPortfolioItem = {
+  sku: string;
+  name: string;
+  category: string | null;
+  offers: OfferVersion[];
+  hasMoreOffers: boolean;
+  activeEntries: PricingPortfolioEntry[];
+};
+export type PricingPortfolio = {
+  items: PricingPortfolioItem[];
+  hasMore: boolean;
 };
 export type ActualEventInput = {
   source:
@@ -233,6 +276,7 @@ export type Reconciliation = {
   revenueVarianceCents: number | null;
 };
 export type PricingProposalInput = {
+  comparison?: import("@workspace/resupply-domain").ProvisionalSupplierComparison;
   estimatedUnitCostCents?: number | null;
   estimatedDropshipFeeCents?: number | null;
   terms?: string;
@@ -246,6 +290,7 @@ export type PricingProposalInput = {
   notes: string;
 };
 export type PricingProposal = PricingProposalInput & {
+  comparisonResult?: import("@workspace/resupply-domain").ProvisionalComparisonResult;
   id: string;
   revision: number;
   status: "open" | "reviewing" | "resolved" | "rejected";

@@ -57,6 +57,7 @@ vi.mock("@/lib/admin/pricing-api", async (importOriginal) => ({
   getPricingQuote: vi.fn(),
   getPricingShippingRates: vi.fn(),
   getPricingBatches: vi.fn(),
+  getPricingPortfolio: vi.fn(),
   previewPricingBatch: vi.fn(),
   activatePricingBatch: vi.fn(),
 }));
@@ -210,6 +211,10 @@ beforeEach(() => {
   });
   vi.mocked(api.getPricingQuote).mockImplementation(async () => quote());
   vi.mocked(api.getPricingBatches).mockResolvedValue({ batches: [] });
+  vi.mocked(api.getPricingPortfolio).mockResolvedValue({
+    items: [],
+    hasMore: false,
+  });
 });
 afterEach(cleanup);
 const initialLines = [
@@ -221,6 +226,142 @@ const initialLines = [
   },
 ];
 describe("pricing review safety and usability", () => {
+  it("evaluates internal volume simulations up to 10,000 units and rejects larger quantities", async () => {
+    mount(<PricingItemReview initialLines={initialLines} />);
+    await fillReview();
+    fireEvent.change(screen.getByLabelText("Item 1 quantity"), {
+      target: { value: "10001" },
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Evaluate profitability" }),
+    );
+    expect(await screen.findByRole("alert")).toHaveProperty(
+      "textContent",
+      expect.stringContaining("1 to 10,000"),
+    );
+    expect(api.evaluatePricingScenario).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByLabelText("Item 1 quantity"), {
+      target: { value: "10000" },
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Evaluate profitability" }),
+    );
+    await waitFor(() =>
+      expect(api.evaluatePricingScenario).toHaveBeenCalledWith(
+        expect.objectContaining({
+          lines: [expect.objectContaining({ quantity: 10_000 })],
+        }),
+      ),
+    );
+    expect(
+      screen.getByText(/Scenarios above 99 units per item cannot be attached/),
+    ).toBeTruthy();
+  });
+  it("retains the 99-unit limit when reviewing a patient order", async () => {
+    const attach = vi.fn();
+    mount(
+      <PricingItemReview
+        patientId={patientId}
+        initialLines={initialLines}
+        onAttach={attach}
+      />,
+    );
+    await fillReview();
+    fireEvent.change(screen.getByLabelText("Item 1 quantity"), {
+      target: { value: "100" },
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Evaluate profitability" }),
+    );
+    expect(await screen.findByRole("alert")).toHaveProperty(
+      "textContent",
+      expect.stringContaining("1 to 99"),
+    );
+    expect(api.evaluatePricingScenario).not.toHaveBeenCalled();
+    expect(attach).not.toHaveBeenCalled();
+  });
+  it("saves a verified within-target review without requesting manager approval", async () => {
+    vi.mocked(api.savePricingQuote).mockImplementation(
+      async ({ requestApproval }) => ({
+        ...quote(),
+        status: requestApproval ? "pending_approval" : "approved",
+      }),
+    );
+    mount(
+      <PricingItemReview
+        patientId={patientId}
+        initialLines={initialLines}
+        onAttach={vi.fn()}
+      />,
+    );
+    await fillReview();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Evaluate profitability" }),
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Save review", exact: true }),
+    );
+    await waitFor(() =>
+      expect(api.savePricingQuote).toHaveBeenCalledWith(
+        expect.objectContaining({
+          requestApproval: false,
+          scenario: resolved().scenario,
+        }),
+      ),
+    );
+    expect(
+      (
+        (await screen.findByRole("button", {
+          name: "Use approved review in order",
+        })) as HTMLButtonElement
+      ).disabled,
+    ).toBe(false);
+    expect(
+      screen.queryByText("Sent to a pricing manager for review."),
+    ).toBeNull();
+  });
+  it("explicitly requests manager approval for a permissible below-target review", async () => {
+    vi.mocked(api.evaluatePricingScenario).mockResolvedValue({
+      ...resolved(),
+      evaluation: { ...resolved().evaluation, state: "approval_needed" },
+    });
+    vi.mocked(api.savePricingQuote).mockImplementation(
+      async ({ requestApproval }) => ({
+        ...quote(),
+        status: requestApproval ? "pending_approval" : "draft",
+      }),
+    );
+    mount(
+      <PricingItemReview
+        patientId={patientId}
+        initialLines={initialLines}
+        onAttach={vi.fn()}
+      />,
+    );
+    await fillReview();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Evaluate profitability" }),
+    );
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "Request manager approval",
+        exact: true,
+      }),
+    );
+    await waitFor(() =>
+      expect(api.savePricingQuote).toHaveBeenCalledWith(
+        expect.objectContaining({ requestApproval: true }),
+      ),
+    );
+    await screen.findByText("Sent to a pricing manager for review.");
+    expect(
+      (
+        screen.getByRole("button", {
+          name: "Use approved review in order",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
+  });
   it("resets an open calculator when the order items change", async () => {
     const props = {
       patientId,
@@ -637,6 +778,36 @@ describe("pricing review safety and usability", () => {
         expect.objectContaining({ id: quoteId, revision: 2, patientId }),
       ),
     );
+  });
+  it("shows oversized internal reviews without allowing them to attach to a patient order", async () => {
+    const large = quote();
+    large.lines = large.lines.map((line) => ({ ...line, quantity: 100 }));
+    large.scenario = { ...large.scenario, lines: large.lines };
+    vi.mocked(api.getPricingQuotes).mockResolvedValue({
+      quotes: [large],
+      hasMore: false,
+    });
+    const attach = vi.fn();
+    mount(
+      <PricingOrderReview
+        patientId={patientId}
+        initialLines={initialLines}
+        quote={null}
+        onAttach={attach}
+        onRequirementChange={vi.fn()}
+      />,
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Choose approved review" }),
+    );
+    await screen.findByText(/Internal simulation only: patient orders support/);
+    const use = screen.getByRole("button", {
+      name: "Use this review",
+    }) as HTMLButtonElement;
+    expect(use.disabled).toBe(true);
+    fireEvent.click(use);
+    expect(api.getPricingQuote).not.toHaveBeenCalled();
+    expect(attach).not.toHaveBeenCalled();
   });
   it("activates the frozen batch id rather than changed working selection", async () => {
     const batch = {

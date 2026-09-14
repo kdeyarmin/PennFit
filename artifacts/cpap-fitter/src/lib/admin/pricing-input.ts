@@ -25,10 +25,10 @@ export function parsePricingPercent(value: string): number | null {
   return bps != null && bps < 10_000 ? bps : null;
 }
 
-export function pricingQuantity(value: string): number | null {
+export function pricingQuantity(value: string, maximum = 99): number | null {
   if (!/^\d+$/.test(value)) return null;
   const number = Number(value);
-  return Number.isSafeInteger(number) && number > 0 && number <= 99
+  return Number.isSafeInteger(number) && number > 0 && number <= maximum
     ? number
     : null;
 }

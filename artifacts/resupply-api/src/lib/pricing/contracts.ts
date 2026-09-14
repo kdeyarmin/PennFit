@@ -2,6 +2,7 @@ import { z } from "zod";
 import type {
   PricingEvaluation,
   PricingInput,
+  ProvisionalComparisonResult,
 } from "@workspace/resupply-domain";
 
 const cents = z.number().int().min(0).max(100_000_000);
@@ -458,6 +459,65 @@ export const closeActualsSchema = z
     reason: z.string().trim().min(10).max(1000),
   })
   .strict();
+export const provisionalComparisonSchema = z
+  .object({
+    currency: z.literal("USD"),
+    quantity: z.number().int().min(1).max(10_000),
+    destination: z.string().trim().max(200),
+    service: z.string().trim().max(100),
+    suppliers: z
+      .array(
+        z
+          .object({
+            id: z.string().trim().min(1).max(100),
+            supplierName: z.string().trim().max(200),
+            source: z.string().trim().max(1000),
+            expiresAt: timestamp.nullable(),
+            packCostCents: cents.nullable(),
+            unitsPerPack: z.number().int().min(1).max(10_000),
+            minimumPacks: z.number().int().min(1).max(10_000),
+            availability: z.enum([
+              "available",
+              "limited",
+              "backorder",
+              "unavailable",
+              "unknown",
+            ]),
+            leadTimeDays: z.number().int().min(0).max(365).nullable(),
+            terms: z.string().trim().max(2000),
+            fees: z
+              .array(
+                z
+                  .object({
+                    id: z.string().trim().min(1).max(100),
+                    label: z.string().trim().min(1).max(160),
+                    category: z.enum([
+                      "inbound",
+                      "dropship",
+                      "freight",
+                      "handling",
+                      "packaging",
+                      "other",
+                    ]),
+                    amountCents: cents.nullable(),
+                    basis: z.enum(["order", "parcel", "pack"]),
+                    count: z.number().int().min(1).max(10_000),
+                    includedIn: z.literal("pack").optional(),
+                  })
+                  .strict()
+                  .refine(
+                    (fee) => fee.basis === "parcel" || fee.count === 1,
+                    "Order and pack charges require a count of one.",
+                  ),
+              )
+              .max(20),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(5),
+  })
+  .strict();
 export const proposalSchema = z
   .object({
     name: z.string().trim().min(1).max(200),
@@ -471,6 +531,7 @@ export const proposalSchema = z
     estimatedDropshipFeeCents: cents.nullable().optional(),
     terms: z.string().trim().max(2000).optional(),
     expiresAt: timestamp.nullable().optional(),
+    comparison: provisionalComparisonSchema.optional(),
   })
   .strict();
 export const reviewProposalSchema = z
@@ -544,11 +605,50 @@ export type PriceBatch = {
   id: string;
   name: string;
   createdAt: string;
-  entries: ResolvedScenario[];
+  entries: Array<
+    ResolvedScenario & {
+      comparison?: PriceComparison;
+      changeKind?: "selected" | "retained";
+    }
+  >;
+  selectedEntryCount: number;
+  retainedEntryCount: number;
   active: boolean;
   scheduledAt: string | null;
   scheduleStatus: "pending" | "applied" | "cancelled" | "blocked" | null;
   scheduleError: string | null;
+};
+export type PriceComparison = {
+  status:
+    | "comparable"
+    | "no_published_price"
+    | "ambiguous_published_price"
+    | "comparison_unavailable";
+  reason: string | null;
+  evaluatedAt: string;
+  previousPriceListId: string | null;
+  previousEntryIndexes: number[];
+  previousUnitAmounts: Array<{
+    sku: string;
+    quantity: number;
+    unitAmountCents: number;
+  }>;
+  previousInput: PricingInput | null;
+  previousEvaluation: PricingEvaluation | null;
+};
+export type PortfolioItem = {
+  sku: string;
+  name: string;
+  category: string | null;
+  offers: OfferVersion[];
+  hasMoreOffers: boolean;
+  activeEntries: Array<{
+    batchId: string;
+    entryIndex: number;
+    entry: ResolvedScenario;
+    /** Current chosen suppliers for this portfolio row's SKU, including capped offers. */
+    suppliers: Array<{ sku: string; offerId: string; supplierName: string }>;
+  }>;
 };
 export type PricingAlert = {
   key: string;
@@ -567,6 +667,7 @@ export type ActualEvent = z.infer<typeof actualSchema> & {
   createdAt: string;
 };
 export type Proposal = z.infer<typeof proposalSchema> & {
+  comparisonResult?: ProvisionalComparisonResult;
   id: string;
   revision: number;
   status: "open" | "reviewing" | "resolved" | "rejected";

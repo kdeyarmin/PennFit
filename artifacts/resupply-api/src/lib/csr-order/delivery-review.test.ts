@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { OrgScopedClient } from "@workspace/resupply-db";
 import {
+  approveDeliveryReview,
   deliveryPreviewSchema,
   previewDeliveryReview,
 } from "./delivery-review";
@@ -39,6 +40,39 @@ const body = {
   delivery: { country: "US", service: "Ground" },
   freight: { amountCents: 700, source: "New delivery estimate", expiresAt },
 };
+
+it.each([
+  "revision_conflict",
+  "delivery_snapshot_changed",
+  "delivery_review_expired",
+  "delivery_review_superseded",
+])("preserves the delivery conflict %s returned as PT409", async (message) => {
+  const rpc = vi.fn().mockResolvedValue({
+    data: null,
+    error: { code: "PT409", message },
+  });
+  const scoped = {
+    orgId: id(9),
+    raw: () => ({ schema: () => ({ rpc }) }),
+  } as unknown as OrgScopedClient;
+  await expect(
+    approveDeliveryReview(scoped, id(4), id(12), "manager", {
+      revision: 1,
+      reason: "Updated delivery verified",
+      allowException: false,
+    }),
+  ).rejects.toMatchObject({ code: message, status: 409 });
+  expect(rpc).toHaveBeenCalledExactlyOnceWith("approve_csr_delivery_review", {
+    p_org_id: id(9),
+    p_order_id: id(4),
+    p_review_id: id(12),
+    p_actor: "manager",
+    p_revision: 1,
+    p_reason: "Updated delivery verified",
+    p_allow_exception: false,
+  });
+});
+
 function fixture() {
   const scenario = {
     patientId: id(8),

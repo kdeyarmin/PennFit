@@ -256,7 +256,7 @@ export function PricingItemReview({
     }
     const output: Scenario["lines"] = [];
     for (const line of lines) {
-      const quantity = pricingQuantity(line.quantity),
+      const quantity = pricingQuantity(line.quantity, onAttach ? 99 : 10_000),
         unitAmountCents = parsePricingMoney(line.amount);
       if (
         !line.sku ||
@@ -266,7 +266,7 @@ export function PricingItemReview({
         unitAmountCents === null
       ) {
         setError(
-          "Choose a canonical item and supplier offer, then enter a whole quantity and a dollar amount for every line.",
+          `Choose a canonical item and supplier offer, then enter a whole quantity from 1 to ${onAttach ? "99" : "10,000"} and a dollar amount for every line.`,
         );
         return null;
       }
@@ -417,6 +417,12 @@ export function PricingItemReview({
   };
   const requestRates = async () => {
     setError(null);
+    if (lines.some((line) => !pricingQuantity(line.quantity))) {
+      setError(
+        "Warehouse shipping estimates support patient order quantities from 1 to 99 per item. Larger internal scenarios need a supplier or freight cost estimate.",
+      );
+      return;
+    }
     const current = captureSessionCacheGuard(qc),
       requestVersion = version.current;
     const values = parcels.map((parcel) => ({
@@ -467,12 +473,15 @@ export function PricingItemReview({
       !saved ||
       saved.status !== "approved" ||
       saved.boundOrderId ||
+      saved.scenario.lines.some(
+        (line) => !pricingQuantity(String(line.quantity)),
+      ) ||
       saved.scenario.revenue.mode !== "insurance" ||
       !saved.patientId ||
       !(Date.parse(saved.validUntil) > Date.now())
     ) {
       setError(
-        "Attach a current approved insurance review linked to this patient.",
+        "Attach a current approved insurance review linked to this patient, with quantities from 1 to 99 per item.",
       );
       return;
     }
@@ -589,6 +598,7 @@ export function PricingItemReview({
               key={line.id}
               line={line}
               index={index}
+              maximumQuantity={onAttach ? 99 : 10_000}
               onChange={(patch) => updateLine(line.id, patch)}
               onRemove={() =>
                 change(
@@ -608,6 +618,11 @@ export function PricingItemReview({
           >
             Add item
           </Button>
+          <p className="text-xs text-slate-600">
+            {onAttach
+              ? "Patient orders support 1–99 units per item. Use the internal calculator for larger volume simulations."
+              : "Internal simulations support 1–10,000 units per item. Scenarios above 99 units per item cannot be attached to a patient order."}
+          </p>
         </div>
         <div className="mt-4 flex flex-wrap gap-2">
           <Button
@@ -1070,11 +1085,11 @@ export function PricingItemReview({
         >
           <PricingEvaluationResult result={result} />
           <PricingDiscountHeadroom
-            key={JSON.stringify(result.scenario)}
+            key={`headroom:${JSON.stringify(result.scenario)}`}
             scenario={result.scenario}
           />
           <PricingSupplierComparison
-            key={JSON.stringify(result.scenario)}
+            key={`suppliers:${JSON.stringify(result.scenario)}`}
             scenario={result.scenario}
             onChoose={(lineId, offer) =>
               updateLine(lineId, {
@@ -1090,8 +1105,7 @@ export function PricingItemReview({
                 save.mutate({
                   scenario: result.scenario,
                   requestApproval:
-                    result.evaluation.state !== "cost_information_needed" &&
-                    result.evaluation.state !== "blocked",
+                    result.evaluation.state === "approval_needed",
                   version: version.current,
                 })
               }
@@ -1139,7 +1153,10 @@ export function PricingItemReview({
               disabled={
                 saved.status !== "approved" ||
                 saved.scenario.revenue.mode !== "insurance" ||
-                !saved.patientId
+                !saved.patientId ||
+                saved.scenario.lines.some(
+                  (line) => !pricingQuantity(String(line.quantity)),
+                )
               }
               onClick={attach}
             >
@@ -1154,12 +1171,14 @@ export function PricingItemReview({
 function LineEditor({
   line,
   index,
+  maximumQuantity,
   onChange,
   onRemove,
   canRemove,
 }: {
   line: ReviewLine;
   index: number;
+  maximumQuantity: number;
   onChange: (patch: Partial<ReviewLine>) => void;
   onRemove: () => void;
   canRemove: boolean;
@@ -1263,7 +1282,7 @@ function LineEditor({
             className={pricingControl}
             type="number"
             min={1}
-            max={99}
+            max={maximumQuantity}
             value={line.quantity}
             onChange={(e) => onChange({ quantity: e.target.value })}
           />

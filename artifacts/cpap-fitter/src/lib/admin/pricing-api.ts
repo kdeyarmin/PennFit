@@ -8,8 +8,15 @@ import type {
   PricingProposal,
   PricingRecommendation,
   PricingDiscountHeadroom,
+  PricingPortfolio,
 } from "@workspace/api-client-react/admin";
 export type { PricingProposalInput, PricingProposal, PricingDiscountHeadroom };
+export type {
+  PricingPortfolio,
+  PricingPortfolioEntry,
+  PricingPortfolioItem,
+  PricingPriceComparison,
+} from "@workspace/api-client-react/admin";
 import type {
   OfferInput,
   OfferVersion,
@@ -45,6 +52,22 @@ const post = <T>(path: string, body: unknown) =>
     body: JSON.stringify(body),
   });
 export const getPricingState = () => get<PricingState>("/state");
+export const getPricingPortfolio = (
+  filters: {
+    q?: string;
+    category?: string;
+    supplier?: string;
+    offset?: number;
+    limit?: number;
+  } = {},
+) => {
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(filters))
+    if (value !== undefined && value !== "") query.set(key, String(value));
+  return get<PricingPortfolio>(`/portfolio?${query}`);
+};
+export const refreshPricingPortfolioScenario = (scenario: Scenario) =>
+  post<ResolvedScenario>("/portfolio/refresh", { scenario });
 export const getPricingOffers = (offset = 0, sku?: string, view?: "latest") =>
   get<{ offers: OfferVersion[]; hasMore?: boolean }>(
     `/offers?limit=100&offset=${offset}${sku ? `&sku=${encodeURIComponent(sku)}` : ""}${view ? `&view=${view}` : ""}`,

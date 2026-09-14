@@ -11,9 +11,12 @@ import {
   type Quote,
 } from "@/lib/admin/pricing-api";
 import { searchPatientsForAttach } from "@/lib/admin/manual-documents-api";
-import { formatPricingMoney } from "@/lib/admin/pricing-input";
+import { formatPricingMoney, pricingQuantity } from "@/lib/admin/pricing-input";
 import { PricingItemReview, type InitialReviewLine } from "./PricingItemReview";
 import { PricingStatus } from "./PricingPrimitives";
+const fitsPatientOrder = (quote: Quote) =>
+  quote.lines.length <= 20 &&
+  quote.lines.every((line) => pricingQuantity(String(line.quantity)) !== null);
 export function PricingOrderReview({
   patientId,
   initialLines,
@@ -65,6 +68,7 @@ export function PricingOrderReview({
       if (
         current.status !== "approved" ||
         current.boundOrderId ||
+        !fitsPatientOrder(current) ||
         current.patientId !== listed.patientId ||
         current.scenario.revenue.mode !== "insurance" ||
         current.revision !== listed.revision ||
@@ -297,12 +301,20 @@ export function PricingOrderReview({
                         )}{" "}
                         · Expires {q.validUntil.slice(0, 10)}
                       </p>
+                      {!fitsPatientOrder(q) && (
+                        <p className="mt-1 text-xs text-amber-800">
+                          Internal simulation only: patient orders support up to
+                          20 items and 1–99 units per item. Evaluate a smaller
+                          order to attach a review.
+                        </p>
+                      )}
                     </div>
                     <Button
                       intent="secondary"
                       size="sm"
                       disabled={
                         saved.isFetching ||
+                        !fitsPatientOrder(q) ||
                         selection.isPending ||
                         !(Date.parse(q.validUntil) > Date.now())
                       }
