@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
-import type { OrgScopedClient } from "@workspace/resupply-db";
+import type { Json, OrgScopedClient } from "@workspace/resupply-db";
 import { preparePortfolioBatch, refreshPortfolioScenario } from "./portfolio";
+import { pricingDestinationFingerprint } from "./shipping";
 import {
   approvalClass,
   mutatePricing,
@@ -336,6 +337,124 @@ describe("pricing financial authority", () => {
     });
     expect(approvalClass(result)).toBe("firm");
     expect(result.evaluation.additionalFulfillmentCostCents).toBe(1000);
+  });
+  it.each(["unit", "included_goods"])(
+    "does not let %s freight on one item cover a sibling item",
+    async (basis) => {
+      const { scoped, tables } = fixture();
+      const first = tables.pricing_offers[0].data as {
+        components: Array<Record<string, unknown>>;
+      };
+      if (basis === "unit") first.components[0].basis = "unit";
+      else first.components[0].includedInId = "goods";
+      const second = structuredClone(tables.pricing_offers[0]);
+      second.id = id(4);
+      Object.assign(second.data as object, { sku: "TUBE", components: [] });
+      tables.pricing_offers.push(second);
+      tables.products.push({ sku: "TUBE", active: true });
+      const input = structuredClone(scenario);
+      input.lines.push({
+        ...input.lines[0],
+        id: id(5),
+        offerId: id(4),
+        sku: "TUBE",
+      });
+      input.revenue = {
+        ...scenario.revenue,
+        expectedCollectibleCents: 20000,
+      } as Scenario["revenue"];
+      const result = await resolveScenario(scoped, input, {
+        mayVerify: true,
+        now,
+      });
+      expect(approvalClass(result)).toBe("blocked");
+      expect(
+        result.input.costs?.some((cost) =>
+          cost.id.startsWith("missing-freight:"),
+        ),
+      ).toBe(true);
+    },
+  );
+  it("does not use an unscoped manual unit fee as whole-order freight coverage", async () => {
+    const { scoped, tables } = fixture();
+    (tables.pricing_offers[0].data as { components: unknown[] }).components =
+      [];
+    const input = structuredClone(scenario);
+    input.costs = [
+      {
+        id: "unit-freight",
+        label: "Single-unit fee",
+        category: "freight",
+        basis: "unit",
+        amountCents: 0,
+        quantity: 1,
+        status: "verified",
+      },
+    ];
+    expect(
+      approvalClass(
+        await resolveScenario(scoped, input, { mayVerify: true, now }),
+      ),
+    ).toBe("blocked");
+  });
+  it.each(["Express", undefined])(
+    "rejects carrier rates without a matching service (%s)",
+    async (service) => {
+      const { scoped, tables } = fixture();
+      (tables.pricing_offers[0].data as { components: unknown[] }).components =
+        [];
+      tables.pricing_shipping_quotes = [
+        {
+          id: id(41),
+          cost_cents: 100,
+          expires_at: expiry,
+          data: {
+            patientId: id(8),
+            lines: [{ sku: "MASK", quantity: 1 }],
+            patientAddressSnapshot: tables.patients[0].address,
+            destinationFingerprint: pricingDestinationFingerprint(
+              tables.patients[0].address as Json,
+            ),
+            service,
+          },
+        },
+      ];
+      await expect(
+        resolveScenario(
+          scoped,
+          { ...scenario, shippingQuoteId: id(41) },
+          { mayVerify: true, now },
+        ),
+      ).rejects.toMatchObject({ code: "shipping_quote_mismatch" });
+    },
+  );
+  it("accepts the exact quoted carrier service", async () => {
+    const { scoped, tables } = fixture();
+    (tables.pricing_offers[0].data as { components: unknown[] }).components =
+      [];
+    tables.pricing_shipping_quotes = [
+      {
+        id: id(41),
+        cost_cents: 100,
+        expires_at: expiry,
+        data: {
+          patientId: id(8),
+          lines: [{ sku: "MASK", quantity: 1 }],
+          patientAddressSnapshot: tables.patients[0].address,
+          destinationFingerprint: pricingDestinationFingerprint(
+            tables.patients[0].address as Json,
+          ),
+          service: "Ground",
+        },
+      },
+    ];
+    const result = await resolveScenario(
+      scoped,
+      { ...scenario, shippingQuoteId: id(41) },
+      { mayVerify: true, now },
+    );
+    expect(approvalClass(result)).toBe("firm");
+    expect(result.evaluation.additionalFulfillmentCostCents).toBe(100);
   });
   it("lets CSRs reuse verified insurance evidence only for the exact patient and items", async () => {
     const { scoped, tables } = fixture();

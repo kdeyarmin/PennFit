@@ -101,7 +101,10 @@ router.post(
             q.input.revenue.mode === "insurance",
         );
       let ready = false;
-      for (const candidate of exact) {
+      // Review only the newest exact approval. Falling through up to 100 stale
+      // versions per patient can produce thousands of serial validation calls.
+      // Older approvals remain available for an explicit individual review.
+      for (const candidate of exact.slice(0, 1)) {
         try {
           const quote = await prepareCsrPricing(db, {
             quoteId: candidate.id,
@@ -138,7 +141,7 @@ router.post(
           ...base,
           state: exact.length ? "stale" : "review_needed",
           message: exact.length
-            ? "The saved pricing needs a fresh review of costs, delivery or policy."
+            ? "The newest matching approval needs a fresh review of costs, delivery or policy. Review this patient individually to choose another saved approval."
             : "Prepare an individual pricing review with this patient's insurance and delivery terms.",
         });
     }

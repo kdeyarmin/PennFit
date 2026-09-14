@@ -21,11 +21,14 @@ applies to writes. Per-actor rate limiting supports the bounded 100-row CSV impo
   reference, verification, expiry and delivery scope. `includedInId: "goods"`
   means the goods cost already includes the component. Shared charge IDs under
   the same supplier deduplicate a single order/shipment fee. Conflicting fee
-  definitions are rejected. Separate supplier deliveries require separate cost
+  definitions are rejected. Unit fees and freight included in an item's goods cover
+  only that item; shared order/parcel fees can cover sibling supplier items.
+  Separate supplier deliveries require separate cost
   coverage. Country, postal prefixes, service and fulfillment method are checked;
   `*` explicitly covers all postal codes in the stated country.
-- Default offer reads return the newest effective version. A future version does
-  not replace today's version early. Manager `view=latest` includes queued future
+- Default offer reads return the newest effective version only while unexpired.
+  Expiring a newer version never resurrects a superseded version. A future version
+  does not replace today's version early. Manager `view=latest` includes queued future
   versions, and `/offers/:id/versions` lists history. Exact duplicate import rows
   reuse the existing offer, including retries whose only difference is a generated
   past effective timestamp. A different cost/source remains a separate offer unless
@@ -42,7 +45,8 @@ applies to writes. Per-actor rate limiting supports the bounded 100-row CSV impo
   insurer, secondary, patient and collection-adjustment shares must sum exactly
   once to that amount. CSR scenarios may reuse the exact profile version; typed-in
   insurer expectations remain estimates. Billed item amounts are independent from
-  expected collections and do not establish patient responsibility.
+  expected collections and do not establish patient responsibility. Default profile
+  reads also omit expired effective versions without resurrecting older evidence.
 
 ## Quotes and publication
 
@@ -55,6 +59,8 @@ estimates and a target gap above all hard limits require an explicit approval re
 A firm, current, within-policy quote saved with `requestApproval:false` is approved
 by the server atomically; pending reviews use `/quotes/:id/approve` with the exact
 revision. Revisions and decisions are retained in `pricing_events`.
+Carrier quotes are bound to the exact quoted service code, patient, items and
+destination. Saving or approving a quote cannot reuse a ground rate for express delivery.
 
 `GET /active-prices` supplies the active batch for an explicit browser Apply action.
 Saving a new quote enforces published unit amounts for matching revenue/SKU/quantity
@@ -103,13 +109,14 @@ scheduled activation all reject a snapshot that omits a context added by an
 intervening publication or restores a retained amount changed by a later manager
 (`price_list_contexts_changed`); re-preview against the current list. Explicit policy
 resets to no active list remain separate operations.
-Deterministic revision/source conflicts use SQLSTATE `PT409` through migration
-0553. They return an actionable HTTP 409 without triggering the transaction retry
+Deterministic revision/source conflicts use SQLSTATE `PT409` through migration 0553. They return an actionable HTTP 409 without triggering the transaction retry
 behavior of affected PostgREST versions. Actual database serialization errors
 retain their normal SQLSTATE and behavior.
 `/schedule` and `/cancel-schedule` use the state revision. The scheduler and pricing
 reads call `pricing_apply_scheduled`; activation is rechecked at execution, once,
-and stale schedules enter a review alert without partially changing prices. Only
+and stale schedules enter a review alert without partially changing prices.
+Transient or unexpected database errors propagate and leave the schedule pending
+for retry; only recognized pricing conflicts permanently block it. Only
 one pending activation is allowed per tenant. Pause remains possible after expiry.
 
 `prepareCsrPricing` checks a current approved insurance quote and exact patient,
@@ -151,7 +158,9 @@ costs and collections with the reviewed revision. `/summary` divides aggregate
 contribution by aggregate revenue and separates settled from incomplete orders.
 
 `/alerts` includes source expiry/increases, pending quote exceptions, actual cost
-overruns, closed collection shortfalls and blocked schedules. Stable keys deduplicate
+overruns, closed collection shortfalls and blocked schedules. Offer alerts use the
+effective version, so a queued future replacement cannot hide a present expiry gap
+or announce a price increase early. Stable keys deduplicate
 unchanged signals. `/alerts/:key/review` assigns an owner/review date and records a
 revisioned decision. `/proposals` is a separate sourcing queue with item identity,
 pack, source, estimated costs, terms and expiry; exact duplicates reuse a proposal.
@@ -170,7 +179,7 @@ approval or writes a catalog SKU.
 ## Validation
 
 `service.test.ts` covers calculation authority and scope; `persistence.test.ts`
-executes migrations 0548/0552 and their transactional/search operations on PGlite by default.
+executes migrations 0548/0552–0554 and their transactional/search operations on PGlite by default.
 It also accepts `PRICING_TEST_DATABASE_URL` only for a positively identified
 loopback database whose name starts `pricing_test_`; this mode recreates its test
 schema and has been exercised on PostgreSQL 17. `routes/admin/pricing.test.ts`

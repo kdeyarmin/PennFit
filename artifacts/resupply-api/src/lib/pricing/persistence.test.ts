@@ -150,6 +150,20 @@ describe("pricing persistence transactions", () => {
         "utf8",
       ),
     );
+    // The deadline trigger uses this actual order key shape; its complete
+    // lifecycle is exercised by the dedicated order deadline regression suite.
+    await db.exec(
+      "CREATE TABLE resupply.csr_order_requests(id uuid PRIMARY KEY, org_id uuid, patient_id uuid, pricing_quote_id uuid, expires_at timestamptz, link_version integer, status text)",
+    );
+    await db.exec(
+      await readFile(
+        new URL(
+          "../../../../../lib/resupply-db/migrations/0554_pricing_delivery_and_schedule_guards.sql",
+          import.meta.url,
+        ),
+        "utf8",
+      ),
+    );
     await db.exec("SET check_function_bodies=on");
   }, 30_000);
   afterAll(async () => {
@@ -267,6 +281,263 @@ describe("pricing persistence transactions", () => {
       [2, 5000, true],
     ]);
   });
+  it("reapplies delivery/schedule corrections without broadening function access", async () => {
+    await db.exec(
+      await readFile(
+        new URL(
+          "../../../../../lib/resupply-db/migrations/0554_pricing_delivery_and_schedule_guards.sql",
+          import.meta.url,
+        ),
+        "utf8",
+      ),
+    );
+    const functions = await db.query<{
+      name: string;
+      invoker: boolean;
+      anon: boolean;
+      authenticated: boolean;
+      service: boolean;
+    }>(
+      "SELECT p.proname name,NOT p.prosecdef invoker,has_function_privilege('anon',p.oid,'EXECUTE') anon,has_function_privilege('authenticated',p.oid,'EXECUTE') authenticated,has_function_privilege('service_role',p.oid,'EXECUTE') service FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='resupply' AND p.proname IN ('pricing_current_offers','pricing_current_revenue_profiles','pricing_assert_quote_current','pricing_alerts','pricing_apply_scheduled','guard_bound_pricing_deadline','guard_csr_pricing_deadline')",
+    );
+    expect(functions.rows).toHaveLength(7);
+    for (const row of functions.rows)
+      expect(row).toMatchObject({
+        invoker: true,
+        anon: false,
+        authenticated: false,
+        service: true,
+      });
+    expect(
+      (
+        await db.query("SELECT * FROM resupply.pricing_current_offers($1)", [
+          org,
+        ])
+      ).rows,
+    ).toHaveLength(1);
+  });
+  it("alerts on the expired effective offer during a gap before its future replacement", async () => {
+    await db.query(
+      "UPDATE resupply.pricing_offers SET expires_at='2025-01-01' WHERE org_id=$1 AND id=$2",
+      [org, offerId],
+    );
+    await mutate("offer", {
+      ...offer,
+      expectedVersion: 1,
+      effectiveFrom: "2090-01-01T00:00:00Z",
+      unitCostCents: 6000,
+    });
+    const alerts = await db.query<{
+      result: Array<{ code: string; entityId: string }>;
+    }>("SELECT resupply.pricing_alerts($1) result", [org]);
+    expect(alerts.rows[0].result).toEqual([
+      expect.objectContaining({ code: "offer_expired", entityId: offerId }),
+    ]);
+    expect(
+      (
+        await db.query("SELECT * FROM resupply.pricing_current_offers($1)", [
+          org,
+        ])
+      ).rows,
+    ).toEqual([]);
+    expect(
+      (
+        await db.query<{ result: unknown[] }>(
+          "SELECT resupply.pricing_alerts($1) result",
+          [otherOrg],
+        )
+      ).rows[0].result,
+    ).toEqual([]);
+  });
+  it("compares current cost only with the preceding effective version", async () => {
+    await mutate("offer", {
+      ...offer,
+      expectedVersion: 1,
+      effectiveFrom: "2090-01-01T00:00:00Z",
+      unitCostCents: 9000,
+    });
+    expect(
+      (
+        await db.query<{ result: unknown[] }>(
+          "SELECT resupply.pricing_alerts($1) result",
+          [org],
+        )
+      ).rows[0].result,
+    ).toEqual([]);
+    await mutate("offer", {
+      ...offer,
+      expectedVersion: 2,
+      unitCostCents: 5000,
+    });
+    const alerts = await db.query<{ result: unknown[] }>(
+      "SELECT resupply.pricing_alerts($1) result",
+      [org],
+    );
+    expect(alerts.rows[0].result).toEqual([
+      expect.objectContaining({
+        code: "supplier_cost_increase",
+        amountCents: 1000,
+        entityId: offerId,
+      }),
+    ]);
+  });
+  it("does not resurrect superseded offers or revenue profiles after the latest effective version expires", async () => {
+    await mutate("offer", {
+      ...offer,
+      expectedVersion: 1,
+      expiresAt: "2025-01-01T00:00:00Z",
+    });
+    expect(
+      (
+        await db.query("SELECT * FROM resupply.pricing_current_offers($1)", [
+          org,
+        ])
+      ).rows,
+    ).toEqual([]);
+    const profile = {
+      id: id(60),
+      patientId: id(3),
+      lines: [{ sku: "MASK", quantity: 1 }],
+      source: "Synthetic",
+      effectiveFrom: offer.effectiveFrom,
+      expiresAt: offer.expiresAt,
+      expectedCollectibleCents: 10000,
+    };
+    await mutate("revenue_profile", profile);
+    await mutate("revenue_profile", {
+      ...profile,
+      expectedVersion: 1,
+      expiresAt: "2025-01-01T00:00:00Z",
+    });
+    expect(
+      (
+        await db.query(
+          "SELECT * FROM resupply.pricing_current_revenue_profiles($1)",
+          [org],
+        )
+      ).rows,
+    ).toEqual([]);
+    expect(
+      (
+        await db.query(
+          "SELECT * FROM resupply.pricing_offers WHERE org_id=$1",
+          [org],
+        )
+      ).rows,
+    ).toHaveLength(2);
+    expect(
+      (
+        await db.query(
+          "SELECT * FROM resupply.pricing_revenue_profiles WHERE org_id=$1",
+          [org],
+        )
+      ).rows,
+    ).toHaveLength(2);
+  });
+  it("rechecks the carrier service when approving an existing saved quote", async () => {
+    const saved = await quote();
+    await db.query(
+      "UPDATE resupply.patients SET address='{}' WHERE org_id=$1 AND id=$2",
+      [org, id(3)],
+    );
+    await db.query(
+      "INSERT INTO resupply.pricing_shipping_quotes(id,org_id,cost_cents,expires_at,data) VALUES($1,$2,100,$3,$4)",
+      [
+        id(61),
+        org,
+        offer.expiresAt,
+        JSON.stringify({ patientAddressSnapshot: {}, service: "Ground" }),
+      ],
+    );
+    await db.query(
+      "UPDATE resupply.pricing_quotes SET scenario=$1 WHERE org_id=$2 AND id=$3",
+      [
+        JSON.stringify({
+          shippingQuoteId: id(61),
+          delivery: { service: "Express" },
+        }),
+        org,
+        saved.id,
+      ],
+    );
+    await expect(
+      db.query("SELECT resupply.pricing_assert_quote_current($1,$2,1)", [
+        org,
+        saved.id,
+      ]),
+    ).rejects.toMatchObject({ code: "PT409", message: "stale_dependencies" });
+    await db.query(
+      "UPDATE resupply.pricing_quotes SET scenario=jsonb_set(scenario,'{delivery,service}','\"Ground\"') WHERE org_id=$1 AND id=$2",
+      [org, saved.id],
+    );
+    await expect(
+      db.query("SELECT resupply.pricing_assert_quote_current($1,$2,1)", [
+        org,
+        saved.id,
+      ]),
+    ).resolves.toBeDefined();
+  });
+  it.each(["40001", "40P01", "08006", "42501"])(
+    "keeps scheduled changes pending and retryable after database error %s",
+    async (code) => {
+      const entry = {
+        policyId,
+        scenario: { validUntil: offer.expiresAt },
+        dependencies: [{ offerId, version: 1 }],
+        approvalClass: "firm",
+      };
+      const batch = await mutate("batch", {
+        name: "Retryable scheduled",
+        entries: [entry],
+      });
+      await mutate("schedule", {
+        id: batch.id,
+        expectedStateRevision: 1,
+        scheduledAt: new Date(Date.now() + 60000).toISOString(),
+      });
+      await db.query(
+        "UPDATE resupply.pricing_price_lists SET scheduled_at=now()-interval '1 minute' WHERE org_id=$1 AND id=$2",
+        [org, batch.id],
+      );
+      await db.exec(
+        `CREATE FUNCTION resupply.fixture_activation_failure() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE SQLSTATE '${code}' USING MESSAGE='Synthetic database failure'; END $$; CREATE TRIGGER fixture_activation_failure BEFORE UPDATE ON resupply.pricing_state FOR EACH ROW WHEN (NEW.active_price_list_id IS NOT NULL) EXECUTE FUNCTION resupply.fixture_activation_failure()`,
+      );
+      try {
+        await expect(
+          db.query("SELECT resupply.pricing_apply_scheduled($1)", [org]),
+        ).rejects.toMatchObject({ code });
+        expect(
+          (
+            await db.query(
+              "SELECT schedule_status,schedule_error FROM resupply.pricing_price_lists WHERE org_id=$1 AND id=$2",
+              [org, batch.id],
+            )
+          ).rows[0],
+        ).toEqual({ schedule_status: "pending", schedule_error: null });
+        expect(
+          (
+            await db.query(
+              "SELECT * FROM resupply.pricing_events WHERE org_id=$1 AND operation='schedule_blocked'",
+              [org],
+            )
+          ).rows,
+        ).toEqual([]);
+      } finally {
+        await db.exec(
+          "DROP TRIGGER fixture_activation_failure ON resupply.pricing_state; DROP FUNCTION resupply.fixture_activation_failure()",
+        );
+      }
+      await db.query("SELECT resupply.pricing_apply_scheduled($1)", [org]);
+      expect(
+        (
+          await db.query(
+            "SELECT schedule_status FROM resupply.pricing_price_lists WHERE org_id=$1 AND id=$2",
+            [org, batch.id],
+          )
+        ).rows[0],
+      ).toEqual({ schedule_status: "applied" });
+    },
+  );
   it("deduplicates exact proposal and import retries without resetting their review", async () => {
     const proposal = {
       name: "Mask",

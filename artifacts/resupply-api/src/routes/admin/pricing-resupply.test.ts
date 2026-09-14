@@ -38,6 +38,38 @@ beforeEach(() => {
   };
 });
 describe("individual patient checks in a resupply pricing batch", () => {
+  it("checks only the newest exact approval when many historical candidates are stale", async () => {
+    stageSupabaseResponse("resupply_order_drafts", "select", {
+      data: [
+        {
+          id: ids[0],
+          patient_id: "patient",
+          suggested_product_id: "MASK",
+          suggested_quantity: 1,
+          status: "proposed",
+        },
+      ],
+    });
+    stageSupabaseResponse("pricing_quotes", "select", {
+      data: Array.from({ length: 100 }, (_, i) => ({
+        id: `quote-${i}`,
+        revision: 1,
+        lines: [{ id: "line", sku: "MASK", quantity: 1 }],
+        input: { revenue: { mode: "insurance" } },
+      })),
+    });
+    prepare.mockRejectedValue(new PricingError("stale_dependencies", 409));
+    const response = await request(app())
+      .post("/admin/pricing/resupply-review")
+      .send({ draftIds: [ids[0]] });
+    expect(response.status).toBe(200);
+    expect(response.body.reviews[0]).toMatchObject({ state: "stale" });
+    expect(response.body.reviews[0].message).toContain(
+      "newest matching approval",
+    );
+    expect(prepare).toHaveBeenCalledTimes(1);
+    expect(prepare.mock.calls[0][1].quoteId).toBe("quote-0");
+  });
   it("checks each patient's exact quantity and reports stale approvals separately", async () => {
     stageSupabaseResponse("resupply_order_drafts", "select", {
       data: ids.map((id, i) => ({

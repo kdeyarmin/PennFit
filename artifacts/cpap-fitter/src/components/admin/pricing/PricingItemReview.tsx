@@ -786,12 +786,13 @@ export function PricingItemReview({
                   className={pricingControl}
                   value={delivery.service}
                   onChange={(e) =>
-                    change(() =>
+                    change(() => {
                       setDelivery((old) => ({
                         ...old,
                         service: e.target.value,
-                      })),
-                    )
+                      }));
+                      setRate(null);
+                    })
                   }
                   placeholder="Service named in the supplier quote"
                 />
@@ -990,7 +991,15 @@ export function PricingItemReview({
                     type="radio"
                     name="pricing-shipping-rate"
                     checked={rate?.shippingQuoteId === r.shippingQuoteId}
-                    onChange={() => change(() => setRate(r))}
+                    onChange={() =>
+                      change(() => {
+                        setRate(r);
+                        setDelivery((old) => ({
+                          ...old,
+                          service: r.serviceCode,
+                        }));
+                      })
+                    }
                   />
                   <span>
                     {r.carrierCode} · {r.serviceDescription} ·{" "}

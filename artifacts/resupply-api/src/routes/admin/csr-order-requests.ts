@@ -612,14 +612,48 @@ router.post(
       return;
     }
 
-    // Reissue: bump link_version (invalidates outstanding links) and
-    // extend the expiry window from now.
-    const nowIso = new Date().toISOString();
-    const expiresAt = new Date(
-      Date.now() + DEFAULT_CSR_ORDER_TTL_DAYS * 24 * 60 * 60 * 1000,
-    ).toISOString();
+    // Reissuing a link cannot renew the approved financial evidence.
+    const now = Date.now();
+    const nowIso = new Date(now).toISOString();
+    let expiry = now + DEFAULT_CSR_ORDER_TTL_DAYS * 24 * 60 * 60 * 1000;
+    if (row.pricing_quote_id) {
+      const { data: quote, error: quoteError } = await supabase
+        .from("pricing_quotes")
+        .select("valid_until,status,bound_order_id,patient_id")
+        .eq("id", row.pricing_quote_id)
+        .maybeSingle();
+      if (quoteError) {
+        const problem = orderPricingFailure(quoteError);
+        res.status(problem.status).json(problem.body);
+        return;
+      }
+      if (
+        !quote ||
+        quote.status !== "bound" ||
+        quote.bound_order_id !== row.id ||
+        quote.patient_id !== row.patient_id
+      ) {
+        const problem = orderPricingFailure({
+          code: "PT409",
+          message: "quote_not_found",
+        });
+        res.status(problem.status).json(problem.body);
+        return;
+      }
+      const quoteExpiry = Date.parse(quote.valid_until);
+      if (!Number.isFinite(quoteExpiry) || quoteExpiry <= now) {
+        const problem = orderPricingFailure({
+          code: "PT409",
+          message: "quote_expired",
+        });
+        res.status(problem.status).json(problem.body);
+        return;
+      }
+      expiry = Math.min(expiry, quoteExpiry);
+    }
+    const expiresAt = new Date(expiry).toISOString();
     const newVersion = row.link_version + 1;
-    const { error: bumpErr } = await supabase
+    const { data: bumped, error: bumpErr } = await supabase
       .from("csr_order_requests")
       .update({
         link_version: newVersion,
@@ -627,8 +661,18 @@ router.post(
         updated_at: nowIso,
       })
       .eq("id", row.id)
-      .eq("link_version", row.link_version);
-    if (bumpErr) throw bumpErr;
+      .eq("link_version", row.link_version)
+      .is("signed_at", null)
+      .in("status", ["sent", "viewed"])
+      .select("id")
+      .maybeSingle();
+    if (bumpErr || !bumped) {
+      const problem = orderPricingFailure(
+        bumpErr ?? { code: "PT409", message: "revision_conflict" },
+      );
+      res.status(problem.status).json(problem.body);
+      return;
+    }
 
     const signingLink = await buildCsrOrderSigningLink(
       row.id,

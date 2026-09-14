@@ -83,7 +83,7 @@ function PricingWorkspace({ permissions }: { permissions: string[] }) {
     canApprove = permissions.includes("pricing.approve"),
     canPublish = permissions.includes("pricing.publish");
   return (
-    <div className="mx-auto max-w-7xl space-y-6 p-1 md:p-2">
+    <div className="admin-root mx-auto max-w-7xl space-y-6 p-1 md:p-2">
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">
@@ -155,6 +155,7 @@ function PricingWorkspace({ permissions }: { permissions: string[] }) {
           >
             {tabs
               .filter((t) => t.id !== "batches" || canManage || canPublish)
+              .filter((t) => t.id !== "alerts" || canManage)
               .map((t) => (
                 <button
                   key={t.id}
@@ -209,7 +210,7 @@ function PricingWorkspace({ permissions }: { permissions: string[] }) {
             </div>
           }
           {tab === "patient-reviews" && <PricingBulkPatientReviewsPanel />}
-          {tab === "alerts" && (
+          {tab === "alerts" && canManage && (
             <PricingAlertsPanel canManage={canManage} />
           )}{" "}
           {tab === "collections" && (

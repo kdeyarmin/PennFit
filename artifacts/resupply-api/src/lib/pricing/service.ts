@@ -563,7 +563,28 @@ export async function resolveScenario(
     const prefix = namespace(offer.supplierName);
     if (!offer.components.some((component) => component.category === "freight"))
       freightRequired.set(prefix, offer.supplierName);
-    else freightCovered.add(prefix);
+    else if (
+      offer.components.some((component) => {
+        if (component.category !== "freight") return false;
+        // Unit charges and freight included in this item's goods cover only
+        // this item. Follow inclusions so an indirect goods/unit charge also
+        // cannot certify delivery for another SKU from the same supplier.
+        let current: (typeof offer.components)[number] | undefined = component;
+        const visited = new Set<string>();
+        while (current) {
+          if (current.basis === "unit" || current.includedInId === "goods")
+            return false;
+          if (!current.includedInId) return true;
+          if (visited.has(current.id)) return false;
+          visited.add(current.id);
+          current = offer.components.find(
+            (candidate) => candidate.id === current?.includedInId,
+          );
+        }
+        return false;
+      })
+    )
+      freightCovered.add(prefix);
     for (const component of offer.components) {
       const perUnit = component.basis === "unit";
       const id = `${prefix}:${perUnit ? `${line.id}:` : ""}${component.id}`;
@@ -630,6 +651,7 @@ export async function resolveScenario(
           lines?: Array<{ sku: string; quantity: number }>;
           patientAddressSnapshot?: Json;
           destinationFingerprint?: string;
+          service?: string;
         }
       | undefined;
     if (
@@ -637,6 +659,8 @@ export async function resolveScenario(
       !data?.lines ||
       !scenario.patientId ||
       data.patientId !== scenario.patientId ||
+      !data.service ||
+      data.service !== scenario.delivery?.service ||
       scenario.lines.some((line) => line.fulfillmentMethod !== "stock") ||
       !sameLines(data.lines, scenario.lines) ||
       data.destinationFingerprint !==
@@ -692,7 +716,9 @@ export async function resolveScenario(
     freightRequired.size === 1 &&
     new Set([...offers.values()].map((offer) => namespace(offer.supplierName)))
       .size === 1 &&
-    (scenario.costs ?? []).some((cost) => cost.category === "freight")
+    (scenario.costs ?? []).some(
+      (cost) => cost.category === "freight" && cost.basis !== "unit",
+    )
   )
     freightRequired.clear();
   for (const [key, supplier] of freightRequired)
@@ -991,52 +1017,47 @@ export async function prepareCsrPricing(
 export async function getReconciliation(
   scoped: OrgScopedClient,
   quoteId: string,
+  offset = 0,
 ): Promise<Reconciliation> {
+  if (!Number.isInteger(offset) || offset < 0 || offset > 2_147_483_647)
+    throw new PricingError("invalid_body", 400);
   const response = await scoped
     .raw()
     .schema("resupply")
-    .rpc("pricing_actuals_snapshot", {
+    .rpc("pricing_actuals_page", {
       p_org_id: scoped.orgId,
       p_quote_id: quoteId,
+      p_offset: offset,
+      p_limit: 100,
     });
   dbError(response.error);
   const snapshot = response.data as unknown as {
     quote: Row<"pricing_quotes">;
     events: Row<"pricing_actual_events">[];
+    actualRevenueCents: number;
+    actualCostCents: number;
+    eventPage: Reconciliation["eventPage"];
   };
   const row = snapshot.quote;
-  if (snapshot.events.length > 1000)
-    throw new PricingError("actuals_export_required");
   const events: ActualEvent[] = snapshot.events.map((event) => ({
     ...(event.data as unknown as ActualEvent),
     id: event.id,
     createdAt: event.created_at,
   }));
-  const actualRevenueCents = events.reduce(
-    (sum, event) =>
-      sum +
-      (event.kind === "revenue"
-        ? event.amountCents
-        : event.kind === "refund"
-          ? -event.amountCents
-          : 0),
-    0,
-  );
-  const actualCostCents = events.reduce(
-    (sum, event) =>
-      sum +
-      (event.kind === "cost"
-        ? event.amountCents
-        : event.kind === "cost_credit"
-          ? -event.amountCents
-          : 0),
-    0,
-  );
+  const { actualRevenueCents, actualCostCents, eventPage } = snapshot;
+  if (
+    !Number.isSafeInteger(actualRevenueCents) ||
+    !Number.isSafeInteger(actualCostCents) ||
+    !Number.isSafeInteger(actualRevenueCents - actualCostCents) ||
+    !Number.isSafeInteger(eventPage.total)
+  )
+    throw new PricingError("actuals_amount_out_of_range");
   const quote = quoteDto(row);
   const actualContributionCents = actualRevenueCents - actualCostCents;
   return {
     quote,
     events,
+    eventPage,
     revision: row.actuals_revision,
     costsComplete: row.costs_complete,
     revenueComplete: row.revenue_complete,

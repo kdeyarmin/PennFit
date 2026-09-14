@@ -262,6 +262,7 @@ export type Reconciliation = {
   };
   quote: Quote;
   events: ActualEvent[];
+  eventPage: { offset: number; limit: number; total: number; hasMore: boolean };
   revision: number;
   costsComplete: boolean;
   revenueComplete: boolean;

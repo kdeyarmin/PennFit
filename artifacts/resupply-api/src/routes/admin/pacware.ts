@@ -609,8 +609,8 @@ router.get(
     );
     const truncated = selected.truncated;
     const records = toResupplyRecords(reviewed.rows);
-    const withheldDeliveryReview =
-      reviewed.withheld + reviewed.rows.length - records.length;
+    const withheldDeliveryReview = reviewed.withheld;
+    const withheldInvalidData = reviewed.rows.length - records.length;
     const withheldMissingPacwareId = missingCount ?? 0;
 
     await logAudit({
@@ -627,6 +627,7 @@ router.get(
         truncated,
         withheld_missing_pacware_id: withheldMissingPacwareId,
         withheld_delivery_review: withheldDeliveryReview,
+        withheld_invalid_data: withheldInvalidData,
         status_filter: status,
         report: "resupply_due",
       },
@@ -656,6 +657,11 @@ router.get(
       res.setHeader(
         "X-Pacware-Withheld-Delivery-Review",
         String(withheldDeliveryReview),
+      );
+    if (withheldInvalidData)
+      res.setHeader(
+        "X-Pacware-Withheld-Invalid-Data",
+        String(withheldInvalidData),
       );
     res.status(200).send(buildPacwareResupplyDueCsv(records));
   },
@@ -760,8 +766,8 @@ router.get(
       status,
       count: records.length,
       withheldMissingPacwareId: missingCount ?? 0,
-      withheldDeliveryReview:
-        reviewed.withheld + reviewed.rows.length - records.length,
+      withheldDeliveryReview: reviewed.withheld,
+      withheldInvalidData: reviewed.rows.length - records.length,
       truncated: selected.truncated,
       sample: records.slice(0, VERIFY_SAMPLE),
     });

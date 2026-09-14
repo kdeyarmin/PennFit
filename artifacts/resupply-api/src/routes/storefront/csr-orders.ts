@@ -117,7 +117,7 @@ async function resolveOpenOrder(token: string): Promise<
     return { ok: false, code: "invalid" };
   }
   if (order.status === "canceled") return { ok: false, code: "canceled" };
-  if (order.expires_at && new Date(order.expires_at).getTime() < Date.now()) {
+  if (order.expires_at && new Date(order.expires_at).getTime() <= Date.now()) {
     return { ok: false, code: "expired" };
   }
   return { ok: true, order: order as ResolvedOrderRow, supabase, orgId };
@@ -276,9 +276,17 @@ router.post("/csr-orders/sign", mutateLimiter, async (req, res) => {
       updated_at: nowIso,
     })
     .eq("id", order.id)
+    .eq("link_version", order.link_version)
+    .in("status", ["sent", "viewed"])
     .is("signed_at", null)
     .select("id");
-  if (updErr) throw updErr;
+  if (updErr) {
+    if (updErr.code === "PT409" && updErr.message.includes("quote_expired")) {
+      res.status(410).json({ error: "expired" });
+      return;
+    }
+    throw updErr;
+  }
   if (!updated || updated.length === 0) {
     res.status(409).json({ error: "already_signed" });
     return;

@@ -709,7 +709,17 @@ router.get(
   requirePermission("pricing.evaluate"),
   ...endpoint(async (req, res) => {
     res.json(
-      await getReconciliation(context(req).scoped, uuid.parse(req.params.id)),
+      await getReconciliation(
+        context(req).scoped,
+        uuid.parse(req.params.id),
+        z.coerce
+          .number()
+          .int()
+          .min(0)
+          .max(2_147_483_647)
+          .default(0)
+          .parse(req.query.offset),
+      ),
     );
   }),
 );

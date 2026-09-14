@@ -58,6 +58,7 @@ export function PricingQuotesPanel({
   const summary = useQuery({
     queryKey: [...pricingKey, "summary"],
     queryFn: getPricingSummary,
+    enabled: canManage,
   });
   const quotes = useQuery({
     queryKey: [...pricingKey, "quotes", offset, pendingOnly],
@@ -83,60 +84,62 @@ export function PricingQuotesPanel({
   });
   return (
     <div className="space-y-5">
-      <PricingSection
-        title="Portfolio profitability"
-        description="Margins use total contribution divided by total revenue; individual order percentages are never averaged. Incomplete orders are reported separately."
-      >
-        {summary.isPending ? (
-          <p role="status">Loading profitability totals…</p>
-        ) : summary.error ? (
-          <ErrorPanel
-            error={summary.error}
-            onRetry={() => void summary.refetch()}
-          />
-        ) : (
-          <div className="space-y-4">
-            {summary.data?.groups.map((group) => (
-              <div key={group.status}>
-                <p className="mb-2 text-sm font-semibold">
-                  {group.status === "settled"
-                    ? "Settled orders"
-                    : "Incomplete / provisional orders"}{" "}
-                  · {group.quoteCount}
-                </p>
-                <div className="grid gap-3 sm:grid-cols-4">
-                  <PricingMetric
-                    label="Recorded revenue"
-                    value={formatPricingMoney(group.revenueCents)}
-                  />
-                  <PricingMetric
-                    label="Recorded costs"
-                    value={formatPricingMoney(group.costCents)}
-                  />
-                  <PricingMetric
-                    label="Contribution"
-                    value={formatPricingMoney(group.contributionCents)}
-                  />
-                  <PricingMetric
-                    label="Weighted margin"
-                    value={
-                      group.marginBps === null
-                        ? "Not available"
-                        : `${(group.marginBps / 100).toFixed(2)}%`
-                    }
-                  />
-                </div>
-                {group.incompleteQuotedCount > 0 && (
-                  <p className="mt-2 text-xs text-amber-800">
-                    {group.incompleteQuotedCount} reviews have incomplete
-                    original cost or revenue assumptions.
+      {canManage && (
+        <PricingSection
+          title="Portfolio profitability"
+          description="Margins use total contribution divided by total revenue; individual order percentages are never averaged. Incomplete orders are reported separately."
+        >
+          {summary.isPending ? (
+            <p role="status">Loading profitability totals…</p>
+          ) : summary.error ? (
+            <ErrorPanel
+              error={summary.error}
+              onRetry={() => void summary.refetch()}
+            />
+          ) : (
+            <div className="space-y-4">
+              {summary.data?.groups.map((group) => (
+                <div key={group.status}>
+                  <p className="mb-2 text-sm font-semibold">
+                    {group.status === "settled"
+                      ? "Settled orders"
+                      : "Incomplete / provisional orders"}{" "}
+                    · {group.quoteCount}
                   </p>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-      </PricingSection>
+                  <div className="grid gap-3 sm:grid-cols-4">
+                    <PricingMetric
+                      label="Recorded revenue"
+                      value={formatPricingMoney(group.revenueCents)}
+                    />
+                    <PricingMetric
+                      label="Recorded costs"
+                      value={formatPricingMoney(group.costCents)}
+                    />
+                    <PricingMetric
+                      label="Contribution"
+                      value={formatPricingMoney(group.contributionCents)}
+                    />
+                    <PricingMetric
+                      label="Weighted margin"
+                      value={
+                        group.marginBps === null
+                          ? "Not available"
+                          : `${(group.marginBps / 100).toFixed(2)}%`
+                      }
+                    />
+                  </div>
+                  {group.incompleteQuotedCount > 0 && (
+                    <p className="mt-2 text-xs text-amber-800">
+                      {group.incompleteQuotedCount} reviews have incomplete
+                      original cost or revenue assumptions.
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </PricingSection>
+      )}
       <PricingSection
         title="Saved reviews and approvals"
         description="An approved review locks the assumptions and line amounts for an order. Expired or changed dependencies are checked again before an order can use it."
@@ -303,9 +306,10 @@ function PricingActualsPanel({
   canManage: boolean;
 }) {
   const qc = useQueryClient();
+  const [eventOffset, setEventOffset] = useState(0);
   const actuals = useQuery({
-    queryKey: [...pricingKey, "actuals", quoteId],
-    queryFn: () => getPricingActuals(quoteId),
+    queryKey: [...pricingKey, "actuals", quoteId, eventOffset],
+    queryFn: () => getPricingActuals(quoteId, eventOffset),
   });
   const [source, setSource] =
       useState<ActualEvent["source"]>("supplier_invoice"),
@@ -316,9 +320,33 @@ function PricingActualsPanel({
     [notes, setNotes] = useState(""),
     [lineId, setLineId] = useState(""),
     [error, setError] = useState<string | null>(null);
-  const [costsComplete, setCostsComplete] = useState(false),
-    [revenueComplete, setRevenueComplete] = useState(false),
-    [closeReason, setCloseReason] = useState("");
+  const [completenessDraft, setCompletenessDraft] = useState<{
+    revision: number;
+    costsComplete: boolean;
+    revenueComplete: boolean;
+  } | null>(null);
+  const [closeReason, setCloseReason] = useState("");
+  const costsComplete =
+    completenessDraft?.costsComplete ?? actuals.data?.costsComplete ?? false;
+  const revenueComplete =
+    completenessDraft?.revenueComplete ??
+    actuals.data?.revenueComplete ??
+    false;
+  const completenessChanged =
+    completenessDraft !== null &&
+    actuals.data !== undefined &&
+    completenessDraft.revision !== actuals.data.revision;
+  const editCompleteness = (
+    patch: Partial<{ costsComplete: boolean; revenueComplete: boolean }> = {},
+  ) => {
+    if (!actuals.data) return;
+    setCompletenessDraft((draft) => ({
+      revision: draft?.revision ?? actuals.data!.revision,
+      costsComplete: draft?.costsComplete ?? actuals.data!.costsComplete,
+      revenueComplete: draft?.revenueComplete ?? actuals.data!.revenueComplete,
+      ...patch,
+    }));
+  };
   const save = useMutation({
     mutationFn: (body: Omit<ActualEvent, "id" | "createdAt">) =>
       savePricingActual(quoteId, body),
@@ -332,17 +360,24 @@ function PricingActualsPanel({
     },
   });
   const close = useMutation({
-    mutationFn: () =>
-      closePricingActuals(quoteId, {
-        expectedRevision: actuals.data!.revision,
+    mutationFn: () => {
+      if (!actuals.data || completenessChanged)
+        throw new Error("Review the latest completeness status before saving.");
+      return closePricingActuals(quoteId, {
+        expectedRevision: completenessDraft?.revision ?? actuals.data.revision,
         costsComplete,
         revenueComplete,
         reason: closeReason.trim(),
-      }),
-    onSuccess: () =>
+      });
+    },
+    onSuccess: () => {
+      setCompletenessDraft(null);
+      setCloseReason("");
       void qc.invalidateQueries({
         queryKey: [...pricingKey, "actuals", quoteId],
-      }),
+      });
+      void qc.invalidateQueries({ queryKey: [...pricingKey, "summary"] });
+    },
   });
   const submit = () => {
     setError(null);
@@ -372,10 +407,17 @@ function PricingActualsPanel({
       {actuals.isPending ? (
         <p role="status">Loading actual results…</p>
       ) : actuals.error ? (
-        <ErrorPanel
-          error={actuals.error}
-          onRetry={() => void actuals.refetch()}
-        />
+        <div className="space-y-3">
+          <ErrorPanel
+            error={actuals.error}
+            onRetry={() => void actuals.refetch()}
+          />
+          {eventOffset > 0 && (
+            <Button intent="secondary" onClick={() => setEventOffset(0)}>
+              Return to first actual events
+            </Button>
+          )}
+        </div>
       ) : (
         actuals.data && (
           <div className="space-y-5">
@@ -481,6 +523,48 @@ function PricingActualsPanel({
                 ))
               )}
             </div>
+            {actuals.data.eventPage && (
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="text-xs text-slate-600">
+                  Showing{" "}
+                  {actuals.data.events.length
+                    ? actuals.data.eventPage.offset + 1
+                    : 0}
+                  –{actuals.data.eventPage.offset + actuals.data.events.length}{" "}
+                  of {actuals.data.eventPage.total} events. Profitability totals
+                  include all events.
+                </p>
+                <div className="flex gap-2">
+                  <Button
+                    intent="ghost"
+                    disabled={eventOffset === 0 || actuals.isFetching}
+                    onClick={() =>
+                      setEventOffset(
+                        Math.max(
+                          0,
+                          eventOffset - actuals.data!.eventPage.limit,
+                        ),
+                      )
+                    }
+                  >
+                    Previous actual events
+                  </Button>
+                  <Button
+                    intent="ghost"
+                    disabled={
+                      !actuals.data.eventPage.hasMore || actuals.isFetching
+                    }
+                    onClick={() =>
+                      setEventOffset(
+                        eventOffset + actuals.data!.eventPage.limit,
+                      )
+                    }
+                  >
+                    Next actual events
+                  </Button>
+                </div>
+              </div>
+            )}
             {canManage && (
               <>
                 <div className="grid gap-3 md:grid-cols-3">
@@ -600,7 +684,10 @@ function PricingActualsPanel({
                     <input
                       type="checkbox"
                       checked={costsComplete}
-                      onChange={(e) => setCostsComplete(e.target.checked)}
+                      disabled={close.isPending}
+                      onChange={(e) =>
+                        editCompleteness({ costsComplete: e.target.checked })
+                      }
                     />
                     All supplier and fulfillment costs are recorded
                   </label>
@@ -608,7 +695,10 @@ function PricingActualsPanel({
                     <input
                       type="checkbox"
                       checked={revenueComplete}
-                      onChange={(e) => setRevenueComplete(e.target.checked)}
+                      disabled={close.isPending}
+                      onChange={(e) =>
+                        editCompleteness({ revenueComplete: e.target.checked })
+                      }
                     />
                     All collections, refunds and credits are recorded
                   </label>
@@ -616,18 +706,46 @@ function PricingActualsPanel({
                     <textarea
                       className={pricingControl}
                       value={closeReason}
-                      onChange={(e) => setCloseReason(e.target.value)}
+                      disabled={close.isPending}
+                      onChange={(e) => {
+                        editCompleteness();
+                        setCloseReason(e.target.value);
+                      }}
                       rows={2}
                     />
                   </PricingField>
                   <Button
                     intent="secondary"
                     isLoading={close.isPending}
-                    disabled={closeReason.trim().length < 10}
+                    disabled={
+                      closeReason.trim().length < 10 ||
+                      actuals.isFetching ||
+                      completenessChanged
+                    }
                     onClick={() => close.mutate()}
                   >
                     Save reconciliation status
                   </Button>
+                  {completenessChanged && (
+                    <div
+                      role="status"
+                      className="rounded border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"
+                    >
+                      Recorded actuals changed while you were editing. Your
+                      choices are preserved; reload and review the latest
+                      completeness status before saving.
+                      <Button
+                        className="mt-2"
+                        intent="secondary"
+                        onClick={() => {
+                          setCompletenessDraft(null);
+                          close.reset();
+                        }}
+                      >
+                        Reload completeness status
+                      </Button>
+                    </div>
+                  )}
                   {close.error && (
                     <ErrorPanel
                       error={close.error}

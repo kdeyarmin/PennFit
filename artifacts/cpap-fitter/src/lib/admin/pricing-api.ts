@@ -133,8 +133,10 @@ export const activatePricingBatch = (
   post<PricingState>(`/batches/${encodeURIComponent(id)}/activate`, {
     expectedStateRevision,
   });
-export const getPricingActuals = (id: string) =>
-  get<Reconciliation>(`/quotes/${encodeURIComponent(id)}/actuals`);
+export const getPricingActuals = (id: string, offset = 0) =>
+  get<Reconciliation>(
+    `/quotes/${encodeURIComponent(id)}/actuals?offset=${offset}`,
+  );
 export const savePricingActual = (
   id: string,
   body: Omit<ActualEvent, "id" | "createdAt">,

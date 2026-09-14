@@ -303,6 +303,72 @@ describe("GET /admin/pacware/export/patients.csv", () => {
 });
 
 describe("GET /admin/pacware/export/resupply-due.csv", () => {
+  it.each(["export/resupply-due.csv", "sync/resupply-due/preview"])(
+    "reports malformed export rows separately from delivery holds in %s",
+    async (path) => {
+      supabaseMock.reset();
+      stageSupabaseRpcResponse("csr_pricing_held_episode_ids", {
+        data: ["held"],
+      });
+      const row = (id: string) => ({
+        id,
+        status: "confirmed",
+        due_at: "2026-06-15T00:00:00Z",
+        prescriptions: { item_sku: "MASK" },
+        patients: {
+          pacware_id: "PW1",
+          legal_first_name: "Synthetic",
+          legal_last_name: "Patient",
+          insurance_payer: null,
+        },
+      });
+      const signed = {
+        item_sku: "MASK",
+        quantity: 2,
+        csr_order_request_id: "order",
+      };
+      stageSupabaseResponse("episodes", "select", { data: null, count: 0 });
+      stageSupabaseResponse("episodes", "select", {
+        data: [
+          row("ready"),
+          row("held"),
+          { ...row("missing-rx"), prescriptions: null },
+          {
+            ...row("invalid-quantity"),
+            fulfillments: [{ ...signed, quantity: 0 }],
+          },
+          { ...row("multiple-lines"), fulfillments: [signed, signed] },
+        ],
+      });
+      const res = await request(makeApp()).get(
+        `/resupply-api/admin/pacware/${path}`,
+      );
+      expect(res.status).toBe(200);
+      if (path.endsWith("preview")) {
+        expect(res.body).toMatchObject({
+          count: 1,
+          withheldDeliveryReview: 1,
+          withheldInvalidData: 3,
+        });
+        expect(res.body.sample).toHaveLength(1);
+        expect(res.body.sample[0].episodeId).toBe("ready");
+      } else {
+        expect(res.headers["x-pacware-withheld-delivery-review"]).toBe("1");
+        expect(res.headers["x-pacware-withheld-invalid-data"]).toBe("3");
+        expect(logAuditMock).toHaveBeenCalledWith(
+          expect.objectContaining({
+            metadata: expect.objectContaining({
+              row_count: 1,
+              withheld_delivery_review: 1,
+              withheld_invalid_data: 3,
+            }),
+          }),
+        );
+        expect(res.text.trim().split("\r\n")).toHaveLength(2);
+      }
+    },
+  );
+
   it("exports the signed fulfillment SKU and quantity instead of a changed prescription or default one", async () => {
     stageSupabaseResponse("episodes", "select", { data: null, count: 0 });
     stageSupabaseResponse("episodes", "select", {

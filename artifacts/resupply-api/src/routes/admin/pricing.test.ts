@@ -13,6 +13,7 @@ const state = vi.hoisted(() => ({
   activePrices: vi.fn(),
   resolved: vi.fn(),
   portfolio: vi.fn(),
+  actuals: vi.fn(),
 }));
 vi.mock("../../middlewares/admin-rate-limit", () => ({
   adminRateLimit:
@@ -62,6 +63,7 @@ vi.mock("../../lib/pricing/service", async (original) => ({
   mutatePricing: state.mutations,
   getActivePrices: state.activePrices,
   resolveScenario: state.resolved,
+  getReconciliation: state.actuals,
 }));
 import router from "./pricing";
 const app = express();
@@ -89,6 +91,10 @@ beforeEach(() => {
   state.activePrices.mockReset().mockResolvedValue(null);
   state.resolved.mockReset();
   state.portfolio.mockReset();
+  state.actuals.mockReset().mockResolvedValue({
+    events: [],
+    eventPage: { offset: 0, limit: 100, total: 0, hasMore: false },
+  });
   state.mutations.mockImplementation(
     async (_scoped, actor, _operation, payload) => ({
       id: "00000000-0000-4000-8000-000000000002",
@@ -100,6 +106,30 @@ beforeEach(() => {
   );
 });
 describe("pricing HTTP boundary", () => {
+  it("pages actual-event history for a CSR and rejects invalid offsets before reading", async () => {
+    const id = "00000000-0000-4000-8000-000000000002";
+    const response = await request(app)
+      .get(`/admin/pricing/quotes/${id}/actuals?offset=1000`)
+      .set("x-fixture-actor", "csr")
+      .set("x-fixture-role", "csr");
+    expect(response.status).toBe(200);
+    expect(state.actuals).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orgId: "00000000-0000-4000-8000-000000000001",
+      }),
+      id,
+      1000,
+    );
+    state.actuals.mockClear();
+    for (const offset of ["-1", "1.5", "2147483648", "invalid"]) {
+      const invalid = await request(app)
+        .get(`/admin/pricing/quotes/${id}/actuals?offset=${offset}`)
+        .set("x-fixture-actor", "csr")
+        .set("x-fixture-role", "csr");
+      expect(invalid.status).toBe(400);
+    }
+    expect(state.actuals).not.toHaveBeenCalled();
+  });
   it("saves server-calculated comparable margins and prior price provenance in batch previews", async () => {
     const scenario = {
       validUntil: "2099-01-01T00:00:00Z",

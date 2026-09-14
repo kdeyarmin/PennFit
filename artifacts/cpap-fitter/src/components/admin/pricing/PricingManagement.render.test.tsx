@@ -6,6 +6,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
@@ -209,6 +210,65 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("verified insurance evidence management", () => {
+  it("keeps immutable profile versions distinct during history refresh and revision selection", async () => {
+    const old = {
+      ...profile,
+      version: 2,
+      name: "Earlier evidence",
+      expectedCollectibleCents: 8000,
+    };
+    mocks.profiles.mockResolvedValue({
+      profiles: [profile, old],
+      hasMore: false,
+    });
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const { client } = mount(<PricingRevenueProfilesPanel canManage />);
+      fireEvent.click(
+        screen.getByRole("button", { name: "Choose first patient" }),
+      );
+      await screen.findByText("Earlier evidence");
+      expect(
+        logged.mock.calls.some((args) =>
+          args.some((value) => String(value).includes("same key")),
+        ),
+      ).toBe(false);
+      mocks.profiles.mockResolvedValue({
+        profiles: [
+          { ...profile, version: 4, name: "Latest evidence" },
+          profile,
+        ],
+        hasMore: false,
+      });
+      await act(async () => {
+        await client.invalidateQueries({
+          queryKey: ["admin", "pricing", "revenue-profiles"],
+        });
+      });
+      await screen.findByText("Latest evidence");
+      expect(screen.queryByText("Earlier evidence")).toBeNull();
+      fireEvent.click(
+        within(
+          screen.getByText("Verified payer fixture").closest("article")!,
+        ).getByRole("button", { name: "Revise profile" }),
+      );
+      fireEvent.click(
+        screen.getByRole("button", {
+          name: "Save verified collection profile",
+        }),
+      );
+      await waitFor(() =>
+        expect(mocks.saveProfile).toHaveBeenCalledWith(
+          expect.objectContaining({
+            expectedVersion: 3,
+            expectedCollectibleCents: 9000,
+          }),
+        ),
+      );
+    } finally {
+      logged.mockRestore();
+    }
+  });
   it("requires a complete allocation and counts a signed collection adjustment once", async () => {
     await startProfile();
     fill("Expected primary insurer collections ($)", "80.00");
@@ -489,6 +549,43 @@ describe("supplier applicability and scope", () => {
       clinicalSuitability: offer.clinicalSuitability,
       deliveryScope: offer.deliveryScope,
       components: offer.components,
+    });
+  });
+  it("does not renew or promote component evidence while revising unrelated supplier terms", async () => {
+    const revised = {
+      ...offer,
+      effectiveFrom: "2090-01-01T11:15:00.000Z",
+      expiresAt: "2099-12-31T11:45:17.123Z",
+      components: [
+        {
+          ...offer.components[0],
+          status: "estimated",
+          expiresAt: "2099-02-01T12:45:32.456Z",
+        },
+        {
+          ...offer.components[0],
+          id: "handling",
+          category: "handling",
+          status: "missing",
+          amountCents: null,
+        },
+      ],
+    };
+    mocks.offers.mockResolvedValue({ offers: [revised], hasMore: false });
+    mount(<PricingOffersPanel canManage />);
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Revise offer" }),
+    );
+    fill("Supplier return terms", "Updated return instructions");
+    fireEvent.click(
+      screen.getByRole("button", { name: "Save supplier offer" }),
+    );
+    await waitFor(() => expect(mocks.saveOffer).toHaveBeenCalledTimes(1));
+    expect(mocks.saveOffer.mock.calls[0][0]).toMatchObject({
+      status: "verified",
+      effectiveFrom: revised.effectiveFrom,
+      expiresAt: revised.expiresAt,
+      components: revised.components,
     });
   });
   it("does not save verified freight without its explicit coverage", async () => {

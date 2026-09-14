@@ -172,6 +172,7 @@ function fixture() {
         expires_at: "2026-09-14T12:10:00Z",
         cost_cents: 900,
         data: {
+          service: "Ground",
           patientId: id(8),
           lines: [{ sku: "MASK", quantity: 2 }],
           patientAddressSnapshot: address,
@@ -339,6 +340,24 @@ describe("delivery review recalculates fixed accepted economics", () => {
     );
     expect(result.expiresAt).toBe("2026-09-14T12:10:00.000Z");
     expect(result.evaluation.totalVariableCostCents).toBe(4900);
+  });
+  it("cannot reuse a carrier rate for a different delivery service", async () => {
+    const { scoped, rpc } = fixture();
+    await expect(
+      previewDeliveryReview(
+        scoped,
+        id(4),
+        "manager",
+        {
+          delivery: { country: "US", service: "Express" },
+          shippingQuoteId: id(10),
+        },
+        now,
+      ),
+    ).rejects.toMatchObject({ code: "shipping_quote_mismatch" });
+    expect(
+      rpc.mock.calls.some((call) => call[0] === "save_csr_delivery_review"),
+    ).toBe(false);
   });
   it("requires a fresh review across a scheduled policy rule change", async () => {
     const { scoped, tables } = fixture();

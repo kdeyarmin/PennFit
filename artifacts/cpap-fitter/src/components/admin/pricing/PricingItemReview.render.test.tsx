@@ -668,6 +668,9 @@ describe("pricing review safety and usability", () => {
       <PricingItemReview patientId={patientId} initialLines={initialLines} />,
     );
     await fillReview();
+    fireEvent.change(screen.getByLabelText("Supplier delivery service"), {
+      target: { value: "Expedited supplier delivery" },
+    });
     fireEvent.change(screen.getByLabelText("Item 1 fulfillment"), {
       target: { value: "stock" },
     });
@@ -690,6 +693,7 @@ describe("pricing review safety and usability", () => {
         expect.objectContaining({
           shippingQuoteId: shippingId,
           validUntil: expiresAt,
+          delivery: expect.objectContaining({ service: "ground" }),
         }),
       ),
     );

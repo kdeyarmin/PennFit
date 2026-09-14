@@ -272,7 +272,7 @@ export function PricingRevenueProfilesPanel({
                 )}
                 {profiles.data?.profiles.map((profile) => (
                   <article
-                    key={profile.id}
+                    key={`${profile.id}:${profile.version}`}
                     className="flex flex-wrap items-start justify-between gap-3 rounded-lg border border-slate-200 p-4"
                   >
                     <div>

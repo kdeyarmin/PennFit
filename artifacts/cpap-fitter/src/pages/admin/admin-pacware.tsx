@@ -962,6 +962,13 @@ function VerifyModal({
                 exporting again.
               </p>
             )}
+            {(data.withheldInvalidData ?? 0) > 0 && (
+              <p role="status" className="rounded-lg border px-3 py-2 text-sm">
+                {data.withheldInvalidData} items are withheld because their
+                patient, prescription or fulfillment data is incomplete or
+                inconsistent. Correct those records before exporting again.
+              </p>
+            )}
             {data.sample.length === 0 ? (
               <p
                 className="text-sm py-2"

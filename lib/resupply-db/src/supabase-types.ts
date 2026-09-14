@@ -7423,6 +7423,15 @@ export interface Database {
       };
     };
     Functions: {
+      pricing_actuals_page: {
+        Args: {
+          p_org_id: string;
+          p_quote_id: string;
+          p_offset?: number;
+          p_limit?: number;
+        };
+        Returns: Json;
+      };
       pricing_mutate: {
         Args: {
           p_org_id: string;

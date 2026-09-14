@@ -33,6 +33,8 @@ type CostRow = {
   basis: OfferInput["components"][number]["basis"];
   quantity: string;
   includedInId: string;
+  status: OfferInput["components"][number]["status"];
+  expiresAt: string;
 };
 const fresh = () => ({
   supplierName: "",
@@ -189,13 +191,18 @@ export function PricingOffersPanel({ canManage }: { canManage: boolean }) {
         basis: c.basis,
         quantity: String(c.quantity),
         includedInId: c.includedInId ?? "",
+        status: c.status,
+        expiresAt: c.expiresAt ?? "",
       })),
     );
   };
   const submit = () => {
     setError(null);
     setNotice("");
-    const expiresAt = pricingExpiry(form.expiry),
+    const expiresAt =
+        editing && form.expiry === editing.expiresAt.slice(0, 10)
+          ? editing.expiresAt
+          : pricingExpiry(form.expiry),
       unitCostCents = form.amount.trim()
         ? parsePricingMoney(form.amount)
         : null;
@@ -243,7 +250,8 @@ export function PricingOffersPanel({ canManage }: { canManage: boolean }) {
         !Number.isInteger(quantity) ||
         quantity < 1 ||
         (cost.amount.trim() && amountCents === null) ||
-        (form.status === "verified" && amountCents === null)
+        (cost.status === "verified" && amountCents === null) ||
+        (cost.expiresAt !== "" && !Number.isFinite(Date.parse(cost.expiresAt)))
       ) {
         setError(
           "Each fee needs a label and whole count. Verified fees require an explicit amount, including $0 when confirmed free.",
@@ -257,7 +265,8 @@ export function PricingOffersPanel({ canManage }: { canManage: boolean }) {
         category: cost.category,
         basis: cost.basis,
         quantity,
-        status: amountCents === null ? "missing" : form.status,
+        status: amountCents === null ? "missing" : cost.status,
+        ...(cost.expiresAt ? { expiresAt: cost.expiresAt } : {}),
         ...(cost.includedInId ? { includedInId: cost.includedInId } : {}),
       });
     }
@@ -265,8 +274,10 @@ export function PricingOffersPanel({ canManage }: { canManage: boolean }) {
     if (!canManage || save.isPending) return;
     if (
       !details ||
-      (form.status === "verified" &&
-        components.some((component) => component.category === "freight") &&
+      (components.some(
+        (component) =>
+          component.category === "freight" && component.status === "verified",
+      ) &&
         !details.deliveryScope)
     ) {
       setError(
@@ -285,7 +296,10 @@ export function PricingOffersPanel({ canManage }: { canManage: boolean }) {
       minQuantity,
       maxQuantity,
       status: form.status,
-      effectiveFrom: new Date().toISOString(),
+      effectiveFrom:
+        editing && Date.parse(editing.effectiveFrom) > Date.now()
+          ? editing.effectiveFrom
+          : new Date().toISOString(),
       expiresAt,
       source: form.source.trim(),
       components,
@@ -806,6 +820,62 @@ export function PricingOffersPanel({ canManage }: { canManage: boolean }) {
                       }
                     />
                   </PricingField>
+                  <PricingField label={`Fee ${index + 1} evidence status`}>
+                    <select
+                      className={pricingControl}
+                      value={cost.status}
+                      onChange={(event) =>
+                        setCosts((old) =>
+                          old.map((row) =>
+                            row.id === cost.id
+                              ? {
+                                  ...row,
+                                  status: event.target
+                                    .value as CostRow["status"],
+                                }
+                              : row,
+                          ),
+                        )
+                      }
+                    >
+                      {["estimated", "verified", "missing", "stale"].map(
+                        (status) => (
+                          <option key={status} value={status}>
+                            {status}
+                          </option>
+                        ),
+                      )}
+                    </select>
+                  </PricingField>
+                  <PricingField
+                    label={`Fee ${index + 1} evidence expires (UTC)`}
+                    hint="Blank uses the offer deadline. Changing the offer does not renew a fee's own evidence."
+                  >
+                    <input
+                      className={pricingControl}
+                      type="datetime-local"
+                      step="0.001"
+                      value={
+                        cost.expiresAt
+                          ? new Date(cost.expiresAt).toISOString().slice(0, -1)
+                          : ""
+                      }
+                      onChange={(event) =>
+                        setCosts((old) =>
+                          old.map((row) =>
+                            row.id === cost.id
+                              ? {
+                                  ...row,
+                                  expiresAt: event.target.value
+                                    ? `${event.target.value}Z`
+                                    : "",
+                                }
+                              : row,
+                          ),
+                        )
+                      }
+                    />
+                  </PricingField>
                   <PricingField label={`Fee ${index + 1} type`}>
                     <select
                       className={pricingControl}
@@ -929,6 +999,8 @@ export function PricingOffersPanel({ canManage }: { canManage: boolean }) {
                       basis: "order",
                       quantity: "1",
                       includedInId: "",
+                      status: "estimated",
+                      expiresAt: "",
                     },
                   ])
                 }

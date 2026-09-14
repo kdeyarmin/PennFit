@@ -79,6 +79,7 @@ export interface PacwareSyncPreview {
    */
   withheldMissingPacwareId?: number;
   withheldDeliveryReview?: number;
+  withheldInvalidData?: number;
   truncated?: boolean;
   sample: Array<Record<string, string | number | null>>;
 }
