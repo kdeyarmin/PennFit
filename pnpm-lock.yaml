@@ -590,6 +590,9 @@ importers:
       '@tanstack/react-query':
         specifier: 'catalog:'
         version: 5.100.10(react@19.2.6)
+      '@workspace/resupply-domain':
+        specifier: workspace:*
+        version: link:../resupply-domain
     devDependencies:
       '@types/node':
         specifier: 'catalog:'

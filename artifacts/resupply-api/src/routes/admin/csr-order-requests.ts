@@ -46,6 +46,12 @@ import {
   adminReadRateLimiter,
 } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
+import {
+  createReviewedOrder,
+  reviewOrderPricing,
+  orderPricingFailure,
+} from "../../lib/csr-order/pricing";
+import { dispenseSignedCsrOrder } from "../../lib/csr-order/dispense-on-sign";
 
 const router: IRouter = Router();
 
@@ -68,6 +74,9 @@ const MAX_TOTAL_CENTS = 100_000_00; // $100k sanity cap
 
 const itemSchema = z
   .object({
+    sku: z.string().trim().min(1).max(64).optional(),
+    lineId: z.string().uuid().optional(),
+    fulfillmentMethod: z.enum(["stock", "dropship"]).optional(),
     description: z.string().trim().min(1).max(250),
     quantity: z.number().int().min(1).max(99),
     unitAmountCents: z.number().int().min(0).max(5_000_000),
@@ -76,6 +85,9 @@ const itemSchema = z
 
 const createBody = z
   .object({
+    patientId: z.string().uuid().optional(),
+    quoteId: z.string().uuid().optional(),
+    quoteRevision: z.number().int().positive().optional(),
     customerName: z.string().trim().min(2).max(160),
     customerEmail: z
       .string()
@@ -93,9 +105,15 @@ const createBody = z
     documentKeys: z.array(z.string().min(1).max(64)).max(20).default([]),
     expiresInDays: z.number().int().min(1).max(120).optional(),
   })
-  .strict();
+  .strict()
+  .refine(
+    (body) => Boolean(body.quoteId) === Boolean(body.quoteRevision),
+    "A pricing review requires both its ID and revision.",
+  );
 
 interface OrderRequestRow {
+  patient_id?: string | null;
+  pricing_quote_id?: string | null;
   id: string;
   order_reference: string;
   status: "sent" | "viewed" | "signed" | "canceled";
@@ -119,7 +137,7 @@ interface OrderRequestRow {
 }
 
 const LIST_COLUMNS =
-  "id, order_reference, status, customer_name, customer_email, customer_phone, items, amount_total_cents, currency, note_to_customer, documents, link_version, expires_at, sent_at, first_viewed_at, signed_at, signer_name, canceled_at, created_by_email, created_at";
+  "id, patient_id, pricing_quote_id, order_reference, status, customer_name, customer_email, customer_phone, items, amount_total_cents, currency, note_to_customer, documents, link_version, expires_at, sent_at, first_viewed_at, signed_at, signer_name, canceled_at, created_by_email, created_at";
 
 function projectRequest(
   row: OrderRequestRow,
@@ -131,6 +149,8 @@ function projectRequest(
   const documents = parseOrderDocuments(row.documents);
   return {
     id: row.id,
+    patientId: row.patient_id ?? null,
+    pricingQuoteId: row.pricing_quote_id ?? null,
     orderReference: row.order_reference,
     status: row.status,
     customerName: row.customer_name,
@@ -181,6 +201,23 @@ async function loadDraftAndFulfillmentHints(
   };
   if (requestIds.length === 0) return empty;
   const supabase = getOrgScopedClient(orgId);
+  // Reviewed orders have direct fulfillment links, including orders that
+  // were entered outside the resupply draft queue. The RPC inserts all
+  // lines atomically, so any returned line proves that commit completed.
+  for (let offset = 0; ; offset += 500) {
+    const { data: reviewed, error: reviewedError } = await supabase
+      .from("fulfillments")
+      .select("csr_order_request_id")
+      .in("csr_order_request_id", requestIds)
+      .order("id")
+      .range(offset, offset + 499);
+    if (reviewedError) break;
+    for (const row of reviewed ?? []) {
+      if (row.csr_order_request_id)
+        empty.queuedFulfillmentIds.add(row.csr_order_request_id);
+    }
+    if (!reviewed || reviewed.length < 500) break;
+  }
   const { data: drafts, error: draftErr } = await supabase
     .from("resupply_order_drafts")
     .select("id, csr_order_request_id")
@@ -200,7 +237,7 @@ async function loadDraftAndFulfillmentHints(
 
   const draftIds = [...draftIdByRequest.values()];
   if (draftIds.length === 0) {
-    return { linkedDraftIds, queuedFulfillmentIds: new Set() };
+    return { linkedDraftIds, queuedFulfillmentIds: empty.queuedFulfillmentIds };
   }
 
   // dispenseSignedCsrOrder keys fulfillments on episode_id = draft.id.
@@ -210,7 +247,7 @@ async function loadDraftAndFulfillmentHints(
     .in("episode_id", draftIds)
     .limit(draftIds.length * 5);
   if (fulErr) {
-    return { linkedDraftIds, queuedFulfillmentIds: new Set() };
+    return { linkedDraftIds, queuedFulfillmentIds: empty.queuedFulfillmentIds };
   }
 
   const draftsWithFulfillment = new Set<string>();
@@ -219,7 +256,7 @@ async function loadDraftAndFulfillmentHints(
     if (episodeId) draftsWithFulfillment.add(episodeId);
   }
 
-  const queuedFulfillmentIds = new Set<string>();
+  const queuedFulfillmentIds = empty.queuedFulfillmentIds;
   for (const [requestId, draftId] of draftIdByRequest) {
     if (draftsWithFulfillment.has(draftId)) {
       queuedFulfillmentIds.add(requestId);
@@ -358,6 +395,11 @@ router.post(
       return;
     }
     const supabase = getOrgScopedClient(orgId);
+    const pricing = await reviewOrderPricing(supabase, b);
+    if (!pricing.ok) {
+      res.status(pricing.status).json(pricing.body);
+      return;
+    }
     const snapshot = await snapshotOrderDocuments(supabase, [
       ...new Set(b.documentKeys),
     ]);
@@ -375,27 +417,54 @@ router.post(
       Date.now() + ttlDays * 24 * 60 * 60 * 1000,
     ).toISOString();
 
-    const { data: created, error: insertErr } = await supabase
-      .from("csr_order_requests")
-      .insert({
-        order_reference: generateCsrOrderReference(),
-        status: "sent",
-        customer_name: b.customerName,
-        customer_email: email,
-        customer_phone: phoneE164,
-        items: b.items as unknown as Json,
-        amount_total_cents: amountTotalCents,
-        currency: "usd",
-        note_to_customer: b.noteToCustomer?.trim() || null,
-        documents: snapshot.documents as unknown as Json,
-        link_version: 1,
-        expires_at: expiresAt,
-        sent_at: nowIso,
-        created_by_email: req.adminEmail ?? null,
-      })
-      .select("id, order_reference, link_version")
-      .single();
-    if (insertErr) throw insertErr;
+    const orderPayload = {
+      order_reference: generateCsrOrderReference(),
+      status: "sent",
+      customer_name: b.customerName,
+      customer_email: email,
+      customer_phone: phoneE164,
+      items: b.items as unknown as Json,
+      amount_total_cents: amountTotalCents,
+      currency: "usd",
+      note_to_customer: b.noteToCustomer?.trim() || null,
+      documents: snapshot.documents as unknown as Json,
+      link_version: 1,
+      expires_at: expiresAt,
+      sent_at: nowIso,
+      created_by_email: req.adminEmail ?? null,
+    };
+    let created: {
+      id: string;
+      order_reference: string;
+      link_version: number;
+      replayed?: boolean;
+    };
+    if (pricing.quote) {
+      const commit = await createReviewedOrder(supabase, pricing.quote, {
+        ...orderPayload,
+        patient_id: pricing.quote.patientId,
+      } as unknown as Json);
+      if (!commit.ok) {
+        res.status(commit.status).json(commit.body);
+        return;
+      }
+      created = commit.order;
+    } else {
+      const { data, error: insertErr } = await supabase
+        .from("csr_order_requests")
+        .insert(orderPayload)
+        .select("id, order_reference, link_version")
+        .single();
+      if (insertErr) {
+        const problem = orderPricingFailure(insertErr);
+        if (problem.status !== 503) {
+          res.status(problem.status).json(problem.body);
+          return;
+        }
+        throw insertErr;
+      }
+      created = data;
+    }
 
     const signingLink = await buildCsrOrderSigningLink(
       created.id,
@@ -407,16 +476,18 @@ router.post(
       res.status(422).json(TENANT_DOMAIN_REQUIRED);
       return;
     }
-    const { emailSent, smsSent } = await deliverCsrOrderInvite({
-      supabase: supabase,
-      customerName: b.customerName,
-      email,
-      phone: phoneE164,
-      link: signingLink,
-      orderReference: created.order_reference,
-      hasDocuments: snapshot.documents.length > 0,
-      orderRequestId: created.id,
-    });
+    const { emailSent, smsSent } = created.replayed
+      ? { emailSent: false, smsSent: false }
+      : await deliverCsrOrderInvite({
+          supabase: supabase,
+          customerName: b.customerName,
+          email,
+          phone: phoneE164,
+          link: signingLink,
+          orderReference: created.order_reference,
+          hasDocuments: snapshot.documents.length > 0,
+          orderRequestId: created.id,
+        });
 
     req.log?.info?.(
       {
@@ -455,6 +526,7 @@ router.post(
       signingLink,
       emailSent,
       smsSent,
+      replayed: created.replayed ?? false,
     });
   },
 );
@@ -657,6 +729,46 @@ router.post(
     }).catch(() => {});
 
     res.json({ status: "canceled" });
+  },
+);
+
+// Staff can retry a completed signature's fulfillment after correcting a
+// missing prescription/address or recovering from a temporary database error.
+router.post(
+  "/admin/csr-order-requests/:id/queue-fulfillment",
+  requirePermission("orders.create"),
+  adminRateLimit({
+    name: "csr_order_fulfillment_retry",
+    windowMs: 60_000,
+    max: 20,
+  }),
+  async (req, res) => {
+    const id = idParam.safeParse(req.params);
+    if (!id.success) {
+      res.status(400).json({ error: "invalid_id" });
+      return;
+    }
+    if (!req.orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const db = getOrgScopedClient(req.orgId);
+    const { data: order, error } = await db
+      .from("csr_order_requests")
+      .select("id,status,pricing_quote_id")
+      .eq("id", id.data.id)
+      .maybeSingle();
+    if (error) throw error;
+    if (!order) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    if (order.status !== "signed") {
+      res.status(409).json({ error: "signed_order_required" });
+      return;
+    }
+    const result = await dispenseSignedCsrOrder(db, order.id);
+    res.status(result.skipped ? 409 : 200).json(result);
   },
 );
 

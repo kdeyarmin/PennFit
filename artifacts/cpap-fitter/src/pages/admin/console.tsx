@@ -242,6 +242,11 @@ const AdminCatalogPage = lazyWithRetry(() =>
     default: m.AdminCatalogPage,
   })),
 );
+const AdminPricingPage = lazyWithRetry(() =>
+  import("@/pages/admin/admin-pricing").then((m) => ({
+    default: m.AdminPricingPage,
+  })),
+);
 const AdminInventoryTurnoverPage = lazyWithRetry(() =>
   import("@/pages/admin/admin-inventory-turnover").then((m) => ({
     default: m.AdminInventoryTurnoverPage,
@@ -1395,6 +1400,7 @@ function AdminConsole() {
                 below redirect so existing bookmarks keep working — the
                 same courtesy the /resupply/* → /admin/* move got. */}
             <Route path="/admin/catalog" component={AdminCatalogPage} />
+            <Route path="/admin/pricing" component={AdminPricingPage} />
             <Route
               path="/admin/shop/backorders"
               component={AdminBackordersPage}

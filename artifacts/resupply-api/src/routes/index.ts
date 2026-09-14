@@ -7,6 +7,11 @@ import customerTimelineRouter from "./admin/customer-timeline.js";
 import followupsListRouter from "./admin/followups-list.js";
 import shopOrderNotesRouter from "./admin/order-notes.js";
 import productCostsRouter from "./admin/product-costs.js";
+import pricingRouter from "./admin/pricing.js";
+import pricingShippingRouter from "./admin/pricing-shipping.js";
+import csrDeliveryReviewsRouter from "./admin/csr-delivery-reviews.js";
+import pricingResupplyRouter from "./admin/pricing-resupply.js";
+import csrOrderRequestsRouter from "./admin/csr-order-requests.js";
 import metricAlertsRouter from "./admin/metric-alerts.js";
 import metricThresholdsRouter from "./admin/metric-thresholds.js";
 import clinicalEncountersRouter from "./admin/clinical-encounters.js";
@@ -448,6 +453,11 @@ router.use(payerFeeSchedulesRouter);
 // SKU. The COGS analog of the fee-schedule catalog; source for the
 // per-transaction cost snapshots + every owner-facing margin surface.
 router.use(productCostsRouter);
+router.use(pricingRouter);
+router.use(pricingShippingRouter);
+router.use(csrDeliveryReviewsRouter);
+router.use(pricingResupplyRouter);
+router.use(csrOrderRequestsRouter);
 // /admin/metric-alerts/* — the in-app KPI alert feed (F2 metrics
 // substrate). Alerts written by the metrics.alerts-evaluator worker.
 router.use(metricAlertsRouter);

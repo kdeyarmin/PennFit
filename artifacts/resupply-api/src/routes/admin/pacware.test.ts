@@ -16,6 +16,7 @@ import {
 import {
   installSupabaseMock,
   stageSupabaseResponse,
+  stageSupabaseRpcResponse,
   getSupabaseWritePayloads,
   getSupabaseFilterCalls,
 } from "../../test-helpers/supabase-mock";
@@ -57,6 +58,7 @@ const HEADER =
 beforeEach(() => {
   mockAdmin.current = null;
   supabaseMock.reset();
+  stageSupabaseRpcResponse("csr_pricing_held_episode_ids", { data: [] });
   logAuditMock.mockClear();
   delete process.env.PACWARE_EXCHANGE_DISABLED;
   asAdmin();
@@ -301,6 +303,78 @@ describe("GET /admin/pacware/export/patients.csv", () => {
 });
 
 describe("GET /admin/pacware/export/resupply-due.csv", () => {
+  it("exports the signed fulfillment SKU and quantity instead of a changed prescription or default one", async () => {
+    stageSupabaseResponse("episodes", "select", { data: null, count: 0 });
+    stageSupabaseResponse("episodes", "select", {
+      data: [
+        {
+          id: "ep_signed",
+          status: "confirmed",
+          due_at: "2026-06-15T00:00:00Z",
+          prescriptions: { item_sku: "CHANGED-RX-SKU" },
+          fulfillments: [
+            {
+              item_sku: "SIGNED-SKU",
+              quantity: 3,
+              csr_order_request_id: "order",
+            },
+          ],
+          patients: {
+            pacware_id: "PW1",
+            legal_first_name: "Synthetic",
+            legal_last_name: "Patient",
+            insurance_payer: null,
+          },
+        },
+      ],
+    });
+    const res = await request(makeApp()).get(
+      "/resupply-api/admin/pacware/export/resupply-due.csv",
+    );
+    expect(res.status).toBe(200);
+    const [header, row] = res.text
+      .trim()
+      .split("\r\n")
+      .map((line) => line.split(","));
+    expect(row[header.indexOf("quantity")]).toBe("3");
+    expect(res.text).toContain("SIGNED-SKU");
+    expect(res.text).not.toContain("CHANGED-RX-SKU");
+  });
+  it.each(["export/resupply-due.csv", "sync/resupply-due/preview"])(
+    "withholds a priced delivery hold from %s",
+    async (path) => {
+      supabaseMock.reset();
+      stageSupabaseRpcResponse("csr_pricing_held_episode_ids", {
+        data: ["ep_held"],
+      });
+      stageSupabaseResponse("episodes", "select", { data: null, count: 0 });
+      stageSupabaseResponse("episodes", "select", {
+        data: ["ep_ready", "ep_held"].map((id) => ({
+          id,
+          status: "confirmed",
+          due_at: "2026-06-15T00:00:00Z",
+          prescriptions: { item_sku: id },
+          patients: {
+            pacware_id: "PW1",
+            legal_first_name: "Synthetic",
+            legal_last_name: "Patient",
+            insurance_payer: null,
+          },
+        })),
+      });
+      const res = await request(makeApp()).get(
+        `/resupply-api/admin/pacware/${path}`,
+      );
+      expect(res.status).toBe(200);
+      expect(res.text).toContain("ep_ready");
+      expect(res.text).not.toContain("ep_held");
+      if (path.endsWith("preview")) {
+        expect(res.body.count).toBe(1);
+        expect(res.body.withheldDeliveryReview).toBe(1);
+      } else
+        expect(res.headers["x-pacware-withheld-delivery-review"]).toBe("1");
+    },
+  );
   it("flattens the episode/prescription/patient join into one line per item", async () => {
     // First query: head-count of items withheld for a missing PacWare id.
     stageSupabaseResponse("episodes", "select", { data: null, count: 0 });
@@ -437,7 +511,6 @@ describe("address-column safety", () => {
 
 describe("sync verify + settings", () => {
   it("previews the resupply-due worklist (count + sample, no CSV)", async () => {
-    stageSupabaseResponse("episodes", "select", { data: null, count: 7 }); // exportable head count
     stageSupabaseResponse("episodes", "select", { data: null, count: 2 }); // withheld (no PacWare id)
     stageSupabaseResponse("episodes", "select", {
       data: [
@@ -460,7 +533,7 @@ describe("sync verify + settings", () => {
     );
     expect(res.status).toBe(200);
     expect(res.body.target).toBe("resupply_due");
-    expect(res.body.count).toBe(7);
+    expect(res.body.count).toBe(1);
     expect(res.body.withheldMissingPacwareId).toBe(2);
     expect(res.body.sample[0].itemSku).toBe("MASK-N20-M");
     expect(res.headers["cache-control"]).toBe("no-store");

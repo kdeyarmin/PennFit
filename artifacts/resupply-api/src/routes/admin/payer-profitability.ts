@@ -30,6 +30,8 @@ export interface PayerClaimInput {
   paidCents: number;
   /** Summed known COGS for this claim's lines, or null when none costed. */
   costCents: number | null;
+  /** False when any claim line has unknown cost, even if other lines are costed. */
+  costComplete?: boolean;
 }
 
 export interface PayerProfitability {
@@ -111,6 +113,8 @@ export function buildPayerProfitability(
     p.paidCents += c.paidCents;
     if (c.costCents != null) {
       p.costKnownCents += c.costCents;
+    }
+    if (c.costCents != null && c.costComplete !== false) {
       p.claimsWithCost += 1;
     } else {
       p.claimsWithoutCost += 1;
@@ -215,12 +219,13 @@ router.get(
       .filter((v): v is string => v != null);
     const costByClaim = new Map<string, number>();
     const claimHasCost = new Set<string>();
+    const claimMissingCost = new Set<string>();
     for (let i = 0; i < claimIds.length; i += CLAIM_ID_CHUNK) {
       const chunk = claimIds.slice(i, i + CLAIM_ID_CHUNK);
       for (let offset = 0; ; offset += PAGE) {
         const { data: lines, error: linesErr } = await supabase
           .from("insurance_claim_line_items")
-          .select("claim_id, quantity, unit_cost_cents")
+          .select("claim_id, quantity, unit_cost_cents, extended_cost_cents")
           .in("claim_id", chunk)
           .order("id", { ascending: true })
           .range(offset, offset + PAGE - 1);
@@ -233,13 +238,20 @@ router.get(
         const page = (lines ?? []) as Array<Record<string, unknown>>;
         for (const l of page) {
           const cid = typeof l.claim_id === "string" ? l.claim_id : "";
-          if (cid === "" || typeof l.unit_cost_cents !== "number") continue;
+          if (cid === "") continue;
           const qty =
             typeof l.quantity === "number" && l.quantity > 0 ? l.quantity : 1;
-          costByClaim.set(
-            cid,
-            (costByClaim.get(cid) ?? 0) + l.unit_cost_cents * qty,
-          );
+          const cost =
+            typeof l.extended_cost_cents === "number"
+              ? l.extended_cost_cents
+              : typeof l.unit_cost_cents === "number"
+                ? l.unit_cost_cents * qty
+                : null;
+          if (cost === null) {
+            claimMissingCost.add(cid);
+            continue;
+          }
+          costByClaim.set(cid, (costByClaim.get(cid) ?? 0) + cost);
           claimHasCost.add(cid);
         }
         if (page.length < PAGE) break;
@@ -262,6 +274,7 @@ router.get(
           allowedCents: numeric(c.total_allowed_cents),
           paidCents: numeric(c.total_paid_cents),
           costCents: claimHasCost.has(id) ? (costByClaim.get(id) ?? 0) : null,
+          costComplete: claimHasCost.has(id) && !claimMissingCost.has(id),
         };
       }),
     );

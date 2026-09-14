@@ -155,6 +155,10 @@ export type Permission =
   | "therapy.read"
   | "cost.read"
   | "cost.write"
+  | "pricing.evaluate"
+  | "pricing.manage"
+  | "pricing.approve"
+  | "pricing.publish"
   | "metrics.read"
   | "bulk_campaigns.send"
   | "fit_session.override"
@@ -191,6 +195,10 @@ const ALL_PERMISSIONS: ReadonlyArray<Permission> = [
   "therapy.read",
   "cost.read",
   "cost.write",
+  "pricing.evaluate",
+  "pricing.manage",
+  "pricing.approve",
+  "pricing.publish",
   "metrics.read",
   "bulk_campaigns.send",
   "fit_session.override",
@@ -298,6 +306,10 @@ const EFFECTIVE_ROLE_PERMISSIONS: Record<
     "therapy.read",
     "cost.read",
     "cost.write",
+    "pricing.evaluate",
+    "pricing.manage",
+    "pricing.approve",
+    "pricing.publish",
     "metrics.read",
     "bulk_campaigns.send",
     "fit_session.override",
@@ -324,6 +336,9 @@ const EFFECTIVE_ROLE_PERMISSIONS: Record<
   // already in csr; agent was a CSR mirror. No new perms beyond
   // what those four roles collectively held.
   customer_service_rep: new Set<Permission>([
+    // Item-level cost and margin review; authoritative cost edits and
+    // portfolio price publication remain management-only.
+    "pricing.evaluate",
     "patients.read",
     "patients.update",
     "returns.read",

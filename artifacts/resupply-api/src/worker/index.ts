@@ -26,6 +26,10 @@
 // into an artifact and add the orchestration plumbing.
 
 import PgBoss from "pg-boss";
+import {
+  PRICING_SCHEDULE_JOB,
+  registerPricingScheduleJob,
+} from "./jobs/pricing-schedules.js";
 import { redactDbErr } from "../lib/redact-db-err";
 import { logger } from "../lib/logger";
 import { registerReminderJobs } from "./jobs/reminders.js";
@@ -1273,6 +1277,15 @@ async function doStartWorker(): Promise<void> {
     "registerSubscriptionBillingNoticeJob",
     registrationFailures,
     () => registerSubscriptionBillingNoticeJob(boss),
+  );
+
+  await safeRegister("registerPricingScheduleJob", registrationFailures, () =>
+    registerIfProvisioned(
+      boss,
+      PRICING_SCHEDULE_JOB,
+      ["pricing_state", "pricing_price_lists", "pricing_offers"],
+      registerPricingScheduleJob,
+    ),
   );
 
   if (registrationFailures.length > 0) {

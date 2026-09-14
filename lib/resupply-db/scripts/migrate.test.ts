@@ -93,7 +93,7 @@ describe.skipIf(!dbUrl)("resupply-db migrate.mjs", () => {
   // plenty of headroom while still failing fast on a real hang.
   it("applies migrations against the live DB and is idempotent on re-run", async () => {
     const first = await runMigrate();
-    expect(first.stdout).toMatch(/migrations applied/);
+    expect(first.stdout).toMatch(/migrations? applied/);
 
     const before = await pool.query<{ count: string }>(
       "SELECT count(*)::text AS count FROM migrations.resupply_migrations",

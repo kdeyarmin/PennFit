@@ -5,5 +5,7 @@ export * from "./front-desk";
 export * from "./csr-order-requests";
 export * from "./platform";
 export * from "./agreements";
+export type * from "./pricing";
+export type * from "./pricing-draft-reviews";
 export { setBaseUrl, setAuthTokenGetter, ApiError } from "./custom-fetch";
 export type { AuthTokenGetter, ErrorType } from "./custom-fetch";

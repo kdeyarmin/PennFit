@@ -293,6 +293,13 @@ BILLING (the claims + revenue-cycle hub):
         and usage against them (same page as Plan & billing under System).
 
 ANALYTICS & REPORTS:
+  - Pricing & Profitability (/admin/pricing, pricing.evaluate) — delivered item
+    costs, supplier offers, patient-specific insurance collection evidence,
+    margin calculations and saved reviews. Management can set margin policies,
+    approve exceptions, publish immediate or scheduled bulk price lists, and
+    reconcile actual costs and collections. Resupply batch review checks each
+    patient's existing approval separately; it does not contact patients.
+    Customer signature packets never show private supplier costs or margins.
   - Reports (/admin/reports) — the report catalog.
   - Audit Trail (/admin/analytics/audit-trail, permission: audit.read) — who did what.
   - Financial: Margin & COGS (/admin/analytics/margin, cost.read), Order outcomes

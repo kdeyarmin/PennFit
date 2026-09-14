@@ -75,8 +75,8 @@ export function BrandHeader({ rightSlot }: { rightSlot?: ReactNode }) {
   const tenantLabel = resolved ? storefrontName : NEUTRAL_TENANT_LABEL;
   return (
     <>
-      <header className="brand-band relative flex items-center justify-between px-6 py-4">
-        <div className="flex items-center gap-3">
+      <header className="brand-band relative flex flex-wrap items-center justify-between gap-3 px-4 py-4 sm:px-6">
+        <div className="flex min-w-0 items-center gap-3">
           <BrandMark />
           <div className="leading-tight">
             <div className="text-white font-semibold tracking-tight text-sm">
@@ -91,7 +91,9 @@ export function BrandHeader({ rightSlot }: { rightSlot?: ReactNode }) {
           </div>
         </div>
         {rightSlot ? (
-          <div className="text-xs text-white/85">{rightSlot}</div>
+          <div className="w-full min-w-0 text-xs text-white/85 xl:w-auto">
+            {rightSlot}
+          </div>
         ) : null}
       </header>
       <div className="aurora-divider" aria-hidden="true" />

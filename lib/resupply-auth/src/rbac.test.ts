@@ -174,6 +174,31 @@ describe("roleHasPermission", () => {
     }
   });
 
+  it("lets CSRs evaluate pricing without editing costs or approving exceptions", () => {
+    for (const role of ["csr", "agent", "fitter", "fulfillment"] as const) {
+      expect(roleHasPermission(role, "pricing.evaluate")).toBe(true);
+      for (const permission of [
+        "pricing.manage",
+        "pricing.approve",
+        "pricing.publish",
+        "cost.write",
+      ] as const) {
+        expect(roleHasPermission(role, permission)).toBe(false);
+      }
+    }
+    for (const role of ["admin", "supervisor", "compliance_officer"] as const) {
+      for (const permission of [
+        "pricing.evaluate",
+        "pricing.manage",
+        "pricing.approve",
+        "pricing.publish",
+      ] as const) {
+        expect(roleHasPermission(role, permission)).toBe(true);
+      }
+    }
+    expect(roleHasPermission("rt", "pricing.evaluate")).toBe(false);
+  });
+
   it("targets.manage is management-gated (off the CSR tier)", () => {
     expect(roleHasPermission("admin", "targets.manage")).toBe(true);
     expect(roleHasPermission("supervisor", "targets.manage")).toBe(true);

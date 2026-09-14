@@ -83,10 +83,13 @@ export interface XpsLabel {
 // ── Vendor response schemas (lenient) ──────────────────────────────────
 
 function dollarsToCents(v: unknown): number | null {
-  if (v == null) return null;
-  const n = typeof v === "string" ? Number.parseFloat(v) : Number(v);
-  if (!Number.isFinite(n)) return null;
-  return Math.round(n * 100);
+  if (typeof v !== "number" && typeof v !== "string") return null;
+  if (typeof v === "string" && !/^\d+(?:\.\d+)?$/.test(v.trim())) return null;
+  const n = Number(v);
+  const cents = Math.round(n * 100);
+  return Number.isFinite(n) && n >= 0 && Number.isSafeInteger(cents)
+    ? cents
+    : null;
 }
 
 export const quoteResponseSchema = z
@@ -110,13 +113,20 @@ export const quoteResponseSchema = z
 export function parseRates(body: unknown): XpsRate[] {
   const parsed = quoteResponseSchema.safeParse(body);
   if (!parsed.success || !parsed.data.quotes) return [];
-  return parsed.data.quotes.map((q) => ({
-    carrierCode: q.carrierCode,
-    serviceCode: q.serviceCode,
-    serviceDescription: q.serviceDescription ?? q.serviceCode,
-    totalCents: dollarsToCents(q.totalAmount) ?? 0,
-    zone: q.zone == null ? null : String(q.zone),
-  }));
+  return parsed.data.quotes.flatMap((q) => {
+    const totalCents = dollarsToCents(q.totalAmount);
+    // A missing carrier price is unavailable, never free shipping.
+    if (totalCents === null) return [];
+    return [
+      {
+        carrierCode: q.carrierCode,
+        serviceCode: q.serviceCode,
+        serviceDescription: q.serviceDescription ?? q.serviceCode,
+        totalCents,
+        zone: q.zone == null ? null : String(q.zone),
+      },
+    ];
+  });
 }
 
 const shipmentSchema = z

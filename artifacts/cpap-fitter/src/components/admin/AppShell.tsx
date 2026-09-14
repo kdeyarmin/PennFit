@@ -614,6 +614,14 @@ export const NAV_GROUPS: ReadonlyArray<NavGroup> = [
     label: "Orders & Leads",
     items: [
       {
+        label: "Pricing & Profitability",
+        icon: CircleDollarSign,
+        href: "/admin/pricing",
+        matchPrefix: "/admin/pricing",
+        requiredPermission: "pricing.evaluate",
+        hint: "Review delivered costs, compare supplier offers, and prepare prices that meet policy",
+      },
+      {
         label: "Catalog",
         requiredFeature: "module.inventory",
         icon: Boxes,
@@ -2624,7 +2632,7 @@ export function AppShell({
         <BrandHeader
           rightSlot={
             adminEmail ? (
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center gap-3">
                 {/* GlobalLookup searches patients/orders — irrelevant to a
                     fitter-only or unpaid tenant, and its endpoint isn't in
                     their scope. */}

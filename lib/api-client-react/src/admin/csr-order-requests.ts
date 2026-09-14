@@ -12,6 +12,10 @@ import {
 import { customFetch, type ErrorType } from "./custom-fetch";
 
 export interface CsrOrderItem {
+  /** Stable catalog identity for a reviewed item. */
+  sku?: string;
+  lineId?: string;
+  fulfillmentMethod?: "stock" | "dropship";
   description: string;
   quantity: number;
   unitAmountCents: number;
@@ -20,6 +24,8 @@ export interface CsrOrderItem {
 export type CsrOrderRequestStatus = "sent" | "viewed" | "signed" | "canceled";
 
 export interface CsrOrderRequestSummary {
+  patientId?: string | null;
+  pricingQuoteId?: string | null;
   id: string;
   orderReference: string;
   status: CsrOrderRequestStatus;
@@ -57,6 +63,9 @@ export interface CsrOrderRequestListResponse {
 }
 
 export interface CreateCsrOrderRequest {
+  patientId?: string;
+  quoteId?: string;
+  quoteRevision?: number;
   customerName: string;
   customerEmail?: string | null;
   customerPhone?: string | null;
@@ -67,6 +76,7 @@ export interface CreateCsrOrderRequest {
 }
 
 export interface CreateCsrOrderResponse {
+  replayed?: boolean;
   id: string;
   orderReference: string;
   status: "sent";

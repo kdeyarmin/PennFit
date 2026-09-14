@@ -41,6 +41,10 @@ import {
   stageResupplyDrafts,
 } from "../../lib/resupply/resupply-draft-staging.js";
 import { requirePermission } from "../../middlewares/requireAdmin.js";
+import {
+  createReviewedOrder,
+  reviewOrderPricing,
+} from "../../lib/csr-order/pricing";
 
 // Order-value bounds: a $0.50 floor (a zero-value line is a data-entry
 // slip) and a $100k sanity cap. Mirrors the bounds the CSR order-requests
@@ -91,6 +95,9 @@ const dismissBody = z
 // itself carries no price.
 const orderItemSchema = z
   .object({
+    sku: z.string().trim().min(1).max(64).optional(),
+    lineId: z.string().uuid().optional(),
+    fulfillmentMethod: z.enum(["stock", "dropship"]).optional(),
     description: z.string().trim().min(1).max(250),
     quantity: z.number().int().min(1).max(99),
     unitAmountCents: z.number().int().min(0).max(5_000_000),
@@ -99,6 +106,9 @@ const orderItemSchema = z
 
 const approveBody = z
   .object({
+    patientId: z.string().uuid().optional(),
+    quoteId: z.string().uuid().optional(),
+    quoteRevision: z.number().int().positive().optional(),
     customerName: z.string().trim().min(2).max(160),
     customerEmail: z.string().trim().toLowerCase().email().max(254).nullish(),
     customerPhone: z.string().trim().min(7).max(32).nullish(),
@@ -333,6 +343,92 @@ router.post(
       res.status(400).json({
         error: "invalid_document_keys",
         invalidKeys: snapshot.invalidKeys,
+      });
+      return;
+    }
+
+    let pricingPatientId: string | undefined;
+    if (b.quoteId) {
+      const { data: draft, error: draftError } = await supabase
+        .from("resupply_order_drafts")
+        .select("patient_id")
+        .eq("id", draftId)
+        .maybeSingle();
+      if (draftError) throw draftError;
+      if (!draft) {
+        res.status(404).json({ error: "draft_not_found" });
+        return;
+      }
+      pricingPatientId = draft.patient_id;
+      if (b.patientId && b.patientId !== pricingPatientId) {
+        res.status(422).json({ error: "draft_patient_mismatch" });
+        return;
+      }
+    }
+    const pricing = await reviewOrderPricing(supabase, {
+      ...b,
+      patientId: pricingPatientId,
+    });
+    if (!pricing.ok) {
+      res.status(pricing.status).json(pricing.body);
+      return;
+    }
+    if (pricing.quote) {
+      const ttlDays = b.expiresInDays ?? DEFAULT_CSR_ORDER_TTL_DAYS;
+      const commit = await createReviewedOrder(
+        supabase,
+        pricing.quote,
+        {
+          patient_id: pricingPatientId,
+          order_reference: generateCsrOrderReference(),
+          customer_name: b.customerName,
+          customer_email: email,
+          customer_phone: phoneE164,
+          items: b.items,
+          amount_total_cents: amountTotalCents,
+          note_to_customer: b.noteToCustomer?.trim() || null,
+          documents: snapshot.documents,
+          created_by_email: req.adminEmail ?? null,
+          expires_at: new Date(Date.now() + ttlDays * 86400_000).toISOString(),
+        } as unknown as Json,
+        draftId,
+      );
+      if (!commit.ok) {
+        res.status(commit.status).json(commit.body);
+        return;
+      }
+      const created = commit.order;
+      const link = await buildCsrOrderSigningLink(
+        created.id,
+        created.link_version,
+        ttlDays * 86400,
+        orgId,
+      );
+      if (!link) {
+        res.status(422).json({ error: "tenant_domain_required" });
+        return;
+      }
+      const delivery =
+        b.deliver && !created.replayed
+          ? await deliverCsrOrderInvite({
+              supabase,
+              customerName: b.customerName,
+              email,
+              phone: phoneE164,
+              link,
+              orderReference: created.order_reference,
+              hasDocuments: snapshot.documents.length > 0,
+              orderRequestId: created.id,
+            })
+          : { emailSent: false, smsSent: false };
+      res.status(201).json({
+        ok: true,
+        draftId,
+        orderRequestId: created.id,
+        orderReference: created.order_reference,
+        signingLink: link,
+        ...delivery,
+        replayed: created.replayed,
       });
       return;
     }
