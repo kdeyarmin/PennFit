@@ -289,6 +289,7 @@ describe("CSR pricing permission boundaries", () => {
     mount(<AdminPricingPage />);
     await screen.findByRole("button", { name: "Reviews & actuals" });
     expect(screen.queryByRole("button", { name: "Follow-up" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Owner models" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Reviews & actuals" }));
     await screen.findByRole("button", { name: /Mask review/ });
     expect(api.getPricingSummary).not.toHaveBeenCalled();

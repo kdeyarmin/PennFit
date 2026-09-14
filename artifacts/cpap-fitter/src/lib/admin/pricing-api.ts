@@ -2,7 +2,15 @@ import { adminJsonFetch } from "../admin-json-fetch";
 import type {
   PricingEvaluation,
   CsrOrderItem,
+  OwnerProfitAssumptions,
+  OwnerProfitModels,
+  PricingOwnerModelsResponse,
 } from "@workspace/api-client-react/admin";
+export type {
+  OwnerProfitAssumptions,
+  OwnerProfitModels,
+  PricingOwnerModelsResponse,
+};
 import type {
   PricingProposalInput,
   PricingProposal,
@@ -88,6 +96,11 @@ export const publishPricingPolicy = (
 ) => post<PricingState>(`/policies/${encodeURIComponent(id)}/publish`, body);
 export const evaluatePricingScenario = (body: Scenario) =>
   post<ResolvedScenario>("/evaluate", body);
+export const getPricingOwnerModels = (
+  scenario: Scenario,
+  assumptions: OwnerProfitAssumptions,
+) =>
+  post<PricingOwnerModelsResponse>("/owner-models", { scenario, assumptions });
 export const getPricingDiscountHeadroom = (
   scenario: Scenario,
   maxAdditionalDiscountCents: number,

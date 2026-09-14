@@ -20,6 +20,10 @@ import {
 import { PricingAlertsPanel } from "@/components/admin/pricing/PricingAlertsPanel";
 import { PricingRevenueProfilesPanel } from "@/components/admin/pricing/PricingRevenueProfilesPanel";
 import { PricingItemReview } from "@/components/admin/pricing/PricingItemReview";
+import {
+  PricingOwnerModelsPanel,
+  type OwnerModelSource,
+} from "@/components/admin/pricing/PricingOwnerModelsPanel";
 import { PricingPolicyPanel } from "@/components/admin/pricing/PricingPolicyPanel";
 import { PricingOffersPanel } from "@/components/admin/pricing/PricingOffersPanel";
 import {
@@ -35,6 +39,7 @@ const tabs = [
     icon: ClipboardCheck,
   },
   { id: "review", label: "Item review", icon: Calculator },
+  { id: "owner-models", label: "Owner models", icon: Calculator },
   { id: "offers", label: "Supplier costs", icon: Truck },
   { id: "proposals", label: "New items", icon: PackageSearch },
   { id: "quotes", label: "Reviews & actuals", icon: ClipboardCheck },
@@ -75,6 +80,8 @@ function PricingWorkspace({ permissions }: { permissions: string[] }) {
     sku: string;
     name: string;
   } | null>(null);
+  const [ownerSource, setOwnerSource] = useState<OwnerModelSource | null>(null);
+  const [ownerModelsOpened, setOwnerModelsOpened] = useState(false);
   const state = useQuery({
     queryKey: [...pricingKey, "state"],
     queryFn: getPricingState,
@@ -156,13 +163,17 @@ function PricingWorkspace({ permissions }: { permissions: string[] }) {
             {tabs
               .filter((t) => t.id !== "batches" || canManage || canPublish)
               .filter((t) => t.id !== "alerts" || canManage)
+              .filter((t) => t.id !== "owner-models" || canManage)
               .map((t) => (
                 <button
                   key={t.id}
                   type="button"
                   aria-current={tab === t.id ? "page" : undefined}
                   className={`inline-flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-slate-500 ${tab === t.id ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100"}`}
-                  onClick={() => setTab(t.id)}
+                  onClick={() => {
+                    if (t.id === "owner-models") setOwnerModelsOpened(true);
+                    setTab(t.id);
+                  }}
                 >
                   <t.icon className="h-4 w-4" aria-hidden="true" />
                   {t.label}
@@ -196,6 +207,18 @@ function PricingWorkspace({ permissions }: { permissions: string[] }) {
                     : undefined
                 }
                 canVerify={canManage}
+                onUseInOwnerModels={
+                  canManage
+                    ? (scenario) => {
+                        setOwnerSource((previous) => ({
+                          scenario,
+                          label: "Current item review",
+                          revision: (previous?.revision ?? 0) + 1,
+                        }));
+                        setTab("owner-models");
+                      }
+                    : undefined
+                }
                 onAddToBatch={
                   canManage || canPublish
                     ? (scenario) => {
@@ -210,6 +233,16 @@ function PricingWorkspace({ permissions }: { permissions: string[] }) {
             </div>
           }
           {tab === "patient-reviews" && <PricingBulkPatientReviewsPanel />}
+          {canManage && (ownerModelsOpened || ownerSource) && (
+            <div hidden={tab !== "owner-models"}>
+              <PricingOwnerModelsPanel
+                canManage
+                active={tab === "owner-models"}
+                incomingSource={ownerSource}
+                onItemReview={() => setTab("review")}
+              />
+            </div>
+          )}
           {tab === "alerts" && canManage && (
             <PricingAlertsPanel canManage={canManage} />
           )}{" "}

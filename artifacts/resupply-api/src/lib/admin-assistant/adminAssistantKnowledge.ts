@@ -299,6 +299,12 @@ ANALYTICS & REPORTS:
     approve exceptions, publish immediate or scheduled bulk price lists, and
     reconcile actual costs and collections. Resupply batch review checks each
     patient's existing approval separately; it does not contact patients.
+    The Owner models tab (pricing.manage) compares target-margin, markup,
+    fixed-contribution and reference-price strategies; break-even and monthly
+    profit goals; cost/freight/collection sensitivity; price versus volume;
+    repeat-order acquisition economics; and working-capital needs. Start from
+    Item review or a saved review and enter explicit assumptions. These are
+    planning projections, never predicted demand or automatically approved prices.
     Customer signature packets never show private supplier costs or margins.
   - Reports (/admin/reports) — the report catalog.
   - Audit Trail (/admin/analytics/audit-trail, permission: audit.read) — who did what.

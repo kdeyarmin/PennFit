@@ -2,8 +2,15 @@ import type {
   PricingEvaluation,
   PricingInput,
   PricingRecommendation,
+  OwnerProfitAssumptions,
+  OwnerProfitModels,
 } from "@workspace/resupply-domain";
 export type { PricingEvaluation, PricingRecommendation };
+export type { OwnerProfitAssumptions, OwnerProfitModels };
+export type PricingOwnerModelsResponse = {
+  resolved: ResolvedScenario;
+  models: OwnerProfitModels;
+};
 export type PricingDiscountHeadroom = {
   status:
     | "calculated"

@@ -73,6 +73,7 @@ export function PricingItemReview({
   canVerify = false,
   onAttach,
   onAddToBatch,
+  onUseInOwnerModels,
 }: {
   patientId?: string;
   initialLines?: InitialReviewLine[];
@@ -80,6 +81,7 @@ export function PricingItemReview({
   canVerify?: boolean;
   onAttach?: (quote: Quote) => void;
   onAddToBatch?: (scenario: Scenario) => void;
+  onUseInOwnerModels?: (scenario: Scenario) => void;
 }) {
   const qc = useQueryClient();
   const version = useRef(0);
@@ -1140,6 +1142,14 @@ export function PricingItemReview({
                 }}
               >
                 Add to bulk preview
+              </Button>
+            )}
+            {onUseInOwnerModels && (
+              <Button
+                intent="secondary"
+                onClick={() => onUseInOwnerModels(result.scenario)}
+              >
+                Use in owner models
               </Button>
             )}
           </div>

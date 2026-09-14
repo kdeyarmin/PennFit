@@ -226,6 +226,32 @@ const initialLines = [
   },
 ];
 describe("pricing review safety and usability", () => {
+  it("opens owner models with the current evaluated scenario and removes the action after editing", async () => {
+    const openOwnerModels = vi.fn();
+    mount(
+      <PricingItemReview
+        initialLines={initialLines}
+        onUseInOwnerModels={openOwnerModels}
+      />,
+    );
+    await fillReview();
+    expect(
+      screen.queryByRole("button", { name: "Use in owner models" }),
+    ).toBeNull();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Evaluate profitability" }),
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Use in owner models" }),
+    );
+    expect(openOwnerModels).toHaveBeenCalledWith(resolved().scenario);
+    fireEvent.change(screen.getByLabelText("Item 1 quantity"), {
+      target: { value: "2" },
+    });
+    expect(
+      screen.queryByRole("button", { name: "Use in owner models" }),
+    ).toBeNull();
+  });
   it("evaluates internal volume simulations up to 10,000 units and rejects larger quantities", async () => {
     mount(<PricingItemReview initialLines={initialLines} />);
     await fillReview();

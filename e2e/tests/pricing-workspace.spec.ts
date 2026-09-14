@@ -1,8 +1,28 @@
 import { expect, test, type BrowserContext } from "@playwright/test";
+import {
+  analyzeOwnerProfitModels,
+  type OwnerProfitAssumptions,
+} from "../../lib/resupply-domain/src/owner-profit-models";
+import {
+  evaluatePricing,
+  type PricingInput,
+} from "../../lib/resupply-domain/src/pricing";
+import type {
+  Quote,
+  Scenario,
+} from "../../lib/api-client-react/src/admin/pricing";
 
 // All application API traffic is synthetic. These checks cannot create an order,
 // contact a patient, or access the backend configured for another local task.
-async function pricingFixture(context: BrowserContext, manager: boolean) {
+async function pricingFixture(
+  context: BrowserContext,
+  manager: boolean,
+  ownerReviews = false,
+) {
+  const ownerRequests: Array<{
+    scenario: Scenario;
+    assumptions: OwnerProfitAssumptions;
+  }> = [];
   const expiresAt = "2099-12-31T23:59:59.999Z";
   const policy = {
     id: "30000000-0000-4000-8000-000000000001",
@@ -15,8 +35,76 @@ async function pricingFixture(context: BrowserContext, manager: boolean) {
     rules: {
       targetMarginBps: 4000,
       floorMarginBps: 2500,
-      basis: "contribution",
+      basis: "contribution" as const,
     },
+  };
+  // Hypothetical single-order economics: $100 revenue - $60 goods - $10
+  // freight = $30 contribution. These are test inputs, never business defaults.
+  const input: PricingInput = {
+    currency: "USD",
+    evaluatedAt: "2026-09-14T12:00:00.000Z",
+    lines: [
+      {
+        id: "owner-line",
+        sku: "FIXTURE-MASK",
+        quantity: 1,
+        unitPriceCents: 10000,
+        unitCostCents: 6000,
+        costStatus: "verified",
+        costExpiresAt: expiresAt,
+      },
+    ],
+    costs: [
+      {
+        id: "freight",
+        label: "Fixture freight",
+        category: "freight",
+        basis: "order",
+        amountCents: 1000,
+        status: "verified",
+        expiresAt,
+      },
+    ],
+    revenue: { mode: "self_pay", shippingChargedCents: 0 },
+    policy: policy.rules,
+  };
+  const scenario: Scenario = {
+    validUntil: expiresAt,
+    lines: [
+      {
+        id: "owner-line",
+        sku: "FIXTURE-MASK",
+        description: "Owner fixture mask",
+        quantity: 1,
+        unitAmountCents: 10000,
+        fulfillmentMethod: "dropship",
+        offerId: "40000000-0000-4000-8000-000000000001",
+        offerVersion: 1,
+      },
+    ],
+    revenue: { mode: "self_pay", shippingChargedCents: 0 },
+  };
+  const resolved = {
+    scenario,
+    input,
+    evaluation: evaluatePricing(input),
+    dependencies: [],
+    policyId: policy.id,
+    policyVersion: 1,
+  };
+  const quote: Quote = {
+    ...resolved,
+    id: "50000000-0000-4000-8000-000000000001",
+    revision: 1,
+    status: "draft",
+    patientId: null,
+    lines: scenario.lines.map((line) => ({ ...line, unitCostCents: 6000 })),
+    validUntil: expiresAt,
+    approvedBy: null,
+    approvedAt: null,
+    boundOrderId: null,
+    createdAt: input.evaluatedAt,
+    updatedAt: input.evaluatedAt,
   };
   await context.route("**/*", async (route) => {
     const url = new URL(route.request().url());
@@ -104,8 +192,28 @@ async function pricingFixture(context: BrowserContext, manager: boolean) {
       return send({ offers: [], hasMore: false });
     if (url.pathname.endsWith("/pricing/revenue-profiles"))
       return send({ profiles: [], hasMore: false });
+    if (url.pathname.endsWith("/pricing/owner-models")) {
+      if (!manager)
+        return route.fulfill({ status: 403, json: { error: "forbidden" } });
+      const body = route
+        .request()
+        .postDataJSON() as (typeof ownerRequests)[number];
+      ownerRequests.push(body);
+      return send({
+        resolved,
+        models: analyzeOwnerProfitModels(input, body.assumptions),
+      });
+    }
+    if (ownerReviews && url.pathname.endsWith(`/pricing/quotes/${quote.id}`))
+      return send(quote);
     if (url.pathname.endsWith("/pricing/quotes"))
-      return send({ quotes: [], hasMore: false });
+      return send({
+        quotes:
+          ownerReviews && Number(url.searchParams.get("offset")) > 0
+            ? [quote]
+            : [],
+        hasMore: ownerReviews && Number(url.searchParams.get("offset")) === 0,
+      });
     if (url.pathname.endsWith("/pricing/summary")) return send({ groups: [] });
     if (url.pathname.endsWith("/pricing/proposals"))
       return send({ proposals: [], hasMore: false });
@@ -124,6 +232,7 @@ async function pricingFixture(context: BrowserContext, manager: boolean) {
       ok: true,
     });
   });
+  return { ownerRequests };
 }
 
 test("pricing workspace stays within a narrow viewport with usable named controls", async ({
@@ -209,6 +318,12 @@ test("CSR pricing access provides review without manager publishing controls", a
   await expect(
     page.getByRole("heading", { name: "Pricing & Profitability", exact: true }),
   ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Owner models", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Use in owner models", exact: true }),
+  ).toHaveCount(0);
   await page
     .getByRole("button", { name: "Pricing policy", exact: true })
     .click();
@@ -227,4 +342,155 @@ test("CSR pricing access provides review without manager publishing controls", a
   await expect(
     page.getByRole("button", { name: "Save supplier offer", exact: true }),
   ).toHaveCount(0);
+});
+
+test("a manager calculates owner models from a paged saved review on a narrow screen", async ({
+  context,
+  page,
+}) => {
+  const { ownerRequests } = await pricingFixture(context, true, true);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/admin/pricing");
+  await page.getByRole("button", { name: "Owner models", exact: true }).click();
+  for (const name of [
+    "Owner models",
+    "Pricing strategies",
+    "Monthly break-even & profit",
+    "Cost & collection stress",
+    "Price versus volume",
+    "Repeat orders & acquisition",
+    "Working capital",
+  ]) {
+    await expect(
+      page.getByRole("heading", { name, exact: true }),
+    ).toBeVisible();
+  }
+  const monthly = page.locator("section").filter({
+    has: page.getByRole("heading", {
+      name: "Monthly break-even & profit",
+      exact: true,
+    }),
+  });
+  const calculateMonthly = monthly.getByRole("button", {
+    name: "Calculate monthly break-even & profit",
+    exact: true,
+  });
+  await expect(calculateMonthly).toBeDisabled();
+  await page
+    .getByRole("button", { name: "Next saved scenarios", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Next saved scenarios", exact: true }),
+  ).toBeDisabled();
+  await page
+    .getByLabel("Saved review for owner models", { exact: true })
+    .selectOption("50000000-0000-4000-8000-000000000001");
+  await expect(
+    page.getByText("1 × Owner fixture mask (FIXTURE-MASK)", { exact: true }),
+  ).toBeVisible();
+  await calculateMonthly.click();
+  await expect(
+    monthly.getByText("More information needed", { exact: true }),
+  ).toBeVisible();
+  expect(ownerRequests[0]?.assumptions).toEqual({ monthly: {} });
+  await page
+    .getByLabel("Monthly fixed costs ($)", { exact: true })
+    .fill("300.00");
+  await page.getByLabel("Assumed monthly orders", { exact: true }).fill("20");
+  await page
+    .getByLabel("Monthly profit target ($)", { exact: true })
+    .fill("300.00");
+  await calculateMonthly.click();
+  await expect(monthly.getByText("Calculated", { exact: true })).toBeVisible();
+  await expect(
+    monthly
+      .getByText("Break-even orders per month", { exact: true })
+      .locator(".."),
+  ).toContainText("10");
+  await expect(
+    monthly
+      .getByText("Orders to reach profit target", { exact: true })
+      .locator(".."),
+  ).toContainText("20");
+  await expect(
+    monthly
+      .getByText("Projected monthly profit", { exact: true })
+      .locator(".."),
+  ).toContainText("$300.00");
+  expect(ownerRequests[1]?.assumptions).toEqual({
+    monthly: { fixedCostCents: 30000, orders: 20, targetProfitCents: 30000 },
+  });
+
+  await page.getByLabel("Assumed monthly orders", { exact: true }).fill("10");
+  await expect(
+    monthly.getByText("Projected monthly profit", { exact: true }),
+  ).toHaveCount(0);
+  await calculateMonthly.click();
+  await expect(
+    monthly
+      .getByText("Projected monthly profit", { exact: true })
+      .locator(".."),
+  ).toContainText("$0.00");
+  for (const [label, value] of [
+    ["Planning period (days)", "30"],
+    ["Assumed orders during this period", "20"],
+    ["Cash paid out per order ($)", "70.00"],
+    ["Days held in inventory", "0"],
+    ["Days until customer / insurer collection", "45"],
+    ["Days until vendor payment", "15"],
+  ])
+    await page.getByLabel(label, { exact: true }).fill(value);
+  const capital = page.locator("section").filter({
+    has: page.getByRole("heading", { name: "Working capital", exact: true }),
+  });
+  await capital
+    .getByRole("button", { name: "Calculate working capital", exact: true })
+    .click();
+  await expect(
+    capital.getByText("Uses estimated inputs", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    capital.getByText("Funding gap (days)", { exact: true }).locator(".."),
+  ).toContainText("30");
+  await expect(
+    capital
+      .getByText("Estimated funding required", { exact: true })
+      .locator(".."),
+  ).toContainText("$1,400.00");
+  expect(ownerRequests[3]?.assumptions).toEqual({
+    workingCapital: {
+      periodDays: 30,
+      orders: 20,
+      cashOutlayPerOrderCents: 7000,
+      inventoryDays: 0,
+      daysToCollect: 45,
+      daysToPayVendor: 15,
+    },
+  });
+  const width = await page.evaluate(() => ({
+    document: document.documentElement.scrollWidth,
+    viewport: innerWidth,
+  }));
+  expect(width.document).toBeLessThanOrEqual(width.viewport + 1);
+  const report = page.waitForEvent("download");
+  await page
+    .getByRole("button", { name: "Download scenario report", exact: true })
+    .click();
+  expect((await report).suggestedFilename()).toBe(
+    "owner-planning-scenarios.csv",
+  );
+  // Switching tabs keeps entered assumptions and current results without a new request.
+  await page
+    .getByRole("button", { name: "Pricing policy", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Owner models", exact: true }).click();
+  await expect(
+    page.getByLabel("Assumed monthly orders", { exact: true }),
+  ).toHaveValue("10");
+  await expect(
+    capital
+      .getByText("Estimated funding required", { exact: true })
+      .locator(".."),
+  ).toContainText("$1,400.00");
+  expect(ownerRequests).toHaveLength(4);
 });

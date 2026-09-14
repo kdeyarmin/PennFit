@@ -13,7 +13,9 @@ import {
   type ResupplyTable,
 } from "@workspace/resupply-db";
 import {
+  analyzeOwnerProfitModels,
   compareProposedSupplierCosts,
+  ownerProfitAssumptionsSchema,
   PricingValidationError,
 } from "@workspace/resupply-domain";
 import {
@@ -434,6 +436,27 @@ router.post(
         resolved,
         payload.maxAdditionalDiscountCents,
       ),
+    });
+  }),
+);
+router.post(
+  "/admin/pricing/owner-models",
+  requirePermission("pricing.manage"),
+  ...endpoint(async (req, res) => {
+    const { scoped, mayVerify } = context(req);
+    const { scenario, assumptions } = z
+      .object({
+        scenario: scenarioSchema,
+        assumptions: ownerProfitAssumptionsSchema,
+      })
+      .strict()
+      .parse(req.body);
+    // Resolve costs and collection evidence in the authenticated tenant. A
+    // submitted evaluation is never an authority for a management projection.
+    const resolved = await resolveScenario(scoped, scenario, { mayVerify });
+    res.json({
+      resolved,
+      models: analyzeOwnerProfitModels(resolved.input, assumptions),
     });
   }),
 );

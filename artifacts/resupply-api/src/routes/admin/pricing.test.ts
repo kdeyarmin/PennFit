@@ -66,6 +66,7 @@ vi.mock("../../lib/pricing/service", async (original) => ({
   getReconciliation: state.actuals,
 }));
 import router from "./pricing";
+import { PricingError } from "../../lib/pricing/service";
 const app = express();
 app.use(express.json());
 app.use(router);
@@ -106,6 +107,180 @@ beforeEach(() => {
   );
 });
 describe("pricing HTTP boundary", () => {
+  function ownerModelFixture() {
+    const scenario = {
+      validUntil: "2099-01-01T00:00:00Z",
+      revenue: { mode: "self_pay" as const, shippingChargedCents: 0 },
+      lines: [
+        {
+          id: "00000000-0000-4000-8000-000000000003",
+          sku: "MASK",
+          description: "Mask",
+          quantity: 1,
+          unitAmountCents: 10000,
+          fulfillmentMethod: "stock" as const,
+          offerId: "00000000-0000-4000-8000-000000000002",
+          offerVersion: 2,
+        },
+      ],
+    };
+    const input: PricingInput = {
+      currency: "USD",
+      evaluatedAt: "2026-09-14T12:00:00Z",
+      lines: [
+        {
+          id: scenario.lines[0].id,
+          sku: "MASK",
+          quantity: 1,
+          unitPriceCents: 10000,
+          unitCostCents: 4000,
+          costStatus: "verified",
+        },
+      ],
+      costs: [
+        {
+          id: "delivery",
+          label: "Delivery",
+          category: "freight",
+          basis: "order",
+          amountCents: 1000,
+          status: "verified",
+        },
+      ],
+      revenue: scenario.revenue,
+      policy: {
+        targetMarginBps: 4000,
+        floorMarginBps: 2000,
+        basis: "contribution",
+      },
+    };
+    const resolved = {
+      scenario,
+      input,
+      evaluation: evaluatePricing(input),
+      dependencies: [],
+      policyId: "policy",
+      policyVersion: 2,
+    };
+    state.resolved.mockResolvedValue(resolved);
+    return { scenario, input, resolved };
+  }
+  it("calculates owner profit models from tenant-resolved costs without publishing prices", async () => {
+    const { scenario } = ownerModelFixture();
+    const response = await request(app)
+      .post("/admin/pricing/owner-models")
+      .set("x-fixture-actor", "manager")
+      .send({
+        scenario,
+        assumptions: {
+          monthly: {
+            fixedCostCents: 10000,
+            orders: 10,
+            targetProfitCents: 20000,
+          },
+        },
+      });
+    expect(response.status).toBe(200);
+    expect(response.body.models.baseline.contributionCents).toBe(5000);
+    expect(response.body.models.monthly).toMatchObject({
+      breakEvenOrders: 2,
+      targetProfitOrders: 6,
+      projectedProfitCents: 40000,
+    });
+    expect(state.resolved).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orgId: "00000000-0000-4000-8000-000000000001",
+      }),
+      expect.objectContaining({ lines: scenario.lines }),
+      { mayVerify: true },
+    );
+    expect(state.mutations).not.toHaveBeenCalled();
+  });
+  it("keeps missing owner assumptions unknown", async () => {
+    const { scenario } = ownerModelFixture();
+    const response = await request(app)
+      .post("/admin/pricing/owner-models")
+      .set("x-fixture-actor", "manager")
+      .send({ scenario, assumptions: {} });
+    expect(response.status).toBe(200);
+    for (const key of [
+      "monthly",
+      "sensitivity",
+      "priceVolume",
+      "acquisition",
+      "workingCapital",
+    ])
+      expect(response.body.models[key].status).toBe("needs_inputs");
+    expect(response.body.models.monthly.projectedProfitCents).toBeNull();
+  });
+  it("rejects fabricated evaluations and invalid or excessive owner assumptions before resolving data", async () => {
+    const { scenario } = ownerModelFixture();
+    for (const body of [
+      { scenario, assumptions: {}, evaluation: { contributionCents: 999999 } },
+      { scenario, assumptions: { monthly: { fixedCostCents: -1 } } },
+      { scenario, assumptions: { monthly: { orders: 1.5 } } },
+      { scenario, assumptions: { acquisition: { horizonMonths: 121 } } },
+      {
+        scenario,
+        assumptions: {
+          sensitivity: {
+            cases: Array.from({ length: 13 }, (_, n) => ({
+              id: String(n),
+              goodsChangeBps: 100,
+            })),
+          },
+        },
+      },
+    ]) {
+      const response = await request(app)
+        .post("/admin/pricing/owner-models")
+        .set("x-fixture-actor", "manager")
+        .send(body);
+      expect(response.status).toBe(400);
+    }
+    expect(state.resolved).not.toHaveBeenCalled();
+  });
+  it("preserves stale-evidence errors instead of projecting saved snapshot profits", async () => {
+    const { scenario } = ownerModelFixture();
+    state.resolved.mockRejectedValue(
+      new PricingError("stale_dependencies", 409),
+    );
+    const response = await request(app)
+      .post("/admin/pricing/owner-models")
+      .set("x-fixture-actor", "manager")
+      .send({ scenario, assumptions: {} });
+    expect(response.status).toBe(409);
+    expect(response.body).toEqual({ error: "stale_dependencies" });
+  });
+  it("does not turn missing supplier costs into an owner profit projection", async () => {
+    const { scenario, input, resolved } = ownerModelFixture();
+    const incomplete: PricingInput = {
+      ...input,
+      lines: input.lines.map((line) => ({
+        ...line,
+        unitCostCents: null,
+        costStatus: "missing",
+      })),
+    };
+    state.resolved.mockResolvedValue({
+      ...resolved,
+      input: incomplete,
+      evaluation: evaluatePricing(incomplete),
+    });
+    const response = await request(app)
+      .post("/admin/pricing/owner-models")
+      .set("x-fixture-actor", "manager")
+      .send({
+        scenario,
+        assumptions: {
+          monthly: { fixedCostCents: 0, orders: 100, targetProfitCents: 0 },
+        },
+      });
+    expect(response.status).toBe(200);
+    expect(response.body.resolved.evaluation.calculationComplete).toBe(false);
+    expect(response.body.models.monthly.projectedProfitCents).toBeNull();
+    expect(state.mutations).not.toHaveBeenCalled();
+  });
   it("pages actual-event history for a CSR and rejects invalid offsets before reading", async () => {
     const id = "00000000-0000-4000-8000-000000000002";
     const response = await request(app)
@@ -308,6 +483,7 @@ describe("pricing HTTP boundary", () => {
     ["get", "/admin/pricing/summary"],
     ["get", "/admin/pricing/portfolio"],
     ["post", "/admin/pricing/portfolio/refresh"],
+    ["post", "/admin/pricing/owner-models"],
     ["post", "/admin/pricing/evaluate"],
     ["post", "/admin/pricing/offers"],
     [
@@ -330,6 +506,7 @@ describe("pricing HTTP boundary", () => {
     ["get", "/admin/pricing/summary"],
     ["get", "/admin/pricing/portfolio"],
     ["post", "/admin/pricing/portfolio/refresh"],
+    ["post", "/admin/pricing/owner-models"],
     ["post", "/admin/pricing/offers"],
     [
       "post",

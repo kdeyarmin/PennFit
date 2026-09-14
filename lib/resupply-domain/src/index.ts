@@ -110,6 +110,7 @@ export {
 } from "./margin";
 
 export * from "./pricing";
+export * from "./owner-profit-models";
 export * from "./provisional-pricing";
 
 export {
