@@ -90,6 +90,47 @@ beforeEach(() => {
   );
 });
 describe("pricing HTTP boundary", () => {
+  it.each([
+    ["get", "/admin/pricing/state"],
+    ["get", "/admin/pricing/summary"],
+    ["post", "/admin/pricing/evaluate"],
+    ["post", "/admin/pricing/offers"],
+    [
+      "post",
+      "/admin/pricing/quotes/00000000-0000-4000-8000-000000000002/approve",
+    ],
+    [
+      "post",
+      "/admin/pricing/policies/00000000-0000-4000-8000-000000000002/publish",
+    ],
+  ] as const)(
+    "authenticates %s %s before consuming the actor rate limit",
+    async (method, path) => {
+      expect((await request(app)[method](path)).status).toBe(401);
+      expect(state.actors).toHaveLength(0);
+      expect(state.mutations).not.toHaveBeenCalled();
+    },
+  );
+  it.each([
+    ["get", "/admin/pricing/summary"],
+    ["post", "/admin/pricing/offers"],
+    [
+      "post",
+      "/admin/pricing/quotes/00000000-0000-4000-8000-000000000002/approve",
+    ],
+    [
+      "post",
+      "/admin/pricing/policies/00000000-0000-4000-8000-000000000002/publish",
+    ],
+  ] as const)("keeps management authority on %s %s", async (method, path) => {
+    const response = await request(app)
+      [method](path)
+      .set("x-fixture-actor", "csr-a")
+      .set("x-fixture-role", "csr");
+    expect(response.status).toBe(403);
+    expect(state.actors).toHaveLength(0);
+    expect(state.mutations).not.toHaveBeenCalled();
+  });
   it("supports a reviewed 100-row import and applies rate limits after actor resolution", async () => {
     for (let index = 0; index < 100; index++)
       expect(

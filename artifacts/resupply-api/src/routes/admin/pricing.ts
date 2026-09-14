@@ -6,7 +6,7 @@ import {
   type Response,
 } from "express";
 import { z } from "zod";
-import { roleHasPermission, type Permission } from "@workspace/resupply-auth";
+import { roleHasPermission } from "@workspace/resupply-auth";
 import {
   getOrgScopedClient,
   type Database,
@@ -87,12 +87,8 @@ function context(req: Request) {
     ),
   };
 }
-function endpoint(
-  permission: Permission,
-  action: (req: Request, res: Response) => Promise<void>,
-) {
+function endpoint(action: (req: Request, res: Response) => Promise<void>) {
   return [
-    requirePermission(permission),
     authenticatedLimit,
     async (req: Request, res: Response) => {
       try {
@@ -130,13 +126,15 @@ function endpoint(
 }
 router.get(
   "/admin/pricing/state",
-  ...endpoint("pricing.evaluate", async (req, res) => {
+  requirePermission("pricing.evaluate"),
+  ...endpoint(async (req, res) => {
     res.json(await getPricingState(context(req).scoped));
   }),
 );
 router.get(
   "/admin/pricing/summary",
-  ...endpoint("pricing.manage", async (req, res) => {
+  requirePermission("pricing.manage"),
+  ...endpoint(async (req, res) => {
     const { scoped } = context(req);
     const { data, error } = await scoped
       .raw()
@@ -148,7 +146,8 @@ router.get(
 );
 router.get(
   "/admin/pricing/offers",
-  ...endpoint("pricing.evaluate", async (req, res) => {
+  requirePermission("pricing.evaluate"),
+  ...endpoint(async (req, res) => {
     const { scoped, mayVerify } = context(req);
     const { offset, limit, sku, view } = pagination.parse(req.query);
     if (view !== "current") {
@@ -182,7 +181,8 @@ router.get(
 );
 router.get(
   "/admin/pricing/offers/:id/versions",
-  ...endpoint("pricing.manage", async (req, res) => {
+  requirePermission("pricing.manage"),
+  ...endpoint(async (req, res) => {
     const { scoped } = context(req);
     const { offset, limit } = pagination.parse(req.query);
     const { data, error } = await scoped
@@ -200,7 +200,8 @@ router.get(
 );
 router.post(
   "/admin/pricing/offers",
-  ...endpoint("pricing.manage", async (req, res) => {
+  requirePermission("pricing.manage"),
+  ...endpoint(async (req, res) => {
     const { scoped, actor } = context(req);
     const payload = offerSchema.parse(req.body);
     const catalog = await scoped
@@ -226,7 +227,8 @@ router.post(
 );
 router.get(
   "/admin/pricing/policies",
-  ...endpoint("pricing.evaluate", async (req, res) => {
+  requirePermission("pricing.evaluate"),
+  ...endpoint(async (req, res) => {
     const { scoped } = context(req);
     const { offset, limit } = pagination.parse(req.query);
     const { data, error } = await scoped
@@ -243,7 +245,8 @@ router.get(
 );
 router.post(
   "/admin/pricing/policies",
-  ...endpoint("pricing.manage", async (req, res) => {
+  requirePermission("pricing.manage"),
+  ...endpoint(async (req, res) => {
     const { scoped, actor } = context(req);
     res
       .status(201)
@@ -261,7 +264,8 @@ router.post(
 );
 router.post(
   "/admin/pricing/policies/:id/publish",
-  ...endpoint("pricing.publish", async (req, res) => {
+  requirePermission("pricing.publish"),
+  ...endpoint(async (req, res) => {
     const { scoped, actor } = context(req);
     await mutatePricing(scoped, actor, "publish", {
       ...publishSchema.parse(req.body),
@@ -272,7 +276,8 @@ router.post(
 );
 router.get(
   "/admin/pricing/revenue-profiles",
-  ...endpoint("pricing.evaluate", async (req, res) => {
+  requirePermission("pricing.evaluate"),
+  ...endpoint(async (req, res) => {
     const { scoped, mayVerify } = context(req);
     const { offset, limit, patientId, view } = pagination.parse(req.query);
     if (view !== "current") {
@@ -311,7 +316,8 @@ router.get(
 );
 router.post(
   "/admin/pricing/revenue-profiles",
-  ...endpoint("pricing.manage", async (req, res) => {
+  requirePermission("pricing.manage"),
+  ...endpoint(async (req, res) => {
     const { scoped, actor } = context(req);
     const payload = revenueProfileSchema.parse(req.body);
     const catalog = await scoped
@@ -341,13 +347,15 @@ router.post(
 );
 router.get(
   "/admin/pricing/active-prices",
-  ...endpoint("pricing.evaluate", async (req, res) => {
+  requirePermission("pricing.evaluate"),
+  ...endpoint(async (req, res) => {
     res.json({ batch: await getActivePrices(context(req).scoped) });
   }),
 );
 router.post(
   "/admin/pricing/evaluate",
-  ...endpoint("pricing.evaluate", async (req, res) => {
+  requirePermission("pricing.evaluate"),
+  ...endpoint(async (req, res) => {
     const { scoped, mayVerify } = context(req);
     res.json(
       await resolveScenario(scoped, scenarioSchema.parse(req.body), {
@@ -358,7 +366,8 @@ router.post(
 );
 router.post(
   "/admin/pricing/discount-headroom",
-  ...endpoint("pricing.evaluate", async (req, res) => {
+  requirePermission("pricing.evaluate"),
+  ...endpoint(async (req, res) => {
     const { scoped, mayVerify } = context(req);
     const payload = z
       .object({
@@ -386,7 +395,8 @@ router.post(
 );
 router.post(
   "/admin/pricing/recommend",
-  ...endpoint("pricing.evaluate", async (req, res) => {
+  requirePermission("pricing.evaluate"),
+  ...endpoint(async (req, res) => {
     const { scoped, mayVerify } = context(req);
     const payload = z
       .object({ scenario: scenarioSchema, lineId: uuid.optional() })
@@ -403,7 +413,8 @@ router.post(
 );
 router.get(
   "/admin/pricing/quotes",
-  ...endpoint("pricing.evaluate", async (req, res) => {
+  requirePermission("pricing.evaluate"),
+  ...endpoint(async (req, res) => {
     const { scoped } = context(req);
     const { offset, limit, status, patientId } = pagination.parse(req.query);
     let query = scoped
@@ -424,7 +435,8 @@ router.get(
 );
 router.get(
   "/admin/pricing/quotes/:id",
-  ...endpoint("pricing.evaluate", async (req, res) => {
+  requirePermission("pricing.evaluate"),
+  ...endpoint(async (req, res) => {
     res.json(
       quoteDto(await getQuote(context(req).scoped, uuid.parse(req.params.id))),
     );
@@ -432,7 +444,8 @@ router.get(
 );
 router.post(
   "/admin/pricing/quotes",
-  ...endpoint("pricing.evaluate", async (req, res) => {
+  requirePermission("pricing.evaluate"),
+  ...endpoint(async (req, res) => {
     const { scoped, actor, mayVerify } = context(req);
     res
       .status(201)
@@ -448,7 +461,8 @@ router.post(
 );
 router.post(
   "/admin/pricing/quotes/:id/approve",
-  ...endpoint("pricing.approve", async (req, res) => {
+  requirePermission("pricing.approve"),
+  ...endpoint(async (req, res) => {
     const { scoped, actor } = context(req);
     res.json(
       quoteDto(
@@ -462,7 +476,8 @@ router.post(
 );
 router.get(
   "/admin/pricing/proposals",
-  ...endpoint("pricing.evaluate", async (req, res) => {
+  requirePermission("pricing.evaluate"),
+  ...endpoint(async (req, res) => {
     const { scoped } = context(req);
     const { offset, limit } = pagination.parse(req.query);
     const { data, error } = await scoped
@@ -480,7 +495,8 @@ router.get(
 );
 router.post(
   "/admin/pricing/proposals",
-  ...endpoint("pricing.evaluate", async (req, res) => {
+  requirePermission("pricing.evaluate"),
+  ...endpoint(async (req, res) => {
     const { scoped, actor } = context(req);
     res
       .status(201)
@@ -498,7 +514,8 @@ router.post(
 );
 router.post(
   "/admin/pricing/proposals/:id/review",
-  ...endpoint("pricing.manage", async (req, res) => {
+  requirePermission("pricing.manage"),
+  ...endpoint(async (req, res) => {
     const { scoped, actor } = context(req);
     res.json(
       proposalDto(
@@ -512,7 +529,8 @@ router.post(
 );
 router.post(
   "/admin/pricing/batches/preview",
-  ...endpoint("pricing.manage", async (req, res) => {
+  requirePermission("pricing.manage"),
+  ...endpoint(async (req, res) => {
     const { scoped, actor, mayVerify } = context(req);
     const payload = batchSchema.parse(req.body);
     const entries = [];
@@ -540,7 +558,8 @@ router.post(
 );
 router.get(
   "/admin/pricing/batches",
-  ...endpoint("pricing.evaluate", async (req, res) => {
+  requirePermission("pricing.evaluate"),
+  ...endpoint(async (req, res) => {
     const { scoped } = context(req);
     const { offset, limit } = pagination.parse(req.query);
     const state = await getPricingState(scoped);
@@ -563,7 +582,8 @@ router.get(
 );
 router.post(
   "/admin/pricing/batches/:id/activate",
-  ...endpoint("pricing.publish", async (req, res) => {
+  requirePermission("pricing.publish"),
+  ...endpoint(async (req, res) => {
     const { scoped, actor } = context(req);
     await mutatePricing(scoped, actor, "activate", {
       ...activateBatchSchema.parse(req.body),
@@ -574,7 +594,8 @@ router.post(
 );
 router.post(
   "/admin/pricing/batches/:id/schedule",
-  ...endpoint("pricing.publish", async (req, res) => {
+  requirePermission("pricing.publish"),
+  ...endpoint(async (req, res) => {
     const { scoped, actor } = context(req);
     const row = await mutatePricing(scoped, actor, "schedule", {
       ...scheduleBatchSchema.parse(req.body),
@@ -590,7 +611,8 @@ router.post(
 );
 router.post(
   "/admin/pricing/batches/:id/cancel-schedule",
-  ...endpoint("pricing.publish", async (req, res) => {
+  requirePermission("pricing.publish"),
+  ...endpoint(async (req, res) => {
     const { scoped, actor } = context(req);
     const row = await mutatePricing(scoped, actor, "cancel_schedule", {
       ...activateBatchSchema.parse(req.body),
@@ -606,7 +628,8 @@ router.post(
 );
 router.get(
   "/admin/pricing/alerts",
-  ...endpoint("pricing.manage", async (req, res) => {
+  requirePermission("pricing.manage"),
+  ...endpoint(async (req, res) => {
     const { scoped } = context(req);
     const { offset, limit } = pagination.parse(req.query);
     const { data, error } = await scoped
@@ -624,7 +647,8 @@ router.get(
 );
 router.post(
   "/admin/pricing/alerts/:key/review",
-  ...endpoint("pricing.manage", async (req, res) => {
+  requirePermission("pricing.manage"),
+  ...endpoint(async (req, res) => {
     const { scoped, actor } = context(req);
     res.json(
       await mutatePricing(scoped, actor, "alert_review", {
@@ -639,7 +663,8 @@ router.post(
 );
 router.get(
   "/admin/pricing/quotes/:id/actuals",
-  ...endpoint("pricing.evaluate", async (req, res) => {
+  requirePermission("pricing.evaluate"),
+  ...endpoint(async (req, res) => {
     res.json(
       await getReconciliation(context(req).scoped, uuid.parse(req.params.id)),
     );
@@ -647,7 +672,8 @@ router.get(
 );
 router.post(
   "/admin/pricing/quotes/:id/actuals",
-  ...endpoint("pricing.manage", async (req, res) => {
+  requirePermission("pricing.manage"),
+  ...endpoint(async (req, res) => {
     const { scoped, actor } = context(req);
     const id = uuid.parse(req.params.id);
     await mutatePricing(scoped, actor, "actual", {
@@ -659,7 +685,8 @@ router.post(
 );
 router.post(
   "/admin/pricing/quotes/:id/actuals/close",
-  ...endpoint("pricing.manage", async (req, res) => {
+  requirePermission("pricing.manage"),
+  ...endpoint(async (req, res) => {
     const { scoped, actor } = context(req);
     const id = uuid.parse(req.params.id);
     await mutatePricing(scoped, actor, "close_actuals", {
