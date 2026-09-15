@@ -29,6 +29,7 @@ import {
   getSupabaseWritePayloads,
   getSupabaseCallCount,
   getSupabaseFilterCalls,
+  getSupabaseSelectColumns,
 } from "../../test-helpers/supabase-mock";
 
 const supabaseMock = installSupabaseMock();
@@ -66,6 +67,7 @@ const ORG = "00000000-0000-4000-8000-000000000001";
 const INVITE = "22222222-2222-4222-8222-222222222222";
 const REQUEST = "33333333-3333-4333-8333-333333333333";
 const PATIENT = "55555555-5555-4555-8555-555555555555";
+const SESSION = "66666666-6666-4666-8666-666666666666";
 const DAY = 86_400_000;
 
 /** A fixed mid-afternoon UTC instant, comfortably inside the US SMS
@@ -604,8 +606,8 @@ describe("request_unworked — the one that is ours", () => {
         {
           id: REQUEST,
           status: "new",
-          patient_id: null,
           fit_session_id: null,
+          fit_sessions: null,
           request_type: "callback",
           created_at: agoDays(3),
         },
@@ -643,6 +645,99 @@ describe("request_unworked — the one that is ours", () => {
     expect(filters.some((f) => f.verb === "range")).toBe(true);
   });
 
+  it("reads the chart through fit_sessions, not off the request", async () => {
+    // Regression. This sweep selected `fitter_fit_requests.patient_id`, a
+    // column that table does not have — a request is filed by somebody
+    // who may not have a chart yet, which is the point of lead capture,
+    // and it reaches one only through `fit_session_id`. PostgREST
+    // answered 42703 and the `throw` killed the whole sweep, so the
+    // "nobody has worked this request" alert never fired for any tenant.
+    // With `fitter.lead_capture_only` seeded ON everywhere, that queue is
+    // the primary path, so a patient who asked to be contacted could sit
+    // in it indefinitely with no escalation.
+    //
+    // The staged mock does not validate column names and the old tests
+    // staged a `patient_id` the mock happily returned, so the suite
+    // agreed with the bug. Assert the select string instead.
+    stageOrg();
+    stageSupabaseResponse("fitter_invites", "select", { data: [] });
+    stageSupabaseResponse("fitter_invites", "select", { data: [] });
+    stageSupabaseResponse("fitter_fit_requests", "select", { data: [] });
+
+    await runFitterFollowupSweep(NOW);
+
+    const [columns] = getSupabaseSelectColumns("fitter_fit_requests");
+    expect(columns).toBeDefined();
+    // Only the TOP-LEVEL names — `patient_id` legitimately appears inside
+    // the embed, which is the whole point.
+    const topLevel = (columns ?? "")
+      .replace(/\([^)]*\)/g, "")
+      .split(",")
+      .map((c) => c.trim());
+    expect(topLevel).not.toContain("patient_id");
+    // Embedded with the FK named, so a second fit_sessions reference
+    // added later cannot silently make this ambiguous (PGRST201).
+    expect(columns).toContain(
+      "fit_sessions!fitter_fit_requests_fit_session_id_fkey(patient_id)",
+    );
+  });
+
+  it("carries the chart onto the alert when the request has a fit session", async () => {
+    stageOrg();
+    stageSupabaseResponse("fitter_invites", "select", { data: [] });
+    stageSupabaseResponse("fitter_invites", "select", { data: [] });
+    stageSupabaseResponse("fitter_fit_requests", "select", {
+      data: [
+        {
+          id: REQUEST,
+          status: "new",
+          fit_session_id: SESSION,
+          fit_sessions: { patient_id: PATIENT },
+          request_type: "callback",
+          created_at: agoDays(3),
+        },
+      ],
+    });
+
+    await runFitterFollowupSweep(NOW);
+
+    const [alert] = getSupabaseWritePayloads(
+      "fitter_followup_alerts",
+      "insert",
+    ) as Array<Record<string, unknown>>;
+    expect(alert.patient_id).toBe(PATIENT);
+    expect(alert.fit_session_id).toBe(SESSION);
+  });
+
+  it("still alerts on a request that has no chart yet", async () => {
+    // A lead who filed a request before any chart exists is exactly who
+    // this alert is for. Requiring a patient_id would drop them.
+    stageOrg();
+    stageSupabaseResponse("fitter_invites", "select", { data: [] });
+    stageSupabaseResponse("fitter_invites", "select", { data: [] });
+    stageSupabaseResponse("fitter_fit_requests", "select", {
+      data: [
+        {
+          id: REQUEST,
+          status: "new",
+          fit_session_id: null,
+          fit_sessions: null,
+          request_type: "callback",
+          created_at: agoDays(3),
+        },
+      ],
+    });
+
+    await runFitterFollowupSweep(NOW);
+
+    const [alert] = getSupabaseWritePayloads(
+      "fitter_followup_alerts",
+      "insert",
+    ) as Array<Record<string, unknown>>;
+    expect(alert.alert_type).toBe("request_unworked");
+    expect(alert.patient_id).toBeNull();
+  });
+
   it("escalates to high once a request has waited a week", async () => {
     stageOrg();
     stageSupabaseResponse("fitter_invites", "select", { data: [] });
@@ -652,8 +747,8 @@ describe("request_unworked — the one that is ours", () => {
         {
           id: REQUEST,
           status: "new",
-          patient_id: null,
           fit_session_id: null,
+          fit_sessions: null,
           request_type: "full_details",
           created_at: agoDays(9),
         },
@@ -739,8 +834,8 @@ describe("an alert closes itself when the thing it was about happens", () => {
         {
           id: REQUEST,
           status: "new",
-          patient_id: null,
           fit_session_id: null,
+          fit_sessions: null,
           request_type: "callback",
           created_at: agoDays(21),
         },
@@ -768,8 +863,8 @@ describe("an alert closes itself when the thing it was about happens", () => {
         {
           id: REQUEST,
           status: "new",
-          patient_id: null,
           fit_session_id: null,
+          fit_sessions: null,
           request_type: "callback",
           created_at: agoDays(3),
         },
