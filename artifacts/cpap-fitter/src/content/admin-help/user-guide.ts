@@ -201,6 +201,10 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
         text: "Duplicate review surfaces likely duplicate records with the evidence behind the match. Merging early matters more than it looks: a split record means split order history, two sets of reminders to the same person, and claims that reference the wrong chart.",
       },
       {
+        kind: "para",
+        text: "The Resupply tab brings prescribed supplies, last orders, replacement-rule timing and quantities, scheduled cycles, linked CSR orders and signatures, and paged fulfillment history together. You can also open this review from Orders & eligibility on Resupply calendar /admin/resupply-calendar. Missing history or eligibility data is shown as missing or failed, not silently treated as no orders or permission to supply.",
+      },
+      {
         kind: "callout",
         tone: "tip",
         text: "The global lookup in the top header is the fastest way to a chart when someone is on the phone. Reserve the roster page for filtering and list work.",
@@ -225,6 +229,60 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
   },
 
   // ---------------------------------------------------------------
+  {
+    id: "resupply-calendar",
+    title: "Resupply calendar — history, timing, and patient contact",
+    category: "outreach",
+    intro:
+      "Use one worklist to see who is due, read what they received, and ask whether they want replacement supplies.",
+    blocks: [
+      {
+        kind: "para",
+        text: "Month calendar supports advance planning and day selection; Due now & overdue focuses on cycles due at the current time. Search narrows patients or supplies. Dates follow the practice's Eastern time, including daylight saving changes. A patient appears once in the worklist even when several supplies are due. Future and expired cycles are not a reason to send outreach today.",
+      },
+      {
+        kind: "bullets",
+        items: [
+          "Orders & eligibility opens prescribed items, Last ordered, Next eligibility, and Scheduled resupply. Replacement rules explain the interval, quantity available now, and any next quantity review date.",
+          "Order history shows each recorded supply line, quantity, status, reference, and shipping and delivery dates, with Older and Newer paging. CSR orders & signatures covers links from the most recent 50 resupply drafts; that is not an unlimited signature archive.",
+          "Email, SMS, and Automated call can be used for an individual patient or up to 50 selected patients. Select visible patients applies only to the displayed view; changing search or calendar filters clears the selection. The confirmation names the actual recipients before Queue outreach.",
+          "Outreach asks for a patient response rather than placing an order. Consent, contact information, configured channels, recent contact, due timing, and contact hours can prevent a send. Read every skipped or failed result; queued is acceptance for processing, not proof of delivery or a refill request.",
+        ],
+      },
+      {
+        kind: "callout",
+        tone: "note",
+        text: "A scheduled date or Eligible by replacement rule is not insurance approval. Confirm prescription validity, coverage, authorization where required, and the patient's need before fulfillment. A failed data request must be retried rather than interpreted as zero history.",
+      },
+      {
+        kind: "pages",
+        title: "Resupply review pages",
+        rows: [
+          {
+            path: "/admin/resupply-calendar",
+            label: "Resupply calendar",
+            what: "Month and due-now lists, patient history and replacement timing, individual and reviewed bulk outreach.",
+          },
+          {
+            path: "/admin/patients",
+            label: "Patients",
+            what: "Open the patient's Resupply tab for the same supply and order review.",
+          },
+          {
+            path: "/admin/episodes",
+            label: "Resupply episodes",
+            what: "Inspect the underlying cycle and its current state.",
+          },
+          {
+            path: "/admin/conversations",
+            label: "Conversations",
+            what: "Review delivery context and work the patient's reply.",
+          },
+        ],
+      },
+    ],
+  },
+
   {
     id: "documents",
     title: "Documents, e-signature, and referrals",
@@ -515,7 +573,15 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
       },
       {
         kind: "para",
-        text: "Shipping labels buys, prints, and tracks — use it rather than a carrier's own site so the tracking number attaches to the order and reaches the patient.",
+        text: "Orders includes CSR-created signature orders as well as fitter orders. The CSR can attach an approved insurance profitability review before requesting the patient's signature. The review must match the patient, all item quantities and amounts, and stock or dropship method. Patient orders allow up to 20 lines and 1–99 units per line. A reviewed internal simulation outside those limits cannot be attached.",
+      },
+      {
+        kind: "para",
+        text: "Signed orders with unresolved prescription or delivery requirements remain held. Retry fulfillment retries eligible work without creating a duplicate order. A priced order whose delivery address changes also needs a manager's Review delivery, which preserves the accepted items and prices while recording a current delivery forecast. Resolving an address alert alone does not release it. PacWare export previews identify withheld or invalid work; exporting a file is not automatic supplier purchasing.",
+      },
+      {
+        kind: "para",
+        text: "Shipping labels serves historical shop orders. Insurance resupply fulfillment is coordinated through the fulfillment and PacWare workflows. The warehouse rate estimate inside Item review is for profitability planning and does not buy a label.",
       },
       {
         kind: "para",
@@ -536,8 +602,8 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
           },
           {
             path: "/admin/fitter/orders",
-            label: "Fitter requests",
-            what: "Orders originating from an approved fitting.",
+            label: "Orders",
+            what: "CSR signature orders, attached pricing reviews, fulfillment retries, and orders originating from a fitting.",
           },
           {
             path: "/admin/catalog",
@@ -552,7 +618,7 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
           {
             path: "/admin/shipping",
             label: "Shipping labels",
-            what: "Buy, print, and track parcels.",
+            what: "Buy, print, and track parcels for historical shop orders.",
           },
         ],
       },
@@ -560,6 +626,75 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
   },
 
   // ---------------------------------------------------------------
+  {
+    id: "pricing-profitability",
+    title: "Pricing & Profitability — evidence, decisions, and actual results",
+    category: "orders",
+    intro:
+      "The pricing workspace connects supplier costs, expected collections, delivery, and your chosen profit rules to the exact order being reviewed.",
+    blocks: [
+      {
+        kind: "para",
+        text: "CSRs with pricing.evaluate can evaluate items and use approved insurance reviews. Owners and administrators with pricing.manage maintain evidence and use management tools; pricing.approve controls decisions and pricing.publish controls publication. Owner models, supplier maintenance, follow-up, and management summaries are not CSR tools. A missing page or action may reflect permissions rather than missing data.",
+      },
+      {
+        kind: "bullets",
+        items: [
+          "Supplier costs stores versioned costs per canonical selling unit, packs and minimum quantities, independent fee evidence and expiry, availability, lead time, return terms, and clinical notes. Delivery coverage specifies country, postal area, service, and stock or dropship method. Imported candidates stay estimated until verified. Shared or included fees must not be counted twice.",
+          "Pricing policy sets a target margin, approval floor, minimum profit, and contribution or after-overhead basis. Optional SKU, category, and revenue-mode overrides are effective-dated. Margin and markup are different calculations. Publishing a policy and requiring reviews for patient orders are explicit management choices.",
+          "Collection evidence records verified expected collections for one patient and exact SKU quantities, with source and validity. Billed charges, payer allowed amounts, and expected collectible revenue are separate. Internal self-pay scenarios support price planning; they do not enable patient card checkout.",
+          "Item review calculates goods, delivery, processing, reserves, discounts, and expected contribution from the available evidence. Warehouse rates use the patient's address and entered parcels and expire quickly; they do not quote a supplier's dropship origin. Missing cost is not zero, and an estimate is not a verified amount.",
+          "Reviews & actuals holds saved snapshots and manager decisions. Save review is available for a qualifying target result; Request manager approval is used for a permitted exception. Hard floors and missing evidence cannot be bypassed. Approved insurance reviews attach only to their exact patient, items, quantities, prices, and fulfillment method; changing the order requires a new matching review.",
+        ],
+      },
+      {
+        kind: "bullets",
+        items: [
+          "Bulk prices starts with Pricing portfolio search and item, category, supplier, and scenario filters. Selected bundles disclose all their SKUs. Items needing their first scenario open in Item review rather than receiving guessed delivery or revenue assumptions.",
+          "A saved bulk preview compares previous and proposed prices under the same current economics where a comparable prior price exists. It also retains and rechecks unselected published contexts. Missing evidence blocks the affected full list instead of silently dropping prices. Explicit eligible subsets require their own preview; publication and scheduled activation recheck current validity. Previously approved orders are not repriced.",
+          "New items collects sourcing proposals before catalog readiness, with provisional supplier comparisons that include pack rounding, minimum purchase quantities, surplus, and delivery fees. A manager resolves the proposal to a real catalog SKU before normal verified offer and order review.",
+          "Patient batch review checks selected open resupply drafts independently for exact, current approved insurance reviews. It neither sends outreach nor creates orders. Follow-up records ownership, notes, and review timing for pricing issues.",
+          "Owner models covers pricing strategies, monthly break-even and target profit, cost and collection stress, price versus volume, repeat orders and acquisition, and working capital. Each model uses explicit assumptions and can calculate independently. Scenario reports include the resolved source, policy, offer versions, and validity; models are planning tools, not approved orders or sales forecasts.",
+        ],
+      },
+      {
+        kind: "para",
+        text: "Actual reconciliation compares the original quote, a current forecast when available, and recorded collections, refunds, costs, and credits. Economic occurrence date and time (UTC) determines event timing, so historical events need their real date. Retry an unchanged uncertain save with its original reference; a conflicting reference calls for reviewing history, not duplicating the expense. Event pages do not limit totals. Mark costs and collections complete only with evidence, and recheck completion after new events. Completed totals are weighted by actual revenue and exclude incomplete reviews.",
+      },
+      {
+        kind: "callout",
+        tone: "note",
+        text: "Product gross profit, order contribution, and contribution after allocated overhead answer different questions. None automatically equals company net profit. Unknown or expired evidence stays visible; repair the source and recalculate rather than treating a saved result as permanently current.",
+      },
+      {
+        kind: "pages",
+        title: "Pricing work and related records",
+        rows: [
+          {
+            path: "/admin/pricing",
+            label: "Pricing & Profitability",
+            what: "Item reviews, policies, sourcing, portfolio changes, owner models, and actual reconciliation.",
+          },
+          {
+            path: "/admin/catalog",
+            label: "Catalog",
+            what: "Canonical selling units and inventory used by pricing and fulfillment.",
+          },
+          {
+            path: "/admin/fitter/orders",
+            label: "Orders",
+            what: "Create signature orders with approved reviews and manage eligible delivery holds and retries.",
+          },
+          {
+            path: "/admin/therapy-resupply",
+            label: "Resupply Opportunities",
+            what: "Attach an exact approved review when approving a patient draft.",
+          },
+        ],
+      },
+    ],
+  },
+
   {
     id: "billing-overview",
     title: "Billing — how the revenue cycle maps to the pages",
@@ -794,6 +929,58 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
   },
 
   // ---------------------------------------------------------------
+  {
+    id: "owner-overview",
+    title: "Owner overview — business activity and financial coverage",
+    category: "analytics",
+    intro:
+      "A single owner page brings together period comparisons, current operational priorities, and clearly scoped financial reporting.",
+    blocks: [
+      {
+        kind: "para",
+        text: "Owner overview requires both metrics.read and cost.read and the Analytics module. Owners and administrators can use it; ordinary CSR and billing-only access is insufficient. Reporting period offers 7, 30, 90, or 365 days or Custom dates up to 366 days. Dates are UTC, custom end dates are inclusive, and today's partial day stops at the generation time. The previous period has the same elapsed duration immediately before the selected one.",
+      },
+      {
+        kind: "bullets",
+        items: [
+          "Period activity: patients created, orders signed, prepared fulfillment lines and units, recorded shipments, returning patients, and recorded financial events use their stated event dates. Quiet days remain in chart and table timelines rather than disappearing.",
+          "Created-period groups: order, resupply, and claim stage charts show current outcomes for records created within the selected period. Later updates can change a past group's results. Claims by payer show billed and paid-to-date amounts for that group, not cash received during the period.",
+          "Current queues: action priorities, open-claim aging, low stock, and scheduled resupply describe the backlog now, including older records. Due and next-30-day counts need active patients and valid prescriptions but do not guarantee payer eligibility or patient consent.",
+          "Products and outreach: product rankings use real shipment dates; untracked stock stays unknown. Top-product, payer, and stock lists show their stated limited rows, while summary cards cover the full relevant set. Delivery receipts are distinct from provider acceptance, and neither establishes conversion to an order.",
+        ],
+      },
+      {
+        kind: "para",
+        text: "Financial activity follows recorded occurrence dates: collections less refunds and costs less credits. The difference between these period streams is not company profit. Completed-review contribution instead uses lifetime actuals for bound orders with complete collections, complete costs, and valid dates. Read the coverage denominator and excluded incomplete or uncertain-date records. It is not an accounting ledger, bank balance, or a total of all insurance collections.",
+      },
+      {
+        kind: "para",
+        text: "Business and financial sources can fail independently. The available section remains usable; an unavailable section never becomes an invented zero. Refresh retries the report. Download overview CSV exports only fresh successful sections with units, dates, and definitions; negative monetary values remain numeric. Custom-date edits and in-progress refreshes prevent exporting an old snapshot. Use the section links to move directly to priorities, financial activity, patients and orders, claims, products and stock, outreach, or source definitions.",
+      },
+      {
+        kind: "pages",
+        title: "Owner reporting and planning",
+        rows: [
+          {
+            path: "/admin/analytics/owner",
+            label: "Owner overview",
+            what: "Current versus previous activity, present queues, financial coverage, charts, tables, and CSV.",
+          },
+          {
+            path: "/admin/reports",
+            label: "Reports",
+            what: "Open detailed reports with their own filters and definitions.",
+          },
+          {
+            path: "/admin/pricing",
+            label: "Pricing & Profitability",
+            what: "Inspect reviewed-order actuals or use Owner models for explicit planning assumptions.",
+          },
+        ],
+      },
+    ],
+  },
+
   {
     id: "analytics",
     title: "Analytics and reports",

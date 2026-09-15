@@ -574,6 +574,10 @@ export const HOW_TO_GUIDES: readonly HowToGuide[] = [
         body: "Awaiting signatures /admin/signature-tracking is everything currently out for a provider signature, with how long it has been waiting. The E-signature portal /admin/provider-portal is the provider-facing staging area and where signed items land.",
       },
       {
+        title: "Send the updated link after editing a packet",
+        body: "On Document packets /admin/patient-packets, review all changes before saving an editable packet. Saving changes invalidates its previous signing link. Use the current copy or resend action to provide the updated link; forwarding the older message will not open the revised packet. If the packet or templates fail to load, retry before editing rather than saving an incomplete view.",
+      },
+      {
         title: "Handle what comes back on paper",
         body: "Faxes return to Inbound faxes /admin/inbound-faxes for triage — returned signature pages, sleep studies, and prescription renewals all arrive there. Work that queue daily; a signed CMN sitting untriaged is a claim you cannot bill.",
         callout: {
@@ -1546,7 +1550,7 @@ export const HOW_TO_GUIDES: readonly HowToGuide[] = [
       },
       {
         title: "Always use the verify step on an export",
-        body: "The exports — patient roster and the resupply-due worklist — show a preview with a row count and a sample before you download. Read it. A count that is wildly off means your filter is wrong, and you would otherwise find out inside PacWare.",
+        body: "The exports — patient roster and the resupply-due worklist — show a preview with a row count and a sample before you download. Read the withheld counts as well: delivery holds, unresolved pricing delivery reviews, already submitted work, and invalid order data can exclude rows. Signed orders use their accepted SKU quantities. Correct the underlying record and preview again instead of manually adding a withheld row to the file. Downloading the CSV does not place a supplier order.",
       },
       {
         title: "Use the ready-to-sync notice as a prompt",
@@ -2825,6 +2829,558 @@ export const HOW_TO_GUIDES: readonly HowToGuide[] = [
       "funnel",
       "conversion",
       "fitter",
+    ],
+  },
+  {
+    slug: "review-resupply-and-contact-patients",
+    title: "Review supplies due and contact patients",
+    category: "outreach",
+    summary:
+      "See what a patient received, check replacement timing, and request a reply individually or in a reviewed batch.",
+    audience:
+      "CSRs and administrators with patient access; sending also requires conversation-management access.",
+    timeEstimate: "5–10 minutes",
+    primaryPath: "/admin/resupply-calendar",
+    prerequisites: [
+      "An active patient record, current prescription, and scheduled resupply cycle.",
+      "A configured sending channel and current patient contact details and preferences.",
+    ],
+    steps: [
+      {
+        title: "Choose the worklist",
+        body: "Open Resupply calendar /admin/resupply-calendar. Use Month calendar to plan ahead, click a day to narrow the list, or choose Due now & overdue for patients due at this moment. Search patients or supplies to narrow the visible rows. Calendar days use the practice's Eastern time, including daylight saving changes.",
+      },
+      {
+        title: "Read the patient's actual history",
+        body: "Select Orders & eligibility beside the patient. Supplies & next eligibility shows each prescribed item, Last ordered, the replacement-rule result, quantity available, and Scheduled resupply. Order history lists quantities, references, and shipped and delivered dates; use Older and Newer for additional lines. CSR orders & signatures separately shows orders linked to the patient's most recent 50 resupply drafts. The patient's Resupply tab on Patients /admin/patients provides the same review.",
+      },
+      {
+        title: "Resolve missing information before proceeding",
+        body: "Read the reason under Next eligibility. Needs eligibility review, a reached quantity limit, an expired prescription, and Not scheduled each require different follow-up. A failed history request is not evidence that the patient has never ordered; use Retry. Check insurance and prescription requirements before fulfillment.",
+        callout: {
+          tone: "note",
+          text: "Eligible by replacement rule describes timing and quantity against recorded orders. It does not confirm payer coverage, authorization, or the patient's wish to receive supplies.",
+        },
+      },
+      {
+        title: "Review one recipient or a batch",
+        body: "Use Email, SMS, or Automated call in the individual review, or close it and select patient rows in the calendar. Select visible patients selects up to 50 unique patients, even when one patient has several supply cycles. Changing the view, day, month, or search clears the selection; check it again before contacting anyone.",
+      },
+      {
+        title: "Confirm the names and channel",
+        body: "Read the recipient list and choose Queue outreach, or cancel without sending. Automated call places an automated resupply call; it is not a manual phone dialer. The request asks whether supplies are needed and does not create an order. Patients not yet due, recently contacted, missing contact details, or otherwise ineligible for that channel can be skipped; SMS and calls respect contact hours.",
+      },
+      {
+        title: "Work the actual outcomes",
+        body: "Read queued, skipped, and failed counts plus each patient's reason. A disabled or unconfigured channel must be corrected before retrying; switching channels is not a way around consent or timing restrictions. Queued means accepted for processing. Review delivery and replies in Conversations /admin/conversations and Outbound Messages /admin/outbound-messages before deciding the next action.",
+      },
+    ],
+    troubleshooting: [
+      {
+        symptom: "A future calendar patient cannot be contacted yet.",
+        fix: "The month view includes future work. Use Due now & overdue for today's outreach and retain future patients for their scheduled date.",
+      },
+      {
+        symptom:
+          "The patient has prescriptions but no next order is scheduled.",
+        fix: "Review the prescription and resupply episode in /admin/episodes. Importing a roster or having an old order alone does not create a current cycle.",
+      },
+    ],
+    related: [
+      "find-and-work-a-patient",
+      "set-up-resupply-reminders",
+      "verify-a-patients-insurance",
+    ],
+    keywords: [
+      "calendar",
+      "due",
+      "overdue",
+      "eligibility",
+      "order history",
+      "bulk",
+      "email",
+      "sms",
+      "call",
+      "resupply",
+    ],
+    featured: true,
+  },
+  {
+    slug: "read-owner-overview",
+    title: "Read and export the owner overview",
+    category: "analytics",
+    summary:
+      "Compare activity, prioritize today's work, and export a report with the right financial scope.",
+    audience:
+      "Owners and administrators with both metrics and cost access; the Analytics module must be available.",
+    timeEstimate: "5–10 minutes",
+    primaryPath: "/admin/analytics/owner",
+    prerequisites: [
+      "Both metrics.read and cost.read permissions. A billing-only or CSR role does not grant this page.",
+    ],
+    steps: [
+      {
+        title: "Set the reporting period",
+        body: "Open Owner overview /admin/analytics/owner. Reporting period offers 7, 30, 90, or 365 days. For Custom dates, enter both dates and select Apply dates. The end date is inclusive, dates use UTC, and a range ending today stops at the report's generation time. Custom ranges cannot exceed 366 days or include future dates. The previous comparison covers the immediately preceding equal duration.",
+      },
+      {
+        title: "Start with priorities and the period cards",
+        body: "Use the section links for Priorities, Financial activity, Patients & orders, Claims, Products & stock, Outreach, and Sources & definitions. Period cards compare selected activity with the prior window. Current queues are today's backlog, including work created before the selected period. Follow an action link to work that queue; the destination report has its own filters.",
+      },
+      {
+        title: "Read each measure in its own scope",
+        body: "Signed orders and shipments use their actual event dates. Order, resupply, and claim stage charts instead show the current status of records created during the period. Claim payer amounts are billed and paid to date for that created group, not cash collected during the period. Outreach delivery requires a delivery receipt; accepted messages are not proof of delivery or new orders.",
+      },
+      {
+        title: "Separate financial activity from completed reviews",
+        body: "Recorded revenue activity is collections less refunds on their occurrence dates; recorded cost activity includes costs less credits. Their period difference is not company profit because related events can occur in different periods. Completed-review contribution is a lifetime measure of bound orders with complete, validly dated financial records. Read its coverage and excluded-record counts before using it. Blank stock counts mean untracked, not zero.",
+      },
+      {
+        title: "Refresh and export the available sections",
+        body: "Select Refresh before sharing, then Download overview CSV. The download contains the successful sections, period and generation time, units, and definitions. Negative money remains numeric for spreadsheet totals. A section marked unavailable is not zero; retry it and use the other available section if needed. Editing dates or refreshing prevents exporting the previous result as if it were current.",
+      },
+    ],
+    troubleshooting: [
+      {
+        symptom: "A number changes when I reopen an earlier period.",
+        fix: "Created-period cohorts show their current outcomes, so later signing, payment, or status updates can change them. Use the event-date measures when asking what happened during the period.",
+      },
+      {
+        symptom: "Contribution does not match my accounting profit.",
+        fix: "This is coverage-limited order-review contribution, not a general ledger or company net-profit report. Check completed versus incomplete reviews and use your accounting records for company-wide profit.",
+      },
+    ],
+    related: [
+      "find-and-read-a-report",
+      "reconcile-order-actuals",
+      "compare-owner-profit-models",
+    ],
+    keywords: [
+      "owner",
+      "CEO",
+      "overview",
+      "dashboard",
+      "UTC",
+      "CSV",
+      "profit",
+      "data quality",
+      "revenue",
+      "coverage",
+    ],
+    featured: true,
+  },
+  {
+    slug: "set-up-pricing-evidence",
+    title: "Set up supplier costs and pricing policy",
+    category: "orders",
+    summary:
+      "Establish the costs, delivery terms, collection evidence, and approval rules that make item reviews useful.",
+    audience:
+      "Owners and administrators with pricing-management access; publishing also requires pricing.publish.",
+    timeEstimate: "15–30 minutes",
+    primaryPath: "/admin/pricing",
+    prerequisites: [
+      "Canonical SKUs in Catalog /admin/catalog.",
+      "Supplier quotes, packing units, delivery terms, and your chosen margin and minimum-profit rules.",
+    ],
+    steps: [
+      {
+        title: "Record the full supplier offer",
+        body: "Open Pricing & Profitability /admin/pricing and choose Supplier costs. Enter the supplier and SKU, cost per canonical selling unit, pack size, minimum quantity, evidence status, source, and validity. Include availability, lead time, return terms, and clinical suitability where known. Leave unknown amounts missing rather than entering zero. Save supplier offer creates a version; Revise preserves the earlier record.",
+      },
+      {
+        title: "Account for delivery and fees once",
+        body: "In Supplier costs, describe each handling, freight, or other fee and whether it applies per item, shipment, or order. Give shared charges a consistent shared charge code and identify costs already included in another amount. Each fee has its own evidence status and expiry. Verified supplier freight also needs covered country, postal prefixes, service, and stock or dropship method. A warehouse shipping estimate does not establish a supplier's dropship charge.",
+      },
+      {
+        title: "Review imports before verifying them",
+        body: "Use Import supplier cost candidates on Supplier costs to preview the CSV rows, correct row errors, and import the reviewed rows. Imported candidates remain estimated until their cost and fee evidence is checked. Review the per-row outcome after importing; do not assume the entire file succeeded.",
+      },
+      {
+        title: "Choose and publish your business rules",
+        body: "In Pricing policy, enter the target margin, approval floor, minimum profit per order, and profit basis. Optional settings include an allocated item floor and self-pay price increments, endings, and ceilings. Use scoped overrides for a SKU, category, or revenue mode with explicit priority and dates. Save draft policy first, then Publish this policy when the rules are ready. Review the choice to require approved insurance reviews for patient orders; it is not automatically enabled.",
+      },
+      {
+        title: "Make verified collections reusable",
+        body: "In Collection evidence, record the patient and exact SKU quantities, allowed amount, expected collectible amount, evidence source, and validity. If entering the insurer, secondary, patient, and adjustment breakdown, reconcile it to the expected total. A CSR can reuse this verified evidence only for that patient and those items. Billed charges alone do not establish expected collections.",
+      },
+    ],
+    troubleshooting: [
+      {
+        symptom: "A revised supplier offer is not being used yet.",
+        fix: "Check its effective date and version in Supplier costs. A future version is visible for management but becomes current only when its effective time arrives.",
+      },
+      {
+        symptom: "My percentage does not produce the markup I expected.",
+        fix: "Margin divides profit by revenue; markup divides profit by cost. Use the selected Profit basis and Owner models to compare the two rather than entering a markup in Target margin.",
+      },
+    ],
+    related: [
+      "review-order-profitability",
+      "publish-bulk-prices",
+      "manage-catalog-and-stock",
+    ],
+    keywords: [
+      "COGS",
+      "supplier",
+      "dropship",
+      "freight",
+      "margin",
+      "markup",
+      "policy",
+      "cost import",
+      "collection evidence",
+      "override",
+    ],
+  },
+  {
+    slug: "review-order-profitability",
+    title: "Review profitability before creating an order",
+    category: "orders",
+    summary:
+      "Calculate delivered costs and expected collections, obtain any required approval, and attach the exact review to an order.",
+    audience:
+      "CSRs and administrators with pricing.evaluate; exceptions require a manager with pricing.approve.",
+    timeEstimate: "5–15 minutes",
+    primaryPath: "/admin/pricing",
+    prerequisites: [
+      "The correct patient, canonical SKUs, quantities, supplier offers, and delivery method.",
+      "Current insurance collection evidence and a published policy when review enforcement is enabled.",
+    ],
+    steps: [
+      {
+        title: "Build the item review",
+        body: "Open Item review in Pricing & Profitability /admin/pricing, or Evaluate items in the signature-order form on Orders /admin/fitter/orders or the draft approval on Resupply Opportunities /admin/therapy-resupply. Select the patient and insurance mode for a patient order. Enter each SKU, quantity, billed unit amount, supplier offer, and Warehouse stock or Supplier dropship method. Apply active prices loads matching published amounts when available.",
+      },
+      {
+        title: "Complete collections and delivered costs",
+        body: "Select matching Collection evidence or provide the available expected-collection information. Keep insurance allowed amounts, billed amounts, and expected collectible revenue distinct. Add delivery country and service and any applicable processing, reserves, refunds, or other costs. Estimates stay estimates. For warehouse stock with a patient address, enter parcel dimensions and weight, use Add parcel as needed, then Get shipping rates and select the service. Rates expire after about 30 minutes and cap the review's validity; changing relevant inputs requires a new rate.",
+      },
+      {
+        title: "Calculate and read the whole result",
+        body: "Select Evaluate profitability and read Profitability result, delivered cost, contribution, policy basis, and every issue. Cost information needed requires evidence, not an assumed zero. A blocked hard floor, minimum contribution, or item floor must be corrected. Internal self-pay scenarios can compare target prices and discount headroom but do not take patient payments or change insurance collections.",
+      },
+      {
+        title: "Save or request the appropriate decision",
+        body: "A result meeting target offers Save review. An eligible exception offers Request manager approval. In Reviews & actuals, the manager checks the snapshot and gives an explicit reason for an allowed exception. Saving a review does not itself create or send an order, and an expired or changed source requires a fresh review.",
+      },
+      {
+        title: "Attach the exact approved insurance review",
+        body: "Return to Orders /admin/fitter/orders or Resupply Opportunities /admin/therapy-resupply. Choose approved review, check the patient, every bundle line, amounts, quantities, and fulfillment method, then Use this review. Editing the patient or items removes the old attachment. Patient orders support up to 20 lines with 1–99 units each; internal simulations can reach 10,000 units but cannot attach when they exceed those order limits. If review enforcement is on, an approved matching review is required before proceeding.",
+      },
+      {
+        title: "Check a patient batch without creating orders",
+        body: "Use Patient batch review in /admin/pricing to select open resupply drafts and check their exact approved insurance reviews together. Work each missing or stale result individually. This review does not contact patients or create orders. After a signed order is eligible for fulfillment, Retry fulfillment on /admin/fitter/orders can retry a prescription or delivery hold once its cause is resolved.",
+      },
+    ],
+    troubleshooting: [
+      {
+        symptom: "The approved review is no longer selectable.",
+        fix: "It may be expired, changed, already bound, cancelled with its order, for another patient, or beyond patient-order limits. Refresh the list and evaluate a new exact review instead of reusing the old one.",
+      },
+      {
+        symptom: "The order says it is unreviewed.",
+        fix: "Without enabled enforcement, the legacy workflow can remain available. Unreviewed is not an approval; attach a current approved insurance review to obtain the reviewed snapshot.",
+      },
+    ],
+    related: [
+      "set-up-pricing-evidence",
+      "review-delivery-change",
+      "reconcile-order-actuals",
+    ],
+    keywords: [
+      "profitability",
+      "CSR",
+      "insurance",
+      "quote",
+      "approval",
+      "bundle",
+      "shipping rates",
+      "discount",
+      "patient batch",
+    ],
+    featured: true,
+  },
+  {
+    slug: "publish-bulk-prices",
+    title: "Review and publish a bulk price change",
+    category: "orders",
+    summary:
+      "Select a pricing portfolio, compare frozen previous and proposed economics, and activate or schedule a complete price list.",
+    audience:
+      "Pricing managers; activation and scheduling require pricing.publish.",
+    timeEstimate: "10–20 minutes",
+    primaryPath: "/admin/pricing",
+    prerequisites: [
+      "Current supplier and policy evidence and complete scenarios for the items to change.",
+    ],
+    steps: [
+      {
+        title: "Find the intended portfolio",
+        body: "Open Bulk prices in /admin/pricing. Pricing portfolio supports item search, category, supplier, and scenario filters. Review the actual supplier and all SKUs in each bundle before selecting rows or filtered results. A bundle is selected once even if it contains several matching items. Respect any displayed result limit; a filtered selection is not an unlimited catalog export.",
+      },
+      {
+        title: "Complete scenarios before repricing",
+        body: "For an item without a published scenario, choose its Review action to open a preloaded Item review and supply real quantity, delivery, and collection assumptions. Selected published scenarios refresh the same supplier's effective offer and current policy; they do not switch silently to a cheaper supplier or renew expired manual evidence.",
+      },
+      {
+        title: "Edit the selected amounts and freeze a preview",
+        body: "Review the selected scenarios, enter proposed unit amounts, or use the target-price recommendation for selected self-pay scenarios. Recommendations do not increase an insurer's expected payment. Choose Create frozen preview and inspect selected updates plus retained published contexts. Changing the working inputs requires another preview; activation uses the saved snapshot, not an unseen edited set.",
+      },
+      {
+        title: "Compare like-for-like economics",
+        body: "Read Previous amount at preview, proposed amounts, percentage changes, and projected margins. Where available, previous prices are recalculated using the same current quantity, cost, and delivery assumptions. Missing, ambiguous, or incompatible prior scenarios are marked unavailable rather than given an invented margin. Optional monthly order counts project weighted results from your assumptions; they are not a sales forecast.",
+      },
+      {
+        title: "Resolve blocked and retained rows",
+        body: "The preview retains and rechecks unselected published contexts so a filtered update does not remove other prices. If a retained context needs evidence, review the named SKU or bundle and preview again. To use an eligible subset, select it explicitly and choose Preview selected eligible changes; inspect the complete resulting list. The full list, including retained contexts, is limited to 100 scenarios.",
+      },
+      {
+        title: "Activate now or schedule a checked change",
+        body: "Choose Activate reviewed price list and confirm the snapshot, or enter Activate later (your local time) and select Schedule activation. A scheduled change is checked again when due and can be cancelled. Review stored batches before restoring a previous version: source validity and preservation of current contexts still apply. If publication changed since preview, create a new preview for a current comparison instead of repeatedly retrying the old one.",
+        callout: {
+          tone: "note",
+          text: "Publishing sets the internal prices used by new or revised reviews. It does not charge a patient, rewrite an already approved order, or publish a cash checkout.",
+        },
+      },
+    ],
+    troubleshooting: [
+      {
+        symptom: "A filtered change reports an unrelated SKU needing review.",
+        fix: "That SKU belongs to a retained published context. Update its evidence or include it in the review, then rebuild the full preview; omitting it would lose an existing price.",
+      },
+    ],
+    related: [
+      "set-up-pricing-evidence",
+      "review-order-profitability",
+      "compare-owner-profit-models",
+    ],
+    keywords: [
+      "portfolio",
+      "bulk",
+      "publish",
+      "schedule",
+      "prices",
+      "supplier filter",
+      "retained",
+      "comparison",
+      "volume",
+    ],
+  },
+  {
+    slug: "compare-owner-profit-models",
+    title: "Compare owner pricing and profit models",
+    category: "analytics",
+    summary:
+      "Use an item scenario to explore pricing, break-even, risk, repeat orders, and working capital without changing approved prices.",
+    audience: "Owners and administrators with pricing.manage.",
+    timeEstimate: "10–20 minutes",
+    primaryPath: "/admin/pricing",
+    prerequisites: [
+      "A current item scenario or saved review with usable source evidence.",
+      "Your own volume, budget, collection, and timing assumptions; blank does not mean zero.",
+    ],
+    steps: [
+      {
+        title: "Choose the source scenario",
+        body: "In Item review on /admin/pricing, choose Use in owner models, or open Owner models and select a Saved review for owner models. Page through saved reviews when necessary. Check the source items, quantities, evidence validity, and profitability issues. Refresh an eligible catalog scenario when offered; patient-linked or expired manual evidence needs a fresh item review rather than an extended date.",
+      },
+      {
+        title: "Calculate the models that answer your question",
+        body: "Each card is independent. Pricing strategies compares target contribution margin, markup, fixed contribution, and reference unit price for self-pay planning. Monthly break-even & profit uses fixed costs, order volume, and a profit target. Cost & collection stress tests changes in goods, freight, and expected collections. Price versus volume compares chosen prices and order counts. Repeat orders & acquisition includes acquisition and retention spending. Working capital uses cash outlay, inventory days, collection days, and vendor payment timing.",
+      },
+      {
+        title: "Enter explicit assumptions and calculate each card",
+        body: "Complete only the models you need and choose their Calculate button. Zero is a deliberate input; leave a value blank when it is unknown. For multiple-item pricing cases, choose the item whose price changes. A strategy can need more inputs while another succeeds. Insurance expected collections are not adjustable selling prices, and changed costs or collections remain planning assumptions.",
+      },
+      {
+        title: "Read constraints as well as the numbers",
+        body: "Review the source status and each model's warnings. Target contribution and markup use contribution before allocated overhead; the actual policy can impose stricter after-overhead or item-floor requirements. Calculated does not mean approved. These models do not publish prices, place orders, guarantee demand, or establish company profit.",
+      },
+      {
+        title: "Export a current comparison",
+        body: "Choose Download scenario report after calculating. It includes the calculated assumptions and results plus the resolved policy, supplier versions, selected SKU and quantity, evidence expiry, and calculation time. Editing a model invalidates its old result; changing the source or allowing evidence to expire prevents an old report being presented as current. Recalculate before sharing. Inputs remain available while moving between workspace tabs.",
+      },
+    ],
+    troubleshooting: [
+      {
+        symptom: "A model is unavailable even though another model calculated.",
+        fix: "Read that card's required inputs and restrictions. Price models may need self-pay mode, while missing costs or expired evidence can prevent reliable calculations. Do not fill unknown inputs with zero just to obtain a result.",
+      },
+    ],
+    related: [
+      "review-order-profitability",
+      "publish-bulk-prices",
+      "read-owner-overview",
+    ],
+    keywords: [
+      "owner models",
+      "CEO",
+      "break even",
+      "markup",
+      "target profit",
+      "stress",
+      "acquisition",
+      "working capital",
+      "CSV",
+    ],
+  },
+  {
+    slug: "propose-a-new-priced-item",
+    title: "Compare suppliers for a proposed new item",
+    category: "orders",
+    summary:
+      "Record an item that is not ready for the catalog and compare real purchase requirements before a manager resolves it.",
+    audience:
+      "Staff with pricing access; proposal decisions and supplier maintenance require the appropriate manager permissions.",
+    timeEstimate: "5–15 minutes",
+    primaryPath: "/admin/pricing",
+    prerequisites: [
+      "The proposed manufacturer, model, size, packing description, and supplier source.",
+    ],
+    steps: [
+      {
+        title: "Open the sourcing queue",
+        body: "Choose New items in Pricing & Profitability /admin/pricing. Enter the proposed item, source, notes, estimated unit cost and dropship fee where known, terms, and evidence expiry. An unknown cost should remain missing.",
+      },
+      {
+        title: "Compare the actual purchase quantities",
+        body: "Add provisional supplier comparisons with the requested quantity, pack size, minimum order, pack cost, and delivery charges. Compare the units you must buy, surplus units, goods subtotal, and delivered totals. Buying one extra pack can change the result even when its unit price looks lower.",
+      },
+      {
+        title: "Save the proposal for review",
+        body: "Submit the proposal and retain its sourcing evidence. The comparison is provisional: it does not create a catalog SKU, verify clinical suitability, activate a supplier offer, or approve an order.",
+      },
+      {
+        title: "Record the decision",
+        body: "A manager reviews the queue, sets Proposal decision and review notes, then selects Save proposal decision. Resolve only after selecting an existing canonical SKU from Catalog /admin/catalog. Record verified supplier costs and delivery coverage in Supplier costs on /admin/pricing before using the item for a firm profitability review.",
+      },
+    ],
+    related: [
+      "manage-catalog-and-stock",
+      "set-up-pricing-evidence",
+      "review-order-profitability",
+    ],
+    keywords: [
+      "new item",
+      "proposal",
+      "sourcing",
+      "supplier comparison",
+      "packs",
+      "minimum order",
+      "surplus",
+    ],
+  },
+  {
+    slug: "review-delivery-change",
+    title: "Review a delivery change on a signed order",
+    category: "orders",
+    summary:
+      "Recheck delivery economics and release eligible held work while preserving the patient's accepted items and prices.",
+    audience: "Managers with pricing.approve.",
+    timeEstimate: "5–15 minutes",
+    primaryPath: "/admin/fitter/orders",
+    prerequisites: [
+      "A signed priced order and a corrected patient delivery address.",
+      "Current supplier coverage and cost evidence; resolve any open address-change alert first.",
+    ],
+    steps: [
+      {
+        title: "Open the signed order's delivery review",
+        body: "On Orders /admin/fitter/orders, find the signed priced order and select Review delivery. Read the accepted items and original economics. This action keeps the signed quantities, customer amounts, and expected insurance collections fixed; it creates a separate delivery forecast.",
+      },
+      {
+        title: "Check the updated delivery evidence",
+        body: "Confirm the country and service for the patient's current address. Use current supplier coverage or supported shipping evidence. If a new supplier zone needs different coverage or fees, revise Supplier costs in /admin/pricing first. Adding manual freight cannot replace an existing positive supplier freight fee or make an uncovered destination valid.",
+      },
+      {
+        title: "Renew only evidence you have actually checked",
+        body: "When offered, document a source and expiry for unchanged expected collections or unchanged verified non-delivery fees and reserves. The confirmation applies only to those existing amounts. It cannot turn missing or estimated costs into verified costs, and it does not change the patient's accepted price.",
+      },
+      {
+        title: "Preview, decide, and check the outcome",
+        body: "Select Preview delivery profitability, compare original and revised contribution, and read all issues. Enter a reason, explicitly acknowledge an allowed exception when required, then select Approve delivery and retry fulfillment. A hard floor or missing evidence remains blocked. Approval releases or queues only eligible work for this order. If the outcome still needs a prescription, correct it and use Retry fulfillment on /admin/fitter/orders; do not create a duplicate order.",
+      },
+    ],
+    troubleshooting: [
+      {
+        symptom: "Resolving the address alert did not release the order.",
+        fix: "Priced orders also require this delivery review. Resolve the alert, then preview and approve the updated delivery economics.",
+      },
+      {
+        symptom: "Delivery review says fulfillment is already in progress.",
+        fix: "An existing carrier label, in-progress work, or a shipped order cannot be changed through this release workflow. Review the order in /admin/fitter/orders with the fulfillment team and follow the appropriate shipping correction process.",
+      },
+    ],
+    related: [
+      "review-order-profitability",
+      "set-up-pricing-evidence",
+      "reconcile-order-actuals",
+    ],
+    keywords: [
+      "address hold",
+      "delivery",
+      "signed order",
+      "freight",
+      "retry fulfillment",
+      "release",
+      "exception",
+    ],
+  },
+  {
+    slug: "reconcile-order-actuals",
+    title: "Record actual costs and collections for an order",
+    category: "analytics",
+    summary:
+      "Compare quoted economics with real events, retry uncertain saves safely, and mark records complete only when evidence supports it.",
+    audience: "Managers with pricing-management access.",
+    timeEstimate: "5–15 minutes per order",
+    primaryPath: "/admin/pricing",
+    prerequisites: [
+      "A pricing review already attached to a patient order (Bound), plus supporting invoices, collections, refunds, credits, or other actual-event records for that order.",
+    ],
+    steps: [
+      {
+        title: "Open the order's actuals",
+        body: "In Reviews & actuals on /admin/pricing, select the review already bound to the patient order and scroll to Quoted vs. actual profitability. Draft and approved-but-unattached reviews cannot accept actual events. Do not create a patient order merely to record unrelated business spending. Compare the original quote, the current forecast where available, and recorded actuals. A blocked current forecast does not erase the original review or the event history.",
+      },
+      {
+        title: "Record the economic event and its real date",
+        body: "Enter the event kind, amount, source, and a reference that identifies the underlying expense or payment. Economic occurrence date and time (UTC) initially shows the current minute; change it to the actual occurrence time for a historical event. Check the UTC conversion before selecting Record actual event. Invalid or future dates must be corrected; posting today does not mean the money moved today.",
+      },
+      {
+        title: "Recover an uncertain save without duplicating it",
+        body: "If the save fails or its outcome is unclear, retry the unchanged event. Keep its source and reference rather than inventing a new one. If the page reports that the reference already has different details, use Refresh actual event history and inspect the original before recording a documented correction. A previous save may have succeeded; changing the draft is not a reason to book the same expense twice.",
+      },
+      {
+        title: "Review the complete history",
+        body: "Use Previous actual events and Next actual events to inspect older entries. Totals include all recorded events, not just the visible page. Your unsaved completeness choices remain while paging. If another change updates the record, use Reload completeness status and review the latest evidence before saving.",
+      },
+      {
+        title: "Confirm completeness separately from recording",
+        body: "Under Confirm completeness, check All supplier and fulfillment costs are recorded and All collections, refunds and credits are recorded only when supported. Enter Completeness evidence / reason and select Save reconciliation status. A new event reopens completeness for review. Incomplete orders remain visible but are excluded from completed-review contribution totals.",
+      },
+      {
+        title: "Read the resulting report in scope",
+        body: "Pricing /admin/pricing shows recorded totals and the saved cost and collection completeness decisions. Owner overview /admin/analytics/owner additionally reports missing, malformed, or future event dates and excludes affected orders from its completed-review contribution, even when both completeness checkboxes are set. These totals can therefore differ. Actuals are recorded events, not an automatic import of every vendor invoice or bank payment; use each report's stated coverage.",
+      },
+    ],
+    related: [
+      "read-owner-overview",
+      "review-order-profitability",
+      "review-delivery-change",
+    ],
+    keywords: [
+      "actuals",
+      "reconciliation",
+      "invoice",
+      "refund",
+      "credit",
+      "UTC",
+      "occurred",
+      "retry",
+      "duplicate",
+      "completeness",
     ],
   },
 ] as const;

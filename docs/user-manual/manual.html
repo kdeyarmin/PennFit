@@ -79,6 +79,7 @@
         color: var(--penn-navy);
         font-weight: 600;
         letter-spacing: -0.01em;
+        break-after: avoid-page;
       }
 
       h1 {
@@ -721,6 +722,7 @@
         padding-left: 0;
       }
       .steps li {
+        break-inside: avoid-page;
         counter-increment: step;
         position: relative;
         padding: 6pt 0 6pt 30pt;
@@ -789,8 +791,8 @@
         <div class="cover-mark-rule"></div>
         <h1 class="cover-title">Customer<br />Service<br />Manual</h1>
         <div class="cover-subtitle">
-          A complete operator's guide to the CareMetric Breathe platform — the
-          most patient-friendly CPAP supply experience on the market.
+          A practical guide to patient history, resupply outreach, insurance
+          orders, and pricing-review handoffs.
         </div>
       </div>
       <div class="cover-meta">
@@ -801,7 +803,7 @@
         </div>
         <div>
           <strong>Edition</strong>
-          May 2026 · v1.0<br />Issued by CareMetric Breathe
+          September 15, 2026 · v2.0<br />Issued by CareMetric Breathe
         </div>
       </div>
       <div class="cover-emblem">
@@ -816,133 +818,131 @@
       <span class="section-tag">Welcome</span>
       <h2 style="border: 0; margin-top: 4pt">About this manual</h2>
       <p>
-        This manual is the canonical reference for everyone on a CareMetric
-        Breathe customer service team. It walks you through every screen of the
-        CareMetric Breathe admin console, every customer-facing flow on the
-        storefront, and the policies behind both. Read it in order on day one;
-        keep it on your second monitor after that.
+        This guide covers everyday customer-service work in CareMetric Breathe,
+        including the resupply calendar, order history, pricing reviews, and
+        delivery holds. Use the chapter links during a call. Company policy and
+        the patient's verified records guide each decision.
       </p>
-      <p>
-        CareMetric Breathe is built on a single guiding principle:
-        <strong>patients get answers in seconds, not days</strong>. Every
-        workflow in this document is designed so you can resolve a question on
-        the first contact — whether it arrives by phone, SMS, email, web chat,
-        or a review left on a product page.
-      </p>
-
       <div class="callout">
-        <strong>How to use this manual.</strong> Each chapter opens with a
-        screenshot of the screen in question, followed by the data on it, the
-        actions available, and the customer-facing language we use to describe
-        it. If a section is marked <span class="pill rose">PHI</span>
-        the contents are protected health information — never paste them into a
-        public channel or screenshot to a personal device.
+        <strong>Read the current screen.</strong> Your role and your
+        organization's enabled services determine which actions appear. Cost
+        verification, exception approval, publishing, and owner reporting
+        require separate access. Ask your lead when an action is unavailable;
+        never share another person's login. Illustrations are examples, not live
+        records or promises about timing. Follow the current steps and labels in
+        this edition.
+      </div>
+      <div class="callout warn">
+        <strong>Protect patient information.</strong> Use approved work systems
+        for patient records, conversations, and exports. Keep private costs and
+        approval notes out of the patient-facing order note. Sign out on shared
+        workstations.
       </div>
 
       <h3 style="margin-top: 18pt">What's in the box</h3>
       <div class="toc">
         <ol>
-          <li class="h2">
-            <span>1 · Platform overview</span><span class="num">p. 04</span>
+          <li class="h2"><a href="#chapter-1">1 · Platform overview</a></li>
+          <li class="h3">
+            <a href="#chapter-1-1"
+              >1.1 · The four jobs CareMetric Breathe does</a
+            >
           </li>
           <li class="h3">
-            <span>1.1 · The four jobs CareMetric Breathe does</span
-            ><span class="num">04</span>
+            <a href="#chapter-1-2">1.2 · What to explain to a patient</a>
           </li>
           <li class="h3">
-            <span>1.2 · Why we are the best CPAP supply app</span
-            ><span class="num">05</span>
+            <a href="#chapter-1-3">1.3 · Privacy &amp; on-device measurement</a>
+          </li>
+          <li class="h2"><a href="#chapter-2">2 · The customer journey</a></li>
+          <li class="h3">
+            <a href="#chapter-2-1">2.1 · Storefront &amp; mask fitter</a>
           </li>
           <li class="h3">
-            <span>1.3 · Privacy &amp; the on-device promise</span
-            ><span class="num">06</span>
-          </li>
-          <li class="h2">
-            <span>2 · The customer journey</span><span class="num">07</span>
+            <a href="#chapter-2-2"
+              >2.2 · Insurance requests &amp; internal self-pay scenarios</a
+            >
           </li>
           <li class="h3">
-            <span>2.1 · Storefront &amp; mask fitter</span
-            ><span class="num">07</span>
+            <a href="#chapter-2-3"
+              >2.3 · Returning patients &amp; repeat requests</a
+            >
+          </li>
+          <li class="h2"><a href="#chapter-3">3 · The admin console</a></li>
+          <li class="h3">
+            <a href="#chapter-3-1">3.1 · Dashboard &amp; live KPIs</a>
+          </li>
+          <li class="h3"><a href="#chapter-3-2">3.2 · Conversations</a></li>
+          <li class="h3">
+            <a href="#chapter-3-3">3.3 · Episodes &amp; resupply automation</a>
           </li>
           <li class="h3">
-            <span>2.2 · Insurance qualifier vs. cash-pay</span
-            ><span class="num">09</span>
+            <a href="#chapter-3-4"
+              >3.4 · Patient history &amp; replacement eligibility</a
+            >
           </li>
           <li class="h3">
-            <span>2.3 · Customer accounts &amp; one-tap reorder</span
-            ><span class="num">10</span>
-          </li>
-          <li class="h2">
-            <span>3 · The admin console</span><span class="num">11</span>
+            <a href="#chapter-3-5"
+              >3.5 · Follow-ups, canned replies &amp; macros</a
+            >
           </li>
           <li class="h3">
-            <span>3.1 · Dashboard &amp; live KPIs</span
-            ><span class="num">11</span>
-          </li>
-          <li class="h3">
-            <span>3.2 · Conversations (SMS, email, voice)</span
-            ><span class="num">12</span>
-          </li>
-          <li class="h3">
-            <span>3.3 · Episodes &amp; resupply automation</span
-            ><span class="num">14</span>
-          </li>
-          <li class="h3">
-            <span>3.4 · Patients (Patient 360)</span><span class="num">15</span>
-          </li>
-          <li class="h3">
-            <span>3.5 · Follow-ups, canned replies, macros</span
-            ><span class="num">16</span>
+            <a href="#chapter-3-6"
+              >3.6 · Resupply calendar &amp; individual or bulk outreach</a
+            >
           </li>
           <li class="h2">
-            <span>4 · Orders &amp; shop</span><span class="num">17</span>
+            <a href="#chapter-4">4 · Insurance orders &amp; pricing reviews</a>
           </li>
           <li class="h3">
-            <span>4.1 · Orders, subscriptions, returns</span
-            ><span class="num">17</span>
+            <a href="#chapter-4-1">4.1 · Create a signature order</a>
           </li>
           <li class="h3">
-            <span>4.2 · Customers (Customer 360)</span
-            ><span class="num">18</span>
+            <a href="#chapter-4-2"
+              >4.2 · Evaluate costs, collections &amp; delivery</a
+            >
           </li>
           <li class="h3">
-            <span>4.3 · Abandoned carts &amp; back-in-stock</span
-            ><span class="num">19</span>
+            <a href="#chapter-4-3"
+              >4.3 · Save, request approval &amp; attach the exact review</a
+            >
           </li>
           <li class="h3">
-            <span>4.4 · Reviews, Q&amp;A, inventory</span
-            ><span class="num">20</span>
+            <a href="#chapter-4-4"
+              >4.4 · New-item proposals &amp; patient batches</a
+            >
+          </li>
+          <li class="h3">
+            <a href="#chapter-4-5"
+              >4.5 · Signatures, retries &amp; changed delivery details</a
+            >
           </li>
           <li class="h2">
-            <span>5 · Insights, system, and audit</span
-            ><span class="num">21</span>
+            <a href="#chapter-5">5 · Insights, system &amp; audit</a>
           </li>
           <li class="h3">
-            <span>5.1 · Operations &amp; delivery failures</span
-            ><span class="num">21</span>
+            <a href="#chapter-5-1">5.1 · Operations &amp; delivery failures</a>
           </li>
           <li class="h3">
-            <span>5.2 · Reports &amp; storefront analytics</span
-            ><span class="num">22</span>
+            <a href="#chapter-5-2">5.2 · Reports &amp; manager handoff</a>
           </li>
           <li class="h3">
-            <span>5.3 · Rules, rule tester, audit logs</span
-            ><span class="num">23</span>
+            <a href="#chapter-5-3">5.3 · Rules, rule tester &amp; audit logs</a>
+          </li>
+          <li class="h3">
+            <a href="#chapter-5-4"
+              >5.4 · Owner overview, planning models &amp; actuals</a
+            >
           </li>
           <li class="h2">
-            <span>6 · Day-in-the-life playbook</span><span class="num">24</span>
+            <a href="#chapter-6">6 · Day-in-the-life playbook</a>
+          </li>
+          <li class="h3"><a href="#chapter-6-1">6.1 · Common scenarios</a></li>
+          <li class="h3">
+            <a href="#chapter-6-2">6.2 · Escalation &amp; service targets</a>
           </li>
           <li class="h3">
-            <span>6.1 · Common scenarios &amp; how to solve them</span
-            ><span class="num">24</span>
-          </li>
-          <li class="h3">
-            <span>6.2 · Escalation &amp; service level targets</span
-            ><span class="num">25</span>
-          </li>
-          <li class="h3">
-            <span>6.3 · Glossary &amp; quick-reference card</span
-            ><span class="num">26</span>
+            <a href="#chapter-6-3">6.3 · Glossary &amp; quick reference</a>
           </li>
         </ol>
       </div>
@@ -953,9 +953,11 @@
          ════════════════════════════════════════════════════════════ -->
     <section class="page-break">
       <span class="section-tag">Chapter 1</span>
-      <h2 style="border: 0; margin-top: 4pt">Platform overview</h2>
+      <h2 id="chapter-1" style="border: 0; margin-top: 4pt">
+        Platform overview
+      </h2>
 
-      <h3>1.1 · The four jobs CareMetric Breathe does</h3>
+      <h3 id="chapter-1-1">1.1 · The four jobs CareMetric Breathe does</h3>
       <p>
         CareMetric Breathe is one product with four tightly-integrated jobs.
         Knowing which "job" a customer is in is the single fastest way to solve
@@ -986,14 +988,15 @@
             </td>
           </tr>
           <tr>
-            <td><strong>Cash-pay shop</strong></td>
-            <td>Returning &amp; uninsured patients</td>
+            <td><strong>Product selection &amp; order requests</strong></td>
+            <td>Patients choosing or replacing supplies</td>
             <td>
-              Direct-to-consumer storefront with Stripe Hosted Checkout,
-              wishlists, and Subscribe &amp; Save.
+              Review products and request an insurance order. Staff verify the
+              request before fulfillment.
             </td>
-            <td><code>/shop, /shop/cart, /shop/checkout, /account</code></td>
+            <td>Storefront and <code>/admin/fitter/orders</code></td>
           </tr>
+
           <tr>
             <td><strong>Insurance pipeline</strong></td>
             <td>Insured patients</td>
@@ -1007,10 +1010,12 @@
             <td><strong>Resupply automation</strong></td>
             <td>Existing patients on a replacement schedule</td>
             <td>
-              Two-way SMS, email, and voice outreach driven by a rule engine and
-              an in-process pg-boss worker.
+              Scheduled reminders and staff-requested email, SMS, and automated
+              calls, with replies available to the team.
             </td>
-            <td><code>admin Conversations / Episodes / Rules</code></td>
+            <td>
+              <code>admin Conversations / Resupply calendar / Episodes</code>
+            </td>
           </tr>
         </tbody>
       </table>
@@ -1059,8 +1064,8 @@
                 Find the mask that finally fits — in 3 minutes, on your phone.
               </h3>
               <p class="page-sub" style="max-width: 4in; font-size: 9.5pt">
-                On-device facial scan. No images leave your device. Insurance or
-                cash-pay. Free shipping over $50.
+                On-device facial measurement. No images leave your device. Staff
+                review insurance supply requests before fulfillment.
               </p>
               <div style="display: flex; gap: 8pt; margin-top: 10pt">
                 <span class="btn gold">Start the fitter →</span>
@@ -1098,57 +1103,34 @@
         insurance qualifier all live at the same URL.
       </div>
 
-      <h3>1.2 · Why we are the best CPAP supply app on the market</h3>
-      <p>
-        Customers compare us to legacy DME suppliers and to one-stop online
-        shops. We win on every axis. Memorize these — they are the
-        differentiators you should bring up unprompted on every call.
-      </p>
+      <h3 id="chapter-1-2">1.2 · What to explain to a patient</h3>
+      <ul>
+        <li>
+          <strong>Mask fitting:</strong> on-device measurements help recommend a
+          mask; a clinician must resolve clinical concerns.
+        </li>
+        <li>
+          <strong>Repeat supplies:</strong> staff can check recorded items,
+          quantities, order dates, and replacement rules before preparing a
+          request.
+        </li>
+        <li>
+          <strong>Contact:</strong> reminders ask whether supplies are needed. A
+          calendar date or unanswered reminder is not permission to ship.
+        </li>
+        <li>
+          <strong>Insurance:</strong> coverage, prescription validity,
+          quantities, and required authorizations need verification. A
+          replacement-rule result alone does not guarantee payment.
+        </li>
+        <li>
+          <strong>Secure signatures:</strong> the patient reviews the proposed
+          items and paperwork. The link does not charge a card. Do not promise
+          shipment before fulfillment is cleared.
+        </li>
+      </ul>
 
-      <div class="grid-2">
-        <div class="callout">
-          <strong>1. The on-device fitter.</strong> Most competitors guess mask
-          sizing from a photo upload — we measure facial landmarks on the
-          patient's own phone using MediaPipe Face Mesh and send only numbers.
-          The patient's image never leaves the browser, never touches our
-          servers, and is never logged.
-        </div>
-        <div class="callout">
-          <strong>2. One unified surface.</strong> Fitter, shop, insurance, and
-          resupply all live behind the same login. Patients are not shipped
-          between three different vendors with three different accounts. Reps
-          see the whole journey in one Patient 360 view.
-        </div>
-        <div class="callout">
-          <strong>3. Two-way conversational AI.</strong> Patients can text us in
-          plain English ("running low on supplies, ship me what worked last
-          time") and the system threads it into the right episode. Voice calls
-          use OpenAI's voice API for natural interactions; SMS uses
-          GPT-completion drafts that you review before sending.
-        </div>
-        <div class="callout">
-          <strong>4. One-tap reorder.</strong> Past orders are stored on the
-          customer's account (encrypted at rest in Postgres). A patient who
-          ordered twelve months ago can reorder the exact same SKU and size with
-          a single tap on their phone.
-        </div>
-        <div class="callout">
-          <strong>5. Subscribe &amp; Save with full transparency.</strong>
-          Recurring orders driven by Stripe with the customer in full control —
-          pause, skip, or change cadence from the account page without calling
-          us. (You can do the same from the admin Subscriptions page when they
-          ask you to.)
-        </div>
-        <div class="callout">
-          <strong>6. Insurance done right.</strong> The qualifier is a real form
-          — not a 'we'll get back to you' explainer page. Patients fill in their
-          carrier and member ID; we route the lead to verification inside the
-          admin Insurance Leads queue and ship as soon as eligibility comes back
-          clean.
-        </div>
-      </div>
-
-      <h3>1.3 · Privacy &amp; the on-device promise</h3>
+      <h3 id="chapter-1-3">1.3 · Privacy &amp; the on-device promise</h3>
       <p>
         Two non-negotiable rules govern everything we do with patient data —
         repeat them to any patient who asks how we keep them safe.
@@ -1182,9 +1164,11 @@
          ════════════════════════════════════════════════════════════ -->
     <section class="page-break">
       <span class="section-tag">Chapter 2</span>
-      <h2 style="border: 0; margin-top: 4pt">The customer journey</h2>
+      <h2 id="chapter-2" style="border: 0; margin-top: 4pt">
+        The customer journey
+      </h2>
 
-      <h3>2.1 · Storefront &amp; mask fitter</h3>
+      <h3 id="chapter-2-1">2.1 · Storefront &amp; mask fitter</h3>
       <p>
         Patients arrive at <strong>your storefront domain</strong> from search,
         sleep-study referrals, and our doctor partner network. The home page
@@ -1308,7 +1292,7 @@
                 "
               >
                 <span class="btn gold">Order through insurance</span>
-                <span class="btn primary">Buy with card</span>
+                <span class="btn primary">Request supplies</span>
                 <span class="btn">Email me my results</span>
               </div>
             </div>
@@ -1316,77 +1300,58 @@
         </div>
       </div>
       <div class="caption">
-        Figure 2 · Results page. The top match is highlighted in gold; cash-pay
-        and insurance options sit side by side.
+        Figure 2 · Illustrative mask results. Use the current insurance-request
+        flow; retired card checkout is not a payment option.
       </div>
 
-      <h3>2.2 · Insurance qualifier vs. cash-pay</h3>
+      <h3 id="chapter-2-2">
+        2.2 · Insurance requests &amp; internal self-pay scenarios
+      </h3>
       <p>
-        Customers who click <em>Order through insurance</em> land on the
-        Insurance qualifier (<code>/insurance</code>). It is a real form:
-        carrier, member ID, group number, primary cardholder, optional Rx
-        upload. Submissions create a row in <code>insurance_leads</code> and
-        appear in the <strong>Insurance Leads</strong> queue inside the admin
-        console (Chapter 4.4).
+        The storefront insurance form at <code>/insurance</code> collects
+        information for staff review. Verify the correct patient, prescription,
+        coverage, and requested quantities in the patient record. Obtain missing
+        evidence before promising an order or patient amount.
       </p>
-      <p>
-        Cash-pay customers go straight to a Stripe Hosted Checkout session —
-        Stripe is the source of truth for products and prices, so the admin
-        Inventory page (Chapter 4.4) reflects whatever you change in the Stripe
-        dashboard within seconds.
-      </p>
-      <table class="spec">
-        <thead>
-          <tr>
-            <th>Decision</th>
-            <th>Cash-pay</th>
-            <th>Insurance</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td>Time to ship</td>
-            <td>Same / next business day</td>
-            <td>2–5 days (after eligibility)</td>
-          </tr>
-          <tr>
-            <td>Out-of-pocket</td>
-            <td>Listed price</td>
-            <td>Co-pay + deductible only</td>
-          </tr>
-          <tr>
-            <td>Rx required</td>
-            <td>No</td>
-            <td>Yes (we can request it)</td>
-          </tr>
-          <tr>
-            <td>Ships through</td>
-            <td>Stripe Checkout → fulfillment</td>
-            <td>Insurance Leads queue → fulfillment</td>
-          </tr>
-          <tr>
-            <td>Patient sees in admin as</td>
-            <td>Customer 360</td>
-            <td>Patient 360 + Insurance Lead</td>
-          </tr>
-        </tbody>
-      </table>
-
-      <h3>2.3 · Customer accounts &amp; one-tap reorder</h3>
-      <p>
-        Signed-in customers have an Account hub at <code>/account</code>
-        showing past orders, payment methods (the last four digits — full cards
-        live with Stripe), shipping addresses, active subscriptions, and saved
-        wishlists. The standout feature is one-tap reorder: every prior order
-        has a "Order again" button that re-creates the cart with the same SKU
-        and size in one tap.
-      </p>
-      <div class="callout info">
-        <strong>Why this matters on a call.</strong> When a patient says "send
-        me what I had last time", you can do it from the Customers → Customer
-        Detail page in three clicks. They never have to remember the model name.
-        (Chapter 4.2.)
+      <div class="callout warn">
+        <strong>No patient card checkout.</strong> Patient card checkout and
+        recurring shop billing are retired. <em>Internal self-pay</em> in
+        Pricing &amp; Profitability is a staff planning scenario. It neither
+        charges a patient nor establishes an approved payment route. An
+        insurance signature link also collects no payment. Refer payment and
+        coverage questions to authorized billing staff.
       </div>
+      <p>
+        The billed amount and expected collections are different. A pricing
+        target cannot increase a contracted insurance payment or create patient
+        liability. Explain only amounts verified by billing.
+      </p>
+      <h3 id="chapter-2-3">2.3 · Returning patients &amp; repeat requests</h3>
+      <ol class="steps">
+        <li>
+          Confirm identity and open <strong>Patients</strong> → the patient →
+          <strong>Resupply</strong>.
+        </li>
+        <li>
+          Read <strong>Order history</strong>: exact item, quantity, status, and
+          shipping dates. Ask whether the patient still uses and needs those
+          supplies.
+        </li>
+        <li>
+          Check <strong>Supplies &amp; next eligibility</strong>, the
+          prescription, current address, and contact preference. Resolve unknown
+          or restricted eligibility before fulfillment.
+        </li>
+        <li>
+          Prepare a new insurance signature request or use the patient's
+          resupply draft. Old history is a reference; the former item, price, or
+          delivery evidence may no longer be valid.
+        </li>
+      </ol>
+      <p>
+        See <a href="#chapter-3-4">patient history</a> and
+        <a href="#chapter-4-1">signature orders</a> for detailed steps.
+      </p>
     </section>
 
     <!-- ════════════════════════════════════════════════════════════════
@@ -1394,18 +1359,19 @@
          ════════════════════════════════════════════════════════════ -->
     <section class="page-break">
       <span class="section-tag">Chapter 3</span>
-      <h2 style="border: 0; margin-top: 4pt">The admin console</h2>
+      <h2 id="chapter-3" style="border: 0; margin-top: 4pt">
+        The admin console
+      </h2>
       <p>
-        The admin console is mounted at <code>/admin/*</code> — same domain,
-        gated by the <code>useGetAdminMe</code> session check. Your permissions
-        are role-based: <span class="pill gold">admin</span>,
-        <span class="pill blue">agent</span>, and
-        <span class="pill slate">operator</span>. Most CSRs are an
-        <strong>agent</strong>, which gives you full access to inboxes, orders,
-        and patients but not to Rules, Audit, or Team management.
+        Sign in at <code>/admin/sign-in</code>. The console shows actions
+        allowed for your role and enabled for your organization. CSR access can
+        include patients, conversations, order requests, and pricing evaluation.
+        Authoritative cost verification, exception approval, publishing, and
+        owner reporting are management responsibilities. Ask your lead about
+        missing or disabled actions.
       </p>
 
-      <h3>3.1 · Dashboard &amp; live KPIs</h3>
+      <h3 id="chapter-3-1">3.1 · Dashboard &amp; live KPIs</h3>
       <p>
         Sign in at <code>/admin/sign-in</code> and you land on the dashboard.
         Six KPI tiles drive every other page on the site — each is a clickable
@@ -1433,7 +1399,7 @@
             </div>
             <div class="group">Customers</div>
             <div class="nav"><a>Patients</a></div>
-            <div class="group">Orders &amp; Shop</div>
+            <div class="group">Orders &amp; leads</div>
             <div class="nav">
               <a>Orders</a>
               <a>Subscriptions</a>
@@ -1520,7 +1486,7 @@
         queue.
       </div>
 
-      <h3>3.2 · Conversations (SMS, email, voice)</h3>
+      <h3 id="chapter-3-2">3.2 · Conversations (SMS, email, voice)</h3>
       <p>
         The Conversations page is your inbox. Every channel — outbound SMS,
         inbound replies, MMS attachments, email replies, and voice transcripts —
@@ -1651,7 +1617,7 @@
                       >+1 (267) 555-0188</span
                     >
                   </td>
-                  <td>"Pause my subscription for July please"</td>
+                  <td>"Please pause my resupply reminders for July"</td>
                   <td><span class="pill blue">SMS</span></td>
                   <td>SUB-2204</td>
                   <td><span class="pill amber">Awaiting admin</span></td>
@@ -1778,7 +1744,7 @@
                 <div style="display: flex; gap: 4pt; flex-wrap: wrap">
                   <span class="btn">Re-ship same SKU</span>
                   <span class="btn">Open RMA</span>
-                  <span class="btn">Pause subscription</span>
+                  <span class="btn">Review reminder preferences</span>
                   <span class="btn">Escalate to lead</span>
                 </div>
               </div>
@@ -1824,7 +1790,7 @@
         bubble is the suggestion — nothing sends until you click.
       </div>
 
-      <h3>3.3 · Episodes &amp; resupply automation</h3>
+      <h3 id="chapter-3-3">3.3 · Episodes &amp; resupply automation</h3>
       <p>
         An <strong>episode</strong> is the unit of work the system tracks — one
         mask resupply, one cushion replacement, one headgear swap. The rule
@@ -1833,12 +1799,13 @@
         "Episode" link in the conversation list.
       </p>
       <p>
-        Episode lifecycle: <span class="pill slate">pending</span> →
-        <span class="pill blue">awaiting_patient</span> →
-        <span class="pill emerald">fulfilled</span>, with side-tracks for
-        <span class="pill amber">overdue</span>,
-        <span class="pill rose">cancelled</span>, and
-        <span class="pill slate">paused</span>.
+        Use the current episode filters: <strong>Outreach</strong>,
+        <strong>Awaiting reply</strong>, <strong>Address hold</strong>,
+        <strong>Confirmed</strong>, <strong>Fulfilled</strong>,
+        <strong>Declined</strong>, <strong>Expired</strong>, and
+        <strong>Canceled</strong>. <strong>Overdue</strong> identifies late open
+        work. A confirmed response is not a recorded shipment; resolve
+        prescription, order, and delivery requirements before fulfillment.
       </p>
 
       <div class="shot">
@@ -1921,45 +1888,106 @@
         </div>
       </div>
       <div class="caption">
-        Figure 6 · Episodes filtered to <em>overdue</em>. The auto-call rule
-        fires at day 5; you should reach out first if you can.
+        Figure 6 · Illustrative overdue episodes. Actual timing follows your
+        organization’s configuration. Check recent conversations before another
+        contact.
       </div>
 
-      <h3>3.4 · Patients (Patient 360)</h3>
+      <h3 id="chapter-3-4">
+        3.4 · Patient history &amp; replacement eligibility
+      </h3>
       <p>
-        The <strong>Patients</strong> page lists every PHI-bearing patient in
-        the system — distinct from the <strong>Customers</strong> page (cash
-        shoppers without an open insurance lead). Click into a row to see the
-        full Patient 360: demographics, prescription, mask history, every
-        conversation, every episode, and a notes timeline.
+        Open <strong>Patients</strong>, find the correct person, and choose
+        <strong>Resupply</strong>. From the calendar,
+        <strong>Orders &amp; eligibility</strong> opens the same summary without
+        leaving the list.
       </p>
-      <ul>
+      <ol class="steps">
         <li>
-          <strong>Phone &amp; email lookup</strong> across all touchpoints — one
-          search box, every channel.
+          <strong>What was ordered:</strong> each
+          <strong>Order history</strong> row is a recorded supply order line,
+          not necessarily a whole order. Match item name/SKU,
+          <strong>Qty</strong>, <strong>Ordered</strong>, and
+          <strong>Status / reference</strong>. Use the recorded quantity, not an
+          assumed standard pack size.
         </li>
         <li>
-          <strong>Status:</strong> active, paused, churned. Pausing suppresses
-          outbound automation without deleting data.
+          <strong>When it moved:</strong> read <strong>Shipped</strong> and
+          <strong>Delivered</strong> separately. A queued line, signature, or
+          missing date does not prove shipment or receipt. Use the reference for
+          fulfillment follow-up.
         </li>
         <li>
-          <strong>Notes:</strong> internal-only timeline; never visible to the
-          patient.
+          <strong>Older records:</strong> use <strong>Older</strong> and
+          <strong>Newer</strong> through 25 lines at a time. The total counts
+          lines. If a page fails, retry it or use <strong>Newer</strong>; a
+          failed page is not empty history.
         </li>
         <li>
-          <strong>Recent activity:</strong> last fitter run, last order, last
-          reply — at a glance.
+          <strong>Signature requests:</strong> when present,
+          <strong>CSR orders &amp; signatures</strong> shows items, quantities,
+          creation date, and signature status linked to the patient's most
+          recent 50 resupply drafts. A signed request may also appear in
+          fulfillment history; do not count it as a second shipment.
         </li>
-      </ul>
-
-      <div class="callout warn">
-        <strong>PHI handling.</strong> Don't paste patient names, phone numbers,
-        prescriptions, or carrier IDs into Slack, email, screenshot tools, or
-        anything not behind CareMetric Breathe SSO. The audit log records every
-        page view that surfaces PHI; pasting it elsewhere will not.
+        <li>
+          <strong>Replacement checks:</strong> read every
+          <strong>Supplies &amp; next eligibility</strong> row: supply/SKU/HCPCS
+          mapping, prescription expiry, <strong>Last ordered</strong>,
+          <strong>Next eligibility</strong>, and
+          <strong>Scheduled resupply</strong>.
+        </li>
+      </ol>
+      <table class="spec">
+        <thead>
+          <tr>
+            <th>What you see</th>
+            <th>How to use it</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Eligible by replacement rule</td>
+            <td>
+              Recorded history passes the mapped rule. Check available units,
+              valid prescription, insurance coverage, and patient need before
+              fulfillment.
+            </td>
+          </tr>
+          <tr>
+            <td>Interval opens… / Quantity limit reached</td>
+            <td>
+              The interval or quantity allowance still restricts the request.
+              Read the reason, units available, and any
+              <strong>Next quantity review</strong> date. An interval date does
+              not mean unlimited supply.
+            </td>
+          </tr>
+          <tr>
+            <td>Needs eligibility review</td>
+            <td>
+              The app cannot establish a mapped rule, for example for an
+              unmapped item. Ask eligibility or billing staff to review it.
+              Unknown is not eligible.
+            </td>
+          </tr>
+          <tr>
+            <td>Scheduled resupply / Not scheduled</td>
+            <td>
+              Scheduling controls review/contact timing. It is separate from
+              replacement eligibility and coverage. No active prescription
+              requires review or renewal before scheduling.
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="callout info">
+        <strong>Useful wording:</strong> “Your record shows this item and
+        quantity on this date. I’ll check when another supply is allowed and
+        confirm that you need it before we prepare the request.”
       </div>
 
-      <h3>3.5 · Follow-ups, canned replies, macros</h3>
+      <h3 id="chapter-3-5">3.5 · Follow-ups, canned replies, macros</h3>
       <p>Three small but heavily-used tools:</p>
       <ul>
         <li>
@@ -1981,6 +2009,121 @@
           a rule against a fake patient before flipping it on.
         </li>
       </ul>
+      <h3 id="chapter-3-6" class="page-break">
+        3.6 · Resupply calendar &amp; individual or bulk outreach
+      </h3>
+      <p>
+        Open <strong>Resupply calendar</strong> at
+        <code>/admin/resupply-calendar</code>, or
+        <strong>Open resupply calendar</strong> from a patient's summary. The
+        calendar groups scheduled supply cycles by patient. A person may have
+        several supplies or due dates; outreach selection is by patient.
+      </p>
+      <ol class="steps">
+        <li>
+          Choose <strong>Month calendar</strong> for planning or
+          <strong>Due now &amp; overdue</strong> for current work. Navigate with
+          <strong>Previous month</strong>, <strong>Next month</strong>, or
+          <strong>Today</strong>. Select a day to filter the list;
+          <strong>Show whole month</strong> clears that day filter.
+        </li>
+        <li>
+          Use <strong>Search patients or supplies…</strong> to narrow the list.
+          Read patient and supply-cycle counts, due dates, contact details, and
+          channel preference. Dates use the time zone named on the calendar,
+          separate from UTC owner-report dates.
+        </li>
+        <li>
+          Choose <strong>Orders &amp; eligibility</strong> to inspect history
+          and limits. Check recent conversations, prescription, active status,
+          and permission to contact. Future calendar entries are for planning;
+          the send check skips supplies not yet scheduled due.
+        </li>
+        <li>
+          For one patient, select their checkbox or use outreach controls in
+          their Resupply summary. For a batch, select individual patients or
+          <strong>Select visible patients (up to 50)</strong>. Larger lists
+          require separate reviewed batches. Changing month, day, view, or
+          search clears selection; check it again.
+        </li>
+        <li>
+          Choose <strong>Email</strong>, <strong>SMS</strong>, or
+          <strong>Automated call</strong>. Automated call queues a system call;
+          it does not connect a live CSR call. For a staff call, follow the
+          approved calling workflow and record the conversation.
+        </li>
+        <li>
+          Review the confirmation's names, count, and channel. It asks whether
+          the patients still use their supplies and need a refill. Choose
+          <strong>Queue outreach</strong> only when the list is correct, or
+          cancel to revise it.
+        </li>
+        <li>
+          Read each result and the
+          <strong>queued · skipped · failed</strong> totals. Open
+          <strong>Conversations</strong> for delivery information and replies. A
+          queue result does not create an order or show patient agreement.
+        </li>
+      </ol>
+      <div style="break-inside: avoid">
+        <h4>Outreach results and contact limits</h4>
+        <table class="spec">
+          <thead>
+            <tr>
+              <th>Result</th>
+              <th>Next step</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Queued</td>
+              <td>
+                Accepted for processing. Do not requeue these patients or switch
+                channels just to obtain another confirmation. Workers recheck
+                restrictions before sending. Sent/accepted is not confirmed
+                delivery; a queued call is not an answered call.
+              </td>
+            </tr>
+            <tr>
+              <td>Skipped</td>
+              <td>
+                Read the reason: recent contact or queued work, not yet due,
+                inactive patient, prescription review, missing email/phone, or
+                contact hours. Correct only verified issues. SMS and calls
+                respect local contact hours. Do not override opt-outs or change
+                preferences merely to send.
+              </td>
+            </tr>
+            <tr>
+              <td>Failed</td>
+              <td>
+                Review and correct the problem, then select only unresolved
+                patients and use the channel action again. The current view
+                excludes successfully queued recipients; do not rely on that
+                after changing views. Do not resend the entire batch.
+              </td>
+            </tr>
+            <tr>
+              <td>Request error / uncertain result</td>
+              <td>
+                Check Conversations and the current queue state before retrying.
+                A lost response may follow a successful send. Duplicate-contact
+                protection may retain the earlier attempt; ask your lead to
+                investigate rather than repeatedly sending or switching
+                channels.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="callout warn">
+          <strong>Channel availability and contact limits.</strong> Contact
+          information does not establish consent or a working delivery service.
+          Recent conversations within 48 hours can prevent another resupply
+          contact across channels. Unavailable email, SMS, or calling services
+          need an administrator; do not use a personal account. Review opt-outs,
+          contact hours, and replies before proceeding.
+        </div>
+      </div>
     </section>
 
     <!-- ════════════════════════════════════════════════════════════════
@@ -1988,205 +2131,295 @@
          ════════════════════════════════════════════════════════════ -->
     <section class="page-break">
       <span class="section-tag">Chapter 4</span>
-      <h2 style="border: 0; margin-top: 4pt">Orders &amp; shop</h2>
-
-      <h3>4.1 · Orders, subscriptions, returns</h3>
-      <p>Three sibling pages cover the cash-pay shop:</p>
+      <h2 id="chapter-4" style="border: 0; margin-top: 4pt">
+        Insurance orders &amp; pricing reviews
+      </h2>
+      <h3 id="chapter-4-1">4.1 · Create a signature order</h3>
+      <p>
+        Open <strong>Orders</strong> at <code>/admin/fitter/orders</code>. In
+        <strong>Signature orders</strong>, choose <strong>Create order</strong>.
+        This is an insurance request and paperwork workflow. Nothing is charged
+        on the patient's signature link.
+      </p>
+      <ol class="steps">
+        <li>
+          Confirm the patient and enter their name and current email or mobile
+          number. At least one contact method is needed. In
+          <strong>Internal profitability review</strong>, use
+          <strong>Patient for pricing review</strong> to select the actual
+          record rather than relying on a typed customer name.
+        </li>
+        <li>
+          Add exact descriptions, quantities, and billed unit amounts. Use
+          <strong>Add item</strong> where needed. Patient signature orders
+          support up to 20 lines and 1–99 units per line; larger internal
+          simulations cannot attach.
+        </li>
+        <li>
+          Use <strong>Evaluate items</strong> or
+          <strong>Choose approved review</strong> as described below. When
+          reviews are required, the order cannot proceed without a valid
+          approved insurance review. When optional, an order without one remains
+          unreviewed.
+        </li>
+        <li>
+          Select applicable <strong>Standalone paperwork to sign</strong>. Use
+          <strong>Document packets</strong> for onboarding or custom patient
+          packets. Confirm the paperwork and items belong to this request.
+        </li>
+        <li>
+          If needed, add a <strong>Note to customer</strong>. The patient sees
+          it; exclude supplier costs, margins, internal approval reasons, and
+          staff-only notes.
+        </li>
+        <li>
+          Review the complete order, then choose
+          <strong>Create &amp; send</strong> once. Keep its reference and read
+          the communication result. A created request is not a signature,
+          payment, or shipment.
+        </li>
+      </ol>
+      <h3 id="chapter-4-2">4.2 · Evaluate costs, collections &amp; delivery</h3>
+      <p>
+        Use <strong>Evaluate items</strong> on the order, or open
+        <strong>Pricing &amp; Profitability</strong> at
+        <code>/admin/pricing</code> → <strong>Item review</strong>. CSRs can
+        evaluate permitted scenarios and request review; entering an estimate
+        does not make supplier or insurance evidence verified.
+      </p>
+      <ol class="steps">
+        <li>
+          Choose the insurance scenario and correct patient. For each line
+          select the exact catalog item and supplier offer, quantity, billed
+          unit amount, and stock or dropship fulfillment. Regular
+          <strong>Supplier costs</strong> offers record cost per canonical
+          selling unit, with units per pack recorded separately. Do not divide
+          an already normalized unit cost by pack size again. The provisional
+          <strong>New items</strong> comparison below instead starts from
+          purchase-pack cost.
+        </li>
+        <li>
+          Review acquisition, inbound freight, dropship charges, outbound
+          delivery, handling, packaging, other fees, and applicable reserves. Do
+          not double-count a charge included in another cost. Blank is unknown;
+          use zero only when evidence establishes zero.
+        </li>
+        <li>
+          Check delivery country, postal code, and supplier service against the
+          saved patient address and supplier coverage. For stock shipping, enter
+          measured weights and dimensions for every parcel, choose
+          <strong>Get shipping rates</strong>, and select the appropriate
+          returned rate. Missing configuration or a missing parcel is not free
+          delivery.
+        </li>
+        <li>
+          For insurance, select the
+          <strong>Verified collection profile</strong> matching this patient and
+          exact items/quantities. An unverified
+          <strong>Expected total collections ($)</strong> entry remains an
+          estimate. Ask management or billing for current source evidence.
+          Billed amounts do not establish what insurance or the patient will
+          pay.
+        </li>
+        <li>
+          Review applicable processing fees, their tax-inclusive charge basis
+          where configured, reserves, discounts, and allocated overhead.
+          Shipping charged in an internal self-pay scenario differs from actual
+          delivery cost. Do not assume card fees apply to insurance collections.
+        </li>
+        <li>
+          Check <strong>Review valid through (UTC)</strong> and evidence dates.
+          Carrier estimates last no longer than their returned expiry, currently
+          up to 30 minutes; a rate is not a purchased label or guaranteed
+          carrier price.
+        </li>
+        <li>
+          Choose <strong>Evaluate profitability</strong>. Read delivered cost,
+          profit after variable costs, policy margin, the rule basis, and every
+          issue. Changes to patient, items, supplier, quantities, address, or
+          assumptions require evaluation again.
+        </li>
+      </ol>
       <table class="spec">
         <thead>
           <tr>
-            <th>Page</th>
-            <th>What it shows</th>
-            <th>Common CSR actions</th>
+            <th>Result</th>
+            <th>Meaning and next action</th>
           </tr>
         </thead>
         <tbody>
           <tr>
-            <td><code>/admin/fitter/orders</code></td>
+            <td>Meets target</td>
             <td>
-              Every Stripe-checkout order with status, tracking, fulfillment
-              notes.
+              The calculation meets policy. A complete, verified scenario can
+              save as approved; inspect saved approval status and expiry before
+              use.
             </td>
-            <td>Re-send confirmation, edit shipping, refund, mark shipped.</td>
           </tr>
           <tr>
-            <td><code>/admin/shop/subscriptions</code></td>
+            <td>Approval needed</td>
             <td>
-              Active Subscribe &amp; Save subscriptions: cadence, next ship
-              date, products.
+              A permitted exception, such as a below-target result or estimated
+              evidence, needs explicit manager review. Use
+              <strong>Request manager approval</strong>; requesting does not
+              approve it.
             </td>
-            <td>Pause, skip, change cadence, change SKU, cancel.</td>
           </tr>
           <tr>
-            <td><code>/admin/shop/returns</code></td>
-            <td>RMA queue: requested → label_sent → received → refunded.</td>
-            <td>Generate prepaid label, refund (full / partial), close RMA.</td>
+            <td>Cost information needed</td>
+            <td>
+              Missing or stale evidence prevents a complete review. Obtain the
+              information and reevaluate. Saving a draft does not clear the
+              issue.
+            </td>
+          </tr>
+          <tr>
+            <td>Blocked</td>
+            <td>
+              A hard floor, minimum contribution, or other policy limit prevents
+              approval. A manager's exception cannot bypass the hard floor.
+              Correct assumptions or arrange an authorized alternative.
+            </td>
           </tr>
         </tbody>
       </table>
-
-      <!-- Order detail mockup -->
-      <div class="shot">
-        <div class="shot-chrome">
-          <span class="shot-dot r"></span><span class="shot-dot y"></span
-          ><span class="shot-dot g"></span>
-          <span class="shot-url"
-            >https://cmbreathe.com/admin/fitter/orders/ORD-9482</span
-          >
-        </div>
-        <div class="shot-body">
-          <div class="shot-side">
-            <div class="brand">CareMetric Breathe</div>
-            <div class="group">Orders &amp; Shop</div>
-            <div class="nav">
-              <a class="active">Orders</a><a>Subscriptions</a
-              ><a>Returns &amp; RMAs</a><a>Customers</a><a>Abandoned Carts</a>
-            </div>
-          </div>
-          <div class="shot-main">
-            <div
-              style="
-                display: flex;
-                justify-content: space-between;
-                align-items: baseline;
-              "
-            >
-              <div>
-                <h3 class="page-title">Order ORD-9482</h3>
-                <div class="page-sub">
-                  M. Alvarez · placed Apr 30 · paid via Independence Blue Cross
-                  · 1 item
-                </div>
-              </div>
-              <div style="display: flex; gap: 6pt">
-                <span class="pill emerald">Delivered</span>
-                <span class="btn">Resend confirmation</span>
-                <span class="btn gold">Reorder for customer</span>
-              </div>
-            </div>
-            <div class="kpi-grid" style="grid-template-columns: repeat(4, 1fr)">
-              <div class="kpi-card">
-                <div class="label">Total</div>
-                <div class="value" style="font-size: 14pt">$0.00</div>
-                <div class="hint">Insurance · co-pay $0</div>
-              </div>
-              <div class="kpi-card">
-                <div class="label">Items</div>
-                <div class="value" style="font-size: 14pt">1</div>
-                <div class="hint">F30i · M</div>
-              </div>
-              <div class="kpi-card">
-                <div class="label">Tracking</div>
-                <div
-                  class="value"
-                  style="font-size: 11pt; color: var(--tone-blue)"
-                >
-                  USPS · 1Z…
-                </div>
-                <div class="hint">Delivered May 02</div>
-              </div>
-              <div class="kpi-card">
-                <div class="label">Source</div>
-                <div class="value" style="font-size: 11pt">Resupply SMS</div>
-                <div class="hint">Episode EP-4012</div>
-              </div>
-            </div>
-            <table class="shot-table">
-              <thead>
-                <tr>
-                  <th>Item</th>
-                  <th>SKU</th>
-                  <th>Qty</th>
-                  <th>List</th>
-                  <th>Charge</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td>ResMed AirFit F30i — Medium</td>
-                  <td>RES-F30I-M</td>
-                  <td>1</td>
-                  <td>$229.00</td>
-                  <td>$0.00 <span class="pill emerald">Insurance</span></td>
-                </tr>
-              </tbody>
-            </table>
-            <h4 style="margin-top: 10pt">Activity</h4>
-            <div class="msg" style="font-size: 7.5pt">
-              <strong>May 02 14:12</strong> · Marked delivered (USPS scan).
-            </div>
-            <div class="msg" style="font-size: 7.5pt">
-              <strong>May 01 09:34</strong> · Shipped (label printed by
-              Fulfillment).
-            </div>
-            <div class="msg" style="font-size: 7.5pt">
-              <strong>Apr 30 18:01</strong> · Patient replied YES to resupply
-              SMS · auto-created.
-            </div>
-          </div>
-        </div>
-      </div>
-      <div class="caption">
-        Figure 7 · Order detail. The "Reorder for customer" button drops the
-        same SKU into a fresh cart in their account.
-      </div>
-
-      <h3>4.2 · Customers (Customer 360)</h3>
       <p>
-        Customers (<code>/admin/shop/customers</code>) is the cash-pay analogue
-        of Patients. Lifetime value, every order, every subscription, every
-        abandoned cart, every review they've left, every wishlist they've saved
-        — all on one screen. The
-        <strong>Reorder for customer</strong> action lives here too: click any
-        past order and the system creates a fresh cart and emails them a
-        checkout link.
+        <strong>Margin is not markup.</strong> The company chooses its target
+        and hard floor; there is no universal recommended percentage. Check
+        whether policy includes allocated overhead. Review economics are not
+        proof of cash collected or total company profit.
       </p>
-
-      <h3>4.3 · Abandoned carts &amp; back-in-stock</h3>
-      <p>The shop captures two recoverable signals:</p>
-      <ul>
+      <h3 id="chapter-4-3">
+        4.3 · Save, request approval &amp; attach the exact review
+      </h3>
+      <ol class="steps">
         <li>
-          <strong>Abandoned Carts</strong>
-          (<code>/admin/shop/abandoned-carts</code>) — a customer added a
-          product but didn't finish checkout. After 4 hours we send a reminder
-          email; after 24 hours, a coupon. You can re-trigger either from this
-          page.
+          Use the displayed action: <strong>Save review</strong>,
+          <strong>Request manager approval</strong>, or
+          <strong>Save draft review</strong>. Give the lead the patient, exact
+          items/quantities, evidence, expiry, and issue to resolve through an
+          approved internal channel.
         </li>
         <li>
-          <strong>Back-in-Stock</strong>
-          (<code>/admin/shop/back-in-stock</code>) — customers who asked to be
-          notified when a SKU returns. The page shows pending notifications
-          grouped by product so you can prioritize what to re-stock.
-        </li>
-      </ul>
-
-      <h3>4.4 · Reviews, Q&amp;A, inventory, insurance leads</h3>
-      <ul>
-        <li>
-          <strong>Reviews</strong> (<code>/admin/shop/reviews</code>) —
-          moderation queue for product reviews. Approve, reply publicly, or
-          hide. Replies email the reviewer through the shared SendGrid client
-          (from your tenant's own configured From address).
+          Once approved, choose <strong>Use approved review in order</strong>.
+          Alternatively choose <strong>Choose approved review</strong>, inspect
+          the patient's saved approvals, then <strong>Use this review</strong>.
         </li>
         <li>
-          <strong>Product Q&amp;A</strong>
-          (<code>/admin/shop/product-questions</code>) — customer-asked
-          questions on product pages. You answer here; the answer publishes on
-          the storefront and emails the asker.
+          Confirm the attached patient, items, quantities, billed amounts, and
+          deadline. Approval belongs to that exact order. A line change removes
+          or invalidates the attachment; evaluate again instead of reusing an
+          old approval.
         </li>
         <li>
-          <strong>Inventory</strong> (<code>/admin/shop/inventory</code>) —
-          read-side mirror of Stripe's product/price catalog. Stripe is the
-          source of truth; this page is the team's view of it.
+          At <strong>Create &amp; send</strong>, the system rechecks policy,
+          approved revision, supplier/collection evidence, and delivery details.
+          Refresh and prepare a current review after changes or expiry. Repeated
+          submission of an unchanged request is protected against a second
+          committed order.
+        </li>
+      </ol>
+      <p>
+        Once linked to an order, the review is <strong>bound</strong> and cannot
+        authorize another order. Patients see the signed items and appropriate
+        amounts, not private costs, contribution, approval notes, or financial
+        history.
+      </p>
+      <h3 id="chapter-4-4">4.4 · New-item proposals &amp; patient batches</h3>
+      <p>
+        <strong>New items:</strong> when no suitable priced catalog item exists,
+        open <strong>New items</strong> in Pricing &amp; Profitability. Record
+        the proposal and evidence, then choose
+        <strong>Compare provisional supplier costs</strong>. Use
+        <strong>Add supplier option</strong> to compare up to five suppliers for
+        the same requested quantity, including pack price, units per pack,
+        minimum pack purchase, dropship, delivery, and handling.
+      </p>
+      <p>
+        Read total purchase outlay, purchased/surplus units, availability,
+        expiry, and delivered-cost completeness together. A lower apparent unit
+        cost may require extra packs. Unknown charges stay unknown; estimated or
+        unavailable supply is not a firm offer. Choose
+        <strong>Submit item proposal</strong> for management review. A firm
+        customer price requires canonical item mapping and a verified supplier
+        offer; provisional comparison creates neither.
+      </p>
+      <p>
+        <strong>Patient batch review:</strong> where available to your role,
+        select up to 50 open drafts. Up to 200 open drafts are shown at a time.
+        Choose <strong>Evaluate selected drafts</strong>; the batch checks each
+        patient's newest matching exact-item approval and separates ready,
+        stale, missing-review, and unavailable results. It neither contacts
+        patients nor creates orders. Use individual review to correct
+        items/quantities, obtain evidence, or choose another valid approval when
+        the newest one is stale. Use
+        <strong>Show only patients needing attention</strong> to focus the
+        results and <strong>Open resupply order review</strong> for follow-up.
+        This differs from the calendar outreach batch.
+      </p>
+      <h3 id="chapter-4-5">
+        4.5 · Signatures, retries &amp; changed delivery details
+      </h3>
+      <ol class="steps">
+        <li>
+          Follow the request in <strong>Signature orders</strong>. The patient
+          opens the secure link, reviews the items and paperwork, and signs. A
+          response requesting supplies still needs the appropriate order and
+          signature process.
         </li>
         <li>
-          <strong>Insurance Leads</strong>
-          (<code>/admin/shop/insurance-leads</code>) — every qualifier-form
-          submission. Triage, run eligibility, and convert to a fulfilled order
-          from here. The detail page links the lead, the patient, and any
-          existing conversations.
+          For a new link to an unsigned request, use <strong>Resend</strong>.
+          Older links become invalid. Resending a priced order does not extend
+          its approved deadline. After expiry, prepare a fresh review/request
+          and cancel the obsolete request as appropriate.
         </li>
-      </ul>
+        <li>
+          A signed request with an approved patient pricing review or linked
+          resupply draft can queue fulfillment. Without the required link it
+          stays signed for staff follow-up. Check exact SKU, quantity, status,
+          and errors; signing does not prove shipment.
+        </li>
+        <li>
+          Resolve missing/expired prescriptions and other prerequisites. Use
+          <strong>Retry fulfillment</strong> on the existing signed request when
+          available. Do not create a duplicate order to work around an error.
+        </li>
+        <li>
+          A changed saved patient address can place unsubmitted priced
+          fulfillment on a delivery hold. Confirm and save the correct address,
+          then give a manager the order reference and reason. Do not restore an
+          incorrect address merely to clear the hold.
+        </li>
+      </ol>
+      <div class="callout warn">
+        <strong>Manager delivery handoff.</strong> The manager uses
+        <strong>Review delivery</strong>, verifies current address,
+        supplier/service coverage, and fresh freight evidence, then
+        <strong>Preview delivery profitability</strong>. The manager enters
+        <strong>Delivery approval reason</strong>, reviews any permitted
+        exception, and chooses
+        <strong>Approve delivery and retry fulfillment</strong>. Approval
+        records the reason and exact revised forecast. Original signed items,
+        accepted amounts, and original pricing remain intact. Resolving a
+        general address alert alone does not release a priced order; the hard
+        financial floor still applies. Previously shipped work is historical and
+        needs the appropriate shipping follow-up.
+      </div>
+      <p>
+        Only a manager may reconfirm previously verified, unchanged fees or
+        reserves with new evidence and expiry. Changed supplier costs or
+        delivery zones require updated supplier offers. This cannot invent a
+        missing cost, change the signed price, or turn an estimate into an
+        invoice.
+      </p>
+      <p>
+        <strong>Warehouse handoff:</strong> PacWare preview and CSV use the
+        signed fulfillment's exact SKU and quantity. Held, already submitted, or
+        delivery-review-required priced lines are withheld and counted.
+        Investigate omissions; do not put a held line into an old file manually.
+        Export is a manual handoff, not supplier submission or shipment
+        confirmation.
+      </p>
     </section>
 
     <!-- ════════════════════════════════════════════════════════════════
@@ -2194,9 +2427,11 @@
          ════════════════════════════════════════════════════════════ -->
     <section class="page-break">
       <span class="section-tag">Chapter 5</span>
-      <h2 style="border: 0; margin-top: 4pt">Insights, system, and audit</h2>
+      <h2 id="chapter-5" style="border: 0; margin-top: 4pt">
+        Insights, system, and audit
+      </h2>
 
-      <h3>5.1 · Operations &amp; delivery failures</h3>
+      <h3 id="chapter-5-1">5.1 · Operations &amp; delivery failures</h3>
       <p>
         Two pages exist specifically for the things that go wrong, so you can
         find them before the patient calls.
@@ -2212,36 +2447,29 @@
         <li>
           <strong>Delivery Failures</strong>
           (<code>/admin/delivery-failures</code>) — bounced emails,
-          undeliverable SMS, voicemails-only after three attempts. Each row has
-          a "switch channel" button so you can move the patient onto a working
-          address.
+          undeliverable messages, and their recorded failure details. Review the
+          conversation, contact information, and existing delivery status before
+          a permitted retry. Do not switch channels to bypass an opt-out or an
+          uncertain earlier send.
         </li>
       </ul>
 
-      <h3>5.2 · Reports &amp; storefront analytics</h3>
-      <p>Four reporting surfaces, in order of how often you'll use them:</p>
-      <ol>
-        <li>
-          <strong>Reports</strong> — operational metrics (resolution time,
-          first-response time, fulfillment lead time, churn) by
-          week/month/agent.
-        </li>
-        <li>
-          <strong>Storefront Analytics</strong> — funnel: home → fitter →
-          results → cart → checkout → confirmed. Use this to spot drop-off when
-          product changes ship.
-        </li>
-        <li>
-          <strong>Reminders</strong> — outbound reminder cadence health: how
-          many fired, how many converted, how many bounced.
-        </li>
-        <li>
-          <strong>Storefront Audit</strong> — a simplified audit view scoped to
-          shop activity (separate from the full system audit log).
-        </li>
-      </ol>
+      <h3 id="chapter-5-2">5.2 · Reports &amp; manager handoff</h3>
+      <p>
+        Use the operational reports available to your role to follow response,
+        delivery, and fulfillment work. Each page has its own filters and
+        definitions. A contact, prepared line, signed request, or scheduled due
+        date is not a completed sale. <strong>Owner overview</strong> is a
+        management page; see <a href="#chapter-5-4">5.4</a>.
+      </p>
+      <p>
+        For a handoff, provide the internal patient/order reference, selected
+        period if relevant, exact status or error, evidence checked, and
+        decision needed. Share through approved systems. A downloaded report is
+        a dated snapshot, not a live record.
+      </p>
 
-      <h3>5.3 · Rules, rule tester, audit logs</h3>
+      <h3 id="chapter-5-3">5.3 · Rules, rule tester, audit logs</h3>
       <p>
         Operators (not agents) own these screens; they're documented here so you
         understand what's driving your inbox.
@@ -2277,6 +2505,72 @@
         log filtered to that record. This is the single most powerful feature
         for resolving "I didn't authorize that" disputes in under a minute.
       </div>
+      <h3 id="chapter-5-4">
+        5.4 · Owner overview, planning models &amp; actuals
+      </h3>
+      <p>
+        <strong>Management access only:</strong>
+        <strong>Owner overview</strong> at
+        <code>/admin/analytics/owner</code> requires management and financial
+        reporting access. Ask a manager for the operational decision you need;
+        do not request another user's credentials.
+      </p>
+      <ul>
+        <li>
+          <strong>Period:</strong> last 7, 30, 90, or 365 days, or
+          <strong>Custom dates</strong> and <strong>Apply dates</strong>. Dates
+          are UTC; custom end dates are inclusive and today stops at report
+          time. The prior period has the same elapsed duration.
+        </li>
+        <li>
+          <strong>Freshness:</strong> use <strong>Refresh</strong> and check the
+          update time. <strong>Download overview CSV</strong> uses the returned
+          report, not unapplied date edits, and is disabled during refresh. A
+          failed section is unavailable, not zero; the other section can still
+          load.
+        </li>
+        <li>
+          <strong>Scope:</strong> current queues include older open work. Claims
+          created in the period show payments recorded to date, not cash
+          received that month. Prepared lines are not shipments. Untracked stock
+          is not zero stock. Scheduled due patients still need eligibility and
+          consent checks.
+        </li>
+        <li>
+          <strong>Financial activity:</strong> revenue, refunds, costs, and
+          credits use their economic dates.
+          <strong>Completed-review contribution</strong> is a separate lifetime
+          total for bound reviews with costs and collections explicitly
+          complete. Missing, invalid, or future event dates exclude the affected
+          review from that total. These figures are not company-wide net profit
+          or bank cash.
+        </li>
+      </ul>
+      <p>
+        <strong>Owner models:</strong> managers choose a saved review in
+        <strong>Owner models</strong>, or use
+        <strong>Use in owner models</strong> after item evaluation. Six tools
+        cover pricing strategies, monthly break-even and profit,
+        cost/freight/collection stress, price versus volume, repeat orders and
+        acquisition, and working capital. Entered costs, demand, collection
+        timing, and other assumptions drive results. The models do not publish
+        prices, approve orders, or charge patients. Refreshing the source clears
+        previous results; exported results identify the evidence used for each
+        calculation.
+      </p>
+      <p>
+        <strong>Reviews &amp; actuals:</strong> authorized managers or finance
+        staff record real invoice, freight, fee, collection, refund, and credit
+        events against the order review. Enter
+        <strong>Economic occurrence date and time (UTC)</strong> from the
+        evidence, including historical dates. The form defaults to the current
+        minute and rejects missing, impossible, or future manual dates. Keep the
+        same source reference and event identifier for an unchanged retry. If an
+        edited retry conflicts, refresh history before documenting a correction;
+        do not create a duplicate expense or payment. Costs and collections are
+        marked complete separately with a reason; a missing invoice is never a
+        known zero.
+      </p>
     </section>
 
     <!-- ════════════════════════════════════════════════════════════════
@@ -2284,81 +2578,100 @@
          ════════════════════════════════════════════════════════════ -->
     <section class="page-break">
       <span class="section-tag">Chapter 6</span>
-      <h2 style="border: 0; margin-top: 4pt">Day-in-the-life playbook</h2>
+      <h2 id="chapter-6" style="border: 0; margin-top: 4pt">
+        Day-in-the-life playbook
+      </h2>
 
-      <h3>6.1 · Common scenarios &amp; how to solve them</h3>
+      <h3 id="chapter-6-1">6.1 · Common scenarios &amp; how to solve them</h3>
 
-      <h4>Scenario A · "My mask is leaking"</h4>
+      <h4>Scenario A · “Send what I had last time”</h4>
       <ol class="steps">
         <li>
-          Open Conversations → click into the patient. Patient 360 shows current
-          mask SKU + size.
+          Confirm identity, then Patients → Resupply → Order history. Read back
+          exact item, quantity, and date.
         </li>
         <li>
-          Confirm sizing in the questionnaire history. If the patient has gained
-          / lost weight or grown a beard, re-run the fitter (<em
-            >Send fitter link</em
-          >
-          macro).
+          Check current need, replacement limits, prescription, coverage, and
+          address.
         </li>
         <li>
-          If sizing was wrong: open RMA, ship the next size up under
-          <strong>Comfort Guarantee</strong> (no charge to patient).
+          Evaluate or attach a current exact-patient review and prepare the
+          insurance signature request. Explain the next step without promising a
+          charge or shipment.
+        </li>
+      </ol>
+      <h4>Scenario B · “Please stop the reminders”</h4>
+      <ol class="steps">
+        <li>
+          Record the request in the conversation and use the authorized
+          contact-preference or pause workflow.
         </li>
         <li>
-          If sizing was right: ship a fresh cushion (resupply episode) and check
-          that the headgear isn't over-tightened.
+          Review recent contact and queued work with the lead before further
+          outreach. Do not switch channels to bypass the request.
+        </li>
+        <li>
+          Explain what was recorded. A resupply pause is not a card-subscription
+          cancellation; patient recurring shop billing is retired.
+        </li>
+      </ol>
+      <h4>Scenario C · “I never got my order”</h4>
+      <ol class="steps">
+        <li>
+          Check the signature request and patient Order history. Distinguish
+          signed, queued, shipped, and delivered records.
+        </li>
+        <li>
+          Ask fulfillment to verify order reference, tracking, and correct
+          address. Message <strong>Delivery Failures</strong> is not parcel
+          tracking.
+        </li>
+        <li>
+          Follow the company's lost-shipment/return procedure and obtain any
+          required replacement approval. Do not promise a free reship based on a
+          cost threshold from an old example.
+        </li>
+      </ol>
+      <h4>Scenario D · “My address changed after I signed”</h4>
+      <ol class="steps">
+        <li>
+          Confirm and save the correct address through the authorized patient
+          workflow. Identify the signed order and whether it has shipped.
+        </li>
+        <li>
+          For unsubmitted priced work on hold, ask a manager for
+          <strong>Review delivery</strong> with current cost and freight
+          evidence.
+        </li>
+        <li>
+          Keep signed items and accepted amounts intact. Resume the existing
+          fulfillment only after required review; do not create a duplicate
+          request or bypass the export hold.
+        </li>
+      </ol>
+      <h4>Scenario E · “Several patients failed in my batch”</h4>
+      <ol class="steps">
+        <li>
+          Read every result. Leave queued patients alone; skipped reasons are
+          not all retryable failures.
+        </li>
+        <li>
+          Check Conversations after uncertain responses. Correct verified
+          contact or prescription issues, then select only unresolved
+          recipients.
+        </li>
+        <li>
+          If the channel is unavailable or an earlier attempt may have reached
+          the provider, escalate rather than repeatedly requeueing.
         </li>
       </ol>
 
-      <h4>Scenario B · "Pause my subscription"</h4>
-      <ol class="steps">
-        <li>Customers → search by name or phone → click their profile.</li>
-        <li>
-          Scroll to Subscriptions → click <strong>Pause</strong>. Choose
-          duration (4, 8, 12 weeks) or "until I unpause".
-        </li>
-        <li>
-          Stripe pauses the recurring charge automatically. The next-ship-date
-          moves; the patient gets an email.
-        </li>
-      </ol>
-
-      <h4>Scenario C · "I never got my order"</h4>
-      <ol class="steps">
-        <li>
-          Look up the order in <code>/admin/fitter/orders</code>. Check the
-          tracking link.
-        </li>
-        <li>
-          If the carrier shows delivered but the patient says no: open Delivery
-          Failures to see if there's a known issue at that ZIP.
-        </li>
-        <li>
-          Reship same SKU at no charge; if the original turns up, the patient
-          keeps it (under $10 in cost — not worth the friction).
-        </li>
-        <li>For high-value items, escalate to a lead before reshipping.</li>
-      </ol>
-
-      <h4>Scenario D · "Insurance denied my claim"</h4>
-      <ol class="steps">
-        <li>Open the patient's Insurance Lead (linked from Patient 360).</li>
-        <li>
-          Check the denial reason. Most common: missing recent sleep study or
-          expired Rx — both can be re-submitted.
-        </li>
-        <li>
-          Send the patient the Rx-upload link macro; once received, re-run
-          eligibility from the lead detail page.
-        </li>
-        <li>
-          If we can't qualify them, offer cash-pay with the loyalty discount
-          macro.
-        </li>
-      </ol>
-
-      <h3>6.2 · Escalation &amp; service level targets</h3>
+      <h3 id="chapter-6-2">6.2 · Escalation &amp; service level targets</h3>
+      <p>
+        The timings below are training examples, not software guarantees or an
+        approved company SLA. Follow your organization’s published coverage
+        hours and escalation policy.
+      </p>
       <table class="spec">
         <thead>
           <tr>
@@ -2403,13 +2716,13 @@
       </table>
 
       <p>
-        Escalation paths, in order: <strong>shift lead</strong> → on-call
-        operator → product on-call. Use the <em>Escalate to lead</em> button on
-        a conversation; it assigns, notifies, and starts a 30-minute resolution
-        timer.
+        Escalate to your shift lead or designated clinical, billing, pricing, or
+        fulfillment owner. Include the reference, current status, steps taken,
+        and decision needed. A delayed callback must not lead to duplicate
+        outreach, duplicate financial events, or an unapproved shipment.
       </p>
 
-      <h3>6.3 · Glossary &amp; quick-reference card</h3>
+      <h3 id="chapter-6-3">6.3 · Glossary &amp; quick-reference card</h3>
       <table class="spec">
         <thead>
           <tr>
@@ -2440,26 +2753,42 @@
             </td>
           </tr>
           <tr>
-            <td><strong>Customer 360</strong></td>
+            <td><strong>Replacement eligibility</strong></td>
             <td>
-              Cash-pay analogue of Patient 360; lives under
-              <code>/admin/shop/customers</code>.
+              Mapped interval and quantity rules checked against recorded
+              orders; not confirmation of coverage.
             </td>
           </tr>
           <tr>
-            <td><strong>Comfort Guarantee</strong></td>
+            <td><strong>Scheduled resupply</strong></td>
             <td>
-              30-day "doesn't fit, swap free" policy. Use the macro on any
-              leak/discomfort case.
+              When a supply cycle is due for review/contact. Separate from
+              replacement entitlement, prescription validity, and patient
+              consent.
             </td>
           </tr>
           <tr>
-            <td><strong>Subscribe &amp; Save</strong></td>
+            <td><strong>Approved / bound review</strong></td>
             <td>
-              Recurring shop subscription. Customer-controlled cadence;
-              Stripe-driven billing.
+              Approved means authorized within its evidence and deadline. Bound
+              means linked to one exact order and unavailable for another.
             </td>
           </tr>
+          <tr>
+            <td><strong>Delivery hold</strong></td>
+            <td>
+              Fulfillment waits for required current-address, delivery, and
+              financial checks.
+            </td>
+          </tr>
+          <tr>
+            <td><strong>Contribution</strong></td>
+            <td>
+              Revenue less costs included in the stated calculation. Read
+              evidence and whether allocated overhead is included.
+            </td>
+          </tr>
+
           <tr>
             <td><strong>Macro / Canned Reply</strong></td>
             <td>
@@ -2492,14 +2821,32 @@
       </table>
 
       <div class="callout">
-        <strong>Quick-reference card.</strong> Tape this to your monitor:
+        <strong>Quick-reference card.</strong>
         <ul style="margin-top: 4pt; margin-bottom: 0">
-          <li>⌘K — global search across patients, customers, orders.</li>
-          <li>⇧S — snooze the current conversation.</li>
-          <li>⇧R — resolve.</li>
-          <li>⇧M — open the macro picker.</li>
-          <li>⇧A — assign to me.</li>
-          <li>⇧E — escalate to lead.</li>
+          <li>
+            Patients → Resupply: exact items, quantities, dates, and replacement
+            checks.
+          </li>
+          <li>
+            Resupply calendar: select at most 50, confirm names/channel, inspect
+            each result.
+          </li>
+          <li>
+            Conversations: verify delivery and replies before retrying uncertain
+            outreach.
+          </li>
+          <li>
+            Orders → Signature orders: attach the approved review, then Create
+            &amp; send.
+          </li>
+          <li>
+            Changed address, expired evidence, or blocked costs: keep the order
+            and hand off for required review.
+          </li>
+          <li>
+            Owner overview/models: management reporting and assumptions, not
+            permission to change prices or collect payments.
+          </li>
         </ul>
       </div>
 
@@ -2514,8 +2861,8 @@
         "
       >
         CareMetric Breathe · cmbreathe.com · support@cmbreathe.com<br />
-        Manual edition May 2026 · written for the v1 admin console
-        (post-consolidation, single-storefront era).
+        Manual edition September 15, 2026 · v2.0<br />Resupply, pricing, and
+        owner-report workflows.
       </p>
     </section>
   </body>
