@@ -18,5 +18,6 @@ export type {
   ProvisionalSupplierResult,
 } from "@workspace/resupply-domain";
 export type * from "./pricing-draft-reviews";
+export type * from "./owner-analytics";
 export { setBaseUrl, setAuthTokenGetter, ApiError } from "./custom-fetch";
 export type { AuthTokenGetter, ErrorType } from "./custom-fetch";

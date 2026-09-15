@@ -994,6 +994,14 @@ export const NAV_GROUPS: ReadonlyArray<NavGroup> = [
     requiredFeature: "module.analytics",
     items: [
       {
+        label: "Owner overview",
+        icon: LayoutDashboard,
+        href: "/admin/analytics/owner",
+        matchPrefix: "/admin/analytics/owner",
+        requiredPermission: "metrics.read",
+        hint: "Business activity, recorded financial results, and priorities for owners",
+      },
+      {
         label: "Reports",
         icon: BarChart3,
         href: "/admin/reports",

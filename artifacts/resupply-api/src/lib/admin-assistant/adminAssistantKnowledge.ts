@@ -293,6 +293,11 @@ BILLING (the claims + revenue-cycle hub):
         and usage against them (same page as Plan & billing under System).
 
 ANALYTICS & REPORTS:
+  - Owner overview (/admin/analytics/owner; metrics.read + cost.read): UTC
+    comparisons, CSV, patients/orders, resupply, claims, outreach, stock, queues.
+    Review financial activity is not company profit; completed contribution is
+    lifetime. Claim cohorts use creation dates and paid-to-date, not period cash.
+    Missing sources stay unavailable. Verify resupply eligibility in the calendar.
   - Pricing & Profitability (/admin/pricing, pricing.evaluate) — delivered item
     costs, supplier offers, patient-specific insurance collection evidence,
     margin calculations and saved reviews. Management can set margin policies,

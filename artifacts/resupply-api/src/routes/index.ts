@@ -64,6 +64,7 @@ import referralReviewsRouter from "./admin/referral-reviews.js";
 import equipmentRecallsRouter from "./admin/equipment-recalls.js";
 import assetRecoveryRouter from "./admin/asset-recovery.js";
 import analyticsRouter from "./admin/analytics.js";
+import analyticsOwnerRouter from "./admin/analytics-owner.js";
 import reorderRemindersRouter from "./admin/reorder-reminders.js";
 import analyticsOutreachAttributionRouter from "./admin/analytics-outreach-attribution.js";
 import analyticsOrderOutcomesRouter from "./admin/analytics-order-outcomes.js";
@@ -922,6 +923,7 @@ router.use(assetRecoveryRouter);
 // analytics at /admin/storefront/analytics which covers orders +
 // email health + mask popularity.
 router.use(analyticsRouter);
+router.use(analyticsOwnerRouter);
 // /admin/reorder-reminders/* — reorder-reminder funnel (due → reminded →
 // confirmed → shipped) with per-channel (sms/email/voice) conversion.
 router.use(reorderRemindersRouter);
