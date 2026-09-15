@@ -174,14 +174,20 @@ describe("runClaimsSubmittingWatchdogForOrg", () => {
 
     const filters = getSupabaseFilterCalls("office_ally_submissions", "select");
     const overlap = filters.find((f) => f.verb === "overlaps");
-    expect(overlap, "evidence query must overlap on attempted_claim_ids").toBeDefined();
+    expect(
+      overlap,
+      "evidence query must overlap on attempted_claim_ids",
+    ).toBeDefined();
     expect(overlap?.args[0]).toBe("attempted_claim_ids");
     expect(overlap?.args[1]).toEqual([CLAIM_A]);
 
     // No timestamp filter of any kind, under any column name.
     const timeFilters = filters.filter(
       (f) =>
-        (f.verb === "gte" || f.verb === "gt" || f.verb === "lt" || f.verb === "lte") &&
+        (f.verb === "gte" ||
+          f.verb === "gt" ||
+          f.verb === "lt" ||
+          f.verb === "lte") &&
         typeof f.args[0] === "string" &&
         /_at$/.test(f.args[0] as string),
     );
