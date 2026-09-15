@@ -16,8 +16,11 @@ import { describe, expect, it } from "vitest";
 import {
   extractReferences,
   joinStringLiteral,
+  matchingClose,
   parseFilterString,
+  parseObjectKeys,
   parseSelect,
+  parseWritePayload,
   stripComments,
 } from "./check-code-schema-refs.js";
 
@@ -169,6 +172,142 @@ describe("joinStringLiteral", () => {
 
   it("refuses a literal concatenated with a variable", () => {
     expect(joinStringLiteral('"id, " + extra')).toBeNull();
+  });
+});
+
+describe("parseObjectKeys", () => {
+  it("reads top-level keys", () => {
+    expect(parseObjectKeys("org_id: o, status: 'open'")).toEqual([
+      "org_id",
+      "status",
+    ]);
+  });
+
+  it("reads shorthand keys", () => {
+    expect(parseObjectKeys("org_id, status")).toEqual(["org_id", "status"]);
+  });
+
+  it("does not descend into a nested object", () => {
+    // A nested object is a jsonb VALUE; its keys are not columns.
+    expect(parseObjectKeys("payload: { inner: 1 }, org_id: o")).toEqual([
+      "payload",
+      "org_id",
+    ]);
+  });
+
+  it("takes the key, not the ternary branch, when the value has a colon", () => {
+    expect(parseObjectKeys("status: ok ? 'a' : 'b', org_id: o")).toEqual([
+      "status",
+      "org_id",
+    ]);
+  });
+
+  it("skips a spread but keeps the explicit keys beside it", () => {
+    expect(parseObjectKeys("...base, org_id: o")).toEqual(["org_id"]);
+  });
+
+  it("skips a computed key", () => {
+    expect(parseObjectKeys("[k]: v, org_id: o")).toEqual(["org_id"]);
+  });
+
+  it("unquotes a quoted key", () => {
+    expect(parseObjectKeys('"org_id": o')).toEqual(["org_id"]);
+  });
+
+  it("is not confused by a comma inside a string value", () => {
+    expect(parseObjectKeys("note: 'a, b', org_id: o")).toEqual([
+      "note",
+      "org_id",
+    ]);
+  });
+
+  it("is not confused by a comma inside an array value", () => {
+    expect(parseObjectKeys("ids: [1, 2, 3], org_id: o")).toEqual([
+      "ids",
+      "org_id",
+    ]);
+  });
+
+  it("is not confused by a comma inside a call argument list", () => {
+    expect(parseObjectKeys("at: fmt(a, b), org_id: o")).toEqual([
+      "at",
+      "org_id",
+    ]);
+  });
+});
+
+describe("parseWritePayload", () => {
+  it("reads one object", () => {
+    expect(parseWritePayload("{ org_id: o, status: 'x' }")).toEqual([
+      "org_id",
+      "status",
+    ]);
+  });
+
+  it("reads every object in an array", () => {
+    expect(parseWritePayload("[{ org_id: o }, { status: 'x' }]")).toEqual([
+      "org_id",
+      "status",
+    ]);
+  });
+
+  it("returns nothing for a variable payload", () => {
+    // Unresolvable; inventing columns here would be a false positive.
+    expect(parseWritePayload("rows")).toEqual([]);
+  });
+
+  it("returns nothing for a mapped array", () => {
+    expect(parseWritePayload("rows.map((r) => ({ org_id: r.o }))")).toEqual([]);
+  });
+});
+
+describe("matchingClose", () => {
+  it("finds the matching brace past a nested one", () => {
+    const s = "{ a: { b: 1 } }";
+    expect(matchingClose(s, 0)).toBe(s.length - 1);
+  });
+
+  it("ignores a brace inside a string", () => {
+    const s = '{ a: "}" }';
+    expect(matchingClose(s, 0)).toBe(s.length - 1);
+  });
+
+  it("returns -1 when unbalanced", () => {
+    expect(matchingClose("{ a: 1", 0)).toBe(-1);
+  });
+});
+
+describe("extractReferences — write payloads", () => {
+  it("sees a column written by insert()", () => {
+    expect(
+      columnsOf('await db.from("t").insert({ org_id: o, ghost_col: 1 });'),
+    ).toEqual(expect.arrayContaining(["t.ghost_col"]));
+  });
+
+  it("sees a column written by update()", () => {
+    expect(
+      columnsOf('await db.from("t").update({ ghost_col: 1 }).eq("id", i);'),
+    ).toContain("t.ghost_col");
+  });
+
+  it("sees a column written by upsert()", () => {
+    expect(columnsOf('await db.from("t").upsert({ ghost_col: 1 });')).toContain(
+      "t.ghost_col",
+    );
+  });
+
+  it("attributes a write payload to its own table, not the previous one", () => {
+    const cols = columnsOf(
+      [
+        'await db.from("patients").insert({ legal_first_name: n });',
+        'await db.from("orders").insert({ status: s });',
+      ].join("\n"),
+    );
+    expect(cols).toEqual(["patients.legal_first_name", "orders.status"]);
+  });
+
+  it("does not invent columns from a variable payload", () => {
+    expect(columnsOf('await db.from("t").insert(rows);')).toEqual([]);
   });
 });
 

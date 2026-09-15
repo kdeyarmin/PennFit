@@ -268,6 +268,128 @@ function chainEnd(source: string, start: number): number {
   return source.length;
 }
 
+/**
+ * Index of the delimiter closing the one at `openIdx`, or -1 if unbalanced.
+ * Quote-aware, so a brace inside a string does not shift the depth.
+ */
+export function matchingClose(source: string, openIdx: number): number {
+  const open = source[openIdx];
+  const close = open === "(" ? ")" : open === "[" ? "]" : "}";
+  let depth = 0;
+  let quote: string | null = null;
+  for (let i = openIdx; i < source.length; i += 1) {
+    const c = source[i];
+    if (quote) {
+      if (c === "\\") {
+        i += 1;
+        continue;
+      }
+      if (c === quote) quote = null;
+      continue;
+    }
+    if (c === '"' || c === "'" || c === "`") {
+      quote = c;
+      continue;
+    }
+    if (c === open) depth += 1;
+    else if (c === close) {
+      depth -= 1;
+      if (depth === 0) return i;
+    }
+  }
+  return -1;
+}
+
+/**
+ * Top-level keys of an object literal body (the text between its braces).
+ *
+ * Only the top level: a nested object is a jsonb VALUE, and its inner keys
+ * are not columns. A spread or a computed key is skipped rather than
+ * guessed at — the explicit keys beside it are still real column names, so
+ * dropping the whole object would lose the signal.
+ */
+export function parseObjectKeys(body: string): string[] {
+  const keys: string[] = [];
+  let depth = 0;
+  let quote: string | null = null;
+  let token = "";
+
+  const flush = () => {
+    const raw = token.trim();
+    token = "";
+    if (!raw) return;
+    // `...spread` — the key set is not knowable here.
+    if (raw.startsWith("...")) return;
+    // `[computed]: v` — likewise.
+    if (raw.startsWith("[")) return;
+    // A ternary in the VALUE also contains a colon; the key is always the
+    // part before the first one.
+    const head = (raw.includes(":") ? raw.slice(0, raw.indexOf(":")) : raw)
+      .trim()
+      // A quoted key: `"member-id": x`.
+      .replace(/^["'`]|["'`]$/g, "");
+    if (/^[A-Za-z_]\w*$/.test(head)) keys.push(head);
+  };
+
+  for (let i = 0; i < body.length; i += 1) {
+    const c = body[i];
+    if (quote) {
+      if (c === "\\") {
+        token += c + (body[i + 1] ?? "");
+        i += 1;
+        continue;
+      }
+      if (c === quote) quote = null;
+      token += c;
+      continue;
+    }
+    if (c === '"' || c === "'" || c === "`") {
+      quote = c;
+      token += c;
+      continue;
+    }
+    if (c === "{" || c === "[" || c === "(") depth += 1;
+    else if (c === "}" || c === "]" || c === ")") depth -= 1;
+    if (c === "," && depth === 0) {
+      flush();
+      continue;
+    }
+    token += c;
+  }
+  flush();
+  return keys;
+}
+
+/**
+ * Column names written by an `.insert()` / `.update()` / `.upsert()`
+ * argument. Handles one object and an array of objects; returns [] for a
+ * variable payload, which is unresolvable.
+ */
+export function parseWritePayload(arg: string): string[] {
+  const trimmed = arg.trim();
+  if (trimmed.startsWith("{")) {
+    const close = matchingClose(trimmed, 0);
+    if (close < 0) return [];
+    return parseObjectKeys(trimmed.slice(1, close));
+  }
+  if (trimmed.startsWith("[")) {
+    const close = matchingClose(trimmed, 0);
+    if (close < 0) return [];
+    const inner = trimmed.slice(1, close);
+    const keys: string[] = [];
+    // Every element that is itself an object literal contributes its keys.
+    for (let i = 0; i < inner.length; i += 1) {
+      if (inner[i] !== "{") continue;
+      const end = matchingClose(inner, i);
+      if (end < 0) break;
+      keys.push(...parseObjectKeys(inner.slice(i + 1, end)));
+      i = end;
+    }
+    return keys;
+  }
+  return [];
+}
+
 /** Top-level column names in a PostgREST select string, plus embeds. */
 export function parseSelect(select: string): {
   columns: string[];
@@ -388,6 +510,18 @@ export function extractReferences(
         column: f[2],
         via: `.${verb}()`,
       });
+    }
+
+    // Write payloads. A write to a column the table lacks fails the same way
+    // a read does, and costs more: the row is not stored.
+    for (const w of body.matchAll(/\.(insert|update|upsert)\(/g)) {
+      const argStart = w.index! + w[0].length - 1;
+      const close = matchingClose(body, argStart);
+      if (close < 0) continue;
+      const line = tableLine + countNewlines(body.slice(0, w.index!));
+      for (const column of parseWritePayload(body.slice(argStart + 1, close))) {
+        refs.push({ file, line, table, column, via: `.${w[1]}()` });
+      }
     }
 
     for (const f of body.matchAll(/\.(or|and)\(\s*["'`]([^"'`]+)["'`]/g)) {
