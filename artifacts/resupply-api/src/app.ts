@@ -22,7 +22,7 @@ import {
   getPlatformIdentity,
 } from "./lib/company-info";
 import { isDeployedRuntime } from "./lib/deployed-runtime";
-import { logger } from "./lib/logger";
+import { LOG_SERIALIZERS, logger } from "./lib/logger";
 import { providerPortalFeatureGate } from "./lib/provider-portal-feature-gate";
 import { RATE_LIMITS } from "./lib/rate-limits-config";
 import { getRequestId, requestContextMiddleware } from "./lib/request-context";
@@ -225,20 +225,11 @@ app.use(
       res.setHeader("X-Request-Id", id);
       return id;
     },
-    serializers: {
-      req(req) {
-        return {
-          id: req.id,
-          method: req.method,
-          // Drop query strings from logs — they may carry PHI in the
-          // future (patient lookup) and we'd rather opt-in than leak.
-          url: req.url?.split("?")[0],
-        };
-      },
-      res(res) {
-        return { statusCode: res.statusCode };
-      },
-    },
+    // Same allowlist the base logger uses (query strings dropped —
+    // they may carry PHI on a patient lookup, and we'd rather opt in
+    // than leak). Shared so the access log and a direct
+    // `logger.warn({ req })` cannot drift apart. See lib/logger.ts.
+    serializers: LOG_SERIALIZERS,
   }),
 );
 
