@@ -185,6 +185,59 @@ describe("owner profit planning models", () => {
     // Solving 50% markup on all costs including overhead would incorrectly ask 10,501.
     expect(result.strategies.items[1].unitPriceCents).not.toBe(10501);
   });
+  it.each([5000, 6000])(
+    "does not call a price a percentage markup when recovery %i removes its cost denominator",
+    (recoveryCents) => {
+      const input = fixture();
+      input.adjustments = { recoveryCents };
+      const result = analyzeOwnerProfitModels(input, {
+        strategies: { markupBps: 5000, referenceUnitPriceCents: 9000 },
+        monthly,
+      });
+      expect(result.strategies.items[1]).toMatchObject({
+        status: "not_applicable",
+        unitPriceCents: null,
+        evaluation: expect.objectContaining({
+          totalVariableCostCents: 5000 - recoveryCents,
+        }),
+        recommendationStatus: null,
+        equivalentTargetMarginBps: null,
+        issues: [expect.objectContaining({ code: "nonpositive_markup_cost" })],
+      });
+      // Recovery is still valid financial evidence for other planning models.
+      expect(result.strategies.items[3].status).toBe("calculated");
+      expect(result.monthly.projectedProfitCents).toBe(
+        (5000 + recoveryCents) * monthly.orders - monthly.fixedCostCents,
+      );
+    },
+  );
+  it("checks the markup denominator after fee rounding at the candidate amount", () => {
+    const input = fixture();
+    input.adjustments = { recoveryCents: 5000 };
+    input.processing = { rateBps: 300, fixedCents: 0, basis: "net_sales" };
+    expect(evaluatePricing(input).totalVariableCostCents).toBe(300);
+    const result = analyzeOwnerProfitModels(input, {
+      strategies: { markupBps: 5000 },
+    }).strategies.items[1];
+    expect(result.status).toBe("not_applicable");
+    expect(result.unitPriceCents).toBeNull();
+    expect(result.evaluation!.totalVariableCostCents).toBe(0);
+    expect(result.issues[0].code).toBe("nonpositive_markup_cost");
+  });
+  it("allows markup when the final policy-constrained amount has positive variable costs", () => {
+    const input = fixture();
+    input.adjustments = { recoveryCents: 5000, overheadCents: 10000 };
+    input.policy.basis = "after_overhead";
+    input.processing = { rateBps: 300, fixedCents: 0, basis: "net_sales" };
+    input.lines = [{ ...input.lines[0], unitPriceCents: 0 }];
+    expect(evaluatePricing(input).totalVariableCostCents).toBe(0);
+    const result = analyzeOwnerProfitModels(input, {
+      strategies: { markupBps: 5000 },
+    }).strategies.items[1];
+    expect(result.status).toBe("calculated");
+    expect(result.evaluation!.totalVariableCostCents).toBeGreaterThan(0);
+    expect(result.evaluation!.meetsFloor).toBe(true);
+  });
   it("retains tax, refund and processing fee math in recommendations", () => {
     const input = fixture();
     input.lines = [{ ...input.lines[0], taxBps: 800 }];
@@ -336,6 +389,111 @@ describe("owner profit planning models", () => {
     expect(result.sensitivity.items[0].status).toBe("needs_inputs");
     expect(result.sensitivity.items[1].status).toBe("not_applicable");
   });
+  it.each([false, true])(
+    "changes a separately itemized freight parent once when it has a freight alias (nested: %s)",
+    (nested) => {
+      const input = fixture();
+      input.costs = [
+        ...input.costs,
+        ...(nested
+          ? [
+              {
+                id: "included-service",
+                label: "Included delivery service",
+                category: "other" as const,
+                basis: "order" as const,
+                amountCents: null,
+                status: "missing" as const,
+                includedInId: "freight",
+              },
+            ]
+          : []),
+        {
+          id: "carrier-charge",
+          label: "Carrier charge included in delivery",
+          category: "shipping",
+          basis: "parcel",
+          amountCents: null,
+          quantity: 2,
+          status: "missing",
+          includedInId: nested ? "included-service" : "freight",
+        },
+      ];
+      expect(evaluatePricing(input).costsComplete).toBe(true);
+      const before = structuredClone(input);
+      const result = analyzeOwnerProfitModels(input, {
+        sensitivity: {
+          cases: [{ id: "delivery-increase", freightChangeBps: 5000 }],
+        },
+      }).sensitivity.items[0];
+      expect(result.status).toBe("estimated");
+      expect(result.evaluation).toMatchObject({
+        additionalFulfillmentCostCents: 1500,
+        goodsCostCents: 4000,
+        contributionCents: 4500,
+      });
+      expect(result.contributionDeltaCents).toBe(-500);
+      expect(
+        result.evaluation?.costs.find((cost) => cost.id === "carrier-charge"),
+      ).toMatchObject({ included: true, extendedCostCents: 0 });
+      expect(input).toEqual(before);
+    },
+  );
+  it("still requires separate freight evidence when an alias ultimately belongs to a non-freight charge", () => {
+    const input = fixture();
+    input.costs = [
+      { ...input.costs[0], category: "handling" },
+      {
+        id: "carrier-charge",
+        label: "Included carrier charge",
+        category: "shipping",
+        basis: "order",
+        amountCents: 500,
+        status: "verified",
+        includedInId: "freight",
+      },
+    ];
+    const result = analyzeOwnerProfitModels(input, {
+      sensitivity: {
+        cases: [{ id: "delivery-increase", freightChangeBps: 5000 }],
+      },
+    }).sensitivity.items[0];
+    expect(result.status).toBe("needs_inputs");
+    expect(result.evaluation).toBeNull();
+    expect(result.issues[0].code).toBe("freight_scope_needed");
+  });
+  it.each(["missing", "stale"] as const)(
+    "does not use an included alias to repair %s freight-parent evidence",
+    (status) => {
+      const input = fixture();
+      input.costs = [
+        {
+          ...input.costs[0],
+          status,
+          amountCents: status === "missing" ? null : 1000,
+        },
+        {
+          id: "carrier-charge",
+          label: "Included carrier charge",
+          category: "shipping",
+          basis: "order",
+          amountCents: 1000,
+          status: "verified",
+          includedInId: "freight",
+        },
+      ];
+      const result = analyzeOwnerProfitModels(input, {
+        sensitivity: {
+          cases: [{ id: "delivery-increase", freightChangeBps: 5000 }],
+        },
+      }).sensitivity.items[0];
+      expect(result.status).toBe("needs_inputs");
+      expect(result.evaluation).toBeNull();
+      expect(
+        result.issues.some((entry) => entry.code === `${status}_input`),
+      ).toBe(true);
+    },
+  );
   it("evaluates explicit price-volume alternatives without predicting demand", () => {
     const result = analyzeOwnerProfitModels(fixture(), {
       priceVolume: {

@@ -542,6 +542,27 @@ export function analyzeOwnerProfitModels(
             ],
           };
         const evaluation = evaluatePricing(candidate);
+        // A meaningful percentage markup needs positive net variable costs.
+        // Recoveries or rounded percentage fees can make that denominator
+        // nonpositive at the candidate even when the original cost was positive.
+        // Preserve its economics for review, but do not claim a markup price.
+        if (
+          strategy === "cost_markup" &&
+          evaluation.totalVariableCostCents !== null &&
+          evaluation.totalVariableCostCents <= 0
+        )
+          return {
+            ...empty,
+            status: "not_applicable",
+            evaluation,
+            issues: [
+              issue(
+                "nonpositive_markup_cost",
+                "strategies.cost_markup",
+                "A percentage markup requires positive net variable costs. Recoveries or rounded fees leave this candidate without a positive cost base; review a reference price or a contribution target instead.",
+              ),
+            ],
+          };
         return {
           ...empty,
           ...modelEvaluation(evaluation),
@@ -664,9 +685,25 @@ export function analyzeOwnerProfitModels(
       const freight = input.costs.filter(
         (cost) => cost.category === "freight" || cost.category === "shipping",
       );
+      const freightParents = new Set(
+        freight.filter((cost) => !cost.includedInId).map((cost) => cost.id),
+      );
+      const components = new Map(input.costs.map((cost) => [cost.id, cost]));
+      const bundledInOtherCosts = freight.some((cost) => {
+        let parent = cost;
+        // evaluatePricing already validated every reference and rejected cycles.
+        // An included alias is safe only when its ultimate priced parent is
+        // itself freight; goods or a mixed non-freight charge is not separable.
+        while (parent.includedInId) {
+          const next = components.get(parent.includedInId);
+          if (!next) return true;
+          parent = next;
+        }
+        return !freightParents.has(parent.id);
+      });
       if (
         change.freightChangeBps !== undefined &&
-        (!freight.length || freight.some((cost) => cost.includedInId))
+        (!freight.length || bundledInOtherCosts)
       )
         return {
           ...empty,
@@ -698,7 +735,7 @@ export function analyzeOwnerProfitModels(
           costs: input.costs.map((cost) =>
             change.freightChangeBps === undefined ||
             cost.amountCents === null ||
-            !freight.includes(cost)
+            !freightParents.has(cost.id)
               ? cost
               : {
                   ...cost,

@@ -4,7 +4,9 @@ Owner models in **Pricing & Profitability** are management planning tools built 
 
 Access requires `pricing.manage`. Start with an evaluated item review using **Use in owner models**, or select a saved review in the **Owner models** tab; use **Next saved scenarios** for later pages. A saved review supplies the scenario, and each calculation rechecks its evidence. Enter the assumptions for the sections you need and calculate each section separately. Editing an assumption hides that section's old result until you recalculate. Missing assumptions remain missing, including costs and expected demand; an explicit zero is different from a blank field.
 
-For an expired catalog scenario, **Refresh catalog assumptions** can load current offer versions where available. Expired manual or patient-linked evidence needs a fresh review; calculation does not extend its deadline. **Download scenario report** exports the current calculated sections and their entered assumptions as CSV. Assumptions remain while switching workspace tabs, but these models do not save a durable planning record; download a report before leaving when one is needed.
+For an expired catalog scenario, **Refresh catalog assumptions** can load current offer versions where available. Starting a refresh clears prior results and removes them from the downloadable report immediately; a late calculation from the previous source cannot restore them. Expired manual or patient-linked evidence needs a fresh review; calculation does not extend its deadline.
+
+**Download scenario report** exports the current calculated sections and their entered assumptions as CSV. Each section records the server response used for that calculation: source items and quantities, baseline amounts, the item selected for repricing, policy and supplier-offer versions, evidence deadlines and calculation time. Sections calculated at different times retain their own source details. Assumptions remain while switching workspace tabs, but these models do not save a durable planning record; download a report before leaving when one is needed.
 
 ## Shared definitions
 
@@ -28,7 +30,9 @@ This compares four ways of choosing one line's unit amount while holding the oth
 
 Markup and margin have different denominators. The model converts markup to its margin equivalent, `markup / (1 + markup)`, rounded upward to the next basis point, then uses the existing exact-cent price recommendation engine. This conservative conversion can produce slightly more than the requested markup. Recommendations obey the applicable hard floor, minimum contribution, price increments, endings and ceiling. An original policy floor after overhead can require a higher amount than the owner's contribution goal alone. The resulting scenario is also evaluated against the original policy, so meeting a planning target does not itself authorize a price. Automated strategy search is bounded to 160 combined input components; larger scenarios require an explicit reference-price case.
 
-For multiple items, select the line whose unit amount may change. Its quantity stays fixed. Processing fees, discounts and tax are recalculated by the shared pricing engine. Insurance collectible revenue is fixed: changing a billed unit amount does not increase reimbursement, so price strategies cannot solve an insurance revenue shortfall.
+A percentage markup requires a positive net variable-cost base. If recoveries or fee rounding leave the candidate with zero or negative variable costs, its economics remain visible for review but the model withholds the markup recommendation. A reference price or contribution target remains available where applicable.
+
+For multiple items, select the line whose unit amount may change. Its quantity stays fixed, and automated recommendations use that item's resolved price increment, ending and ceiling. Every item's ceiling is checked, including unchanged items; exceeding one blocks the affected result rather than allowing another line's price to conceal it. Explicit reference-price and price/volume cases remain visible for diagnosis when blocked. Processing fees, discounts and tax are recalculated by the shared pricing engine. Insurance collectible revenue is fixed: changing a billed unit amount does not increase reimbursement, so price strategies cannot solve an insurance revenue shortfall.
 
 ## 2. Monthly break-even and profit
 
@@ -44,9 +48,9 @@ A positive profit requirement cannot be reached by adding orders with nonpositiv
 
 Enter up to 12 named cases with percentage changes to line acquisition unit costs, freight costs or expected insurance collections. The model reevaluates each case through the same pricing engine and shows its contribution difference from the baseline. Changed unit or component amounts round to the nearest cent before the normal quantity calculation. Multiple changes in one case occur together; it is not a probability-weighted forecast.
 
-Freight sensitivity changes separately itemized `freight` and `shipping` components. It requires separate delivery evidence when freight is absent or included in another amount; it cannot isolate an unknown delivery share of an acquisition cost. Other handling or dropship fees remain as entered. Goods sensitivity changes each line's acquisition unit cost, not unrelated shared charges.
+Freight sensitivity changes separately itemized `freight` and `shipping` components. An included freight entry can point through other included entries to a separately priced freight charge; that parent charge changes once, without charging its included entries again. Freight bundled into goods or another non-freight charge still needs separate evidence. Missing or stale parent evidence cannot be replaced by a verified included entry. Other handling or dropship fees remain as entered. Goods sensitivity changes each line's acquisition unit cost, not unrelated shared charges.
 
-Collection changes apply to insurance expected collectible revenue. They do not rewrite contracted allowed amounts, calculate patient liability or apply a self-pay price discount. A sensitivity case does not verify a new supplier cost or collection estimate; it remains a hypothetical change to the scenario's evidence.
+Collection changes apply to insurance expected collectible revenue. They do not rewrite contracted allowed amounts, calculate patient liability or apply a self-pay price discount. When a resolved allowed amount is available, a projection above it is retained for review but blocked. A sensitivity case does not verify a new supplier cost or collection estimate; it remains a hypothetical change to the scenario's evidence.
 
 ## 4. Price and volume
 

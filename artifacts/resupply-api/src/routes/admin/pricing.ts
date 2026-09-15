@@ -13,7 +13,6 @@ import {
   type ResupplyTable,
 } from "@workspace/resupply-db";
 import {
-  analyzeOwnerProfitModels,
   compareProposedSupplierCosts,
   ownerProfitAssumptionsSchema,
   PricingValidationError,
@@ -25,6 +24,7 @@ import {
   refreshPortfolioScenario,
 } from "../../lib/pricing/portfolio";
 import { calculateDiscountHeadroom } from "../../lib/pricing/discount-headroom";
+import { analyzeResolvedOwnerProfitModels } from "../../lib/pricing/owner-models";
 import { requirePermission } from "../../middlewares/requireAdmin";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import {
@@ -456,7 +456,7 @@ router.post(
     const resolved = await resolveScenario(scoped, scenario, { mayVerify });
     res.json({
       resolved,
-      models: analyzeOwnerProfitModels(resolved.input, assumptions),
+      models: analyzeResolvedOwnerProfitModels(resolved, assumptions),
     });
   }),
 );

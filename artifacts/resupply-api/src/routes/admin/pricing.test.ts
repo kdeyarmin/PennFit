@@ -157,7 +157,13 @@ describe("pricing HTTP boundary", () => {
     const resolved = {
       scenario,
       input,
-      evaluation: evaluatePricing(input),
+      evaluation: {
+        ...evaluatePricing(input),
+        policyApplications: input.lines.map((line) => ({
+          lineId: line.id,
+          rules: input.policy,
+        })),
+      },
       dependencies: [],
       policyId: "policy",
       policyVersion: 2,
@@ -265,7 +271,7 @@ describe("pricing HTTP boundary", () => {
     state.resolved.mockResolvedValue({
       ...resolved,
       input: incomplete,
-      evaluation: evaluatePricing(incomplete),
+      evaluation: { ...resolved.evaluation, ...evaluatePricing(incomplete) },
     });
     const response = await request(app)
       .post("/admin/pricing/owner-models")
@@ -279,6 +285,23 @@ describe("pricing HTTP boundary", () => {
     expect(response.status).toBe(200);
     expect(response.body.resolved.evaluation.calculationComplete).toBe(false);
     expect(response.body.models.monthly.projectedProfitCents).toBeNull();
+    expect(state.mutations).not.toHaveBeenCalled();
+  });
+  it("fails closed when resolved item policy context is unavailable", async () => {
+    const { scenario, input, resolved } = ownerModelFixture();
+    state.resolved.mockResolvedValue({
+      ...resolved,
+      evaluation: evaluatePricing(input),
+    });
+    const response = await request(app)
+      .post("/admin/pricing/owner-models")
+      .set("x-fixture-actor", "manager")
+      .send({
+        scenario,
+        assumptions: { strategies: { targetMarginBps: 4000 } },
+      });
+    expect(response.status).toBe(503);
+    expect(response.body).toEqual({ error: "pricing_policy_context_missing" });
     expect(state.mutations).not.toHaveBeenCalled();
   });
   it("pages actual-event history for a CSR and rejects invalid offsets before reading", async () => {

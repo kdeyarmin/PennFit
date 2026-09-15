@@ -200,10 +200,12 @@ function button(name: string) {
 }
 function deferred<T>() {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>((done) => {
+  let reject!: (error: Error) => void;
+  const promise = new Promise<T>((done, fail) => {
     resolve = done;
+    reject = fail;
   });
-  return { promise, resolve };
+  return { promise, resolve, reject };
 }
 beforeEach(() => {
   vi.clearAllMocks();
@@ -221,6 +223,64 @@ afterEach(() => {
 });
 
 describe("owner planning models", () => {
+  it("does not restore the old calculation after a concurrent catalog refresh fails", async () => {
+    const pendingModel = deferred<PricingOwnerModelsResponse>();
+    const pendingRefresh = deferred<PricingOwnerModelsResponse["resolved"]>();
+    vi.mocked(api.getPricingOwnerModels).mockReturnValue(pendingModel.promise);
+    vi.mocked(api.refreshPricingPortfolioScenario).mockReturnValue(
+      pendingRefresh.promise,
+    );
+    mount();
+    fill("Monthly fixed costs ($)", "100");
+    fireEvent.click(button("Calculate monthly break-even & profit"));
+    await waitFor(() => expect(api.getPricingOwnerModels).toHaveBeenCalled());
+    fireEvent.click(button("Refresh catalog assumptions"));
+    await waitFor(() =>
+      expect(api.refreshPricingPortfolioScenario).toHaveBeenCalled(),
+    );
+    await act(async () => {
+      pendingModel.resolve(response());
+      pendingRefresh.reject(
+        new Error("Supplier evidence could not be refreshed"),
+      );
+    });
+    await screen.findByText("Supplier evidence could not be refreshed");
+    expect(screen.queryByText("$321.45")).toBeNull();
+    expect(
+      (button("Download scenario report") as HTMLButtonElement).disabled,
+    ).toBe(true);
+    expect(
+      (screen.getByLabelText("Monthly fixed costs ($)") as HTMLInputElement)
+        .value,
+    ).toBe("100");
+  });
+  it("preserves monthly results when the item selected for a separate price model changes", async () => {
+    const bundle = {
+      ...scenario,
+      lines: [
+        ...scenario.lines,
+        {
+          ...scenario.lines[0],
+          id: "cushion",
+          sku: "CUSHION",
+          description: "Cushion",
+        },
+      ],
+    };
+    vi.mocked(api.getPricingOwnerModels).mockResolvedValue({
+      ...response(),
+      resolved: { ...response().resolved, scenario: bundle },
+    });
+    mount({ ...source, scenario: bundle });
+    fill("Monthly fixed costs ($)", "100");
+    fireEvent.click(button("Calculate monthly break-even & profit"));
+    await screen.findByText("$321.45");
+    fill("Item to reprice in strategy and volume models", "cushion");
+    expect(screen.getByText("$321.45")).toBeTruthy();
+    expect(
+      (button("Download scenario report") as HTMLButtonElement).disabled,
+    ).toBe(false);
+  });
   it("keeps blanks unknown, sends only the selected model, accepts explicit zero and renders server results and source issues", async () => {
     mount();
     expect(
@@ -407,6 +467,31 @@ describe("owner planning models", () => {
       (button("Download scenario report") as HTMLButtonElement).disabled,
     ).toBe(true);
   });
+  it("lets a new source calculate while an obsolete source request is still pending", async () => {
+    const pending = deferred<PricingOwnerModelsResponse>();
+    vi.mocked(api.getPricingOwnerModels)
+      .mockReturnValueOnce(pending.promise)
+      .mockResolvedValue(response());
+    const view = mount();
+    fill("Monthly fixed costs ($)", "100");
+    fireEvent.click(button("Calculate monthly break-even & profit"));
+    await waitFor(() =>
+      expect(api.getPricingOwnerModels).toHaveBeenCalledTimes(1),
+    );
+    view.rerender({ ...source, revision: 2, label: "Replacement source" });
+    await screen.findByText("Replacement source");
+    expect(
+      (button("Calculate monthly break-even & profit") as HTMLButtonElement)
+        .disabled,
+    ).toBe(false);
+    fireEvent.click(button("Calculate monthly break-even & profit"));
+    await screen.findByText("$321.45");
+    const obsolete = response();
+    obsolete.models.monthly.projectedProfitCents = 98765;
+    await act(async () => pending.resolve(obsolete));
+    expect(screen.queryByText("$987.65")).toBeNull();
+    expect(screen.getByText("$321.45")).toBeTruthy();
+  });
   it("does not restore a result after the account session cache is cleared", async () => {
     const pending = deferred<PricingOwnerModelsResponse>();
     vi.mocked(api.getPricingOwnerModels).mockReturnValue(pending.promise);
@@ -422,6 +507,31 @@ describe("owner planning models", () => {
     expect(
       (button("Download scenario report") as HTMLButtonElement).disabled,
     ).toBe(true);
+  });
+  it("rechecks session ownership at export even before a queued rerender can hide the result", async () => {
+    const createObjectURL = vi.fn(() => "blob:stale-owner-models");
+    const ExistingURL = URL;
+    vi.stubGlobal(
+      "URL",
+      class extends ExistingURL {
+        static createObjectURL = createObjectURL;
+        static revokeObjectURL = vi.fn();
+      },
+    );
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    const view = mount();
+    fill("Monthly fixed costs ($)", "100");
+    fireEvent.click(button("Calculate monthly break-even & profit"));
+    await screen.findByText("$321.45");
+    const exportButton = button(
+      "Download scenario report",
+    ) as HTMLButtonElement;
+    await act(async () => {
+      const clearing = clearSessionCache(view.client);
+      exportButton.click();
+      await clearing;
+    });
+    expect(createObjectURL).not.toHaveBeenCalled();
   });
   it("supports paged saved sources and offers fresh-review guidance for an expired patient quote", async () => {
     vi.mocked(api.getPricingQuotes).mockImplementation(async (offset = 0) => ({
@@ -519,6 +629,75 @@ describe("owner planning models", () => {
     expect(csv).toContain("Contribution change");
     expect(csv).toContain("Planning assumptions only");
     expect(csv).not.toContain("patientId");
+  });
+  it("exports the resolved bundle item, prices, policy and supplier evidence used for the calculation", async () => {
+    let captured: NodeBlob | undefined;
+    const ExistingURL = URL;
+    vi.stubGlobal(
+      "URL",
+      class extends ExistingURL {
+        static createObjectURL = vi.fn((blob: NodeBlob) => {
+          captured = blob;
+          return "blob:owner-source";
+        });
+        static revokeObjectURL = vi.fn();
+      },
+    );
+    vi.stubGlobal("Blob", NodeBlob);
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    const bundle = {
+      ...scenario,
+      lines: [
+        ...scenario.lines,
+        {
+          ...scenario.lines[0],
+          id: "cushion",
+          sku: "CUSHION",
+          description: "Cushion",
+        },
+      ],
+    };
+    const result = response();
+    result.resolved = {
+      ...result.resolved,
+      scenario: {
+        ...bundle,
+        validUntil: "2098-02-03T04:05:06Z",
+        lines: bundle.lines.map((line) =>
+          line.id === "cushion"
+            ? {
+                ...line,
+                description: "Resolved cushion",
+                unitAmountCents: 4000,
+              }
+            : line,
+        ),
+      },
+      policyId: "resolved-policy",
+      policyVersion: 7,
+      dependencies: [
+        { offerId: "offer", version: 3, expiresAt: "2098-05-06T07:08:09Z" },
+      ],
+    };
+    vi.mocked(api.getPricingOwnerModels).mockResolvedValue(result);
+    mount({ ...source, scenario: bundle });
+    fill("Item to reprice in strategy and volume models", "cushion");
+    fill("Reference unit price ($)", "95");
+    fireEvent.click(button("Calculate pricing strategies"));
+    await screen.findByText("Reference price · Calculated");
+    fireEvent.click(button("Download scenario report"));
+    const csv = await captured!.text();
+    expect(csv).toContain('"Repriced item","1 × Resolved cushion (CUSHION)"');
+    expect(csv).toContain(
+      '"1 × Resolved cushion (CUSHION)","Baseline unit price","$40.00"',
+    );
+    expect(csv).toContain('"Pricing policy ID","resolved-policy"');
+    expect(csv).toContain('"Pricing policy version","7"');
+    expect(csv).toContain('"Evidence valid through","2098-02-03T04:05:06Z"');
+    expect(csv).toContain('"Offer ID","offer"');
+    expect(csv).toContain('"Offer version","3"');
+    expect(csv).toContain('"Evidence expiry","2098-05-06T07:08:09Z"');
+    expect(csv).toContain('"Calculated at","2026-09-14T12:00:00Z"');
   });
   it("does not fetch or render model controls without manager access", () => {
     mount(null, false);

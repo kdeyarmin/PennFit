@@ -40,6 +40,7 @@ export type OwnerModelSource = {
 };
 type Calculation = {
   signature: string;
+  sourceVersion: number;
   assumptions: OwnerProfitAssumptions;
   response: PricingOwnerModelsResponse;
   session: () => boolean;
@@ -432,7 +433,10 @@ function OwnerModelsWorkspace({
     signatures.current[model.key] = JSON.stringify({
       source: source?.scenario,
       sourceVersion: sourceVersion.current,
-      selectedLineId,
+      selectedLineId:
+        model.key === "strategies" || model.key === "priceVolume"
+          ? selectedLineId
+          : undefined,
       form: forms[model.key],
       cases: model.caseFields
         ? cases[model.key as "sensitivity" | "priceVolume"]
@@ -519,6 +523,7 @@ function OwnerModelsWorkspace({
     mutationFn: async (request: {
       key: ModelKey;
       signature: string;
+      sourceVersion: number;
       scenario: Scenario;
       assumptions: OwnerProfitAssumptions;
       session: () => boolean;
@@ -531,6 +536,7 @@ function OwnerModelsWorkspace({
       if (
         !mounted.current ||
         !request.session() ||
+        request.sourceVersion !== sourceVersion.current ||
         signatures.current[request.key] !== request.signature
       )
         return;
@@ -538,6 +544,7 @@ function OwnerModelsWorkspace({
         ...old,
         [request.key]: {
           signature: request.signature,
+          sourceVersion: request.sourceVersion,
           assumptions: request.assumptions,
           response,
           session: request.session,
@@ -548,6 +555,7 @@ function OwnerModelsWorkspace({
       if (
         !mounted.current ||
         !request.session() ||
+        request.sourceVersion !== sourceVersion.current ||
         signatures.current[request.key] !== request.signature
       )
         return;
@@ -557,6 +565,20 @@ function OwnerModelsWorkspace({
       }));
     },
   });
+  const calculationPending =
+    calculate.isPending &&
+    calculate.variables?.sourceVersion === sourceVersion.current;
+  const refreshSource = () => {
+    if (!source || refresh.isPending) return;
+    sourceVersion.current++;
+    setCalculations({});
+    setErrors({});
+    refresh.mutate({
+      scenario: source.scenario,
+      version: sourceVersion.current,
+      session: captureSessionCacheGuard(qc),
+    });
+  };
   const edit = (key: ModelKey, field: string, value: string) => {
     setForms((old) => ({ ...old, [key]: { ...old[key], [field]: value } }));
     setErrors((old) => ({ ...old, [key]: undefined }));
@@ -564,7 +586,7 @@ function OwnerModelsWorkspace({
   const run = (key: ModelKey) => {
     if (
       !source ||
-      calculate.isPending ||
+      calculationPending ||
       loadQuote.isPending ||
       refresh.isPending
     )
@@ -612,6 +634,7 @@ function OwnerModelsWorkspace({
       calculate.mutate({
         key,
         signature: signatures.current[key]!,
+        sourceVersion: sourceVersion.current,
         scenario: source.scenario,
         assumptions,
         session: captureSessionCacheGuard(qc),
@@ -627,12 +650,19 @@ function OwnerModelsWorkspace({
     const calculation = calculations[model.key];
     return calculation &&
       calculation.session() &&
+      calculation.sourceVersion === sourceVersion.current &&
       calculation.signature === signatures.current[model.key]
       ? [{ model, calculation }]
       : [];
   });
   const download = () => {
-    if (!source || !currentCalculations.length) return;
+    const exportable = currentCalculations.filter(
+      ({ calculation, model }) =>
+        calculation.session() &&
+        calculation.sourceVersion === sourceVersion.current &&
+        calculation.signature === signatures.current[model.key],
+    );
+    if (!source || !exportable.length) return;
     const rows: string[][] = [
       ["CareMetric Breathe — owner planning scenarios"],
       [
@@ -640,24 +670,75 @@ function OwnerModelsWorkspace({
       ],
       ["Source", source.label],
       [
-        "Items",
-        source.scenario.lines
-          .map((line) => `${line.quantity} × ${line.description} (${line.sku})`)
-          .join("; "),
-      ],
-      [
-        "Revenue mode",
-        source.scenario.revenue.mode === "insurance"
-          ? "Expected insurance collections"
-          : "Internal self-pay",
-      ],
-      [
         "Overhead",
         "Explicit fixed costs replace allocated overhead; fixed costs are subtracted once.",
       ],
       ["Model", "Section", "Metric", "Value"],
     ];
-    for (const { model, calculation } of currentCalculations) {
+    for (const { model, calculation } of exportable) {
+      const resolved = calculation.response.resolved;
+      rows.push([
+        model.title,
+        "Source review",
+        "Revenue mode",
+        resolved.scenario.revenue.mode === "insurance"
+          ? "Expected insurance collections"
+          : "Internal self-pay",
+      ]);
+      rows.push([
+        model.title,
+        "Source review",
+        "Evidence valid through",
+        resolved.scenario.validUntil,
+      ]);
+      rows.push([
+        model.title,
+        "Source review",
+        "Pricing policy ID",
+        resolved.policyId ?? "Not available",
+      ]);
+      rows.push([
+        model.title,
+        "Source review",
+        "Pricing policy version",
+        resolved.policyVersion == null
+          ? "Not available"
+          : String(resolved.policyVersion),
+      ]);
+      for (const line of resolved.scenario.lines) {
+        const itemLabel = `${line.quantity} × ${line.description} (${line.sku})`;
+        rows.push([model.title, "Source item", "Item and quantity", itemLabel]);
+        rows.push([
+          model.title,
+          itemLabel,
+          "Baseline unit price",
+          formatPricingMoney(line.unitAmountCents),
+        ]);
+        if (line.id === calculation.assumptions.selectedLineId)
+          rows.push([model.title, "Source review", "Repriced item", itemLabel]);
+      }
+      for (const dependency of resolved.dependencies ?? []) {
+        const items = resolved.scenario.lines
+          .filter((line) => line.offerId === dependency.offerId)
+          .map((line) => line.sku)
+          .join(", ");
+        const label = items
+          ? `Supplier source for ${items}`
+          : "Supplier source";
+        rows.push([model.title, label, "Offer ID", dependency.offerId]);
+        rows.push([
+          model.title,
+          label,
+          "Offer version",
+          String(dependency.version),
+        ]);
+        rows.push([
+          model.title,
+          label,
+          "Evidence expiry",
+          dependency.expiresAt,
+        ]);
+      }
       rows.push([
         model.title,
         "Result",
@@ -858,15 +939,7 @@ function OwnerModelsWorkspace({
                 className="mt-3"
                 intent="secondary"
                 isLoading={refresh.isPending}
-                onClick={() => {
-                  setCalculations({});
-                  setErrors({});
-                  refresh.mutate({
-                    scenario: source.scenario,
-                    version: sourceVersion.current,
-                    session: captureSessionCacheGuard(qc),
-                  });
-                }}
+                onClick={refreshSource}
               >
                 Refresh catalog assumptions
               </Button>
@@ -901,23 +974,14 @@ function OwnerModelsWorkspace({
           </p>
         )}
         {refresh.error && (
-          <ErrorPanel
-            error={refresh.error}
-            onRetry={() => {
-              if (source)
-                refresh.mutate({
-                  scenario: source.scenario,
-                  version: sourceVersion.current,
-                  session: captureSessionCacheGuard(qc),
-                });
-            }}
-          />
+          <ErrorPanel error={refresh.error} onRetry={refreshSource} />
         )}
       </PricingSection>
       {MODELS.map((model) => {
         const calculation = calculations[model.key];
         const result =
           calculation?.session() &&
+          calculation.sourceVersion === sourceVersion.current &&
           calculation.signature === signatures.current[model.key]
             ? calculation.response.models[model.key]
             : null;
@@ -1057,12 +1121,12 @@ function OwnerModelsWorkspace({
               intent="secondary"
               disabled={
                 !source ||
-                calculate.isPending ||
+                calculationPending ||
                 loadQuote.isPending ||
                 refresh.isPending
               }
               isLoading={
-                calculate.isPending && calculate.variables?.key === model.key
+                calculationPending && calculate.variables?.key === model.key
               }
               onClick={() => run(model.key)}
             >

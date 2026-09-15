@@ -1,4 +1,5 @@
 import { expect, test, type BrowserContext } from "@playwright/test";
+import { readFile } from "node:fs/promises";
 import {
   analyzeOwnerProfitModels,
   type OwnerProfitAssumptions,
@@ -88,7 +89,13 @@ async function pricingFixture(
     scenario,
     input,
     evaluation: evaluatePricing(input),
-    dependencies: [],
+    dependencies: [
+      {
+        offerId: scenario.lines[0].offerId,
+        version: scenario.lines[0].offerVersion,
+        expiresAt,
+      },
+    ],
     policyId: policy.id,
     policyVersion: 1,
   };
@@ -232,7 +239,7 @@ async function pricingFixture(
       ok: true,
     });
   });
-  return { ownerRequests };
+  return { ownerRequests, resolved };
 }
 
 test("pricing workspace stays within a narrow viewport with usable named controls", async ({
@@ -348,7 +355,7 @@ test("a manager calculates owner models from a paged saved review on a narrow sc
   context,
   page,
 }) => {
-  const { ownerRequests } = await pricingFixture(context, true, true);
+  const { ownerRequests, resolved } = await pricingFixture(context, true, true);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/admin/pricing");
   await page.getByRole("button", { name: "Owner models", exact: true }).click();
@@ -476,8 +483,60 @@ test("a manager calculates owner models from a paged saved review on a narrow sc
   await page
     .getByRole("button", { name: "Download scenario report", exact: true })
     .click();
-  expect((await report).suggestedFilename()).toBe(
+  const downloadedReport = await report;
+  expect(downloadedReport.suggestedFilename()).toBe(
     "owner-planning-scenarios.csv",
+  );
+  const reportPath = await downloadedReport.path();
+  expect(reportPath).not.toBeNull();
+  const csv = await readFile(reportPath!, "utf8");
+  const supplier = resolved.dependencies[0];
+  for (const model of ["Monthly break-even & profit", "Working capital"]) {
+    expect(csv).toContain(
+      `"${model}","Source review","Pricing policy ID","${resolved.policyId}"`,
+    );
+    expect(csv).toContain(
+      `"${model}","Source review","Pricing policy version","${resolved.policyVersion}"`,
+    );
+    expect(csv).toContain(
+      `"${model}","Source review","Evidence valid through","${resolved.scenario.validUntil}"`,
+    );
+    expect(csv).toContain(
+      `"${model}","Result","Calculated at","${resolved.input.evaluatedAt}"`,
+    );
+    expect(csv).toContain(
+      `"${model}","Source item","Item and quantity","1 × Owner fixture mask (FIXTURE-MASK)"`,
+    );
+    expect(csv).toContain(
+      `"${model}","1 × Owner fixture mask (FIXTURE-MASK)","Baseline unit price","$100.00"`,
+    );
+    expect(csv).toContain(
+      `"${model}","Supplier source for FIXTURE-MASK","Offer ID","${supplier.offerId}"`,
+    );
+    expect(csv).toContain(
+      `"${model}","Supplier source for FIXTURE-MASK","Offer version","${supplier.version}"`,
+    );
+    expect(csv).toContain(
+      `"${model}","Supplier source for FIXTURE-MASK","Evidence expiry","${supplier.expiresAt}"`,
+    );
+  }
+  expect(csv).toContain(
+    '"Monthly break-even & profit","Assumption","Assumed monthly orders","10"',
+  );
+  expect(csv).toContain(
+    '"Monthly break-even & profit","Monthly break-even & profit","Projected monthly contribution","$300.00"',
+  );
+  expect(csv).toContain(
+    '"Monthly break-even & profit","Monthly break-even & profit","Projected monthly profit","$0.00"',
+  );
+  expect(csv).not.toContain(
+    '"Monthly break-even & profit","Monthly break-even & profit","Projected monthly profit","$300.00"',
+  );
+  expect(csv).toContain(
+    '"Working capital","Working capital","Funding gap (days)","30"',
+  );
+  expect(csv).toContain(
+    '"Working capital","Working capital","Estimated funding required","$1,400.00"',
   );
   // Switching tabs keeps entered assumptions and current results without a new request.
   await page
