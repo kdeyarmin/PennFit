@@ -158,6 +158,9 @@ export function stripComments(source: string): string {
   let inLine = false;
   let inBlock = false;
   let quote: string | null = null;
+  // Last significant (non-whitespace, non-comment) character emitted, used
+  // only to tell a regex literal from a division.
+  let prev: string | null = null;
 
   while (i < source.length) {
     const c = source[i];
@@ -196,6 +199,7 @@ export function stripComments(source: string): string {
     if (c === '"' || c === "'" || c === "`") {
       quote = c;
       out += c;
+      prev = c;
       i += 1;
       continue;
     }
@@ -209,10 +213,51 @@ export function stripComments(source: string): string {
       i += 2;
       continue;
     }
+    // A regex literal. This has to be recognised, because THIS file's own
+    // patterns contain an odd number of quote characters inside character
+    // classes (`[^"'\`]`). Treating those as string delimiters desynchronises
+    // the scanner: everything after is read as one long string literal, which
+    // both invents references and silently swallows real ones.
+    if (c === "/" && startsRegex(prev)) {
+      i = skipRegex(source, i);
+      prev = "/";
+      continue;
+    }
     out += c;
+    if (!/\s/.test(c)) prev = c;
     i += 1;
   }
   return out;
+}
+
+/**
+ * Whether a `/` at this position opens a regex rather than being division.
+ * Division can only follow a value, so anything that cannot end an
+ * expression means a regex starts here.
+ */
+function startsRegex(prev: string | null): boolean {
+  if (prev === null) return true;
+  return !/[A-Za-z0-9_$)\]]/.test(prev);
+}
+
+/**
+ * Index just past a regex literal starting at `start`. A `/` inside a
+ * character class does not close it, so classes are tracked.
+ */
+function skipRegex(source: string, start: number): number {
+  let inClass = false;
+  for (let i = start + 1; i < source.length; i += 1) {
+    const c = source[i];
+    if (c === "\\") {
+      i += 1;
+      continue;
+    }
+    if (c === "\n") return i;
+    if (c === "[") inClass = true;
+    else if (c === "]") inClass = false;
+    else if (c === "/" && !inClass) return i + 1;
+  }
+  return source.length;
 }
 
 /** 1-based line number of a character offset. */

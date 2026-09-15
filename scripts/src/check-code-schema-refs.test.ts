@@ -68,6 +68,38 @@ describe("stripComments", () => {
     expect(refs[0]?.line).toBe(5);
   });
 
+  it("does not let a quote inside a regex character class open a string", () => {
+    // This checker's own patterns contain `["'\`]`. Reading those quotes as
+    // string delimiters desynchronises the scanner, so everything after is
+    // swallowed as one long string — inventing references and hiding real
+    // ones. The `.from("real")` after the regex must still be visible.
+    const src = [
+      "const re = /[\"'`]([a-z]+)[\"'`]/g;",
+      'db.from("real");',
+    ].join("\n");
+    expect(tablesOf(src)).toEqual(["real"]);
+  });
+
+  it("survives a regex whose class holds an odd number of quotes", () => {
+    // The exact shape that broke it: three `"` across two classes.
+    const src = [
+      "const re = /\\.(or|and)\\(\\s*[\"'`]([^\"'`]+)[\"'`]/g;",
+      'db.from("real").select("id");',
+    ].join("\n");
+    const { refs } = extractReferences("f.ts", src);
+    expect(refs.map((r) => r.table)).toEqual(["real", "real"]);
+  });
+
+  it("still treats a division slash as division, not a regex", () => {
+    const src = ["const ratio = total / count;", 'db.from("real");'].join("\n");
+    expect(tablesOf(src)).toEqual(["real"]);
+  });
+
+  it("does not read a .from inside a regex literal as a table", () => {
+    const src = 'const re = /\\.from\\("ghost"\\)/g;';
+    expect(tablesOf(src)).toEqual([]);
+  });
+
   it("does not treat an escaped quote as ending the string", () => {
     const out = stripComments('const s = "a\\"b"; // gone');
     expect(out).not.toContain("gone");
