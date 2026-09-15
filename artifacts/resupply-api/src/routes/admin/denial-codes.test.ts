@@ -38,6 +38,35 @@ vi.mock("../../middlewares/requireAdmin", () =>
   makeRequireAdminMock(mockAdmin),
 );
 
+// ── Platform-admin gate on the GLOBAL-table writes ───────────────────────────
+// CARC/RARC are national code sets and `denial_codes` stores them with no
+// org_id, so POST/PATCH chain requirePlatformAdminForGlobalWrite. Default to
+// "is a platform admin" so the existing CRUD cases still reach the handler.
+const { mockIsPlatformAdmin } = vi.hoisted(() => ({
+  mockIsPlatformAdmin: { current: true as boolean | "unknown" },
+}));
+vi.mock("../../middlewares/requirePlatformAdmin", () => ({
+  requirePlatformAdminForGlobalWrite: (
+    req: import("express").Request,
+    res: import("express").Response,
+    next: import("express").NextFunction,
+  ) => {
+    if (!req.adminUserId) {
+      res.status(401).json({ error: "Sign in required" });
+      return;
+    }
+    if (mockIsPlatformAdmin.current === "unknown") {
+      res.status(503).json({ error: "authorization_unavailable" });
+      return;
+    }
+    if (!mockIsPlatformAdmin.current) {
+      res.status(403).json({ error: "platform_admin_required" });
+      return;
+    }
+    next();
+  },
+}));
+
 // ── adminRateLimit mock ──────────────────────────────────────────────────────
 const rateLimitBlocked = vi.hoisted(() => ({ current: false }));
 const adminRateLimitSpy = vi.hoisted(() =>
@@ -109,8 +138,64 @@ const validCreateBody = {
 
 beforeEach(() => {
   mockAdmin.current = null;
+  mockIsPlatformAdmin.current = true;
   rateLimitBlocked.current = false;
   supabaseMock.reset();
+});
+
+// ── Platform-global write gate ────────────────────────────────────────────────
+//
+// `resupply.denial_codes` has no `org_id` and is unique on
+// `(code_system, code)`, so every tenant's denial triage reads the same rows.
+// PATCH is only `.eq("id", …)`, which the org-scoped client cannot narrow on a
+// table with no org_id, so on `requireAdminOnly` alone one tenant editing a
+// description, category, recommended action, or `is_terminal` moved every other
+// tenant's worklist routing.
+describe("platform-global write gate", () => {
+  it("rejects a tenant admin who is not a platform admin on POST", async () => {
+    stubAdmin();
+    mockIsPlatformAdmin.current = false;
+    const res = await request(makeApp())
+      .post("/admin/denial-codes")
+      .send(validCreateBody);
+    expect(res.status).toBe(403);
+    expect(res.body.error).toBe("platform_admin_required");
+  });
+
+  it("rejects a tenant admin who is not a platform admin on PATCH", async () => {
+    stubAdmin();
+    mockIsPlatformAdmin.current = false;
+    const res = await request(makeApp())
+      .patch(`/admin/denial-codes/${CODE_ID}`)
+      .send({ isTerminal: true });
+    expect(res.status).toBe(403);
+  });
+
+  it("never reaches the handler when the gate rejects", async () => {
+    stubAdmin();
+    mockIsPlatformAdmin.current = false;
+    await request(makeApp())
+      .patch(`/admin/denial-codes/${CODE_ID}`)
+      .send({ isTerminal: true });
+    expect(supabaseMock.callCount("denial_codes", "update")).toBe(0);
+  });
+
+  it("fails closed with 503 when platform membership cannot be verified", async () => {
+    stubAdmin();
+    mockIsPlatformAdmin.current = "unknown";
+    const res = await request(makeApp())
+      .post("/admin/denial-codes")
+      .send(validCreateBody);
+    expect(res.status).toBe(503);
+  });
+
+  it("leaves GET open to a tenant admin — the catalog stays readable", async () => {
+    stubAdmin();
+    mockIsPlatformAdmin.current = false;
+    stageSupabaseResponse("denial_codes", "select", { data: [] });
+    const res = await request(makeApp()).get("/admin/denial-codes");
+    expect(res.status).toBe(200);
+  });
 });
 
 // ── POST /admin/denial-codes ─────────────────────────────────────────────────

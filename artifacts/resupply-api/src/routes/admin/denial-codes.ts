@@ -1,9 +1,18 @@
 // /admin/denial-codes — CARC / RARC catalog browse + admin maintenance.
 //
-//   GET   /admin/denial-codes?codeSystem=carc&q=...&category=...
-//   GET   /admin/denial-codes/:codeSystem/:code   (lookup by natural key)
-//   POST  /admin/denial-codes        admin-only
-//   PATCH /admin/denial-codes/:id    admin-only
+//   GET   /admin/denial-codes?codeSystem=carc&q=...&category=...   reports.read
+//   GET   /admin/denial-codes/:codeSystem/:code   (natural key)    reports.read
+//   POST  /admin/denial-codes        platform admin only
+//   PATCH /admin/denial-codes/:id    platform admin only
+//
+// CARC/RARC are national code sets, and `resupply.denial_codes` stores them
+// platform-GLOBAL to match: no `org_id`, unique on `(code_system, code)`. That
+// makes the writes cross-tenant — PATCH is only `.eq("id", …)`, which the
+// org-scoped client cannot narrow on a table with no `org_id` — so one tenant
+// editing a description, category, `recommended_action`, or `is_terminal` moves
+// every other tenant's denial triage and worklist routing. Writes are therefore
+// gated one level above tenant admin; reads stay open to `reports.read` so
+// tenants keep the catalog as reference.
 
 import { Router, type IRouter } from "express";
 import { z } from "zod";
@@ -18,6 +27,7 @@ import {
   requireAdminOnly,
   requirePermission,
 } from "../../middlewares/requireAdmin";
+import { requirePlatformAdminForGlobalWrite } from "../../middlewares/requirePlatformAdmin";
 
 const router: IRouter = Router();
 
@@ -163,6 +173,7 @@ router.get(
 router.post(
   "/admin/denial-codes",
   requireAdminOnly,
+  requirePlatformAdminForGlobalWrite,
   adminRateLimit({ name: "denial_codes.create", preset: "sensitive" }),
   async (req, res) => {
     const parsed = upsertBody.safeParse(req.body);
@@ -225,6 +236,7 @@ router.post(
 router.patch(
   "/admin/denial-codes/:id",
   requireAdminOnly,
+  requirePlatformAdminForGlobalWrite,
   adminRateLimit({ name: "denial_codes.update", preset: "mutation" }),
   async (req, res) => {
     const idParsed = idParam.safeParse(req.params);

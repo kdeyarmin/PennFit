@@ -36,6 +36,36 @@ vi.mock("../../middlewares/requireAdmin", () =>
   makeRequireAdminMock(mockAdmin),
 );
 
+// ── Platform-admin gate on the GLOBAL-table writes ───────────────────────────
+// `product_hcpcs_map` has no org_id, so POST/PATCH chain
+// requirePlatformAdminForGlobalWrite after requireAdminOnly. Default the mock
+// to "is a platform admin" so the pre-existing CRUD/validation cases below keep
+// exercising the handler; the gate itself is covered explicitly further down.
+const { mockIsPlatformAdmin } = vi.hoisted(() => ({
+  mockIsPlatformAdmin: { current: true as boolean | "unknown" },
+}));
+vi.mock("../../middlewares/requirePlatformAdmin", () => ({
+  requirePlatformAdminForGlobalWrite: (
+    req: import("express").Request,
+    res: import("express").Response,
+    next: import("express").NextFunction,
+  ) => {
+    if (!req.adminUserId) {
+      res.status(401).json({ error: "Sign in required" });
+      return;
+    }
+    if (mockIsPlatformAdmin.current === "unknown") {
+      res.status(503).json({ error: "authorization_unavailable" });
+      return;
+    }
+    if (!mockIsPlatformAdmin.current) {
+      res.status(403).json({ error: "platform_admin_required" });
+      return;
+    }
+    next();
+  },
+}));
+
 // ── adminRateLimit spy — verifies it is NOT called ───────────────────────────
 const adminRateLimitSpy = vi.hoisted(() =>
   vi.fn(
@@ -95,8 +125,65 @@ const validCreateBody = {
 
 beforeEach(() => {
   mockAdmin.current = null;
+  mockIsPlatformAdmin.current = true;
   supabaseMock.reset();
   adminRateLimitSpy.mockClear();
+});
+
+// ── Platform-global write gate ────────────────────────────────────────────────
+//
+// `resupply.product_hcpcs_map` has no `org_id` and is unique on
+// `(lookup_kind, lookup_value)`, so its rows are shared by every tenant, and
+// claim-builder reads `hcpcs_code` / `default_billed_cents` off them onto real
+// 837P lines. On `requireAdminOnly` alone, one tenant's admin could PATCH by row
+// id — which the org-scoped client cannot narrow on a table with no org_id — and
+// change what every other tenant bills.
+describe("platform-global write gate", () => {
+  it("rejects a tenant admin who is not a platform admin on POST", async () => {
+    stubAdmin();
+    mockIsPlatformAdmin.current = false;
+    const res = await request(makeApp())
+      .post("/admin/product-hcpcs-map")
+      .send(validCreateBody);
+    expect(res.status).toBe(403);
+    expect(res.body.error).toBe("platform_admin_required");
+  });
+
+  it("rejects a tenant admin who is not a platform admin on PATCH", async () => {
+    stubAdmin();
+    mockIsPlatformAdmin.current = false;
+    const res = await request(makeApp())
+      .patch(`/admin/product-hcpcs-map/${MAP_UUID}`)
+      .send({ defaultBilledCents: 21000 });
+    expect(res.status).toBe(403);
+  });
+
+  it("never reaches the handler when the gate rejects", async () => {
+    stubAdmin();
+    mockIsPlatformAdmin.current = false;
+    await request(makeApp())
+      .patch(`/admin/product-hcpcs-map/${MAP_UUID}`)
+      .send({ defaultBilledCents: 21000 });
+    // No write was attempted against the shared catalog.
+    expect(supabaseMock.callCount("product_hcpcs_map", "update")).toBe(0);
+  });
+
+  it("fails closed with 503 when platform membership cannot be verified", async () => {
+    stubAdmin();
+    mockIsPlatformAdmin.current = "unknown";
+    const res = await request(makeApp())
+      .post("/admin/product-hcpcs-map")
+      .send(validCreateBody);
+    expect(res.status).toBe(503);
+  });
+
+  it("leaves GET open to a tenant admin — reference data stays readable", async () => {
+    stubAdmin();
+    mockIsPlatformAdmin.current = false;
+    stageSupabaseResponse("product_hcpcs_map", "select", { data: [] });
+    const res = await request(makeApp()).get("/admin/product-hcpcs-map");
+    expect(res.status).toBe(200);
+  });
 });
 
 // ── POST /admin/product-hcpcs-map ─────────────────────────────────────────────
