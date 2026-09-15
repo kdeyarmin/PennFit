@@ -8,15 +8,24 @@
 // no active subscription — resolves to "full", the normal whole-suite
 // experience.
 //
-// Posture — fail OPEN to "full". This drives an ACCESS RESTRICTION, so the
-// safe failure is to NOT restrict: a DB hiccup, a missing tenant context,
-// or an unknown plan must never lock a paying tenant out of their console.
-// Only an explicit, successfully-read "mask_fitter" plan scopes a tenant
-// down. Resolved on EVERY admin request (requireAdmin), so it's cached to
-// avoid a per-request DB round-trip. Because this drives an ACCESS
-// restriction, the TTL is kept short (matching the feature-flag cache
-// posture) so a plan switch — upgrade out of the fitter scope, or downgrade
-// into it — takes effect within seconds, not a minute.
+// Posture — fail OPEN to "full", but not amnesiac. This drives an ACCESS
+// RESTRICTION, so a restriction must never be INVENTED from a failed read:
+// a DB hiccup, a missing tenant context, or an unknown plan must not lock a
+// paying tenant out of their console, and only an explicit, successfully-read
+// "mask_fitter" plan scopes a tenant down. But "we cannot read the scope" is
+// not the same claim as "this tenant is unrestricted", and treating it as one
+// handed the whole console back to a tenant we had resolved as `locked`
+// (unpaid, wall enforced) moments earlier — for as long as the read kept
+// failing. So a failed read now reuses the LAST RESOLVED scope when there is
+// one, and only opens up to "full" for a tenant that has never resolved.
+//
+// Resolved on EVERY admin request (requireAdmin), so it's cached to avoid a
+// per-request DB round-trip. Because this drives an ACCESS restriction, the
+// TTL is kept short (matching the feature-flag cache posture) so a plan
+// switch — upgrade out of the fitter scope, or downgrade into it — takes
+// effect within seconds, not a minute. The same short TTL bounds the
+// stale-reuse window: recovery is picked up on the next expiry, not held for
+// the life of the process.
 
 import { getOrgScopedClient } from "@workspace/resupply-db";
 
@@ -61,10 +70,12 @@ function isPaywallEnforced(): boolean {
  *      account surfaces until the `invoice.paid` webhook clears the flag. An
  *      unpaid tenant is locked regardless of which plan they chose.
  *   2. "mask_fitter" — the standalone Virtual Mask Fitter plan.
- *   3. "full" — every other plan, no active subscription, or ANY error.
+ *   3. "full" — every other plan, or no active subscription.
  *
- * Fails OPEN to "full" on any error (this drives an ACCESS RESTRICTION, so the
- * safe failure is to NOT restrict — a DB hiccup must never lock a tenant out).
+ * On ANY error, reuses the last scope resolved for this tenant, and falls back
+ * to "full" only when there isn't one. Fails OPEN in the sense that matters —
+ * a restriction is never invented from a failed read — without forgetting a
+ * restriction that a successful read had already established.
  */
 export async function resolveTenantProductScope(
   orgId: string | undefined | null,
@@ -78,8 +89,8 @@ export async function resolveTenantProductScope(
   let scope: ProductScope = "full";
   try {
     // 1. Payment wall (opt-in, env-gated). Checked first — an unpaid tenant is
-    // locked regardless of plan. A read error throws into the fail-open catch
-    // below, so a hiccup never locks anyone out.
+    // locked regardless of plan. A read error throws into the catch below, so a
+    // hiccup never locks out a tenant we have not already resolved as locked.
     if (isPaywallEnforced()) {
       const { data: org, error: orgErr } = await getOrgScopedClient(id)
         .raw()
@@ -121,15 +132,26 @@ export async function resolveTenantProductScope(
     )?.billing_plans?.product_scope;
     if (planScope === "mask_fitter") scope = "mask_fitter";
   } catch (err) {
+    // Reuse the last scope we actually resolved for this tenant. Reaching
+    // here means the entry is absent or expired (a live one returned above),
+    // so this is the previous answer, not the current one — but it is a far
+    // better reading of "the lookup failed" than "unrestricted", which is a
+    // claim the failed read did not support. A tenant that has never
+    // resolved still opens up to "full": with nothing to reuse, inventing a
+    // restriction is the one outcome that could lock out a paying customer.
+    const stale = cache.get(id);
     logger.warn(
       {
         event: "tenant_product_scope_resolve_failed",
         orgId: id,
+        staleScope: stale?.scope ?? null,
         err: err instanceof Error ? err : new Error(String(err)),
       },
-      "product scope resolve failed; defaulting to full (fail open)",
+      stale
+        ? "product scope resolve failed; reusing last resolved scope"
+        : "product scope resolve failed; defaulting to full (fail open)",
     );
-    scope = "full";
+    scope = stale?.scope ?? "full";
   }
 
   cache.set(id, { scope, expiresAt: Date.now() + CACHE_TTL_MS });
