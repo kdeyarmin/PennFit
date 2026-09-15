@@ -121,7 +121,28 @@ export interface ProposedClaimLine {
    *  product_costs by the dispensed SKU. undefined/null = cost unknown
    *  (template / manual lines, or a SKU with no recorded cost). */
   unitCostCents?: number | null;
+  /** Exact COGS for the entire line, independent of billed-unit conversion. */
+  extendedCostCents?: number | null;
   costSource?: string | null;
+}
+
+/** Preserve product-unit economics across a catalog-to-HCPCS conversion. */
+export function stampDispensedCost(
+  line: ProposedClaimLine,
+  dispensedQuantity: number,
+  productUnitCostCents: number | null | undefined,
+  source: string,
+): void {
+  const cost =
+    productUnitCostCents == null
+      ? null
+      : productUnitCostCents * dispensedQuantity;
+  line.extendedCostCents = cost;
+  line.unitCostCents =
+    cost !== null && line.quantity > 0 && cost % line.quantity === 0
+      ? cost / line.quantity
+      : null;
+  line.costSource = cost === null ? null : source;
 }
 
 export interface ProposedClaim {
@@ -180,7 +201,7 @@ export async function buildClaimFromFulfillment(
   const { data: fulfillment, error: fErr } = await supabase
     .from("fulfillments")
     .select(
-      "id, patient_id, item_sku, quantity, shipped_at, submitted_at, status",
+      "id, patient_id, item_sku, quantity, shipped_at, submitted_at, status, pricing_quote_id, pricing_unit_cost_cents",
     )
     .eq("id", input.fulfillmentId)
     .limit(1)
@@ -394,11 +415,28 @@ export async function buildClaimFromFulfillment(
   //     unknown cost leaves the line's cost null — must never block
   //     claim building.
   if (line && fulfillment.item_sku) {
-    const costBySku = await fetchUnitCostsBySku([fulfillment.item_sku], orgId);
-    const cost = costBySku.get(fulfillment.item_sku);
-    if (cost) {
-      line.unitCostCents = cost.unitCostCents;
-      line.costSource = cost.costSource;
+    if (fulfillment.pricing_quote_id) {
+      // The approved order owns this snapshot. A missing quoted cost must
+      // remain unknown; today's catalog cost cannot replace its history.
+      stampDispensedCost(
+        line,
+        fulfillment.quantity,
+        fulfillment.pricing_unit_cost_cents,
+        "pricing_quote",
+      );
+    } else {
+      const costBySku = await fetchUnitCostsBySku(
+        [fulfillment.item_sku],
+        orgId,
+      );
+      const cost = costBySku.get(fulfillment.item_sku);
+      if (cost)
+        stampDispensedCost(
+          line,
+          fulfillment.quantity,
+          cost.unitCostCents,
+          cost.costSource,
+        );
     }
   }
 
@@ -708,6 +746,7 @@ export interface ClaimLineItemRow {
   billed_cents: number;
   status: "pending";
   unit_cost_cents: number | null;
+  extended_cost_cents: number | null;
   cost_source: string | null;
   cost_captured_at: string | null;
 }
@@ -726,7 +765,11 @@ export function buildClaimLineRows(
   capturedAtIso: string,
 ): ClaimLineItemRow[] {
   return lines.map((l) => {
-    const hasCost = typeof l.unitCostCents === "number";
+    const hasUnitCost = typeof l.unitCostCents === "number";
+    const extendedCost =
+      l.extendedCostCents ??
+      (hasUnitCost ? l.unitCostCents! * l.quantity : null);
+    const hasCost = extendedCost !== null;
     return {
       claim_id: claimId,
       hcpcs_code: l.hcpcsCode,
@@ -735,7 +778,8 @@ export function buildClaimLineRows(
       quantity: l.quantity,
       billed_cents: l.billedCents,
       status: "pending",
-      unit_cost_cents: hasCost ? (l.unitCostCents as number) : null,
+      unit_cost_cents: hasUnitCost ? (l.unitCostCents as number) : null,
+      extended_cost_cents: extendedCost,
       cost_source: hasCost ? (l.costSource ?? "manual") : null,
       cost_captured_at: hasCost ? capturedAtIso : null,
     };

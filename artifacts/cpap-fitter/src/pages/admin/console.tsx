@@ -182,6 +182,11 @@ const AdminAnalyticsPage = lazyWithRetry(() =>
     default: m.AdminAnalyticsPage,
   })),
 );
+const AdminOwnerAnalyticsPage = lazyWithRetry(() =>
+  import("@/pages/admin/admin-owner-analytics").then((m) => ({
+    default: m.AdminOwnerAnalyticsPage,
+  })),
+);
 const AdminReorderRemindersPage = lazyWithRetry(() =>
   import("@/pages/admin/admin-reorder-reminders").then((m) => ({
     default: m.AdminReorderRemindersPage,
@@ -240,6 +245,11 @@ const AdminBackordersPage = lazyWithRetry(() =>
 const AdminCatalogPage = lazyWithRetry(() =>
   import("@/pages/admin/admin-catalog").then((m) => ({
     default: m.AdminCatalogPage,
+  })),
+);
+const AdminPricingPage = lazyWithRetry(() =>
+  import("@/pages/admin/admin-pricing").then((m) => ({
+    default: m.AdminPricingPage,
   })),
 );
 const AdminInventoryTurnoverPage = lazyWithRetry(() =>
@@ -1165,6 +1175,10 @@ function AdminConsole() {
               component={AdminAnalyticsMarginPage}
             />
             <Route
+              path="/admin/analytics/owner"
+              component={AdminOwnerAnalyticsPage}
+            />
+            <Route
               path="/admin/analytics/outreach-attribution"
               component={AdminAnalyticsOutreachAttributionPage}
             />
@@ -1395,6 +1409,7 @@ function AdminConsole() {
                 below redirect so existing bookmarks keep working — the
                 same courtesy the /resupply/* → /admin/* move got. */}
             <Route path="/admin/catalog" component={AdminCatalogPage} />
+            <Route path="/admin/pricing" component={AdminPricingPage} />
             <Route
               path="/admin/shop/backorders"
               component={AdminBackordersPage}

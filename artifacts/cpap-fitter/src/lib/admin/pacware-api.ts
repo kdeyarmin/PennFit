@@ -78,6 +78,9 @@ export interface PacwareSyncPreview {
    * patient page, then sync again.
    */
   withheldMissingPacwareId?: number;
+  withheldDeliveryReview?: number;
+  withheldInvalidData?: number;
+  truncated?: boolean;
   sample: Array<Record<string, string | number | null>>;
 }
 

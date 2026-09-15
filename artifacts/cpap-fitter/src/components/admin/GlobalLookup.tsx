@@ -196,7 +196,11 @@ export function GlobalLookup() {
   }
 
   return (
-    <div ref={wrapRef} className="relative w-72" data-testid="global-lookup">
+    <div
+      ref={wrapRef}
+      className="relative w-72 max-w-full"
+      data-testid="global-lookup"
+    >
       <input
         ref={inputRef}
         type="search"

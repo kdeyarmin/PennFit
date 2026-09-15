@@ -107,7 +107,7 @@ function HeadlineCards({ overall }: { overall: MarginAggregate }) {
   return (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
       <Metric
-        label="Net margin"
+        label="Product gross profit"
         value={money(overall.marginCents)}
         hint="Over costed lines"
       />

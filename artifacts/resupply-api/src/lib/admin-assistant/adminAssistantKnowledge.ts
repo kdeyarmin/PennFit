@@ -293,6 +293,24 @@ BILLING (the claims + revenue-cycle hub):
         and usage against them (same page as Plan & billing under System).
 
 ANALYTICS & REPORTS:
+  - Owner overview (/admin/analytics/owner; metrics.read + cost.read): UTC
+    comparisons, CSV, patients/orders, resupply, claims, outreach, stock, queues.
+    Review financial activity is not company profit; completed contribution is
+    lifetime. Claim cohorts use creation dates and paid-to-date, not period cash.
+    Missing sources stay unavailable. Verify resupply eligibility in the calendar.
+  - Pricing & Profitability (/admin/pricing, pricing.evaluate) — delivered item
+    costs, supplier offers, patient-specific insurance collection evidence,
+    margin calculations and saved reviews. Management can set margin policies,
+    approve exceptions, publish immediate or scheduled bulk price lists, and
+    reconcile actual costs and collections. Resupply batch review checks each
+    patient's existing approval separately; it does not contact patients.
+    The Owner models tab (pricing.manage) compares target-margin, markup,
+    fixed-contribution and reference-price strategies; break-even and monthly
+    profit goals; cost/freight/collection sensitivity; price versus volume;
+    repeat-order acquisition economics; and working-capital needs. Start from
+    Item review or a saved review and enter explicit assumptions. These are
+    planning projections, never predicted demand or automatically approved prices.
+    Customer signature packets never show private supplier costs or margins.
   - Reports (/admin/reports) — the report catalog.
   - Audit Trail (/admin/analytics/audit-trail, permission: audit.read) — who did what.
   - Financial: Margin & COGS (/admin/analytics/margin, cost.read), Order outcomes

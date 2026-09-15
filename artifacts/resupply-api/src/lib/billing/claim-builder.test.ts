@@ -5,6 +5,7 @@ import {
   buildClaimLineRows,
   cappedRentalRotationForLine,
   mergeLineModifiers,
+  stampDispensedCost,
   type ProposedClaimLine,
 } from "./claim-builder";
 
@@ -21,6 +22,38 @@ function line(overrides: Partial<ProposedClaimLine> = {}): ProposedClaimLine {
     ...overrides,
   };
 }
+
+describe("approved fulfillment cost snapshot", () => {
+  it("preserves the whole product cost when billed units have fractional cents", () => {
+    const proposed = line({ quantity: 6 });
+    stampDispensedCost(proposed, 2, 100, "pricing_quote");
+    const [row] = buildClaimLineRows(
+      "claim",
+      [proposed],
+      "2026-09-14T00:00:00Z",
+    );
+    expect(row.extended_cost_cents).toBe(200);
+    expect(row.unit_cost_cents).toBeNull();
+    expect(row.cost_source).toBe("pricing_quote");
+    expect(row.cost_captured_at).not.toBeNull();
+  });
+  it("converts exact billed-unit costs and distinguishes verified zero from unknown", () => {
+    const proposed = line({ quantity: 4 });
+    stampDispensedCost(proposed, 2, 100, "pricing_quote");
+    expect(proposed.unitCostCents).toBe(50);
+    stampDispensedCost(proposed, 2, 0, "pricing_quote");
+    expect(proposed.extendedCostCents).toBe(0);
+    stampDispensedCost(proposed, 2, null, "pricing_quote");
+    const [row] = buildClaimLineRows(
+      "claim",
+      [proposed],
+      "2026-09-14T00:00:00Z",
+    );
+    expect(row.extended_cost_cents).toBeNull();
+    expect(row.unit_cost_cents).toBeNull();
+    expect(row.cost_captured_at).toBeNull();
+  });
+});
 
 describe("cappedRentalRotationForLine", () => {
   it("returns the CMS rotation for an adherence-gated capped-rental code", () => {

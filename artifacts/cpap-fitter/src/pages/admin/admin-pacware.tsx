@@ -881,7 +881,7 @@ function VerifyModal({
     target === "patients" ? "Sync patient roster" : "Sync resupply due";
   const columns =
     data && data.sample.length > 0 ? Object.keys(data.sample[0]) : [];
-  const willTruncate = (data?.count ?? 0) > SYNC_EXPORT_CAP;
+  const willTruncate = data?.truncated || (data?.count ?? 0) > SYNC_EXPORT_CAP;
 
   async function confirm() {
     setErr(null);
@@ -933,9 +933,8 @@ function VerifyModal({
               >
                 <TriangleAlert className="h-3.5 w-3.5 inline-block mr-1" />
                 The download is capped at {SYNC_EXPORT_CAP.toLocaleString()}{" "}
-                rows — only the first {SYNC_EXPORT_CAP.toLocaleString()} of
-                these {data.count} will be included. Narrow the filter and sync
-                again for the rest.
+                rows. This preview includes the eligible items in that window.
+                Narrow the filter and sync again for the rest.
               </div>
             )}
             {(data.withheldMissingPacwareId ?? 0) > 0 && (
@@ -954,6 +953,21 @@ function VerifyModal({
                 <em>Add</em> next to &ldquo;No PacWare ID&rdquo; in the header,
                 then sync again to include them.
               </div>
+            )}
+            {(data.withheldDeliveryReview ?? 0) > 0 && (
+              <p role="status" className="rounded-lg border px-3 py-2 text-sm">
+                {data.withheldDeliveryReview} priced items are withheld because
+                they are held, already submitted, or require a current delivery
+                review. Open the signed order to resolve the review before
+                exporting again.
+              </p>
+            )}
+            {(data.withheldInvalidData ?? 0) > 0 && (
+              <p role="status" className="rounded-lg border px-3 py-2 text-sm">
+                {data.withheldInvalidData} items are withheld because their
+                patient, prescription or fulfillment data is incomplete or
+                inconsistent. Correct those records before exporting again.
+              </p>
             )}
             {data.sample.length === 0 ? (
               <p

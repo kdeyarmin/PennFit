@@ -1037,6 +1037,9 @@ export async function releaseAddressChangeHold(args: {
       })
       .eq("patient_id", args.patientId)
       .eq("status", FULFILLMENT_ON_HOLD)
+      // A changed address on a priced order needs its own manager-approved
+      // delivery review. Resolving this alert alone cannot approve new costs.
+      .is("pricing_quote_id", null)
       .select("id");
     if (error) throw error;
 

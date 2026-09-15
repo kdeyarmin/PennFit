@@ -149,7 +149,12 @@ describe("GET /admin/billing/payer-profitability", () => {
     });
     stageSupabaseResponse("insurance_claim_line_items", "select", {
       data: [
-        { claim_id: "c1", quantity: 2, unit_cost_cents: 1500 }, // 3000 cost
+        {
+          claim_id: "c1",
+          quantity: 3,
+          unit_cost_cents: null,
+          extended_cost_cents: 3000,
+        }, // exact pack cost
         { claim_id: "c2", quantity: 1, unit_cost_cents: null }, // uncosted
       ],
     });

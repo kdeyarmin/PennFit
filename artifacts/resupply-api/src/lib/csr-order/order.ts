@@ -48,6 +48,9 @@ export const DEFAULT_CSR_ORDER_TTL_DAYS = 30;
 
 /** One free-form line item priced by the CSR (cents, USD). */
 export interface CsrOrderItem {
+  sku?: string;
+  lineId?: string;
+  fulfillmentMethod?: "stock" | "dropship";
   description: string;
   quantity: number;
   unitAmountCents: number;

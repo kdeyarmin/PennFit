@@ -88,10 +88,19 @@ export interface DraftSeedInput {
 }
 
 export interface ApproveDraftInput {
+  quoteId?: string;
+  quoteRevision?: number;
   customerName: string;
   customerEmail?: string | null;
   customerPhone?: string | null;
-  items: { description: string; quantity: number; unitAmountCents: number }[];
+  items: {
+    description: string;
+    quantity: number;
+    unitAmountCents: number;
+    sku?: string;
+    lineId?: string;
+    fulfillmentMethod?: "stock" | "dropship";
+  }[];
   noteToCustomer?: string | null;
   deliver?: boolean;
 }

@@ -11,7 +11,19 @@
 // public twin: /order-sign (token-gated).
 
 import { useMemo, useState } from "react";
-import { keepPreviousData, useQueryClient } from "@tanstack/react-query";
+import { PricingOrderReview } from "./pricing/PricingOrderReview";
+import {
+  PricingDeliveryReview,
+  PricingDeliveryReviewAction,
+} from "./pricing/PricingDeliveryReview";
+import type { Quote } from "@/lib/admin/pricing-api";
+import { parsePricingMoney, pricingQuantity } from "@/lib/admin/pricing-input";
+import {
+  keepPreviousData,
+  useMutation,
+  useQueryClient,
+} from "@tanstack/react-query";
+import { adminJsonFetch } from "@/lib/admin-json-fetch";
 import { ClipboardCopy, Loader2, Plus, Send, Trash2, X } from "lucide-react";
 
 import {
@@ -104,6 +116,8 @@ export function CsrOrderRequestsPanel() {
   const [confirm, ConfirmDialogEl] = useConfirmDialog();
   const queryClient = useQueryClient();
   const [showCreate, setShowCreate] = useState(false);
+  const [deliveryOrder, setDeliveryOrder] =
+    useState<CsrOrderRequestSummary | null>(null);
   const [page, setPage] = useState(1);
   const pageSize = 25;
 
@@ -113,6 +127,30 @@ export function CsrOrderRequestsPanel() {
   );
   const resend = useResendCsrOrderRequest();
   const cancel = useCancelCsrOrderRequest();
+  const queueFulfillment = useMutation({
+    mutationFn: (id: string) =>
+      adminJsonFetch<{ fulfillmentIds: string[]; skipped: unknown }>(
+        `/admin/csr-order-requests/${encodeURIComponent(id)}/queue-fulfillment`,
+        { method: "POST", body: "{}" },
+      ),
+    onSuccess: (result) => {
+      void invalidate();
+      toast({
+        title: result.fulfillmentIds.length
+          ? "Fulfillment queued"
+          : "Fulfillment status checked",
+        description: result.fulfillmentIds.length
+          ? `${result.fulfillmentIds.length} fulfillment item(s) are ready for the queue.`
+          : "Review the updated order status for any remaining hold.",
+      });
+    },
+    onError: (err) =>
+      toast({
+        title: "Fulfillment still needs attention",
+        description: err.message,
+        variant: "destructive",
+      }),
+  });
 
   const invalidate = () =>
     queryClient.invalidateQueries({
@@ -194,9 +232,9 @@ export function CsrOrderRequestsPanel() {
             <p className="text-muted-foreground mt-1 text-sm">
               Build an order for a customer and send them a secure link to
               review and e-sign paperwork. Billed to their insurance — nothing
-              is charged on the link. Draft-backed resupply orders queue
-              fulfillment on sign; ad-hoc orders stay Signed here for staff to
-              attach a patient and SKU.
+              is charged on the link. Linked resupply drafts and approved
+              patient pricing reviews can queue fulfillment after signing.
+              Orders without that link stay Signed for staff follow-up.
             </p>
           </div>
           <Button
@@ -272,9 +310,11 @@ export function CsrOrderRequestsPanel() {
                           </Badge>
                           {status === "signed_needs_followup" ? (
                             <div className="text-muted-foreground mt-1 text-xs max-w-[14rem]">
-                              {r.hasLinkedDraft
-                                ? "Signature captured, but fulfillment did not queue — check patient/SKU on the draft."
-                                : "Ad-hoc order — attach a patient and SKU before fulfillment can queue."}
+                              {r.pricingQuoteId
+                                ? "Reviewed order — check the prescription and delivery address, then retry fulfillment."
+                                : r.hasLinkedDraft
+                                  ? "Signature captured, but fulfillment did not queue — check patient/SKU on the draft."
+                                  : "Ad-hoc order — attach a patient and SKU before fulfillment can queue."}
                             </div>
                           ) : null}
                         </td>
@@ -282,6 +322,26 @@ export function CsrOrderRequestsPanel() {
                           {formatAppDateTime(r.sentAt)}
                         </td>
                         <td className="py-3 px-4 text-right whitespace-nowrap">
+                          {r.signedAt && r.pricingQuoteId && (
+                            <PricingDeliveryReviewAction
+                              onClick={() => setDeliveryOrder(r)}
+                            />
+                          )}
+                          {status === "signed_needs_followup" &&
+                            (r.pricingQuoteId || r.hasLinkedDraft) && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                disabled={
+                                  queueFulfillment.isPending ||
+                                  isFetching ||
+                                  Boolean(error)
+                                }
+                                onClick={() => queueFulfillment.mutate(r.id)}
+                              >
+                                Retry fulfillment
+                              </Button>
+                            )}
                           {open && (
                             <>
                               <Button
@@ -368,6 +428,15 @@ export function CsrOrderRequestsPanel() {
         )}
       </div>
       {ConfirmDialogEl}
+      {deliveryOrder && (
+        <PricingDeliveryReview
+          order={deliveryOrder}
+          onClose={() => setDeliveryOrder(null)}
+          onUpdated={() => {
+            void invalidate();
+          }}
+        />
+      )}
     </>
   );
 }
@@ -388,6 +457,8 @@ function CreateCsrOrderModal({
   const [customerPhone, setCustomerPhone] = useState("");
   const [items, setItems] = useState<DraftItem[]>([{ ...EMPTY_ITEM }]);
   const [note, setNote] = useState("");
+  const [pricingQuote, setPricingQuote] = useState<Quote | null>(null);
+  const [pricingRequired, setPricingRequired] = useState<boolean | null>(null);
   const [documentKeys, setDocumentKeys] = useState<string[]>([]);
   const [formError, setFormError] = useState<string | null>(null);
   const [result, setResult] = useState<{
@@ -408,10 +479,12 @@ function CreateCsrOrderModal({
     [items],
   );
 
-  const updateItem = (index: number, patch: Partial<DraftItem>) =>
+  const updateItem = (index: number, patch: Partial<DraftItem>) => {
+    setPricingQuote(null);
     setItems((prev) =>
       prev.map((it, i) => (i === index ? { ...it, ...patch } : it)),
     );
+  };
 
   const toggleDocument = (key: string) =>
     setDocumentKeys((prev) =>
@@ -420,6 +493,18 @@ function CreateCsrOrderModal({
 
   const handleSubmit = () => {
     setFormError(null);
+    if (pricingRequired === null || (pricingRequired && !pricingQuote)) {
+      setFormError(
+        "Attach an approved insurance review before creating this order.",
+      );
+      return;
+    }
+    if (pricingQuote && Date.parse(pricingQuote.validUntil) <= Date.now()) {
+      setFormError(
+        "This pricing review expired. Re-evaluate the items before creating the order.",
+      );
+      return;
+    }
     if (customerName.trim().length < 2) {
       setFormError("Enter the customer's name.");
       return;
@@ -436,13 +521,13 @@ function CreateCsrOrderModal({
         setFormError("Every line item needs a description.");
         return;
       }
-      const cents = parsePriceToCents(it.price);
-      const qty = Number.parseInt(it.quantity, 10);
+      const cents = parsePricingMoney(it.price);
+      const qty = pricingQuantity(it.quantity);
       if (cents == null) {
         setFormError(`Enter a valid price for "${it.description.trim()}".`);
         return;
       }
-      if (!Number.isFinite(qty) || qty < 1) {
+      if (qty === null) {
         setFormError(`Enter a valid quantity for "${it.description.trim()}".`);
         return;
       }
@@ -464,7 +549,23 @@ function CreateCsrOrderModal({
         customerName: customerName.trim(),
         customerEmail: customerEmail.trim() || null,
         customerPhone: customerPhone.trim() || null,
-        items: parsedItems,
+        items: pricingQuote
+          ? pricingQuote.lines.map((line) => ({
+              description: line.description,
+              quantity: line.quantity,
+              unitAmountCents: line.unitAmountCents,
+              sku: line.sku,
+              lineId: line.id,
+              fulfillmentMethod: line.fulfillmentMethod,
+            }))
+          : parsedItems,
+        ...(pricingQuote
+          ? {
+              quoteId: pricingQuote.id,
+              quoteRevision: pricingQuote.revision,
+              patientId: pricingQuote.patientId!,
+            }
+          : {}),
         noteToCustomer: note.trim() || null,
         documentKeys,
       },
@@ -546,7 +647,7 @@ function CreateCsrOrderModal({
   return (
     <AdminModal
       title="Create a signature order"
-      description="The customer gets a secure link to review the order and e-sign the required paperwork. Nothing is charged — the order is billed to their insurance. Without a linked resupply draft (patient + SKU), signing leaves the request Signed for you to finish."
+      description="The customer gets a secure link to review the order and e-sign the required paperwork. Nothing is charged — the order is billed to their insurance. An approved patient pricing review links the reviewed items to fulfillment after signing."
       onClose={onClose}
       className="max-w-3xl"
     >
@@ -634,9 +735,10 @@ function CreateCsrOrderModal({
                 size="sm"
                 className="mt-0.5"
                 disabled={items.length === 1}
-                onClick={() =>
-                  setItems((prev) => prev.filter((_, idx) => idx !== i))
-                }
+                onClick={() => {
+                  setPricingQuote(null);
+                  setItems((prev) => prev.filter((_, idx) => idx !== i));
+                }}
                 aria-label={`Remove item ${i + 1}`}
               >
                 <Trash2 className="w-4 h-4" />
@@ -648,7 +750,10 @@ function CreateCsrOrderModal({
               variant="outline"
               size="sm"
               disabled={items.length >= 20}
-              onClick={() => setItems((prev) => [...prev, { ...EMPTY_ITEM }])}
+              onClick={() => {
+                setPricingQuote(null);
+                setItems((prev) => [...prev, { ...EMPTY_ITEM }]);
+              }}
               data-testid="button-csr-order-add-item"
             >
               <Plus className="w-3.5 h-3.5 mr-1" /> Add item
@@ -658,6 +763,27 @@ function CreateCsrOrderModal({
             </div>
           </div>
         </div>
+
+        <PricingOrderReview
+          initialLines={items.map((item) => ({
+            description: item.description,
+            quantity: pricingQuantity(item.quantity) ?? 1,
+            unitAmountCents: parsePricingMoney(item.price),
+          }))}
+          quote={pricingQuote}
+          onRequirementChange={setPricingRequired}
+          onAttach={(quote) => {
+            setPricingQuote(quote);
+            if (quote)
+              setItems(
+                quote.lines.map((line) => ({
+                  description: line.description,
+                  quantity: String(line.quantity),
+                  price: (line.unitAmountCents / 100).toFixed(2),
+                })),
+              );
+          }}
+        />
 
         {/* Paperwork */}
         <div className="space-y-2">

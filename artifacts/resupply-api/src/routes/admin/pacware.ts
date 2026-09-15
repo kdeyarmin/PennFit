@@ -58,6 +58,7 @@ import {
 } from "../../middlewares/admin-rate-limit";
 import { withIdempotency } from "../../middlewares/idempotency";
 import { requirePermission } from "../../middlewares/requireAdmin";
+import { filterDeliveryReadyEpisodes } from "../../lib/csr-order/export-review";
 
 const router: IRouter = Router();
 
@@ -517,6 +518,11 @@ const exportResupplyQuerySchema = z
 
 interface EpisodeJoinRow {
   id: string;
+  fulfillments?: {
+    item_sku: string;
+    quantity: number;
+    csr_order_request_id: string | null;
+  }[];
   status: string;
   due_at: string;
   prescriptions: { item_sku: string } | { item_sku: string }[] | null;
@@ -534,6 +540,32 @@ interface EpisodeJoinRow {
         insurance_payer: string | null;
       }[]
     | null;
+}
+
+async function loadResupplyExportRows(db: OrgScopedClient, status: string) {
+  const rows: EpisodeJoinRow[] = [];
+  const pageSize = 500;
+  while (rows.length <= MAX_EXPORT_ROWS) {
+    const size = Math.min(pageSize, MAX_EXPORT_ROWS + 1 - rows.length);
+    const { data, error } = await db
+      .from("episodes")
+      .select(
+        "id, status, due_at, fulfillments!fulfillments_episode_id_episodes_id_fk(item_sku,quantity,csr_order_request_id), prescriptions!inner(item_sku), patients!inner(pacware_id, legal_first_name, legal_last_name, insurance_payer)",
+      )
+      .eq("status", status)
+      .not("patients.pacware_id", "is", null)
+      .order("due_at", { ascending: true })
+      .order("id", { ascending: true })
+      .range(rows.length, rows.length + size - 1);
+    if (error) throw error;
+    const page = (data ?? []) as unknown as EpisodeJoinRow[];
+    rows.push(...page);
+    if (page.length < size) break;
+  }
+  return {
+    rows: rows.slice(0, MAX_EXPORT_ROWS),
+    truncated: rows.length > MAX_EXPORT_ROWS,
+  };
 }
 
 router.get(
@@ -569,22 +601,16 @@ router.get(
       .eq("status", status)
       .is("patients.pacware_id", null);
     if (missingErr) throw missingErr;
-    const { data: rows, error } = await supabase
-      .from("episodes")
-      .select(
-        "id, status, due_at, prescriptions!inner(item_sku), patients!inner(pacware_id, legal_first_name, legal_last_name, insurance_payer)",
-      )
-      .eq("status", status)
-      .not("patients.pacware_id", "is", null)
-      .order("due_at", { ascending: true })
-      .limit(MAX_EXPORT_ROWS + 1);
-    if (error) throw error;
-
-    const list = (rows ?? []) as unknown as EpisodeJoinRow[];
-    const truncated = list.length > MAX_EXPORT_ROWS;
-    const slice = truncated ? list.slice(0, MAX_EXPORT_ROWS) : list;
-
-    const records = toResupplyRecords(slice);
+    const selected = await loadResupplyExportRows(supabase, status);
+    const reviewed = await filterDeliveryReadyEpisodes(
+      supabase,
+      orgId,
+      selected.rows,
+    );
+    const truncated = selected.truncated;
+    const records = toResupplyRecords(reviewed.rows);
+    const withheldDeliveryReview = reviewed.withheld;
+    const withheldInvalidData = reviewed.rows.length - records.length;
     const withheldMissingPacwareId = missingCount ?? 0;
 
     await logAudit({
@@ -600,6 +626,8 @@ router.get(
         row_count: records.length,
         truncated,
         withheld_missing_pacware_id: withheldMissingPacwareId,
+        withheld_delivery_review: withheldDeliveryReview,
+        withheld_invalid_data: withheldInvalidData,
         status_filter: status,
         report: "resupply_due",
       },
@@ -625,6 +653,16 @@ router.get(
       );
     }
     if (truncated) res.setHeader("X-Truncated", "true");
+    if (withheldDeliveryReview)
+      res.setHeader(
+        "X-Pacware-Withheld-Delivery-Review",
+        String(withheldDeliveryReview),
+      );
+    if (withheldInvalidData)
+      res.setHeader(
+        "X-Pacware-Withheld-Invalid-Data",
+        String(withheldInvalidData),
+      );
     res.status(200).send(buildPacwareResupplyDueCsv(records));
   },
 );
@@ -704,16 +742,6 @@ router.get(
     // `withheldMissingPacwareId` so the operator can backfill the id
     // first. The sample query mirrors the export's filter for the same
     // reason — the preview must never show a row the file won't have.
-    const { count, error: countErr } = await supabase
-      .from("episodes")
-      .select("id, prescriptions!inner(id), patients!inner(id)", {
-        count: "exact",
-        head: true,
-      })
-      .eq("status", status)
-      .not("patients.pacware_id", "is", null);
-    if (countErr) throw countErr;
-
     const { count: missingCount, error: missingErr } = await supabase
       .from("episodes")
       .select("id, prescriptions!inner(id), patients!inner(id)", {
@@ -724,24 +752,24 @@ router.get(
       .is("patients.pacware_id", null);
     if (missingErr) throw missingErr;
 
-    const { data: rows, error } = await supabase
-      .from("episodes")
-      .select(
-        "id, status, due_at, prescriptions!inner(item_sku), patients!inner(pacware_id, legal_first_name, legal_last_name, insurance_payer)",
-      )
-      .eq("status", status)
-      .not("patients.pacware_id", "is", null)
-      .order("due_at", { ascending: true })
-      .limit(VERIFY_SAMPLE);
-    if (error) throw error;
+    const selected = await loadResupplyExportRows(supabase, status);
+    const reviewed = await filterDeliveryReadyEpisodes(
+      supabase,
+      orgId,
+      selected.rows,
+    );
 
+    const records = toResupplyRecords(reviewed.rows);
     res.setHeader("Cache-Control", "no-store");
     res.json({
       target: "resupply_due",
       status,
-      count: count ?? 0,
+      count: records.length,
       withheldMissingPacwareId: missingCount ?? 0,
-      sample: toResupplyRecords((rows ?? []) as unknown as EpisodeJoinRow[]),
+      withheldDeliveryReview: reviewed.withheld,
+      withheldInvalidData: reviewed.rows.length - records.length,
+      truncated: selected.truncated,
+      sample: records.slice(0, VERIFY_SAMPLE),
     });
   },
 );
@@ -990,12 +1018,24 @@ function toResupplyRecords(list: EpisodeJoinRow[]): PacwareResupplyDueRecord[] {
     // and surfaced as "withheld" instead). Skip here too so a future
     // caller can't accidentally emit a blank account line.
     if (!pt.pacware_id) continue;
+    const signedLines = (ep.fulfillments ?? []).filter(
+      (line) => line.csr_order_request_id,
+    );
+    if (signedLines.length > 1) continue;
+    const signed = signedLines[0];
+    if (
+      signed &&
+      (!signed.item_sku ||
+        !Number.isSafeInteger(signed.quantity) ||
+        signed.quantity < 1)
+    )
+      continue;
     out.push({
       pacwareId: pt.pacware_id,
       legalLastName: pt.legal_last_name,
       legalFirstName: pt.legal_first_name,
-      itemSku: rx.item_sku,
-      quantity: 1,
+      itemSku: signed?.item_sku ?? rx.item_sku,
+      quantity: signed?.quantity ?? 1,
       dueDate: ep.due_at.slice(0, 10),
       episodeStatus: ep.status,
       insurancePayer: pt.insurance_payer,

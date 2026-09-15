@@ -1,111 +1,71 @@
-// Turn a SIGNED CSR order into insurance work.
-//
-// WHY THIS EXISTS
-//   Before the cash-pay removal, a CSR order ended at Stripe Checkout and
-//   the charge webhook mirrored it into `shop_orders`, which the retail
-//   fulfillment machinery then worked. Deleting checkout removed that
-//   downstream entirely: a patient could complete the signature flow and
-//   nothing would happen. The signature became terminal.
-//
-//   Signing is the moment the patient commits, so it is where the order
-//   has to enter `fulfillments` → claim-builder → Office Ally.
-//
-// WHAT IT CAN AND CANNOT RESOLVE
-//   `csr_order_requests` carries a customer NAME and contact, not a
-//   patient id, and its line items are free text with no SKU — so a
-//   signed request is not by itself enough to file a claim against. What
-//   IS enough is the resupply draft that produced it: drafts carry
-//   `patient_id`, the supply `category`, and a `csr_order_request_id`
-//   back-link (routes/admin/resupply-order-drafts.ts). So this resolves
-//   through the draft, which covers exactly the flow that regressed.
-//
-//   An ad-hoc CSR order — one a rep built by hand, with no draft behind
-//   it — has no patient to attribute and is deliberately left alone. It
-//   stays visible as `signed` on the admin Orders page for a human to
-//   work, which is the honest outcome: guessing a patient from a name
-//   would be worse than doing nothing.
-//
-// FAIL-SOFT
-//   Never throws. The signature is already committed and acknowledged to
-//   the patient by the time this runs; a downstream hiccup must not turn
-//   a completed signing into an error page. Failures log and leave the
-//   request in `signed`, where the drafts queue still shows it.
-
+// A signature commits the patient-facing order before fulfillment starts.
+// Both reviewed and legacy draft orders use atomic database operations;
+// failures leave a visible, retryable signed order without losing a signature.
 import type { OrgScopedClient } from "@workspace/resupply-db";
-
 import { logger } from "../logger";
-import { ensureFulfillments } from "../messaging/order-flow";
 
 export interface DispenseOnSignResult {
-  /** Fulfillment ids created (or already present). Empty when skipped. */
   fulfillmentIds: string[];
-  /** Why nothing was created, for logs and tests. */
-  skipped: "no_draft" | "no_patient" | "no_sku" | "error" | null;
+  skipped:
+    | "no_draft"
+    | "no_patient"
+    | "no_sku"
+    | "error"
+    | "not_found"
+    | "not_signed"
+    | "needs_prescription"
+    | "address_hold"
+    | null;
 }
-
-/**
- * Create the fulfillment(s) a signed CSR order represents, resolving the
- * patient through the resupply draft that produced it.
- */
+const holds = new Set<DispenseOnSignResult["skipped"]>([
+  "no_draft",
+  "no_patient",
+  "no_sku",
+  "not_found",
+  "not_signed",
+  "needs_prescription",
+  "address_hold",
+]);
 export async function dispenseSignedCsrOrder(
   supabase: OrgScopedClient,
   orderRequestId: string,
 ): Promise<DispenseOnSignResult> {
-  const none = (skipped: DispenseOnSignResult["skipped"]) => ({
-    fulfillmentIds: [],
-    skipped,
-  });
-
   try {
-    const { data: draft, error } = await supabase
-      .from("resupply_order_drafts")
-      .select("id, patient_id, category, suggested_product_id")
-      .eq("csr_order_request_id", orderRequestId)
-      .limit(1)
-      .maybeSingle();
-    if (error) throw error;
-
-    if (!draft) return none("no_draft");
-
-    const row = draft as {
-      id: string;
-      patient_id: string | null;
-      category: string | null;
-      suggested_product_id: string | null;
+    const args = { p_org_id: supabase.orgId, p_order_id: orderRequestId };
+    const reviewed = await supabase
+      .raw()
+      .schema("resupply")
+      .rpc("dispense_csr_priced_order", args);
+    if (reviewed.error) throw reviewed.error;
+    // Only an explicitly unpriced order enters the legacy path. Stale or
+    // held financial reviews never fall back to an unreviewed substitution.
+    const result =
+      reviewed.data?.status === "no_pricing_quote"
+        ? await supabase
+            .raw()
+            .schema("resupply")
+            .rpc("dispense_csr_legacy_order", args)
+        : reviewed;
+    if (result.error) throw result.error;
+    if (result.data?.status === "queued")
+      return {
+        fulfillmentIds: result.data.fulfillmentIds ?? [],
+        skipped: null,
+      };
+    const reason = result.data?.status as DispenseOnSignResult["skipped"];
+    return {
+      fulfillmentIds: [],
+      skipped: holds.has(reason) ? reason : "error",
     };
-    if (!row.patient_id) return none("no_patient");
-
-    // The SKU the warehouse will pick. `suggested_product_id` is the
-    // catalog SKU the draft proposed; `category` is the fallback the
-    // resupply engine itself uses when no specific item was chosen.
-    const itemSku = row.suggested_product_id?.trim() || row.category?.trim();
-    if (!itemSku) return none("no_sku");
-
-    // Episode id is the draft: it is the unit of resupply work this order
-    // fulfils, and keying on it makes ensureFulfillments idempotent — a
-    // double-submitted signature returns the existing rows rather than
-    // dispensing twice.
-    const fulfillmentIds = await ensureFulfillments(supabase, {
-      patientId: row.patient_id,
-      episodeId: row.id,
-      itemSku,
-    });
-
-    logger.info(
-      {
-        event: "csr_order.signed.fulfillments_created",
-        orderRequestId,
-        draftId: row.id,
-        count: fulfillmentIds.length,
-      },
-      "csr order signed — queued for insurance fulfillment",
-    );
-    return { fulfillmentIds, skipped: null };
-  } catch (err) {
+  } catch (error) {
     logger.warn(
-      { event: "csr_order.signed.dispense_failed", orderRequestId, err },
-      "csr order signed but could not be queued for fulfillment (non-fatal)",
+      {
+        event: "csr_order.signed.dispense_failed",
+        orderRequestId,
+        errName: error instanceof Error ? error.name : "database_error",
+      },
+      "Signed CSR order could not be queued; staff can retry fulfillment",
     );
-    return none("error");
+    return { fulfillmentIds: [], skipped: "error" };
   }
 }

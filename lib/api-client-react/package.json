@@ -8,6 +8,7 @@
     "./admin": "./src/admin/index.ts"
   },
   "dependencies": {
+    "@workspace/resupply-domain": "workspace:*",
     "@tanstack/react-query": "catalog:"
   },
   "peerDependencies": {

@@ -16,6 +16,9 @@
 // this file with the generator output and delete the hand-authored
 // shapes.
 
+import type { PricingTables } from "./pricing-types";
+import type { CsrDeliveryReviewTable } from "./csr-delivery-types";
+
 export type Json =
   | string
   | number
@@ -154,6 +157,18 @@ export interface Database {
   };
   resupply: {
     Tables: {
+      pricing_policies: PricingTables["pricing_policies"];
+      pricing_offers: PricingTables["pricing_offers"];
+      pricing_state: PricingTables["pricing_state"];
+      pricing_price_lists: PricingTables["pricing_price_lists"];
+      pricing_quotes: PricingTables["pricing_quotes"];
+      csr_delivery_reviews: CsrDeliveryReviewTable;
+      pricing_events: PricingTables["pricing_events"];
+      pricing_actual_events: PricingTables["pricing_actual_events"];
+      pricing_shipping_quotes: PricingTables["pricing_shipping_quotes"];
+      pricing_proposals: PricingTables["pricing_proposals"];
+      pricing_revenue_profiles: PricingTables["pricing_revenue_profiles"];
+      pricing_alert_reviews: PricingTables["pricing_alert_reviews"];
       // Short-lived inventory holds (migration 0434). One row per reserved
       // SKU (= Stripe product id) per checkout; status walks
       // active → consumed | released | expired. Closes the oversell window
@@ -1225,6 +1240,12 @@ export interface Database {
       };
       fulfillments: {
         Row: {
+          csr_order_request_id: string | null;
+          csr_order_line_id: string | null;
+          pricing_quote_id: string | null;
+          pricing_unit_cost_cents: number | null;
+          fulfillment_method: "stock" | "dropship" | null;
+          pricing_snapshot: Json | null;
           org_id: string | null;
           id: string;
           patient_id: string;
@@ -2619,6 +2640,7 @@ export interface Database {
           // claim-line creation from resupply.product_costs. Nullable —
           // null = "cost unknown" (never silently zero).
           unit_cost_cents: number | null;
+          extended_cost_cents: number | null;
           cost_source: string | null;
           cost_captured_at: string | null;
           // Migration 0250: payer-facing 837P line narrative (loop 2400
@@ -6304,6 +6326,8 @@ export interface Database {
       // shop_orders at read time.
       csr_order_requests: {
         Row: {
+          patient_id: string | null;
+          pricing_quote_id: string | null;
           org_id: string | null;
           id: string;
           order_reference: string;
@@ -7399,6 +7423,86 @@ export interface Database {
       };
     };
     Functions: {
+      pricing_actuals_page: {
+        Args: {
+          p_org_id: string;
+          p_quote_id: string;
+          p_offset?: number;
+          p_limit?: number;
+        };
+        Returns: Json;
+      };
+      pricing_mutate: {
+        Args: {
+          p_org_id: string;
+          p_actor: string;
+          p_operation: string;
+          p_payload: Json;
+        };
+        Returns: Json;
+      };
+      pricing_current_offers: {
+        Args: {
+          p_org_id: string;
+          p_ids?: string[];
+          p_sku?: string;
+          p_offset?: number;
+          p_limit?: number;
+        };
+        Returns: PricingTables["pricing_offers"]["Row"][];
+      };
+      pricing_portfolio: {
+        Args: {
+          p_org_id: string;
+          p_q?: string;
+          p_category?: string;
+          p_supplier?: string;
+          p_offset?: number;
+          p_limit?: number;
+          p_active_offer_ids?: string[];
+        };
+        Returns: Array<{
+          sku: string;
+          name: string;
+          category: string | null;
+          offers: Json;
+          has_more_offers: boolean;
+          matching_offer_ids: string[];
+          active_suppliers: Json;
+        }>;
+      };
+      pricing_save_portfolio_batch: {
+        Args: {
+          p_org_id: string;
+          p_actor: string;
+          p_expected_active_price_list_id: string | null;
+          p_payload: Json;
+        };
+        Returns: Json;
+      };
+      pricing_current_revenue_profiles: {
+        Args: {
+          p_org_id: string;
+          p_patient_id?: string;
+          p_offset?: number;
+          p_limit?: number;
+        };
+        Returns: PricingTables["pricing_revenue_profiles"]["Row"][];
+      };
+      pricing_apply_scheduled: { Args: { p_org_id: string }; Returns: Json };
+      pricing_actuals_snapshot: {
+        Args: { p_org_id: string; p_quote_id: string };
+        Returns: Json;
+      };
+      pricing_alerts: {
+        Args: { p_org_id: string; p_offset?: number; p_limit?: number };
+        Returns: Json;
+      };
+      pricing_summary: { Args: { p_org_id: string }; Returns: Json };
+      pricing_assert_quote_current: {
+        Args: { p_org_id: string; p_quote_id: string; p_revision: number };
+        Returns: Json;
+      };
       // Mig 0545 — atomic patient packet signature and completion.
       finalize_patient_packet: {
         Args: {
@@ -7424,6 +7528,66 @@ export interface Database {
       create_patient_packet: {
         Args: { p_org_id: string; p_packet: Json; p_documents: Json };
         Returns: { id: string; link_version: number };
+      };
+      dispense_csr_priced_order: {
+        Args: { p_org_id: string; p_order_id: string };
+        Returns: {
+          status: string;
+          fulfillmentIds?: string[];
+          replayed?: boolean;
+        };
+      };
+      save_csr_delivery_review: {
+        Args: {
+          p_org_id: string;
+          p_order_id: string;
+          p_actor: string;
+          p_payload: Json;
+        };
+        Returns: { id: string };
+      };
+      csr_pricing_held_episode_ids: {
+        Args: { p_org_id: string; p_episode_ids: string[] };
+        Returns: string[];
+      };
+      approve_csr_delivery_review: {
+        Args: {
+          p_org_id: string;
+          p_order_id: string;
+          p_review_id: string;
+          p_actor: string;
+          p_revision: number;
+          p_reason: string;
+          p_allow_exception: boolean;
+        };
+        Returns: {
+          status: string;
+          fulfillmentIds?: string[];
+          replayed?: boolean;
+        };
+      };
+      dispense_csr_legacy_order: {
+        Args: { p_org_id: string; p_order_id: string };
+        Returns: {
+          status: string;
+          fulfillmentIds?: string[];
+          replayed?: boolean;
+        };
+      };
+      create_csr_priced_order: {
+        Args: {
+          p_org_id: string;
+          p_quote_id: string;
+          p_quote_revision: number;
+          p_draft_id: string | null;
+          p_request: Json;
+        };
+        Returns: {
+          id: string;
+          order_reference: string;
+          link_version: number;
+          replayed: boolean;
+        };
       };
       // Mig 0520 — atomic stock movement. Serializes concurrent callers
       // per (org, sku) with a txn-scoped advisory lock, then updates the

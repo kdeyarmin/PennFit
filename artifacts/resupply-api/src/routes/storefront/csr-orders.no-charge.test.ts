@@ -24,7 +24,10 @@ vi.mock("../../lib/auth-deps", () => ({
 }));
 
 import csrOrdersRouter from "./csr-orders";
-import { buildCsrOrderSigningLink } from "../../lib/csr-order/order";
+import {
+  buildCsrOrderSigningLink,
+  parseOrderItems,
+} from "../../lib/csr-order/order";
 
 // The signing link is HMAC-signed; the token module refuses to sign
 // without a key. Any 32+ decoded bytes will do — we assert the URL shape,
@@ -49,6 +52,23 @@ function app(): Express {
 }
 
 describe("the public CSR-order surface exposes no payment endpoint", () => {
+  it("projects signature items without private pricing or supplier fields", () => {
+    expect(
+      parseOrderItems([
+        {
+          description: "Mask",
+          quantity: 2,
+          unitAmountCents: 5000,
+          sku: "MASK",
+          lineId: "internal-line",
+          unitCostCents: 1700,
+          supplierName: "Private supplier",
+          contributionMarginBps: 4000,
+          approvalNotes: "Private approval",
+        },
+      ]),
+    ).toEqual([{ description: "Mask", quantity: 2, unitAmountCents: 5000 }]);
+  });
   it("404s the checkout endpoint the flow used to have", async () => {
     // The single most important assertion in this file: the route that
     // minted a Stripe Checkout Session must not answer at all.

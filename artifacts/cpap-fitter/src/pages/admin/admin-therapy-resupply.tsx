@@ -1,3 +1,6 @@
+import { PricingOrderReview } from "@/components/admin/pricing/PricingOrderReview";
+import type { Quote } from "@/lib/admin/pricing-api";
+import { parsePricingMoney, pricingQuantity } from "@/lib/admin/pricing-input";
 // /admin/therapy-resupply — resupply opportunities from device data.
 //
 // Reads the vendor `supplies[]` roster the therapy-cloud snapshots
@@ -575,6 +578,7 @@ function DraftsReviewCard({
 
       {approving && (
         <ApproveDraftModal
+          key={approving.id}
           draft={approving}
           onClose={() => setApproving(null)}
           onDone={() => {
@@ -604,18 +608,48 @@ function ApproveDraftModal({
   const [customerEmail, setCustomerEmail] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [description, setDescription] = useState(defaultDescription);
-  const [quantity, setQuantity] = useState(1);
+  const [quantity, setQuantity] = useState(draft.suggestedQuantity || 1);
   const [priceDollars, setPriceDollars] = useState("");
   const [note, setNote] = useState("");
+  const [pricingQuote, setPricingQuote] = useState<Quote | null>(null);
+  const [pricingRequired, setPricingRequired] = useState<boolean | null>(null);
 
   const approve = useMutation({
     mutationFn: () => {
-      const unitAmountCents = Math.round(Number(priceDollars) * 100);
+      const unitAmountCents = parsePricingMoney(priceDollars);
+      if (unitAmountCents === null)
+        throw new Error("Enter a valid billed amount.");
+      if (!pricingQuote && pricingQuantity(String(quantity)) === null)
+        throw new Error("Enter a whole-number quantity from 1 to 99.");
+      if (pricingRequired === null || (pricingRequired && !pricingQuote))
+        throw new Error("An approved insurance review is required.");
+      if (
+        pricingQuote &&
+        (pricingQuote.status !== "approved" ||
+          pricingQuote.boundOrderId ||
+          pricingQuote.patientId !== draft.patientId ||
+          !(Date.parse(pricingQuote.validUntil) > Date.now()))
+      )
+        throw new Error(
+          "Use a current approved pricing review for this patient. Evaluate the items again.",
+        );
       const body: ApproveDraftInput = {
         customerName: customerName.trim(),
         customerEmail: customerEmail.trim() || null,
         customerPhone: customerPhone.trim() || null,
-        items: [{ description: description.trim(), quantity, unitAmountCents }],
+        items: pricingQuote
+          ? pricingQuote.lines.map((line) => ({
+              description: line.description,
+              quantity: line.quantity,
+              unitAmountCents: line.unitAmountCents,
+              sku: line.sku,
+              lineId: line.id,
+              fulfillmentMethod: line.fulfillmentMethod,
+            }))
+          : [{ description: description.trim(), quantity, unitAmountCents }],
+        ...(pricingQuote
+          ? { quoteId: pricingQuote.id, quoteRevision: pricingQuote.revision }
+          : {}),
         noteToCustomer: note.trim() || null,
         deliver: true,
       };
@@ -626,16 +660,26 @@ function ApproveDraftModal({
   // Mirror the server's $0.50 billed-amount floor on the TOTAL (unit × qty)
   // so the modal can't submit a blank/zero estimate the API rejects with
   // amount_below_minimum (insurance-billed, not card checkout).
-  const totalCents = Math.round(Number(priceDollars) * 100) * quantity;
+  const totalCents = pricingQuote
+    ? pricingQuote.lines.reduce(
+        (sum, line) => sum + line.unitAmountCents * line.quantity,
+        0,
+      )
+    : (parsePricingMoney(priceDollars) ?? NaN) * quantity;
   const totalValid = Number.isFinite(totalCents) && totalCents >= 50;
+  const quantityValid =
+    !!pricingQuote || pricingQuantity(String(quantity)) !== null;
   const recipientValid =
     customerEmail.trim().length > 0 || customerPhone.trim().length > 0;
   const canSubmit =
     customerName.trim().length >= 2 &&
     description.trim().length > 0 &&
     totalValid &&
+    quantityValid &&
     recipientValid &&
-    !approve.isPending;
+    !approve.isPending &&
+    pricingRequired !== null &&
+    (!pricingRequired || !!pricingQuote);
 
   return (
     <div
@@ -646,7 +690,7 @@ function ApproveDraftModal({
       aria-label="Approve resupply draft"
     >
       <div
-        className="w-full max-w-md rounded-xl p-5 space-y-3"
+        className="w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-xl p-5 space-y-3"
         style={{
           backgroundColor: "hsl(var(--surface-1))",
           border: "1px solid hsl(var(--line-1))",
@@ -724,7 +768,10 @@ function ApproveDraftModal({
               <input
                 className={inputCls}
                 value={description}
-                onChange={(e) => setDescription(e.target.value)}
+                onChange={(e) => {
+                  setPricingQuote(null);
+                  setDescription(e.target.value);
+                }}
               />
             </Field>
             <div className="grid grid-cols-2 gap-2">
@@ -735,9 +782,10 @@ function ApproveDraftModal({
                   min={1}
                   max={99}
                   value={quantity}
-                  onChange={(e) =>
-                    setQuantity(Math.max(1, Number(e.target.value) || 1))
-                  }
+                  onChange={(e) => {
+                    setPricingQuote(null);
+                    setQuantity(Math.max(1, Number(e.target.value) || 1));
+                  }}
                 />
               </Field>
               <Field label="Estimated billed amount (USD per unit)">
@@ -747,10 +795,38 @@ function ApproveDraftModal({
                   min="0"
                   step="0.01"
                   value={priceDollars}
-                  onChange={(e) => setPriceDollars(e.target.value)}
+                  onChange={(e) => {
+                    setPricingQuote(null);
+                    setPriceDollars(e.target.value);
+                  }}
                 />
               </Field>
             </div>
+            <PricingOrderReview
+              patientId={draft.patientId}
+              initialLines={[
+                {
+                  description,
+                  quantity,
+                  unitAmountCents: parsePricingMoney(priceDollars),
+                  sku: draft.suggestedProductId ?? undefined,
+                },
+              ]}
+              quote={pricingQuote}
+              onRequirementChange={setPricingRequired}
+              onAttach={(quote) => {
+                setPricingQuote(quote);
+                if (quote) {
+                  setDescription(
+                    quote.lines.map((line) => line.description).join(", "),
+                  );
+                  setQuantity(quote.lines[0]?.quantity ?? 1);
+                  setPriceDollars(
+                    ((quote.lines[0]?.unitAmountCents ?? 0) / 100).toFixed(2),
+                  );
+                }
+              }}
+            />
             <Field label="Note (optional)">
               <input
                 className={inputCls}
@@ -768,10 +844,16 @@ function ApproveDraftModal({
                 Enter a billed amount (minimum $0.50 catches blank entries).
               </p>
             )}
-            {approve.isError && (
-              <p className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
-                Couldn’t create the order — check the details and try again.
+            {!quantityValid && (
+              <p className="text-xs" role="alert">
+                Enter a whole-number quantity from 1 to 99.
               </p>
+            )}
+            {approve.isError && (
+              <ErrorPanel
+                title="Couldn’t create the order"
+                error={approve.error}
+              />
             )}
             <div className="flex justify-end gap-2 pt-1">
               <Button intent="secondary" size="sm" onClick={onClose}>

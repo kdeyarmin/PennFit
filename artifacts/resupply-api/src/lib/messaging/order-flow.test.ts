@@ -1278,6 +1278,10 @@ describe("requestAddressChangeHold / releaseAddressChangeHold", () => {
     });
 
     expect(released).toBe(3);
+    expect(supabaseMock.filterCalls("fulfillments", "update")).toContainEqual({
+      verb: "is",
+      args: ["pricing_quote_id", null],
+    });
   });
 
   it("returns 0 rather than throwing when the release fails", async () => {
