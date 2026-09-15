@@ -5,12 +5,24 @@
  * `.or()` clause form). Two layers:
  *
  *  1. LIKE/ILIKE metacharacters — `\` (the LIKE escape char), `%` and
- *     `_` (wildcards) — are backslash-escaped so the value matches
- *     LITERALLY. Without this, an ilike on `a%b@x.com` matches
- *     `a<anything>b@x.com` (a wrong-row match for exact-lookup callers
- *     like the fitter-lead email matchers, and a surprise for admin
- *     search). Mirrors the inline escaping the storefront me-billing /
- *     me-claims routes already apply.
+ *     `_` (wildcards), and `*` (PostgREST's own wildcard spelling) — are
+ *     backslash-escaped so the value cannot widen the match. Without
+ *     this, an ilike on `a%b@x.com` matches `a<anything>b@x.com` (a
+ *     wrong-row match for exact-lookup callers like the fitter-lead
+ *     email matchers and the patient-packet chart resolver, and a
+ *     surprise for admin search). Mirrors the inline escaping the
+ *     storefront me-billing / me-claims routes already apply.
+ *
+ *     `*` is a special case, because PostgREST rewrites `*`→`%` on its
+ *     way into the LIKE pattern and does that rewrite AFTER the escape
+ *     character, so `\*` reaches Postgres as `\%` — a literal PERCENT
+ *     SIGN, not a literal asterisk. A value that contained `*` therefore
+ *     matches NOTHING rather than matching everything. That is the right
+ *     direction here: these callers are asking "which row IS this
+ *     value", and no row is a safer answer than an arbitrary other
+ *     person's row. A literal `*` is simply not expressible through
+ *     `ilike`; a caller that needs to match one must not use this
+ *     operator.
  *  2. `.or()` clause delimiters — commas separate clauses, parens group
  *     them — so a value containing them is wrapped in double-quotes
  *     (re-escaping `\` and `"` for the quoting layer, which PostgREST
@@ -32,11 +44,12 @@
  * ```
  */
 export function escapePostgRESTFilterValue(value: string): string {
-  // 1. LIKE literal-escaping (\, %, _).
+  // 1. LIKE literal-escaping (\, %, _) plus PostgREST's `*` wildcard.
   const likeEscaped = value
     .replace(/\\/g, "\\\\")
     .replace(/%/g, "\\%")
-    .replace(/_/g, "\\_");
+    .replace(/_/g, "\\_")
+    .replace(/\*/g, "\\*");
   // 2. .or() delimiter quoting. Use standard string escaping for the
   //    quoted-value layer so backslashes and quotes are encoded once in
   //    a well-defined way.
@@ -62,6 +75,15 @@ export function escapePostgRESTFilterValue(value: string): string {
  * live INSIDE the quotes: `"*Smith, John*"`. The `*`→`%` like-pattern
  * translation happens after the quote layer is decoded, so quoted
  * wildcards still match as wildcards.
+ *
+ * A `*` INSIDE the searched-for value is deliberately left alone, unlike
+ * in {@link escapePostgRESTFilterValue}. This backs staff search boxes,
+ * where the two available readings of a typed `*` are "wildcard" (already
+ * true of every other search box in the console) and "no results, ever" —
+ * a literal `*` cannot be expressed through `ilike`, since PostgREST
+ * rewrites `*`→`%` after the escape character. Widening a search the
+ * caller has already scoped to one tenant costs little; silently
+ * returning zero rows for a character someone typed costs more.
  *
  * @example
  * ```ts
