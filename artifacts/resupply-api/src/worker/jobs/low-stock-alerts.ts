@@ -338,6 +338,11 @@ async function lowStockAlertsForOrg(
         { event: "shop-inventory.low-stock-alerts.email_unconfigured", err },
         "low-stock-alerts: email not configured; skipping send",
       );
+      // Same reasoning as the no-recipients branch above: record the alert so
+      // the cooldown starts. The Slack digest already fired, so leaving state
+      // unwritten would re-deliver the identical digest on every tick for as
+      // long as the SKUs stay down.
+      await upsertAlertState(orgId, alertable, nowIso);
       return;
     }
     throw err;
