@@ -45,7 +45,28 @@ export function ownerLabel(key: string): string {
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
-function csvCell(value: string | number): string {
+type CsvValue = string | number | { kind: "money"; cents: number };
+
+function reportValue(value: number | boolean, money: boolean): CsvValue {
+  return typeof value === "boolean"
+    ? value
+      ? "Yes"
+      : "No"
+    : money
+      ? { kind: "money", cents: value }
+      : value;
+}
+
+function csvCell(value: CsvValue): string {
+  if (typeof value === "object") {
+    if (!Number.isSafeInteger(value.cents))
+      throw new Error("Invalid report monetary amount.");
+    // Keep signed cents exact, including totals near the safe-integer limit.
+    // Only these explicitly typed money cells bypass text-formula protection.
+    const cents = BigInt(value.cents);
+    const absolute = cents < 0n ? -cents : cents;
+    return `"${cents < 0n ? "-" : ""}${absolute / 100n}.${String(absolute % 100n).padStart(2, "0")}"`;
+  }
   let text = String(value);
   const firstSignificant = Array.from(text).find(
     (character) => character.charCodeAt(0) > 32 && !/\s/.test(character),
@@ -60,7 +81,7 @@ function csvCell(value: string | number): string {
 
 /** All values belong to this returned snapshot, never a pending filter draft. */
 export function ownerAnalyticsCsv(report: OwnerAnalyticsResponse): string {
-  const rows: Array<Array<string | number>> = [
+  const rows: CsvValue[][] = [
     ["Section", "Scope", "Metric", "Current", "Previous", "Unit", "Detail"],
     ["Report", "Snapshot", "Generated at", report.generatedAt, "", "UTC", ""],
     ["Report", "Period", "From (inclusive)", report.window.from, "", "UTC", ""],
@@ -96,18 +117,8 @@ export function ownerAnalyticsCsv(report: OwnerAnalyticsResponse): string {
         section,
         scope,
         ownerLabel(key),
-        typeof value === "boolean"
-          ? value
-            ? "Yes"
-            : "No"
-          : money
-            ? (value / 100).toFixed(2)
-            : value,
-        previous?.[key] === undefined
-          ? ""
-          : money
-            ? (Number(previous[key]) / 100).toFixed(2)
-            : String(previous[key]),
+        reportValue(value, money),
+        previous?.[key] === undefined ? "" : reportValue(previous[key], money),
         money ? "USD" : typeof value === "boolean" ? "Setting" : "Count",
         "",
       ]);
@@ -129,7 +140,7 @@ export function ownerAnalyticsCsv(report: OwnerAnalyticsResponse): string {
             section,
             scope,
             ownerLabel(key),
-            key.endsWith("Cents") ? (value / 100).toFixed(2) : value,
+            reportValue(value, key.endsWith("Cents")),
             "",
             key.endsWith("Cents") ? "USD" : "Count",
             detail,

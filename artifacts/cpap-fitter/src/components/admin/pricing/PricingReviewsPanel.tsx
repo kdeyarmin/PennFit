@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { captureSessionCacheGuard } from "@workspace/resupply-auth-react";
 import { ApiError } from "@workspace/api-client-react/admin";
@@ -298,6 +298,25 @@ export function PricingQuotesPanel({
   );
 }
 
+type ActualSubmission = {
+  body: Omit<ActualEvent, "id" | "createdAt">;
+  revision: number;
+  session: () => boolean;
+};
+const currentOccurrenceInput = () => new Date().toISOString().slice(0, 16);
+function occurrenceTimestamp(value: string): string | null {
+  if (
+    !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value) ||
+    value.startsWith("0000-")
+  )
+    return null;
+  const date = new Date(`${value}:00.000Z`);
+  return Number.isFinite(date.getTime()) &&
+    date.toISOString().slice(0, 16) === value
+    ? date.toISOString()
+    : null;
+}
+
 function PricingActualsPanel({
   quoteId,
   canManage,
@@ -306,10 +325,29 @@ function PricingActualsPanel({
   canManage: boolean;
 }) {
   const qc = useQueryClient();
+  const [isSessionCurrent] = useState(() => captureSessionCacheGuard(qc));
+  const mounted = useRef(true);
+  const draftRevision = useRef(0);
+  const submitted = useRef<ActualSubmission | null>(null);
+  const inFlight = useRef<ActualSubmission | null>(null);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
   const [eventOffset, setEventOffset] = useState(0);
   const actuals = useQuery({
     queryKey: [...pricingKey, "actuals", quoteId, eventOffset],
-    queryFn: () => getPricingActuals(quoteId, eventOffset),
+    enabled: isSessionCurrent(),
+    queryFn: async () => {
+      if (!isSessionCurrent())
+        throw new Error("Your session changed. Reopen the pricing review.");
+      const result = await getPricingActuals(quoteId, eventOffset);
+      if (!isSessionCurrent())
+        throw new Error("Your session changed. Reopen the pricing review.");
+      return result;
+    },
   });
   const [source, setSource] =
       useState<ActualEvent["source"]>("supplier_invoice"),
@@ -319,6 +357,7 @@ function PricingActualsPanel({
     [kind, setKind] = useState<ActualEvent["kind"]>("cost"),
     [notes, setNotes] = useState(""),
     [lineId, setLineId] = useState(""),
+    [occurredAt, setOccurredAt] = useState(currentOccurrenceInput),
     [error, setError] = useState<string | null>(null);
   const [completenessDraft, setCompletenessDraft] = useState<{
     revision: number;
@@ -348,17 +387,45 @@ function PricingActualsPanel({
     }));
   };
   const save = useMutation({
-    mutationFn: (body: Omit<ActualEvent, "id" | "createdAt">) =>
-      savePricingActual(quoteId, body),
-    onSuccess: () => {
-      setEventId("");
-      setAmount("");
-      setNotes("");
+    mutationFn: (request: ActualSubmission) => {
+      if (!mounted.current || !isSessionCurrent() || !request.session())
+        throw new Error("Your session changed. Reopen the pricing review.");
+      return savePricingActual(quoteId, request.body);
+    },
+    onSuccess: (_data, request) => {
+      if (!mounted.current || !isSessionCurrent() || !request.session()) return;
+      // A reply for an earlier draft must not erase edits made while saving.
+      if (request.revision === draftRevision.current) {
+        submitted.current = null;
+        draftRevision.current++;
+        setEventId("");
+        setSourceRef("");
+        setAmount("");
+        setNotes("");
+        setOccurredAt(currentOccurrenceInput());
+      }
       void qc.invalidateQueries({
         queryKey: [...pricingKey, "actuals", quoteId],
       });
+      void qc.invalidateQueries({ queryKey: [...pricingKey, "summary"] });
+    },
+    onSettled: (_data, _error, request) => {
+      if (inFlight.current === request) inFlight.current = null;
     },
   });
+  const editActual = (edit: () => void) => {
+    draftRevision.current++;
+    submitted.current = null;
+    setError(null);
+    if (!inFlight.current) save.reset();
+    edit();
+  };
+  const currentSaveError =
+    save.variables?.revision === draftRevision.current ? save.error : null;
+  const duplicateActual =
+    currentSaveError instanceof ApiError &&
+    (currentSaveError.data as { error?: string } | null)?.error ===
+      "duplicate_economic_event";
   const close = useMutation({
     mutationFn: () => {
       if (!actuals.data || completenessChanged)
@@ -380,7 +447,19 @@ function PricingActualsPanel({
     },
   });
   const submit = () => {
+    if (
+      !canManage ||
+      !mounted.current ||
+      !isSessionCurrent() ||
+      inFlight.current
+    )
+      return;
     setError(null);
+    if (submitted.current) {
+      inFlight.current = submitted.current;
+      save.mutate(submitted.current);
+      return;
+    }
     const amountCents = parsePricingMoney(amount);
     if (amountCents === null || !sourceRef.trim() || !eventId.trim()) {
       setError(
@@ -388,16 +467,30 @@ function PricingActualsPanel({
       );
       return;
     }
-    save.mutate({
-      source,
-      sourceRef: sourceRef.trim(),
-      economicEventId: eventId.trim(),
-      kind,
-      amountCents,
-      occurredAt: new Date().toISOString(),
-      ...(lineId ? { lineId } : {}),
-      notes: notes.trim() || undefined,
-    });
+    const occurrence = occurrenceTimestamp(occurredAt);
+    if (!occurrence || Date.parse(occurrence) > Date.now()) {
+      setError(
+        "Enter a valid economic occurrence date and time in UTC that is not in the future.",
+      );
+      return;
+    }
+    const request: ActualSubmission = {
+      body: {
+        source,
+        sourceRef: sourceRef.trim(),
+        economicEventId: eventId.trim(),
+        kind,
+        amountCents,
+        occurredAt: occurrence,
+        ...(lineId ? { lineId } : {}),
+        notes: notes.trim() || undefined,
+      },
+      revision: draftRevision.current,
+      session: captureSessionCacheGuard(qc),
+    };
+    submitted.current = request;
+    inFlight.current = request;
+    save.mutate(request);
   };
   return (
     <PricingSection
@@ -514,6 +607,11 @@ function PricingActualsPanel({
                     <span>
                       {event.source.replaceAll("_", " ")} · {event.sourceRef} ·{" "}
                       {event.economicEventId}
+                      <span className="mt-1 block text-xs text-slate-500">
+                        {Number.isFinite(Date.parse(event.occurredAt))
+                          ? `Occurred ${new Date(event.occurredAt).toLocaleString("en-US", { timeZone: "UTC" })} UTC`
+                          : "Occurrence date unavailable"}
+                      </span>
                     </span>
                     <strong>
                       {event.kind.replaceAll("_", " ")}{" "}
@@ -574,16 +672,18 @@ function PricingActualsPanel({
                       value={source}
                       onChange={(e) => {
                         const s = e.target.value as ActualEvent["source"];
-                        setSource(s);
-                        setKind(
-                          s === "collection"
-                            ? "revenue"
-                            : s === "refund"
-                              ? "refund"
-                              : s === "supplier_credit"
-                                ? "cost_credit"
-                                : "cost",
-                        );
+                        editActual(() => {
+                          setSource(s);
+                          setKind(
+                            s === "collection"
+                              ? "revenue"
+                              : s === "refund"
+                                ? "refund"
+                                : s === "supplier_credit"
+                                  ? "cost_credit"
+                                  : "cost",
+                          );
+                        });
                       }}
                     >
                       {[
@@ -607,7 +707,9 @@ function PricingActualsPanel({
                       value={kind}
                       disabled={source !== "adjustment"}
                       onChange={(e) =>
-                        setKind(e.target.value as ActualEvent["kind"])
+                        editActual(() =>
+                          setKind(e.target.value as ActualEvent["kind"]),
+                        )
                       }
                     >
                       {["cost", "revenue", "refund", "cost_credit"].map((s) => (
@@ -622,14 +724,33 @@ function PricingActualsPanel({
                       className={pricingControl}
                       inputMode="decimal"
                       value={amount}
-                      onChange={(e) => setAmount(e.target.value)}
+                      onChange={(e) =>
+                        editActual(() => setAmount(e.target.value))
+                      }
+                    />
+                  </PricingField>
+                  <PricingField
+                    label="Economic occurrence date and time (UTC)"
+                    hint="When the invoice, payment or credit occurred, not when you enter it. This date determines its reporting period."
+                  >
+                    <input
+                      type="datetime-local"
+                      step={60}
+                      max={currentOccurrenceInput()}
+                      className={pricingControl}
+                      value={occurredAt}
+                      onChange={(e) =>
+                        editActual(() => setOccurredAt(e.target.value))
+                      }
                     />
                   </PricingField>
                   <PricingField label="Source document reference">
                     <input
                       className={pricingControl}
                       value={sourceRef}
-                      onChange={(e) => setSourceRef(e.target.value)}
+                      onChange={(e) =>
+                        editActual(() => setSourceRef(e.target.value))
+                      }
                       placeholder="Invoice or remittance reference"
                     />
                   </PricingField>
@@ -640,14 +761,18 @@ function PricingActualsPanel({
                     <input
                       className={pricingControl}
                       value={eventId}
-                      onChange={(e) => setEventId(e.target.value)}
+                      onChange={(e) =>
+                        editActual(() => setEventId(e.target.value))
+                      }
                     />
                   </PricingField>
                   <PricingField label="Allocate to item">
                     <select
                       className={pricingControl}
                       value={lineId}
-                      onChange={(e) => setLineId(e.target.value)}
+                      onChange={(e) =>
+                        editActual(() => setLineId(e.target.value))
+                      }
                     >
                       <option value="">Whole order</option>
                       {actuals.data.quote.lines.map((l) => (
@@ -661,7 +786,9 @@ function PricingActualsPanel({
                     <input
                       className={pricingControl}
                       value={notes}
-                      onChange={(e) => setNotes(e.target.value)}
+                      onChange={(e) =>
+                        editActual(() => setNotes(e.target.value))
+                      }
                     />
                   </PricingField>
                 </div>
@@ -673,9 +800,35 @@ function PricingActualsPanel({
                 <Button isLoading={save.isPending} onClick={submit}>
                   Record actual event
                 </Button>
-                {save.error && (
-                  <ErrorPanel error={save.error} onRetry={submit} />
-                )}
+                {duplicateActual ? (
+                  <div
+                    role="alert"
+                    className="space-y-3 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950"
+                  >
+                    <p>
+                      This event reference already has different recorded
+                      details. A previous save may have succeeded. Refresh and
+                      review the existing history before recording a documented
+                      correction; do not create another event for the same
+                      expense or payment.
+                    </p>
+                    <Button
+                      intent="secondary"
+                      disabled={actuals.isFetching}
+                      onClick={() => {
+                        if (!isSessionCurrent()) return;
+                        setEventOffset(0);
+                        void qc.invalidateQueries({
+                          queryKey: [...pricingKey, "actuals", quoteId],
+                        });
+                      }}
+                    >
+                      Refresh actual event history
+                    </Button>
+                  </div>
+                ) : currentSaveError ? (
+                  <ErrorPanel error={currentSaveError} onRetry={submit} />
+                ) : null}
                 <div className="space-y-3 border-t border-slate-200 pt-4">
                   <h3 className="text-sm font-semibold">
                     Confirm completeness

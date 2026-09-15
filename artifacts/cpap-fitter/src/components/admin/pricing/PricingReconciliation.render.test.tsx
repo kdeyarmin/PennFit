@@ -8,7 +8,11 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { SessionMutationCache } from "@workspace/resupply-auth-react";
+import {
+  SessionMutationCache,
+  clearSessionCache,
+} from "@workspace/resupply-auth-react";
+import { ApiError } from "@workspace/api-client-react/admin";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as api from "@/lib/admin/pricing-api";
 import type { Quote, Reconciliation } from "@/lib/admin/pricing-api";
@@ -32,6 +36,7 @@ vi.mock("@/lib/admin/pricing-api", async (original) => ({
   getPricingSummary: vi.fn(),
   getPricingActuals: vi.fn(),
   closePricingActuals: vi.fn(),
+  savePricingActual: vi.fn(),
   getPricingState: vi.fn(),
   getPricingAlerts: vi.fn(),
 }));
@@ -117,6 +122,9 @@ beforeEach(() => {
     reconciliation(offset),
   );
   vi.mocked(api.closePricingActuals).mockResolvedValue(reconciliation(0, 4));
+  vi.mocked(api.savePricingActual)
+    .mockReset()
+    .mockResolvedValue(reconciliation(0, 4));
   vi.mocked(api.getPricingState).mockResolvedValue({
     revision: 1,
     policy: null,
@@ -125,7 +133,254 @@ beforeEach(() => {
     activePriceListId: null,
   });
 });
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+});
+
+function fillActual(label: string, value: string) {
+  fireEvent.change(screen.getByLabelText(label), { target: { value } });
+}
+function enterActual() {
+  fillActual("Actual amount ($)", "24.50");
+  fillActual("Source document reference", "Invoice-123");
+  fillActual("Unique economic event reference", "cost-123");
+  fillActual("Actual event notes", "Supplier invoice checked");
+  fillActual("Allocate to item", "line-1");
+}
+
+describe("actual event submission", () => {
+  it("retries the complete committed payload unchanged after a lost response", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-09-15T12:00:00Z"));
+    vi.mocked(api.savePricingActual).mockRejectedValueOnce(
+      new Error("Reply lost after save"),
+    );
+    await openActuals();
+    enterActual();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Record actual event" }),
+    );
+    await screen.findByText("Reply lost after save");
+    const body = vi.mocked(api.savePricingActual).mock.calls[0][1];
+    vi.setSystemTime(new Date("2026-09-15T12:10:00Z"));
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await waitFor(() => expect(api.savePricingActual).toHaveBeenCalledTimes(2));
+    expect(vi.mocked(api.savePricingActual).mock.calls[1]).toEqual([
+      "quote-1",
+      body,
+    ]);
+    expect(vi.mocked(api.savePricingActual).mock.calls[1][1]).toBe(body);
+    await waitFor(() =>
+      expect(
+        (
+          screen.getByLabelText(
+            "Unique economic event reference",
+          ) as HTMLInputElement
+        ).value,
+      ).toBe(""),
+    );
+    expect(
+      (
+        screen.getByLabelText(
+          "Economic occurrence date and time (UTC)",
+        ) as HTMLInputElement
+      ).value,
+    ).toBe("2026-09-15T12:10");
+    enterActual();
+    fillActual("Source document reference", "Invoice-124");
+    fillActual("Unique economic event reference", "cost-124");
+    fireEvent.click(
+      screen.getByRole("button", { name: "Record actual event" }),
+    );
+    await waitFor(() => expect(api.savePricingActual).toHaveBeenCalledTimes(3));
+    expect(vi.mocked(api.savePricingActual).mock.calls[2][1]).toMatchObject({
+      economicEventId: "cost-124",
+      sourceRef: "Invoice-124",
+      occurredAt: "2026-09-15T12:10:00.000Z",
+    });
+  });
+  it("records a historical economic date as UTC instead of the entry time", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-09-15T12:00:00Z"));
+    await openActuals();
+    enterActual();
+    fillActual("Economic occurrence date and time (UTC)", "2026-08-15T09:45");
+    fireEvent.click(
+      screen.getByRole("button", { name: "Record actual event" }),
+    );
+    await waitFor(() =>
+      expect(api.savePricingActual).toHaveBeenCalledWith(
+        "quote-1",
+        expect.objectContaining({ occurredAt: "2026-08-15T09:45:00.000Z" }),
+      ),
+    );
+  });
+  it.each(["", "2026-02-30T09:45", "2026-09-16T09:45"])(
+    "refuses missing, impossible or future occurrence time %j",
+    async (date) => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(new Date("2026-09-15T12:00:00Z"));
+      await openActuals();
+      enterActual();
+      fillActual("Economic occurrence date and time (UTC)", date);
+      fireEvent.click(
+        screen.getByRole("button", { name: "Record actual event" }),
+      );
+      expect(
+        screen.getByText(/Enter a valid economic occurrence date/),
+      ).toBeTruthy();
+      expect(api.savePricingActual).not.toHaveBeenCalled();
+    },
+  );
+  it("uses deliberate edits without replacing references after an uncertain save and shows conflict recovery", async () => {
+    vi.mocked(api.savePricingActual)
+      .mockRejectedValueOnce(new Error("Reply lost after save"))
+      .mockRejectedValueOnce(
+        new ApiError(
+          new Response(null, { status: 409 }),
+          { error: "duplicate_economic_event" },
+          { method: "POST", url: "/pricing/quotes/quote-1/actuals" },
+        ),
+      );
+    await openActuals();
+    enterActual();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Record actual event" }),
+    );
+    await screen.findByText("Reply lost after save");
+    const original = structuredClone(
+      vi.mocked(api.savePricingActual).mock.calls[0][1],
+    );
+    fillActual("Actual event source", "adjustment");
+    fillActual("Economic effect", "cost_credit");
+    fillActual("Actual amount ($)", "35.00");
+    fillActual("Allocate to item", "");
+    fillActual("Actual event notes", "Correction evidence");
+    fillActual("Economic occurrence date and time (UTC)", "2026-07-01T10:30");
+    fireEvent.click(
+      screen.getByRole("button", { name: "Record actual event" }),
+    );
+    await screen.findByText(
+      /This event reference already has different recorded details/,
+    );
+    expect(vi.mocked(api.savePricingActual).mock.calls[0][1]).toEqual(original);
+    expect(vi.mocked(api.savePricingActual).mock.calls[1][1]).toEqual({
+      source: "adjustment",
+      sourceRef: "Invoice-123",
+      economicEventId: "cost-123",
+      kind: "cost_credit",
+      amountCents: 3500,
+      notes: "Correction evidence",
+      occurredAt: "2026-07-01T10:30:00.000Z",
+    });
+    const reads = vi.mocked(api.getPricingActuals).mock.calls.length;
+    fireEvent.click(
+      screen.getByRole("button", { name: "Refresh actual event history" }),
+    );
+    await waitFor(() =>
+      expect(api.getPricingActuals).toHaveBeenCalledTimes(reads + 1),
+    );
+    expect(api.savePricingActual).toHaveBeenCalledTimes(2);
+    expect(
+      (
+        screen.getByLabelText(
+          "Unique economic event reference",
+        ) as HTMLInputElement
+      ).value,
+    ).toBe("cost-123");
+  });
+  it("does not erase a newer draft when an earlier save finishes", async () => {
+    let resolve!: (value: Reconciliation) => void;
+    vi.mocked(api.savePricingActual).mockReturnValueOnce(
+      new Promise((done) => {
+        resolve = done;
+      }),
+    );
+    await openActuals();
+    enterActual();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Record actual event" }),
+    );
+    await waitFor(() => expect(api.savePricingActual).toHaveBeenCalledTimes(1));
+    fillActual("Actual amount ($)", "99.00");
+    fillActual("Source document reference", "Invoice-next");
+    fillActual("Unique economic event reference", "cost-next");
+    fireEvent.click(
+      screen.getByRole("button", { name: "Record actual event" }),
+    );
+    expect(api.savePricingActual).toHaveBeenCalledTimes(1);
+    await act(async () => resolve(reconciliation(0, 4)));
+    expect(
+      (screen.getByLabelText("Actual amount ($)") as HTMLInputElement).value,
+    ).toBe("99.00");
+    expect(
+      (
+        screen.getByLabelText(
+          "Unique economic event reference",
+        ) as HTMLInputElement
+      ).value,
+    ).toBe("cost-next");
+    await waitFor(() =>
+      expect(
+        (
+          screen.getByRole("button", {
+            name: "Record actual event",
+          }) as HTMLButtonElement
+        ).disabled,
+      ).toBe(false),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Record actual event" }),
+    );
+    await waitFor(() => expect(api.savePricingActual).toHaveBeenCalledTimes(2));
+    expect(vi.mocked(api.savePricingActual).mock.calls[1][1]).toMatchObject({
+      amountCents: 9900,
+      sourceRef: "Invoice-next",
+      economicEventId: "cost-next",
+    });
+  });
+  it("does not retry an old actual-event body after the session changes", async () => {
+    vi.mocked(api.savePricingActual).mockRejectedValueOnce(
+      new Error("Reply lost after save"),
+    );
+    const { client } = await openActuals();
+    enterActual();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Record actual event" }),
+    );
+    await screen.findByText("Reply lost after save");
+    const retry = screen.getByRole("button", { name: "Retry" });
+    await act(async () => {
+      await clearSessionCache(client);
+      fireEvent.click(retry);
+    });
+    expect(api.savePricingActual).toHaveBeenCalledTimes(1);
+  });
+  it("does not refresh private data from a late actual-event reply after a session change", async () => {
+    let resolve!: (value: Reconciliation) => void;
+    vi.mocked(api.savePricingActual).mockReturnValueOnce(
+      new Promise((done) => {
+        resolve = done;
+      }),
+    );
+    const { client } = await openActuals();
+    enterActual();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Record actual event" }),
+    );
+    await waitFor(() => expect(api.savePricingActual).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      await clearSessionCache(client);
+    });
+    const invalidate = vi.spyOn(client, "invalidateQueries");
+    await act(async () => resolve(reconciliation(0, 4)));
+    expect(invalidate).not.toHaveBeenCalled();
+    expect(
+      client.getQueryData([...api.pricingKey, "actuals", "quote-1", 0]),
+    ).toBeUndefined();
+  });
+});
 
 describe("reconciliation controls and history", () => {
   it("recovers from a failed history page without losing the completeness draft", async () => {

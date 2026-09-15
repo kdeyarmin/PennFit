@@ -5,7 +5,12 @@ import { ownerAnalyticsFixture } from "../../artifacts/cpap-fitter/src/pages/adm
 
 // All API requests use synthetic aggregates; no patient or vendor is contacted.
 async function overviewFixture(context: BrowserContext, manager = true) {
-  const state = { requests: [] as string[], partial: false, failed: false };
+  const state = {
+    requests: [] as string[],
+    partial: false,
+    failed: false,
+    negative: false,
+  };
   await context.route("**/*", async (route) => {
     const url = new URL(route.request().url());
     if (!["localhost", "127.0.0.1"].includes(url.hostname))
@@ -87,13 +92,29 @@ async function overviewFixture(context: BrowserContext, manager = true) {
           patientsAdded: i === dates.length - 1 ? 12 : 0,
         }));
       }
-      if (report.financial.status === "available")
+      if (report.financial.status === "available") {
+        if (state.negative) {
+          const f = report.financial.data;
+          Object.assign(f.current, { revenueCents: -12345, costCents: -200 });
+          Object.assign(f.previous, { revenueCents: -1, costCents: -75 });
+          Object.assign(f.settled, {
+            netRevenueCents: 10005,
+            netCostCents: 60010,
+            contributionCents: -50005,
+          });
+          f.costSources = [
+            { source: "supplier_invoice", costCents: -200, eventCount: 1 },
+          ];
+        }
         report.financial.data.daily = dates.map((date, i) => ({
           date,
-          revenueCents: i === dates.length - 1 ? 10000 : 0,
-          costCents: i === dates.length - 1 ? 6000 : 0,
+          revenueCents:
+            i === dates.length - 1 ? (state.negative ? -12345 : 10000) : 0,
+          costCents:
+            i === dates.length - 1 ? (state.negative ? -200 : 6000) : 0,
           eventCount: i === dates.length - 1 ? 3 : 0,
         }));
+      }
       if (state.partial)
         report.financial = {
           status: "unavailable",
@@ -281,4 +302,55 @@ test("a CSR cannot request or view owner financial analytics", async ({
   await expect(
     page.getByRole("button", { name: "Download overview CSV", exact: true }),
   ).toHaveCount(0);
+});
+
+test("downloaded owner CSV keeps refunds, credits and losses as signed numbers", async ({
+  context,
+  page,
+}) => {
+  const state = await overviewFixture(context);
+  state.negative = true;
+  await page.goto("/admin/analytics/owner");
+  const button = page.getByRole("button", {
+    name: "Download overview CSV",
+    exact: true,
+  });
+  await expect(button).toBeEnabled();
+  const downloaded = page.waitForEvent("download");
+  await button.click();
+  const csv = await readFile((await (await downloaded).path())!, "utf8");
+  const cell = (scope: string, metric: string, column = 3) => {
+    const prefix = `"Financial","${scope}","${metric}",`;
+    const row = csv.split("\r\n").find((line) => line.startsWith(prefix));
+    expect(row, `${scope}: ${metric}`).toBeDefined();
+    // These fixed metric rows contain only quoted labels and numeric cells.
+    const value = row!.slice(1, -1).split('","')[column];
+    expect(value).toMatch(/^-?\d+\.\d{2}$/);
+    return Number(value);
+  };
+  const period = "Recorded revenue and cost events in period";
+  expect(cell(period, "Revenue")).toBe(-123.45);
+  expect(cell(period, "Revenue", 4)).toBe(-0.01);
+  expect(cell(period, "Cost")).toBe(-2);
+  expect(cell(period, "Cost", 4)).toBe(-0.75);
+  const lifetime =
+    "Lifetime bound reviews; contribution only completed reviews";
+  expect(cell(lifetime, "Contribution")).toBe(-500.05);
+  expect(
+    Math.round(cell(lifetime, "Net Revenue") * 100) -
+      Math.round(cell(lifetime, "Net Cost") * 100),
+  ).toBe(-50005);
+  expect(cell("Recorded cost sources", "Cost")).toBe(-2);
+  const daily = csv
+    .split("\r\n")
+    .filter((line) =>
+      line.startsWith('"Financial","Daily recorded event activity","Revenue",'),
+    )
+    .map((line) => {
+      const value = line.slice(1, -1).split('","')[3];
+      expect(value).toMatch(/^-?\d+\.\d{2}$/);
+      return Math.round(Number(value) * 100);
+    });
+  expect(daily.reduce((sum, value) => sum + value, 0)).toBe(-12345);
+  expect(csv).not.toContain("\"'-");
 });

@@ -51,24 +51,18 @@ describe.skipIf(!databaseUrl)("owner business analytics in PostgreSQL", () => {
     // All DDL and synthetic fixtures roll back. Never modify a hosted database,
     // persistent role settings, existing organization, or another test's data.
     await db.query("BEGIN");
-    await db.query(
-      readFileSync(
-        new URL(
-          "../migrations/0557_owner_business_analytics.sql",
-          import.meta.url,
+    for (const migration of [
+      "0557_owner_business_analytics.sql",
+      "0558_owner_analytics_stock_threshold.sql",
+      "0558_owner_analytics_stock_threshold.sql",
+    ]) {
+      await db.query(
+        readFileSync(
+          new URL(`../migrations/${migration}`, import.meta.url),
+          "utf8",
         ),
-        "utf8",
-      ),
-    );
-    await db.query(
-      readFileSync(
-        new URL(
-          "../migrations/0557_owner_business_analytics.sql",
-          import.meta.url,
-        ),
-        "utf8",
-      ),
-    );
+      );
+    }
   }, 30000);
   afterAll(async () => {
     if (db) {
@@ -488,11 +482,41 @@ describe.skipIf(!databaseUrl)("owner business analytics in PostgreSQL", () => {
       activeProducts: 14,
       trackedProducts: 13,
       untrackedProducts: 1,
-      lowStockProducts: 12,
+      lowStockProducts: 13,
       outOfStockProducts: 13,
     });
     expect(result.lowStock).toHaveLength(10);
     expect(result.lowStock.some((row) => row.sku === "UNKNOWN")).toBe(false);
+  });
+
+  it("matches the catalog default threshold while preserving explicit zero and untracked stock", async () => {
+    await db.query(
+      "INSERT INTO resupply.products(org_id,sku,name,stock_count,low_stock_threshold,active,created_at) VALUES($1,'DEFAULT-0','Default at zero',0,NULL,true,$3),($1,'DEFAULT-5','Default boundary',5,NULL,true,$3),($1,'DEFAULT-6','Above default',6,NULL,true,$3),($1,'EXPLICIT-0','Explicit zero',0,0,true,$3),($1,'EXPLICIT-1','Above explicit zero',1,0,true,$3),($1,'UNTRACKED','Unknown stock',NULL,NULL,true,$3),($1,'INACTIVE','Inactive',0,NULL,false,$3),($2,'FOREIGN','Foreign stock',0,NULL,true,$3)",
+      [org, foreign, old],
+    );
+    const result = await report();
+    expect(result.snapshot).toMatchObject({
+      activeProducts: 6,
+      trackedProducts: 5,
+      untrackedProducts: 1,
+      lowStockProducts: 3,
+      outOfStockProducts: 2,
+    });
+    expect(result.lowStock).toEqual([
+      {
+        sku: "DEFAULT-0",
+        name: "Default at zero",
+        stockCount: 0,
+        threshold: 5,
+      },
+      { sku: "EXPLICIT-0", name: "Explicit zero", stockCount: 0, threshold: 0 },
+      {
+        sku: "DEFAULT-5",
+        name: "Default boundary",
+        stockCount: 5,
+        threshold: 5,
+      },
+    ]);
   });
 
   it("uses receipt evidence instead of provider acceptance for message delivery", async () => {
