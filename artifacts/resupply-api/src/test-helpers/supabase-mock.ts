@@ -152,6 +152,7 @@ interface TableBuilder {
   match: (...args: unknown[]) => TableBuilder;
   contains: (...args: unknown[]) => TableBuilder;
   containedBy: (...args: unknown[]) => TableBuilder;
+  overlaps: (...args: unknown[]) => TableBuilder;
   textSearch: (...args: unknown[]) => TableBuilder;
   filter: (...args: unknown[]) => TableBuilder;
   or: (...args: unknown[]) => TableBuilder;
@@ -287,6 +288,7 @@ function makeTableBuilder(table: string): TableBuilder {
     match: captureFilter("match"),
     contains: captureFilter("contains"),
     containedBy: captureFilter("containedBy"),
+    overlaps: captureFilter("overlaps"),
     textSearch: captureFilter("textSearch"),
     filter: captureFilter("filter"),
     or: captureFilter("or"),

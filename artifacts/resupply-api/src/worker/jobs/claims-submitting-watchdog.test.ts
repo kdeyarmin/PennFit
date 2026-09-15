@@ -134,6 +134,90 @@ describe("runClaimsSubmittingWatchdogForOrg", () => {
     expect(stats).toEqual({ scanned: 2, released: 1, needsManual: 1 });
   });
 
+  // Regression: the evidence query used to filter
+  // `.gte("created_at", cutoffIso)`. Two defects in one line.
+  //
+  // 1. `office_ally_submissions` has no `created_at` column (its timestamp is
+  //    `submitted_at`), so PostgREST answered 42703 / HTTP 400 and the
+  //    `throw subErr` below killed the job — but ONLY once a stale claim
+  //    existed, because an empty scan returns before this query runs. The
+  //    watchdog therefore worked in exactly the case where it had nothing to
+  //    do and threw in the case it exists for.
+  // 2. Renaming the column alone would have been worse than the crash. A
+  //    claim only becomes a candidate once it has been locked LONGER than
+  //    staleMs, so the submission that transmitted it is always OLDER than
+  //    `cutoffIso`; `submitted_at >= cutoffIso` excludes the very evidence
+  //    being sought, and a miss releases a claim Office Ally already has —
+  //    a second transmission of the same claim.
+  //
+  // Matching on the candidate ids has neither failure mode. A staged mock
+  // cannot reproduce either one, so assert the filter shape directly.
+  it("matches transmission evidence by claim id, not by a time window", async () => {
+    stageSupabaseResponse("insurance_claims", "select", {
+      data: [
+        {
+          id: CLAIM_A,
+          office_ally_submission_id: null,
+          updated_at: "2026-08-27T15:00:00.000Z",
+        },
+      ],
+    });
+    stageSupabaseResponse("office_ally_submissions", "select", { data: [] });
+    stageSupabaseResponse("insurance_claims", "update", {
+      data: [{ id: CLAIM_A }],
+    });
+
+    await runClaimsSubmittingWatchdogForOrg(ORG, {
+      now: NOW,
+      staleMs: STALE_MS,
+    });
+
+    const filters = getSupabaseFilterCalls("office_ally_submissions", "select");
+    const overlap = filters.find((f) => f.verb === "overlaps");
+    expect(overlap, "evidence query must overlap on attempted_claim_ids").toBeDefined();
+    expect(overlap?.args[0]).toBe("attempted_claim_ids");
+    expect(overlap?.args[1]).toEqual([CLAIM_A]);
+
+    // No timestamp filter of any kind, under any column name.
+    const timeFilters = filters.filter(
+      (f) =>
+        (f.verb === "gte" || f.verb === "gt" || f.verb === "lt" || f.verb === "lte") &&
+        typeof f.args[0] === "string" &&
+        /_at$/.test(f.args[0] as string),
+    );
+    expect(timeFilters).toEqual([]);
+
+    // And the column that does not exist must never come back.
+    expect(filters.every((f) => f.args[0] !== "created_at")).toBe(true);
+  });
+
+  // Truncation must fail SAFE. If the evidence page fills up, "no match" no
+  // longer means "not transmitted", so nothing may be released on that tick.
+  it("holds every candidate when the evidence page is truncated", async () => {
+    const stuckRows = Array.from({ length: 3 }, (_, i) => ({
+      id: `cccccccc-cccc-4ccc-8ccc-${String(i).padStart(12, "0")}`,
+      office_ally_submission_id: null,
+      updated_at: "2026-08-27T15:00:00.000Z",
+    }));
+    stageSupabaseResponse("insurance_claims", "select", { data: stuckRows });
+    // 500 rows === EVIDENCE_SCAN_LIMIT, none of which name our candidates.
+    stageSupabaseResponse("office_ally_submissions", "select", {
+      data: Array.from({ length: 500 }, (_, i) => ({
+        id: `sub-${i}`,
+        status: "uploaded",
+        attempted_claim_ids: [],
+      })),
+    });
+
+    const stats = await runClaimsSubmittingWatchdogForOrg(ORG, {
+      now: NOW,
+      staleMs: STALE_MS,
+    });
+
+    expect(stats).toEqual({ scanned: 3, released: 0, needsManual: 3 });
+    expect(getSupabaseCallCount("insurance_claims", "update")).toBe(0);
+  });
+
   it("filters the scan to submitting + stale updated_at", async () => {
     stageSupabaseResponse("insurance_claims", "select", { data: [] });
     await runClaimsSubmittingWatchdogForOrg(ORG, {
