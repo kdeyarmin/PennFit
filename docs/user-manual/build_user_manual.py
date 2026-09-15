@@ -2,7 +2,9 @@
 """Build the CareMetric Breathe User Manual PDF.
 
 Generates docs/user-manual/CareMetric-Breathe-User-Manual.pdf from the
-CONTENT structures below. The manual is organised by the four operating
+CONTENT structures below and, after a successful build, copies it to
+artifacts/resupply-api/assets/user-manual/CareMetric-Breathe-User-Manual.pdf
+for deployment. The manual is organised by the four operating
 roles in a DME/HME PAP practice — Administrator, Biller, Customer Service
 Rep, and Respiratory Therapist — and has four parts:
 
@@ -27,12 +29,14 @@ docs/feature-guide/build_feature_guide.py.
 Usage:
     pip install reportlab Pillow
     python3 docs/user-manual/build_user_manual.py
+    # Updates both the documentation PDF and its runtime asset copy.
 """
 
 import colorsys
 import io
 import json
 import os
+import shutil
 from datetime import date
 
 from reportlab.pdfgen import canvas as _pdfcanvas
@@ -62,6 +66,10 @@ from reportlab.platypus import (
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUT_PATH = os.path.join(HERE, "CareMetric-Breathe-User-Manual.pdf")
+RUNTIME_OUT_PATH = os.path.abspath(os.path.join(
+    HERE, "..", "..", "artifacts", "resupply-api", "assets", "user-manual",
+    "CareMetric-Breathe-User-Manual.pdf",
+))
 SHOTS = os.path.join(HERE, "screenshots")
 ASSETS = os.path.join(HERE, "assets")
 EMBLEM = os.path.join(ASSETS, "caremetric-emblem.png")
@@ -659,11 +667,20 @@ SUMMARY = {
             ("Webhook Deliveries", "Outbound event deliveries to partner endpoints; re-queue failed sends."),
         ]),
         ("Analytics & goals", [
+            ("Owner overview", "Recorded business activity, current queues, claims, stock, outreach, and completed-review contribution with explicit reporting periods."),
             ("Reports", "Exportable CSV/PDF/QuickBooks reports for ops and finance."),
             ("Audit Trail", "Who accessed which patient's information, and when — filter by employee, patient, and time frame (admins only)."),
             ("Financial analytics", "Margin & COGS, LTV:CAC, inventory turnover, revenue by source, outreach attribution."),
             ("Performance & Goals", "Team throughput, live staffing load, KPI targets, and threshold alerts."),
             ("Clinical & customer analytics", "Resupply funnel, reorder reminders, NPS, and storefront traffic."),
+        ]),
+        ("Pricing & Profitability", [
+            ("Supplier costs & collection evidence", "Versioned, dated canonical-unit supplier costs, whole-pack rules, freight coverage and verified insurance collection assumptions."),
+            ("Pricing policy", "Set your own targets, hard floors, minimum dollars and scoped rules; deliberately enable required patient reviews."),
+            ("Item review & New items", "Evaluate exact items and fulfillment costs; review provisional supplier comparisons before mapping a new item."),
+            ("Bulk prices", "Select published item or bundle scenarios, compare old/new economics, retain other prices, then activate or schedule a complete version."),
+            ("Owner models", "Six assumption-driven planning models: pricing strategies, break-even, sensitivity, price/volume, repeat orders and working capital."),
+            ("Reviews & actuals / Follow-up", "Approve eligible exceptions, reconcile dated financial events, and assign cost or collection follow-up."),
         ]),
     ],
     "biller": [
@@ -713,14 +730,16 @@ SUMMARY = {
             ("Episodes", "Dated follow-up promises and open service episodes."),
         ]),
         ("Schedule & outreach", [
+            ("Resupply calendar", "Month and due-now views with patient order/eligibility review and individual or selected-batch email, SMS or automated calls."),
             ("Company Calendar", "Shared team schedule of fittings, setups, follow-ups, and video visits."),
             ("Video Visits", "Telehealth visits with secure join links sent by SMS/email."),
             ("Follow-ups", "Today's callback queue across customers and patients."),
-            ("Bulk Campaigns", "Batch SMS/email sends with audience filters and a recipient sanity-check."),
+            ("Bulk Campaigns", "Separate campaign sending requires its own permission; CSRs use the resupply calendar for selected due-patient outreach."),
             ("Alert Library / Reminders", "One-off patient alerts and the resupply reminder schedule."),
             ("Playbooks / Canned Replies / Automated Messages", "Reusable outreach cadences, saved reply snippets, and system-message copy."),
         ]),
         ("Patients & paperwork", [
+            ("Supplies & next eligibility", "See the exact supply, recorded order history, replacement-rule quantities, prescription expiry and scheduled due date together."),
             ("Patients", "Patient roster and the 360° timeline (orders, messages, documents, therapy, billing)."),
             ("Duplicate Review", "Find and merge likely-duplicate patient records."),
             ("Documents & Packets", "Draft CMNs/prescriptions/agreements and send e-signature packets."),
@@ -728,9 +747,12 @@ SUMMARY = {
             ("Referral Reviewer / Sources", "AI-extracted intake from faxed referrals; referring-physician scorecards."),
         ]),
         ("Orders, catalog & leads", [
+            ("Pricing item review", "Evaluate the patient's items, costs and insurance assumptions; save a within-policy review or request manager approval."),
+            ("Patient batch review", "Check approved pricing separately for up to 50 selected resupply drafts without creating orders or contacting patients."),
+            ("Signed order safeguards", "Preserve approved items and amounts; resolve prescription, inventory and changed-address holds before release."),
             ("Fit Requests", "Finished fittings waiting for someone to verify the benefit and place the order."),
             ("Orders", "Insurance orders — fulfill, track, and look up."),
-            ("Shipping Labels", "Print shipping labels with the patient address merged; tracking auto-fills."),
+            ("Shipping Labels", "XPS labels for historical cash-pay shop orders. Current insurance resupplies use the PacWare and fulfillment workflow."),
             ("Catalog", "The SKUs you dispense and what is on the shelf; stock moves as a reasoned movement, never a typed total."),
             ("Backorders", "Mark a SKU out of stock and set the substitution the fulfillment path should use instead."),
             ("Insurance Leads", "Work new benefit-verification requests from the storefront."),
@@ -801,9 +823,54 @@ DETAIL = {
         ("Analytics, reports & goals", "The numbers that run the business. Most are finance-gated.", [
             ("Reports", "A catalog of exportable reports (CSV/PDF/QuickBooks) — revenue summary, orders, refunds journal, patient payments, insurance claims, customer activity, and more."),
             ("Patient-Access Audit Trail", "An admins-only report of who accessed which patient's information, and when. Filter by employee, by patient, and by time frame to answer a “who looked at this chart?” question. It is kept out of the CSR and clinician sidebars (it requires the audit-read permission) and the page itself enforces full-admin access."),
-            ("Financial analytics", "Captured-cost economics: gross Margin & COGS by product, LTV:CAC by channel, inventory turnover and stockout demand, revenue by source, and outreach attribution."),
+            ("Financial analytics", "Use <b>Owner overview</b> for current business activity and the financial records attached to pricing reviews. Use <b>Reviews &amp; actuals</b> for individual order reconciliation. Other specialist reports have their own source populations; do not combine legacy shop totals, claim paid-to-date figures and pricing actuals as though they were separate receipts."),
             ("Performance & Goals", "Operational management: per-agent Team Throughput, real-time Live Staffing load, KPI Goals & Targets with pace-to-goal, and KPI Alerts that fire when a metric crosses a threshold."),
             ("Clinical & customer analytics", "Resupply funnel and reorder-reminder conversion, post-delivery NPS with comments, and storefront traffic & revenue."),
+        ]),
+        ("Pricing setup, costs and approval", "Open <b>Orders &amp; Leads - Pricing &amp; Profitability</b>. Owners and Admins manage pricing; CSRs can evaluate and request review. A financial review never replaces insurance, prescription or clinical checks.", [
+            ("Supplier costs", "Record the canonical catalog SKU, supplier SKU and <b>Goods cost per sellable unit ($)</b> for one canonical selling unit, not the total purchase-pack price. Normalize the supplier paperwork before entry. Record units per supplier pack and the allowed quantity range; an order must use whole verified packs within that range. The separate New items comparison accepts whole-pack costs and can show surplus units. Choose stock or dropship fulfillment. Record evidence, verification status, effective date and expiry; a new version preserves history. Itemize freight, dropship, handling, packaging and other applicable charges, including whether each applies per unit, order or parcel. Mark amounts already included elsewhere so they are counted once. Blank means unknown; a verified zero means no charge. CSV imports expose per-row results: review errors and retry the affected rows rather than assuming the whole file succeeded."),
+            ("Delivery evidence", "Compare total delivered cost, not the supplier's goods price alone. Confirm destination coverage, service, availability, lead time, return terms and clinical suitability. Stock rate estimates require measured parcels and the configured warehouse shipping account; selecting a rate binds its service and saved patient address. The app's 30-minute validity is an estimate window, not a carrier price guarantee or label purchase. Dropship freight must come from verified supplier terms; a warehouse rate cannot establish a supplier's shipping charge."),
+            ("Collection evidence", "For insurance, select the patient and exact items/quantities and record dated, verified allowed and expected collectible amounts. Billed charges are separate. Optional insurer, secondary and patient shares plus the collection adjustment must reconcile to the expected total. The allowed amount already includes applicable shares; do not add it to those shares again. An inflated bill amount does not increase expected reimbursement or authorize a new patient charge. CSRs can model estimates, but management verifies the reusable evidence."),
+            ("Pricing policy", "Enter the business-approved target, <b>Approval floor (%)</b>, optional <b>Minimum profit per order ($)</b> and profit basis. Contribution is before allocated overhead; the alternative basis includes the explicit allocation. Add dated item, category or revenue-mode rules with priorities and review the effective rules. Optional unit-price increments, endings, ceilings and allocated item floors also apply. The app does not choose a default business margin. <b>Save draft policy</b> preserves a version; <b>Publish this policy</b> affects future reviews."),
+            ("Required review is a separate choice", "Publishing and enabling pricing does not by itself mean every patient order is mandatory-review. Inspect the <b>Patient order review</b> card. Enable the requirement deliberately only after catalog mappings, supplier evidence, collection assumptions and delivery choices are ready. When Required, new CSR orders need an approved insurance review. When Optional, existing unreviewed workflows remain available. <b>Pause pricing enforcement</b> is a management action; neither a simulation nor a supplier import silently changes enforcement."),
+            ("Item review and its states", "Choose exact SKU, quantity, billed unit amount, patient, revenue mode, supplier and delivery assumptions, then calculate. <b>Meets target</b> with complete verified evidence can <b>Save review</b> as approved. A permissible below-target result uses <b>Request manager approval</b>; missing or stale inputs require correction or a permitted documented estimate. <b>Blocked</b> includes hard-floor, minimum-dollar and other invalid conditions; an ordinary exception cannot override them. A changed input requires recalculation. Displayed percentages are rounded; approval uses the exact calculation."),
+            ("Scope and quantity limits", "Pricing uses USD cents. Internal scenarios support quantities up to 10,000; the patient signature workflow accepts at most 20 lines and quantities 1-99 per line. The stock-rate form has its own 99-unit limit. A larger internal scenario cannot simply attach to a patient order. These supply-sale calculations are not capped-rental or multi-period reimbursement models. Record actual method-specific processing fees where applicable; the practice's platform subscription fee does not establish a patient-order fee."),
+            ("New items before catalog pricing", "In <b>New items</b>, submit manufacturer/model/size, source, terms and quoted costs. Compare up to five suppliers for the same requested quantity and delivery scope. Whole purchase packs and minimums determine the cash outlay and surplus units; fractional unit rounding must not hide that outlay. Missing fee categories or evidence stay unknown, and expired offers remain expired. The comparison is provisional and does not publish a price. Management verifies the offer and links the proposal to the correct canonical SKU before a firm order review."),
+            ("Reviews, approval and follow-up", "In <b>Reviews &amp; actuals</b>, filter pending approvals, open the exact revision, read evidence and expiry, and enter the approval reason. A permitted exception needs explicit acknowledgement. Approval applies only to that review; later order creation rechecks current dependencies. Use <b>Follow-up</b> for expiring costs, overruns and collection gaps, recording an owner, review date and resolution notes. Supplier or policy changes never rewrite the economics accepted on a bound order."),
+        ]),
+        ("Bulk prices and future versions", "Management reviews the full saved result before changing future pricing. A price-list version is not a patient communication or a purchase order.", [
+            ("Choose the portfolio", "In <b>Bulk prices</b>, use <b>Find item or SKU</b>, <b>Category (exact)</b>, <b>Supplier</b>, revenue mode and published-status filters. Select complete published contexts, including every item in a bundle. A product without a usable context opens item review so quantity, delivery and revenue assumptions can be supplied. Filtered selection is bounded to 1,000 catalog items; narrow the filter if the screen reaches its limit. A list supports at most 100 complete scenarios, including retained contexts."),
+            ("Compare a frozen preview", "Refresh selected catalog assumptions, enter intended unit amounts or explicitly request target recommendations, then create a named preview. The old/new projected margins use the same current costs and delivery assumptions; only the previous published amounts are substituted. This is not a comparison against historical realized profit. Missing or ambiguous old-price comparisons are disclosed. Check the full SKU/quantity, supplier, destination, service and revenue basis; changing a filter afterward cannot alter a saved preview."),
+            ("Keep unselected prices", "A partial update retains other published contexts at their existing amounts. Selected and retained rows are shown separately, and both need current valid evidence. A retained row that fails review blocks the complete snapshot; its SKU/bundle and reason identify what to fix. Previewing an eligible subset can omit a new proposal, but cannot silently delete an already published price. If another publication adds a context or changes a retained amount, an older preview must be rebuilt."),
+            ("Activate, schedule or return to a version", "Review the frozen result, then activate it or choose <b>Activate later (your local time)</b>. The scheduler rechecks evidence and applies the full version together; expired or changed dependencies require a new review. Read any blocked schedule in history and follow-up instead of assuming the date changed prices. Re-activating an eligible prior version affects future reviews only and must pass current checks. It does not undo signed orders or recorded financial events."),
+            ("Volume and discount comparisons", "Volume inputs in a frozen preview are explicit expected order counts, not inferred demand. Combined margin is weighted by revenue, and incomplete assumptions prevent a combined result. For an internal self-pay item review, bounded discount analysis finds additional discount within the displayed search interval while preserving the target or floor. A partial search is not a global maximum; costs, quantities and fee assumptions stay fixed. Neither tool automatically applies a discount or charges a patient."),
+        ]),
+        ("Owner models - choose the question first", "Open <b>Owner models</b>, select a saved review, or choose <b>Use in owner models</b> after an item calculation. Each card calculates separately from its own explicit assumptions. These are internal planning tools, not patient checkout, order approval or an accounting income statement.", [
+            ("Pricing strategies", "Use this when deciding the unit amount of one selected line in a self-pay simulation. Compare any supplied target contribution margin, markup on all variable costs, fixed whole-order contribution or reference price. The app does not fetch a competitor price. Margin divides contribution by revenue; markup divides it by costs. Other items and quantities stay fixed. The selected item's price grid and ceiling, every other item's ceiling, and the original policy's hard checks still apply. Insurance collections remain fixed, so raising a billed price does not solve a reimbursement shortfall."),
+            ("Monthly break-even &amp; profit", "Enter monthly fixed costs, expected orders and target monthly profit. Every order repeats the source scenario. Break-even orders equal fixed costs divided by contribution per order, rounded upward; target orders include target profit in the numerator. Projected profit equals contribution times expected orders minus fixed costs. Illustrative arithmetic only: $50 contribution, $1,000 monthly fixed costs and $500 target profit require 20 orders to break even and 30 for the target. These numbers are not business defaults. More orders with nonpositive contribution cannot fund a positive profit requirement."),
+            ("Cost &amp; collection stress", "Enter up to 12 named percentage-change cases. Goods changes affect line acquisition unit costs; freight changes affect separately identified shipping/freight charges, counting an included parent once. Freight bundled into another cost needs separate evidence. Collection changes apply to expected insurance collections and remain hypothetical; exceeding recorded allowed amounts is blocked. Each case shows recalculated contribution and its change from the baseline. It neither verifies a new cost nor changes contracted patient responsibility."),
+            ("Price versus volume", "For up to 12 cases, enter the selected line's unit amount, expected orders and fixed costs for the comparison period. Each order repeats the entire scenario. Projected revenue and contribution multiply that order result by volume; projected profit subtracts the period's fixed costs once. Price and demand are independent assumptions: the app does not predict that a higher or lower price will produce the entered volume. This price-changing model does not apply to fixed insurance collections."),
+            ("Repeat orders &amp; acquisition", "Enter a finite horizon in months, acquired customers, total orders per customer over that whole horizon, acquisition cost per customer, retention cost per order and fixed costs for the horizon. Net per customer is contribution after retention times repeat orders, less acquisition cost. The payback count covers acquisition cost using contribution after retention; the screen compares it with the entered repeat count. Total orders equal customers times orders per customer; projected profit subtracts the horizon's fixed costs from total net per customer. It is not infinite lifetime value, a subscription, a retention forecast, or permission for future resupplies."),
+            ("Working capital", "Enter period days and orders, explicit cash outlay per order, inventory days, days to collect and days to pay the vendor. Funding-gap days are inventory plus collection days minus vendor-payment days, with a minimum of zero. Estimated funding equals cash outlay per order times period orders times gap days, divided by period days and rounded upward to cents. This estimate can use explicit cash assumptions even when profit evidence is incomplete. It does not include opening cash, irregular receipts, interest or other cash flows unless supplied; zero gap does not mean the business needs no cash."),
+            ("Read model results without double counting", "Blank inputs remain missing; explicit zero is accepted where valid. Monthly, price/volume and acquisition models use contribution before allocated overhead and subtract their entered fixed costs once. Do not also include those same expenses as variable costs. Read <b>More information needed</b>, <b>Review required</b>, <b>Not attainable with these assumptions</b>, <b>Not available for this scenario</b> and <b>Uses estimated inputs</b> with the source-policy result. A calculated loss or below-floor case is not an approved price."),
+            ("Refresh and download model evidence", "Every calculation rechecks its source. <b>Refresh catalog assumptions</b> can load current offer versions; it cannot renew expired manual or patient evidence. Starting a refresh clears prior results and export eligibility, and editing a card hides its old answer until recalculated. <b>Download scenario report</b> includes calculated sections, entered assumptions, source items, selected line, policy/offer versions, deadlines and calculation time. Sections keep their own returned source details. Assumptions survive workspace tabs, but there is no durable saved model record: download a needed report before leaving."),
+        ]),
+        ("Owner overview - recorded results", "Open <b>Analytics &amp; Reports - Owner overview</b>. This management-only page combines current business activity and tracked pricing-review financial records for your organization. It does not claim complete company profit.", [
+            ("Period and comparison", "Choose 7, 30, 90 or 365 days, or <b>Custom dates</b> and <b>Apply dates</b>, up to 366 days. Dates are UTC; the selected end day is included, except today stops at report time. The previous period is the immediately preceding equal elapsed duration, including across daylight saving changes. Use <b>Refresh</b> and read the returned update time. Editing a date selection hides the old report until applied; exports are unavailable during a refresh."),
+            ("Activity, stages and priorities", "Activity covers new patients, order creation and signatures, opened resupply episodes, fulfillment lines and units prepared, shipment evidence, distinct patients served, fitting requests and messages. Order/resupply/claim stages show the current status of records created in the selected period; later work can change that earlier cohort. Current queues include older open work, signatures, conversations and holds. They do not become historical balances when the date filter changes. Detail links open their own worklists without silently copying the overview's period."),
+            ("Claims and payers", "Period claim figures group claims created during that period and show billed amounts, current stages and payments recorded to date. They are neither cash received during the period nor expected collectible revenue. Current open claims and aging are separate backlog measures; aging uses submission date, or creation when not submitted. Payer detail shows up to ten entries while aggregate cards cover all matching claims. Reconcile payer receipts in the billing workflow rather than adding them again to pricing actuals."),
+            ("Supply, stock and shipping", "Due-now and next-30-day counts use distinct active patients with nonexpired open cycles and current valid active prescriptions. One patient can be in both groups; scheduling does not establish insurance eligibility or patient consent. Top products use recorded shipped units, not prepared units or product profit. Shipment evidence is a recorded ship/delivery date, not proof of receipt; assumed-shipped episodes remain separate. Returning patients also have earlier shipment evidence. Null stock is untracked; low stock uses the configured threshold or five when unset, preserving explicit zero. The low-stock preview shows ten while totals are exact."),
+            ("Outreach and service", "Messages are counted by creation in the selected period with their current delivery status, across inbound and outbound channels. Accepted or sent does not prove delivered; a reply count is not a conversion rate. Review open conversations, follow-ups, signature and address holds in their detailed queues. Prepared supply lines, shipped lines, distinct patients and signed orders count different things and should not be added together as sales."),
+            ("Period financial activity versus lifetime contribution", "Period revenue and cost use each pricing event's economic occurrence date. Refunds reduce revenue; cost credits reduce cost. Revenue and related costs may fall in different periods, so subtracting these period cards does not establish period profit. <b>Completed-review contribution</b> is a separate lifetime total: recorded net revenue less recorded net costs for bound reviews with both completeness decisions closed. Multiple lines or events do not count an order twice. Zero and negative results remain visible."),
+            ("Coverage and date quality", "Missing, invalid or future economic dates are disclosed and excluded from period activity; the entry timestamp is never used as a substitute. A review with uncertain dates is also excluded from completed financial totals even when both completeness flags are set. Incomplete-cost, incomplete-collection and uncertain-date categories can overlap; the combined incomplete count counts a review once. Reopening completeness removes it from completed totals. An event never entered cannot be discovered by the report."),
+            ("CSV and unavailable sources", "<b>Download overview CSV</b> exports the returned snapshot, exact windows, units and definitions. Negative refunds, credits and losses remain numeric USD amounts for spreadsheet sums; free text is protected against spreadsheet formulas. Business and finance load independently: an unavailable section is labeled, not replaced with zero, including in the CSV. Retry if both fail. A real zero only means no matching recorded activity. Neither this export nor a planning report is a complete bank, remittance or accounting ledger."),
+        ]),
+        ("Reconcile accepted orders and resolve delivery changes", "Use <b>Reviews &amp; actuals</b> for the bound order review. Private supplier costs and approval notes stay out of patient signature documents.", [
+            ("Record the economic event", "Enter the actual source, effect, USD amount, source document reference, unique economic event reference and optional item allocation. Use <b>Economic occurrence date and time (UTC)</b> from invoice/payment evidence, then <b>Record actual event</b>. Historical dates are supported; blank, impossible or future manual dates are rejected. The form starts at the current minute, which must be changed for older evidence. Cost, revenue, refund and cost-credit entries are separate documented events, not edits to the original quote."),
+            ("Retry without duplicating money", "After a lost response, an unchanged <b>Retry</b> resends the exact body, including occurrence time and references. Do not invent another event identifier just to clear an error. Editing a submitted event deliberately creates a changed request; a conflicting reference prompts <b>Refresh actual event history</b> so you can check whether the first save committed. Record a correction only after review. A completed save clears the event-specific draft and initializes the next occurrence time; later replies cannot erase a newer edited draft."),
+            ("Close costs and collections separately", "History pages contain 100 events, but totals include all recorded events. Compare the immutable original quote, current forecast and actuals as separate measures. Mark costs and collections complete independently with supporting reason. New actual events reopen completeness; stale revision conflicts require reviewing current history. Completed contribution uses total contribution divided by corresponding revenue for weighted margin, not an average of percentages. Incomplete evidence is always disclosed."),
+            ("Signed order and delivery holds", "Binding uses the approved patient, exact items, amounts, supplier versions and deadline. Signing queues the exact lines together once; stock movements and dropship ownership remain distinct. Missing active prescriptions, inventory bookkeeping or changed-address conditions hold release. A resend cannot extend the pricing deadline; expired requests need a fresh review/request. Cancellation remains possible. For a changed destination on a signed order, a manager reviews the original amounts and fixed collectible revenue against current address, costs and fresh freight evidence, records a reason and approves the exact revision. Clearing an address alert alone does not release priced work."),
+            ("Release and export", "Correct prerequisites and retry the signed order's fulfillment action. A delivery re-review may acknowledge a permissible exception but cannot bypass a hard floor or silently increase accepted prices. Already shipped records remain historical evidence. PacWare preview/export uses signed SKU quantities and withholds priced lines on hold or already submitted; read withheld counts and the disclosed export limit before a manual handoff. Export does not buy a label, place a supplier order, or prove shipment."),
         ]),
     ],
     "biller": [
@@ -855,11 +922,19 @@ DETAIL = {
         ]),
     ],
     "csr": [
-        ("How the resupply engine works, end to end", "Resupply is the heart of the business, and it largely runs itself. Here's the machinery behind the reorder cycle.", [
-            ("When reminders go out", "An automated job scans hourly for prescriptions that are due and sends a reminder on each patient's cadence — typically the 90- and 30-day reorder windows. The cadence is resolved per patient: an explicit per-patient override wins, then frequency rules matched by product, payer, and how long the patient has been on service, then the prescription's own interval. Device-reported supply schedules from the therapy-cloud sync feed the next-eligible dates, so reminders track real wear, not just the calendar."),
-            ("One tap for the patient", "Reminders go by SMS and email (the AI voice agent can call, too). Email carries signed one-tap <b>confirm</b>, <b>edit</b>, and <b>stop</b> links — no login, no account, no phone tree; SMS simply accepts a reply to confirm or decline. A quiet-period guard skips anyone you've already been talking to in the last 48 hours, and one reminder goes out per patient per cycle even if several items are due."),
-            ("Why it lifts reorders", "Because outreach fires automatically on the payer-allowed cadence across every channel, eligible patients are reliably reminded instead of forgotten — and a confirmation takes one tap, so more of them say yes. A confirmed reorder flows straight through the funnel — <b>due → reminded → confirmed → shipped</b> — into fulfillment and billing with no re-keying, and you can watch the conversion at each step, per channel, on the Reorder Reminders board."),
-            ("Effortless for the customer", "No app to download, no portal to remember: tap to confirm, change, or stop right from the text or email. Patients who'd rather not think about it subscribe once and let auto-ship keep supplies arriving on the cadence their insurance allows."),
+        ("Resupply: history, eligibility and outreach", "Use the patient record and resupply calendar together: recorded history explains the replacement-rule estimate, while the patient's response starts the next review.", [
+            ("Patient supplies and history", "Open a patient record's resupply view or <b>Orders &amp; eligibility</b> from the calendar. <b>Supplies &amp; next eligibility</b> lists supply name/SKU, HCPCS mapping, last ordered date, prescription expiry, replacement-rule result, quantity available and scheduled resupply. <b>Order history</b> shows recorded supply lines newest first, including quantity, status and shipment/delivery evidence; use <b>Older</b> and <b>Newer</b> for 25-line pages. <b>CSR orders &amp; signatures</b> separately shows links from the latest 50 resupply drafts. A signed request can also appear later in fulfillment history; these are not two separate dispenses."),
+            ("Eligibility is not a shipment authorization", "Read the reason beside <b>Eligible by replacement rule</b>, <b>Quantity limit reached</b> or the interval-opening date. Related mapped supplies and recorded quantities affect the available allowance, so do not treat another SKU name as a new allowance. <b>Needs eligibility review</b> means the app cannot establish the rule, including missing HCPCS mapping; it does not mean eligible. A scheduled due date is distinct from interval and quantity eligibility. Verify active insurance, prescription validity, actual patient need and required paperwork before fulfillment."),
+            ("Calendar and overdue work", "Open <b>Workspace - Schedule - Resupply calendar</b>. Use the month view, previous/next month and a day, or <b>Due now &amp; overdue</b>. Search patients or supplies; each patient row groups its due supplies and shows contact details/preferences. Dates follow the practice display timezone, including month boundaries. Future scheduled patients may be reviewed but are not yet ready for outreach. Search filters the displayed patients; review the selected date scope before interpreting the count as a worklist."),
+            ("Individual and selected-batch outreach", "From a due patient's supply review, or after selecting calendar patients, choose <b>Email</b>, <b>SMS</b> or <b>Automated call</b>. <b>Select visible patients (up to 50)</b> is a bounded selection, not every patient in the database. Read the confirmation's patient names and chosen channel, then <b>Queue outreach</b>. It asks whether supplies are still used and a refill is wanted; it does not place an order. Automated call is the configured voice-agent outreach, not a manual dialer or proof that a person answered."),
+            ("Read the per-patient result", "The result shows queued, skipped and failed patients with reasons. Contact details, channel consent, opt-outs, recent contact, active cycles and local SMS/call contact hours are checked. Duplicate requests and multiple due items do not authorize repeated cross-channel contact. Queued means accepted for processing; the worker may still defer or skip it. Review delivery and replies in <b>Conversations</b>. Correct a stated missing detail or wait for the allowed contact time; do not switch channels repeatedly to evade a skip or ambiguous provider response."),
+            ("Confirmation and fulfillment stay separate", "The configured reminder channels support patient replies and signed response links. A response that supplies are wanted proceeds to order review; it is not proof of delivery and does not bypass price, prescription or address holds. The recent-contact guard generally avoids another request within 48 hours. Existing automation depends on the tenant's enabled features, channel setup and valid rules. No patient subscription purchase or unconditional auto-ship is created by these tools."),
+        ]),
+        ("Pricing review in the CSR workflow", "CSRs can review relevant item costs and margins, submit new-item information and request approval. Supplier verification, business rules, owner models, actual-event writes and publishing remain management actions.", [
+            ("Review the exact patient order", "Open <b>Orders &amp; Leads - Pricing &amp; Profitability - Item review</b>, or the embedded review on an order/resupply draft. Confirm patient, canonical SKU, size/model, quantity, supplier, stock/dropship method, destination and service. Choose the matching verified collection evidence when available; your own estimate remains an estimate. Insurance billed amounts and expected collectible revenue are different. Internal self-pay mode is a simulation and cannot attach to an insurance patient order."),
+            ("Save or ask for help", "Calculate after every change. A complete within-policy result can <b>Save review</b> as approved without a separate manager action. Use <b>Request manager approval</b> for a permitted exception, or <b>Save draft review</b> while correcting missing evidence. A hard floor cannot be overridden by an ordinary approval. Select the approved review for the exact patient/items and attach it to the order. Changing lines or quantities needs another matching review. When reviews are Required, an unreviewed order is blocked; when Optional, legacy ordering does not imply financial approval."),
+            ("Check resupply drafts in a batch", "Open <b>Patient batch review</b>, select up to 50 open drafts and choose <b>Evaluate selected drafts</b>. Each patient's newest matching approval is checked independently for items, quantities, collection and delivery assumptions. Results identify ready, stale, missing or unavailable reviews. If the newest matching review is stale, open the patient individually to choose another valid one. This check sends no messages and creates no orders. The screen exposes up to 200 open drafts; work additional groups deliberately."),
+            ("Signed lines and holds", "An approved review binds to one order and its signature deadline. Resending cannot extend expired pricing evidence; create a fresh review/request when expired. Signing queues the exact lines together; required exact-SKU prescriptions and other holds must be resolved before release. Stocked items decrement tracked inventory once; supplier dropships do not decrement owned inventory. After an address change, ask a manager for delivery re-review at the original accepted amounts. Clearing a general address flag alone is insufficient. After prerequisites are corrected, retry the signed order's fulfillment action."),
         ]),
         ("Paperless paperwork — e-signature, nothing printed", "Everything a patient or provider needs to sign is signed on a screen. No printing, no scanning, no faxing, no lost forms, no delays.", [
             ("Sign on a phone, file automatically", "Staff stage a document or a packet; the patient gets a link and e-signs on their own device with a typed name and explicit ESIGN consent — image-free and ESIGN-Act compliant. The signed PDF files itself to the chart the moment it's done, and any related <b>bill hold</b> lifts automatically so the claim can go out. Nothing is printed, nothing gets lost, and nothing waits on the mail."),
@@ -881,7 +956,7 @@ DETAIL = {
             ("Company Calendar", "The shared team schedule of patient appointments — fittings, equipment setups, follow-ups, and video visits — with office hours and closures respected."),
             ("Video Visits", "Run telehealth visits for setups and mask troubleshooting; the system generates a secure join link and sends it by SMS/email."),
             ("Follow-ups", "Today's callback queue across customers and patients, with overdue items surfaced so nothing is forgotten."),
-            ("Bulk Campaigns", "Build an audience with filters, sanity-check the recipient count, draft the message, and send a batch SMS or email."),
+            ("Bulk Campaigns", "A separate management-authorized campaign workflow: filter the audience, check recipients and review the message before sending. Standard CSR resupply outreach uses the calendar and conversation permission; it does not grant campaign-send authority."),
             ("Alert Library & Reminders", "Send a curated one-off alert (SMS/email/call) to an individual patient, and manage the automated resupply reminder schedule."),
             ("Playbooks, Canned Replies & Automated Messages", "Reusable situation-based outreach cadences, saved snippets you drop into manual replies, and the editable copy behind system-sent messages (order confirmations, tracking)."),
         ]),
@@ -895,8 +970,8 @@ DETAIL = {
         ("Orders, catalog & leads", "Fulfillment, stock, and the acquisition funnel.", [
             ("Fit Requests", "The queue a finished mask fitting lands in. The patient never files their own insurance order — they send their details or ask to be called, and a CSR verifies the benefit and places the order. Closing a row records what actually happened; only <b>Fulfilled</b> — the patient has the mask — marks the fitting as dispensed for the outcomes dashboard."),
             ("Orders", "Work insurance orders — fulfill, look up, and track — from a single queue."),
-            ("Shipping Labels", "Print shipping labels with the patient's address merged in; tracking numbers auto-fill back onto the order."),
-            ("Catalog", "The SKU registry: what you dispense and how many are on the shelf. Stock only moves as a recorded movement with a reason — received, returned, counted, adjusted — so every balance has a history behind it, and a blank count means <b>untracked</b> rather than zero. A dispense is recorded when a fulfillment is queued; an un-catalogued SKU is logged and skipped rather than failing a resupply the patient is due. Low-stock SKUs are badged here and emailed as a digest every six hours."),
+            ("Shipping Labels", "This XPS label worklist serves historical cash-pay shop orders. Current insurance resupplies use the PacWare and fulfillment workflow. A shipping estimate in Item review is not a purchased label, a supplier order or proof of shipment."),
+            ("Catalog", "The SKU registry records what you dispense and what is on the shelf. Stock moves through recorded movements with reasons, so every change has history. Blank stock means <b>untracked</b>, not zero. Low stock uses a configured threshold, or five units when unset; an explicit zero is preserved. Priced signed orders require canonical item mappings and valid prescriptions. A queued stock dispense is not shipment evidence, and supplier dropship fulfillment does not consume owned stock."),
             ("Backorders", "Mark a SKU out of stock and set the substitution rules that apply while it is. This is read by the insurance fulfillment path, not a retail shelf notice, so an uncleared backorder keeps routing patients away from that SKU. Recording a receipt on Catalog clears it automatically."),
             ("Insurance Leads", "Work new benefit-verification requests that came in from the storefront."),
             ("Fitter Invites & Prospects", "Invite a patient to the AI mask fitter and review the returned mask & size recommendation; the Prospects view tracks the fitter conversion funnel."),
@@ -943,6 +1018,68 @@ DETAIL = {
 # role_id -> list of (task_title, intro, [steps], optional_tip)
 JOB_AIDES = {
     "administrator": [
+        ("Start the day with Owner overview",
+         "Read activity, current work and financial coverage in their correct periods.",
+         ["Open <b>Analytics &amp; Reports - Owner overview</b> and choose a preset or <b>Custom dates</b>, then <b>Apply dates</b>.",
+          "Read the UTC period, equal-duration comparison and update time. Use <b>Refresh</b> when needed.",
+          "Review activity and current priorities, then open the relevant order, claims, resupply or service queue. Detail pages have their own filters.",
+          "Check shipping evidence and stock coverage; do not interpret prepared units or untracked stock as delivered or available.",
+          "Read date-quality and incomplete-review counts before comparing period financial activity with separate lifetime completed-review contribution.",
+          "Choose <b>Download overview CSV</b> for the returned snapshot. An unavailable source is labeled, and refunds, credits and losses remain numeric."],
+         "Claims paid to date, period financial events and lifetime contribution measure different things. Do not add them together as receipts or company net profit."),
+        ("Set up a reviewable pricing policy",
+         "Supply the business's own economics before requiring reviews.",
+         ["Open <b>Orders &amp; Leads - Pricing &amp; Profitability</b>. In <b>Supplier costs</b>, map exact SKUs, enter cost per canonical selling unit and supplier pack/quantity rules, verify evidence and expiry, and identify all freight/fee inclusions.",
+          "In <b>Collection evidence</b>, verify the patient's exact items, allowed amount and expected total collections. Reconcile any component shares once.",
+          "In <b>Pricing policy</b>, enter target, floor, optional minimum dollars, basis and any dated scoped rules; choose <b>Save draft policy</b>.",
+          "For an initial policy, leave <b>Require an approved insurance review before creating patient orders</b> unchecked, then choose <b>Publish this policy</b> and confirm. Check that <b>Patient order review</b> remains <b>Optional</b>; Item review needs a published policy to evaluate.",
+          "Evaluate representative patient, supplier and delivery cases in <b>Item review</b>, resolving blocked or missing evidence.",
+          "When the workflow is ready, select <b>Require an approved insurance review before creating patient orders</b>, choose <b>Publish this policy</b> again and confirm the requirement.",
+          "Verify the current policy and <b>Patient order review</b> cards. Review availability and follow-up after enabling."],
+         "Neither a default margin nor free freight is invented. Publishing prices does not create a patient checkout or collect money."),
+        ("Compare suppliers for an unpriced item",
+         "Save a provisional cost comparison without promising a customer price.",
+         ["Open <b>New items</b> and describe the exact manufacturer, model, size, source and terms.",
+          "Enter the same requested quantity, destination and service for up to five supplier options.",
+          "Record pack cost, units per pack, minimum packs, applicable fee categories, evidence and expiry. Mark genuine inclusions; leave unknown costs blank.",
+          "Compare purchase outlay, purchased/surplus units and delivered-cost completeness, as well as availability, lead time and clinical suitability.",
+          "Save the proposal, verify the chosen supplier evidence and link the canonical SKU before preparing an authoritative order review."],
+         "The least goods cost is not necessarily the least delivered cost. An estimate is not a verified supplier commitment."),
+        ("Choose an owner profit model",
+         "Answer a business question using explicit assumptions.",
+         ["Evaluate an item and choose <b>Use in owner models</b>, or open <b>Owner models</b> and choose a saved scenario; use <b>Next saved scenarios</b> for more.",
+          "Choose <b>Pricing strategies</b> for a unit-price decision; <b>Monthly break-even &amp; profit</b> for required orders; <b>Cost &amp; collection stress</b> for cost/collection changes; <b>Price versus volume</b> for demand cases; <b>Repeat orders &amp; acquisition</b> for finite repeat orders; <b>Working capital</b> for a cash-funding estimate.",
+          "Enter only the card's needed assumptions. Keep blank unknown inputs blank, and enter fixed costs once for the stated period.",
+          "For multi-item price strategies, choose the one line allowed to change. Insurance collection assumptions do not rise with billed prices.",
+          "Calculate each needed section, read its status and original-policy checks, then compare results. Edited assumptions require recalculation.",
+          "Use <b>Download scenario report</b> before leaving if a planning record is needed; it includes each returned source/version and assumptions."],
+         "Refreshing catalog assumptions clears old results and does not renew expired manual evidence. No model publishes a price, approves a patient order or proves demand."),
+        ("Publish a selected portfolio change",
+         "Update future prices while preserving unselected contexts.",
+         ["Open <b>Bulk prices</b>. Filter the pricing portfolio by item, exact category or supplier, then select the intended complete scenarios.",
+          "Refresh current catalog evidence and review full bundles. Narrow a filter if the 1,000-item scan limit is reached.",
+          "Enter proposed unit amounts or explicitly request recommendations, name the price list and create the frozen preview.",
+          "Review selected changes and retained prices, old/new amounts, current-assumption margins, exclusions and every issue. The complete list must fit the 100-scenario limit.",
+          "Resolve retained-context problems before proceeding. If another publication changed the covered contexts or retained amounts, make a fresh preview.",
+          "Activate the validated version, or set <b>Activate later (your local time)</b>. Check schedule/history afterward and re-review changed dependencies."],
+         "Returning to an eligible earlier version changes future reviews only. It cannot overwrite accepted orders or silently remove other published prices."),
+        ("Record and reconcile actual financial events",
+         "Preserve source evidence and avoid duplicate money after a network error.",
+         ["Open <b>Reviews &amp; actuals</b> and select the bound order review.",
+          "Choose the actual source/effect, amount, source document reference, unique economic event reference and optional item allocation.",
+          "Enter <b>Economic occurrence date and time (UTC)</b> from evidence. Change the default current minute for a historical invoice or payment, then <b>Record actual event</b>.",
+          "If the response is lost, use unchanged <b>Retry</b>. If edited details conflict, choose <b>Refresh actual event history</b> and investigate before recording a correction; keep stable references.",
+          "Page through history as needed. Compare original quote, current forecast and actuals separately; totals include all pages.",
+          "Confirm cost and collection completeness separately with the reason. Refresh and review any revision conflict; new events reopen completeness."],
+         "A refund reduces revenue; a supplier credit reduces cost. Correct recorded history with a documented new economic event, not a replacement identifier for the same expense."),
+        ("Review delivery after a signed-order address change",
+         "Release the right delivery while keeping accepted customer terms.",
+         ["Open the held signed order and its delivery review action. Confirm the current patient address and exact original items/amounts.",
+          "Obtain new delivery evidence for the correct service and fulfillment source. Review current supplier costs and any expired fee/reserve evidence.",
+          "Compare original and revised contribution at the accepted amounts and fixed collectible revenue; record the reason and any permitted exception acknowledgement.",
+          "Approve the exact valid review revision. A hard financial floor or unresolved prescription requirement still blocks release.",
+          "Retry fulfillment after prerequisites are resolved, and confirm the released SKU quantities before shipping or a manual PacWare export."],
+         "A general address-alert resolution is not delivery approval. The review cannot silently raise accepted amounts, extend an expired signature request or change already shipped history."),
         ("Create your CareMetric Breathe workspace (self-serve sign-up)",
          "How a brand-new practice gets its own workspace and first Owner login.",
          ["Go to the public site <b>/breathe</b> and choose <b>Create your account</b> (<b>/breathe/signup</b>).",
@@ -964,7 +1101,7 @@ JOB_AIDES = {
          ["Open <b>System → Set Up Your Workspace</b> (or click the “finish setting up” banner on Home).",
           "Set your brand and logo under <b>Storefront Branding</b>, and your legal details under <b>Company Information</b>.",
           "Connect your numbers under <b>Phone &amp; SMS</b> and <b>Fax Number</b>, and your sender under <b>Email From Address</b> (authenticate the sending domain for deliverability).",
-          "Wire up payments (Stripe) so the storefront and patient statements can collect.",
+          "Review the practice's CareMetric subscription under <b>Package &amp; usage</b>. Configure the organization's billing identity separately for insurance claims; subscription billing does not enable patient card checkout.",
           "Work down the checklist until every essential step is green."],
          "A NULL/unset From address falls back to the platform default — patient email still sends, but your own authenticated domain lands in the inbox instead of spam."),
         ("Invite a team member and assign a role",
@@ -1100,7 +1237,7 @@ JOB_AIDES = {
          ["Open <b>Billing → A/R &amp; collections → Statement Send</b>.",
           "Review the patient-responsibility amounts due.",
           "Send by email or SMS — the system respects consent and quiet hours automatically.",
-          "Use a payment link so the patient can pay online."],
+          "Use the billing workflow to review and record any permitted patient responsibility; internal pricing simulations do not create a card checkout."],
          None),
         ("Configure a payer profile and fee schedule",
          "Set the rules the claim engine reads.",
@@ -1168,6 +1305,38 @@ JOB_AIDES = {
          "Requires the billing.adr_queue flag (an Owner enables it in the Control Center); a nightly sweep surfaces at-risk and overdue deadlines."),
     ],
     "csr": [
+        ("Check what was ordered and when supplies are due",
+         "Use history and replacement rules before contacting the patient.",
+         ["Open the patient's resupply view, or select <b>Orders &amp; eligibility</b> on the <b>Resupply calendar</b>.",
+          "Read the exact supply, HCPCS mapping, last ordered date, prescription expiry, interval/quantity result and separate scheduled due date.",
+          "Check <b>Order history</b> status, quantity and shipment evidence. Use <b>Older</b>/<b>Newer</b> to inspect beyond the first 25 lines.",
+          "Review <b>CSR orders &amp; signatures</b> separately so a request and its later fulfillment are not mistaken for two supplies.",
+          "Resolve missing eligibility information, then verify coverage, valid prescription and actual patient need before ordering."],
+         "Due on the calendar does not mean coverage approved. Missing mapping or history needs review; it is not an unlimited allowance."),
+        ("Ask one patient or a batch about new supplies",
+         "Queue the right channel deliberately and inspect every result.",
+         ["Open <b>Workspace - Schedule - Resupply calendar</b>. Select a month/day or <b>Due now &amp; overdue</b>, and search if needed.",
+          "Open <b>Orders &amp; eligibility</b> to review a patient. Use that due patient's action or select intended rows, up to 50, in the calendar.",
+          "Choose <b>Email</b>, <b>SMS</b> or <b>Automated call</b>. Review the named recipients and confirm <b>Queue outreach</b>.",
+          "Read queued, skipped and failed results per patient. Correct missing details or respect the stated timing, consent and recent-contact restriction.",
+          "Follow processing, delivery and replies in <b>Conversations</b>. Confirm supplies are wanted, then complete the normal order and financial review."],
+         "Queued is not delivered or ordered. Do not repeatedly switch channels after a skip or uncertain send; check the conversation first."),
+        ("Attach a valid pricing review to an order",
+         "Use exact patient/item economics without managing business policy.",
+         ["Open <b>Pricing &amp; Profitability - Item review</b> or the embedded order review. Select the patient, exact SKU/quantity, supplier, fulfillment method, delivery and insurance evidence.",
+          "Calculate and resolve missing or blocked inputs. Use <b>Save review</b> for a verified within-policy result or <b>Request manager approval</b> for a permitted exception.",
+          "After approval, choose that matching review in the order form. Recalculate for changed items/quantities; another patient's approval cannot be reused.",
+          "Send the normal signature request. An expired pricing deadline requires a fresh review/request, not a longer resend.",
+          "After signing, verify exact fulfillment lines and address/prescription holds; request manager delivery re-review when required."],
+         "An internal self-pay simulation cannot attach to the insurance patient workflow. The signature packet excludes private cost and margin details."),
+        ("Check existing approvals for resupply drafts",
+         "Review a selected group without sending or ordering.",
+         ["Open <b>Pricing &amp; Profitability - Patient batch review</b>.",
+          "Select the intended drafts, up to 50, and choose <b>Evaluate selected drafts</b>.",
+          "Read each patient's ready, stale, missing-review or unavailable result. Each patient's exact items and delivery assumptions are checked separately.",
+          "Open an individual review to fix mappings/evidence or choose another still-valid approval when the newest matching approval is stale.",
+          "Create and send each authorized order through the normal workflow only after the required checks."],
+         "Batch pricing review is separate from bulk resupply outreach. Neither action automatically performs the other."),
         ("Handle an inbound message",
          "Triage and reply in the unified inbox.",
          ["Open <b>Workspace → Conversations</b> and pick a thread awaiting reply (or claim one for yourself).",
@@ -1178,7 +1347,7 @@ JOB_AIDES = {
          "Order-, account-, and clinical-specific questions should go to the right person — use Cases so the full history travels with the issue."),
         ("Work a fit request",
          "Turn a finished mask fitting into an order.",
-         ["Open <b>Orders, Catalog &amp; Leads → Fit Requests</b> — oldest first; the patient was told one business day.",
+         ["Open <b>Orders &amp; Leads → Fit Requests</b> — oldest first; the patient was told one business day.",
           "Read what they asked for: they either sent their details or asked to be called.",
           "Verify the benefit properly — whatever the patient typed is a starting point, not a verified plan.",
           "Place the order and move the row through Contacted → In progress.",
@@ -1193,7 +1362,7 @@ JOB_AIDES = {
          None),
         ("Send a bulk SMS or email campaign",
          "Reach a filtered audience at once.",
-         ["Open <b>Workspace → Outreach → Bulk Campaigns</b>.",
+         ["Confirm your role has campaign-send permission, then open <b>Workspace - Outreach - Bulk Campaigns</b>. Standard CSRs should use Resupply calendar for due-patient outreach.",
           "Build the audience with filters and check the resolved recipient count.",
           "Draft the message (or start from a Playbook).",
           "Review and send; track delivery under <b>Outbound Messages</b>."],
@@ -1207,17 +1376,18 @@ JOB_AIDES = {
          None),
         ("Process a return or RMA",
          "Decide a return and close it out.",
-         ["Open <b>Orders &amp; Shop → Orders → Returns &amp; RMAs</b>.",
+         ["Open <b>Orders &amp; Leads → Orders → Returns &amp; RMAs</b>.",
           "Open the return request and review the reason and comfort-guarantee window.",
           "Approve or deny; on approval, choose restock and/or refund.",
           "The patient is notified automatically of the decision."],
          None),
         ("Fulfill and ship an order",
          "Get product out the door with tracking.",
-         ["Open <b>Orders &amp; Shop → Orders</b> and pick the order to fulfill.",
-          "Open <b>Shipping Labels</b> and print the label — the patient address is merged in automatically.",
-          "The tracking number flows back onto the order and the patient is notified."],
-         None),
+         ["Review the patient's exact signed order, required documents and any prescription, stock or delivery-address hold before release.",
+          "Use the <b>PacWare</b> export preview for the insurance resupply handoff. Check withheld rows and exact items and quantities, then download and import the eligible rows into PacWare.",
+          "Complete the warehouse or supplier shipping workflow. Import the actual shipment report through <b>PacWare</b>, review matched, unmatched and ambiguous rows, and record only verified matches.",
+          "Check the patient's <b>Fulfillments</b> history for the recorded shipment dates and references. Follow up on missing evidence before telling the patient an order shipped."],
+         "Exporting or queuing an order does not ship it. Shipping Labels is a separate historical cash-pay shop worklist; an Item review rate estimate does not purchase a label."),
         ("Send an e-signature document packet",
          "Get new-patient paperwork signed.",
          ["Open <b>Patients &amp; Clinical → Documents &amp; e-sign → Document Packets</b>.",
@@ -1234,7 +1404,7 @@ JOB_AIDES = {
          None),
         ("Invite a patient to the AI mask fitter",
          "Let a patient size their mask from a selfie.",
-         ["Open <b>Orders &amp; Shop → Storefront &amp; Leads → Fitter Invites</b>.",
+         ["Open <b>Orders &amp; Leads → Storefront &amp; Leads → Fitter Invites</b>.",
           "Enter the patient and send the invite link.",
           "When they finish, review the returned mask and size recommendation.",
           "Convert it to an order, or follow up from the Prospects funnel."],
@@ -1248,14 +1418,14 @@ JOB_AIDES = {
          "AI auto-reply only sends on its own above a confidence bar; everything else falls to a human by design."),
         ("Work an insurance lead",
          "Follow up someone who asked what their plan covers.",
-         ["Open <b>Orders, Catalog &amp; Leads → Insurance Leads</b>.",
+         ["Open <b>Orders &amp; Leads → Insurance Leads</b>.",
           "Review what they asked for and their contact details.",
           "Run the benefit check, then call or message them with what you found.",
           "Convert them into a patient record when they want to proceed."],
          None),
         ("Keep stock straight after a count",
          "Make the shelf and the system agree.",
-         ["Open <b>Orders, Catalog &amp; Leads → Catalog</b>.",
+         ["Open <b>Orders &amp; Leads → Catalog</b>.",
           "Find the SKU and record the difference as a <b>counted</b> movement — never type over the total.",
           "Give the movement a reason while you still remember it; that is what explains the variance later.",
           "Recording a receipt also clears any backorder on that SKU automatically."],
@@ -1348,6 +1518,9 @@ MATRIX_AREAS = [
     "Billing & revenue cycle",
     "Therapy monitoring & clinical notes",
     "Analytics & financial reports",
+    "Owner overview & owner models",
+    "Item pricing evaluation / proposals",
+    "Cost verification, approval & publishing",
     "Team management",
     "System configuration & secrets",
 ]
@@ -1359,7 +1532,10 @@ MATRIX = {
     "Orders, shop & returns":                   ("full", "none", "full", "none"),
     "Billing & revenue cycle":                  ("full", "full", "none", "none"),
     "Therapy monitoring & clinical notes":      ("full", "none", "some", "full"),
-    "Analytics & financial reports":            ("full", "some", "some", "some"),
+    "Analytics & financial reports":            ("full", "some", "some", "none"),
+    "Owner overview & owner models":             ("full", "none", "none", "none"),
+    "Item pricing evaluation / proposals":       ("full", "none", "full", "none"),
+    "Cost verification, approval & publishing":  ("full", "none", "none", "none"),
     "Team management":                          ("some", "none", "none", "none"),
     "System configuration & secrets":           ("some", "none", "none", "none"),
 }
@@ -1369,8 +1545,16 @@ MATRIX_NOTE = (
     "only the Owner role can use them. <b>Biller</b> reaches the whole Billing "
     "area plus patient billing context and the shared inbox (revenue-cycle "
     "staff work patient-balance and benefit threads), but not clinical notes "
-    "or settings. A practice can grant any combination by assigning the "
-    "matching role on the Team page."
+    "or settings. <b>Owner and Admin</b> have pricing evaluation, management, "
+    "approval and publication permissions. Owner models require pricing "
+    "management; Owner overview requires both management metrics and cost "
+    "reporting. <b>CSR</b> pricing evaluation exposes relevant item economics "
+    "and proposals, not authoritative cost edits, actual-event writes, owner "
+    "models or price publication. <b>Biller</b> cost/reporting access does not "
+    "grant pricing management or Owner overview. <b>RT</b> has clinical "
+    "reports, not financial pricing access. Calendar reads need patient "
+    "access; resupply outreach also needs conversation-management access. "
+    "Available navigation also depends on enabled practice modules."
 )
 
 GLOSSARY = [
@@ -1389,6 +1573,26 @@ GLOSSARY = [
     ("NPS", "Net Promoter Score — a post-delivery satisfaction measure from patient survey responses."),
     ("Prior auth (PAS)", "Prior Authorization — payer approval secured before dispensing; Da Vinci PAS is the electronic FHIR standard for it."),
     ("Resupply", "The recurring replacement of CPAP consumables (masks, cushions, filters, tubing) on a cadence."),
+    ("Allowed amount", "The payer-contract allowance, distinct from the billed charge; relevant payer and patient shares are portions of it, not additions to it."),
+    ("Expected collectible", "The supported total the practice expects to collect. It is an assumption until receipts are recorded and reconciled."),
+    ("Delivered / landed cost", "Goods plus applicable acquisition, dropship, freight, packing and other fulfillment costs, with inclusions counted only once."),
+    ("Purchase pack", "The supplier's purchasing unit. New-item comparisons calculate whole-pack outlay and surplus. Firm reviews require whole allowed packs and use the recorded cost per canonical selling unit."),
+    ("Contribution", "Net revenue less modeled or recorded variable costs. It is before separately allocated fixed overhead and is not company net income."),
+    ("Margin versus markup", "Margin divides contribution by revenue; markup divides it by costs. Equal percentages do not produce equal prices."),
+    ("Hard floor", "A required pricing boundary. A routine exception approval cannot override a failed floor or other hard rule."),
+    ("Pricing context", "The complete item/quantity, revenue and delivery assumptions to which a published price applies, including a full bundle where selected."),
+    ("Frozen preview", "A saved price-list proposal whose selected changes, retained prices, evidence and comparisons cannot be changed by later filter edits."),
+    ("Bound review", "An approved pricing snapshot committed to a specific patient order; later cost changes do not rewrite its accepted amounts."),
+    ("Economic occurrence date", "When the invoice, receipt, refund or credit happened. Recorded as UTC and used for financial activity periods, independently of entry time."),
+    ("Economic event reference", "A stable identifier used to recognize the same expense or receipt on retry and prevent duplicate financial entries."),
+    ("Completed-review contribution", "Lifetime recorded net revenue minus net costs for bound reviews with costs and collections complete and reliable event dates."),
+    ("Created cohort", "Records created in a selected period, shown with their current status or paid-to-date values. Later changes can affect an earlier cohort."),
+    ("Current snapshot", "Work queues or balances as recorded now, including older records; it is not a reconstructed historical balance."),
+    ("Break-even orders", "Whole orders needed to cover entered fixed costs at the assumed contribution per order; a positive requirement needs positive contribution."),
+    ("Acquisition payback", "Orders needed to recover entered acquisition cost using contribution after retention cost; it does not allocate all company expenses."),
+    ("Working-capital estimate", "An explicit cash-outlay projection over inventory, collection and vendor-payment timing; not a forecast of every cash flow."),
+    ("Queued / delivered", "Queued means accepted for processing. Delivery needs recorded provider evidence; neither status is a patient order confirmation."),
+    ("UTC", "The time standard used for owner-report periods and financial occurrence dates. A scheduling field labeled local time follows that separate label."),
 ]
 
 
@@ -1412,7 +1616,8 @@ PREREQS = [
         ("Email From address", "The platform default sender works out of the box; to send from your own address, set it AND authenticate the sending domain (SPF/DKIM) in the email provider — an unauthenticated address still sends but lands in spam."),
     ]),
     ("Money & integrations", [
-        ("Payments (Stripe)", "Connect payment processing so the storefront and patient statements can collect; you confirm your subscription payment as you finish setup."),
+        ("Platform subscription billing", "Complete the practice's CareMetric subscription setup separately from patient insurance ordering. Platform billing credentials do not activate patient card checkout or establish patient-order processing costs."),
+        ("Pricing readiness", "Enter the business-approved margin policy, canonical supplier costs, pack/fee/delivery evidence and insurance collection assumptions before making approved reviews mandatory. Test normal and exception cases first; blank values are not verified zero."),
         ("Clearinghouse & billing config", "Enter Office Ally (and, if used, Da Vinci PAS) credentials under System Configuration, then set up payer profiles and fee schedules under Billing → Config before submitting claims."),
         ("Therapy-cloud integrations", "Add ResMed AirView / Philips Care Orchestrator / 3B React Health credentials so adherence data flows into the RT boards."),
         ("Slack (optional)", "To bring alerts and digests into Slack, add a Slack bot token + channel under System Configuration and link each teammate's Slack handle on the Team page; the Slack toggles ship on but stay inert until the credentials are set."),
@@ -1503,7 +1708,7 @@ PLATFORM_FOUNDATIONS_INTRO = (
 )
 PLATFORM_FOUNDATIONS = [
     ("Patient storefront & portal", "A patient-facing site and self-service account portal: what they are due for, order tracking, statements and billing history, document access and e-signature, insurance details, caregiver access, and an in-app message thread with your team. It is an <b>insurance</b> storefront, not a retail one — patients are supplied against their plan and are never charged a card, so there is no cart and no checkout."),
-    ("AI mask fitter", "Camera-based facial measurement in the patient's browser scores every available mask for fit. Images never leave the device — only numeric measurements are transmitted. The fitter is <b>invitation-only</b>: staff send a signed invite link by SMS or email from <b>Orders &amp; Shop → Fitter Invites</b>, and the completed fitting attaches back to the patient's chart."),
+    ("AI mask fitter", "Camera-based facial measurement in the patient's browser scores every available mask for fit. Images never leave the device — only numeric measurements are transmitted. The fitter is <b>invitation-only</b>: staff send a signed invite link by SMS or email from <b>Orders &amp; Leads → Fitter Invites</b>, and the completed fitting attaches back to the patient's chart."),
     ("Resupply reminder engine", "Automated SMS and email reminders with signed one-tap confirm/decline links, quiet-hours awareness, and unsubscribe handling."),
     ("AI voice agent", "A natural-voice phone agent that takes reorders, runs reminder and check-in calls, hands off to staff on request, and writes a structured summary of every call."),
     ("Chatbot & sleep coach", "Patient-facing AI chat for shopping help and therapy coaching, with optional high-confidence email auto-reply; anything uncertain hands off to staff."),
@@ -1514,20 +1719,20 @@ PLATFORM_FOUNDATIONS = [
 
 # ── The storefront & end-to-end fulfillment journey ──────────────────
 STOREFRONT_INTRO = (
-    "Every tenant gets a complete, ready-to-sell storefront — not a brochure, "
-    "a working e-commerce site that takes the patient from “which mask fits "
-    "me?” all the way to a box on the doorstep, with the practice billing "
-    "either the patient or their insurance. It's the same system that runs "
-    "billing, clinical, and resupply, so an order never has to be re-keyed "
-    "from one tool into another. Here's the whole journey, end to end."
+    "The patient storefront supports fitting requests, insurance intake, "
+    "documents and service. Staff verify the patient, benefits and intended "
+    "supplies before creating the insurance order. Internal self-pay pricing "
+    "models do not add a cart, patient card checkout or subscription purchase. "
+    "The journey continues through reviewed signatures, fulfillment, recorded "
+    "delivery evidence and a later resupply conversation."
 )
 STOREFRONT_JOURNEY = [
-    ("1 · AI mask fitting, by invitation", "The mask fitter is <b>invitation-only</b>: a staff member sends the patient a signed link by text or email from <b>Orders &amp; Shop → Fitter Invites</b> (the public storefront's “get fitted” button routes to an invitation-required explainer, not the fitter). The patient opens the link, consents, the phone or laptop camera measures their face right in the browser, they answer a short comfort questionnaire (mouth-breather, side-sleeper, facial hair, glasses…), and the AI ranks the masks that fit best — each with an add-to-cart button. The camera images never leave the device; only numeric measurements are used. The completed fitting attaches itself to the matching chart (or waits in a holding area for staff to attach). No appointment, no guesswork, far fewer wrong-size exchanges."),
-    ("2 · Shop and buy in minutes", "From the catalog the patient browses masks, cushions, tubing, filters, and bundles — with reviews, machine compatibility, and search — adds to the cart, and checks out through secure Stripe-hosted payment (card data never touches the platform). They can buy once, or choose <b>Subscribe &amp; Save</b> so supplies auto-ship on a cadence, or pick <b>in-store pickup</b> where it's offered."),
-    ("3 · Or bill it to insurance", "Patients who'd rather use their benefits request insurance billing instead of paying cash. That drops a benefit-verification request into a CSR worklist, where staff run a real-time <b>270/271 eligibility</b> check, confirm what's covered and the patient's share, and — when coverage is good — create the order and send a signed payment link for the patient to e-sign and pay any balance. Coverage is confirmed <i>before</i> anything ships, so claims don't bounce later."),
-    ("4 · Pick, pack, and a label in a click", "Paid, unshipped orders queue up in the Shipping console with the patient's address already filled in. Staff rate-shop USPS, UPS, and FedEx, create and print the carrier label, and the tracking number is written back onto the order and emailed to the patient automatically — or they can key in a tracking number by hand. Counter and walk-in orders print a receipt and label the same way."),
-    ("5 · Delivered — with proof", "When the box arrives, staff capture <b>Proof of Delivery</b> right on the order — a delivery photo and an optional signature name — and the order is marked delivered. The patient can follow the whole way with a public <b>order-tracking</b> page (order number + email, no login)."),
-    ("6 · Closing the loop", "After delivery the patient gets a quick satisfaction (NPS) prompt and a one-tap mask-fit check — “great / leaking / uncomfortable.” A problem answer routes straight to a CSR or therapist to fix the fit, and the patient is enrolled in the resupply engine so the next cushion, filter, and tube reorder cycle starts itself. The storefront sale becomes a recurring, self-renewing relationship."),
+    ("1 - Fitting by invitation", "Staff send a signed fitting link from <b>Fitter Invites</b>. The patient consents and completes the camera-based fitting and comfort questions; camera images stay on the device. The result attaches to the matching chart or awaits staff matching. A recommendation is a request for staff follow-up, not a purchase."),
+    ("2 - Confirm the requested supply", "The CSR reviews the fit request, patient record and requested model/size. Read prior supply orders, available replacement-rule quantities and prescription expiry. Confirm that supplies are wanted; a calendar entry alone is not authorization."),
+    ("3 - Verify benefits and pricing", "Verify coverage and required documentation. Review exact items, quantity, supplier, destination and insurance collection assumptions. If pricing review is required, attach a matching approved insurance review. Billed charges and expected collections remain distinct; no patient charge is invented to repair a margin shortfall."),
+    ("4 - Sign, release and ship", "Send the authorized order for signature. Priced signatures queue exact lines together and preserve accepted amounts. Resolve prescription, stock and delivery holds before release. Obtain the appropriate label or supplier shipment and record tracking. A rate estimate or queued fulfillment is not evidence of shipment or delivery."),
+    ("5 - Record delivery evidence", "Record the actual shipping/delivery dates and required proof in the appropriate order workflow. Do not mark delivered simply because a label was printed or work was assumed shipped. Separate factual delivery evidence from a patient's signature approving an order."),
+    ("6 - Review the next resupply", "Use the patient's <b>Supplies &amp; next eligibility</b> and the <b>Resupply calendar</b> for the next review. Send individual or selected-batch reminders through configured channels, inspect results and obtain the patient's response. Each future order requires its own current clinical, coverage and pricing checks."),
 ]
 
 # ── Paperless paperwork: referrals in, faxes out, signatures tracked ──
@@ -1731,21 +1936,27 @@ CALL_DEFLECTION_MATH = (
 
 # ── Owner's playbook: managing the software ──────────────────────────
 OWNER_PLAYBOOK_INTRO = (
-    "Running the practice from CareMetric Breathe is mostly a matter of "
-    "knowing where to look and how often. Everything below is on one "
-    "platform, so you monitor the whole business — front desk to clinic to "
-    "revenue cycle — without logging into anything else. Set your targets "
-    "once, let the alerts find the exceptions, and work from the queues."
+    "Start with Owner overview for recorded activity and current priorities, "
+    "then open the detailed worklist that needs attention. Use Pricing &amp; "
+    "Profitability to review current costs, accepted-order results and "
+    "explicit future scenarios. Keep period activity, current queues and "
+    "lifetime completed-review contribution separate. The platform cannot "
+    "infer missing invoices, future demand or the business's approved targets."
 )
 OWNER_WATCH = [
     ("Every day (5 minutes)", [
+        "<b>Owner overview</b> - refresh the UTC report; check activity, current priorities, source availability and financial date quality.",
         "<b>Home dashboard</b> — conversations awaiting reply, overdue follow-ups, returns to action, fulfillments this week.",
+        "<b>Resupply calendar</b> - review due/overdue patients, their exact order history and any skipped outreach before choosing the next contact.",
+        "<b>Pricing Follow-up</b> - assign expiring evidence, delivery holds, cost overruns or collection gaps to an owner and review date.",
         "<b>Operations</b> — the background worker and nightly sync ran clean; nothing stuck.",
         "<b>Delivery Failures / Outbound Messages</b> — clear any bounced texts/emails or shipping exceptions.",
         "<b>KPI Alerts</b> — anything that crossed a threshold overnight (revenue dip, denial spike, churn).",
         "<b>Live Staffing</b> — open-conversation load per agent so nobody is buried.",
     ]),
     ("Every week (20 minutes)", [
+        "<b>Reviews &amp; actuals</b> - reconcile recorded invoices and collections, preserving original quote amounts and documenting completeness.",
+        "<b>Supplier costs / Collection evidence</b> - verify changed or expiring sources before they block new patient reviews or scheduled prices.",
         "<b>Billing Hub + Denials &amp; DSO</b> — money in flight, denial rate, and days-to-pay trend per payer.",
         "<b>A/R Aging + Filing Deadlines</b> — work the oldest buckets and anything near timely-filing.",
         "<b>Therapy Fleet + Setup Adherence</b> — who is at risk of failing their CMS 90-day window.",
@@ -1753,7 +1964,9 @@ OWNER_WATCH = [
         "<b>Reorder Reminders funnel</b> — due → reminded → confirmed → shipped conversion.",
     ]),
     ("Every month (45 minutes)", [
-        "<b>Financial analytics</b> — Margin &amp; COGS, Payer Profitability, Revenue by Source, LTV:CAC, Inventory Turnover.",
+        "<b>Owner overview</b> - compare equal-duration activity; assess separate lifetime completed-review contribution and excluded/incomplete coverage.",
+        "<b>Owner models</b> - explicitly test break-even, cost changes, order volume, repeat-order acquisition and funding assumptions. Download the current scenario report when a planning record is needed.",
+        "<b>Bulk prices</b> - preview future changes with current evidence and retained contexts. Activate or schedule only after reviewing the complete snapshot.",
         "<b>Reports</b> — export the revenue summary, patient payments, and insurance-claims reports (CSV / PDF / QuickBooks) for the books.",
         "<b>Goals &amp; Targets</b> — review pace-to-goal and reset targets for the next period.",
         "<b>Customer NPS</b> — post-delivery satisfaction and the comment tail.",
@@ -1761,8 +1974,10 @@ OWNER_WATCH = [
     ]),
 ]
 MONITOR_AREAS = [
+    ("Owner overview", "One report for patient/order activity, current queues, claims, supply scheduling, stock, shipping and outreach; tracked pricing financial activity and lifetime completed-review contribution stay separate."),
+    ("Pricing & planning", "Pricing & Profitability - costs and evidence, item/patient reviews, new-item proposals, owner models, bulk versions, actuals and assigned follow-up."),
     ("Patients & service", "Home, Conversations, Cases, Follow-ups, Live Staffing — every patient touch in one inbox with assignment and SLA visibility."),
-    ("Revenue cycle", "Billing Hub, Denials & DSO, A/R Aging, Collections Forecast, Payer Profitability — the whole money picture, claim to cash."),
+    ("Revenue cycle", "Billing Hub, Denials & DSO, A/R Aging, Collections Forecast and Payer Profitability - use each page's own claims, dates and collection definitions."),
     ("Clinical & therapy", "RT Overview, Therapy Fleet, Setup Adherence — adherence and clinical risk across every device cloud."),
     ("Storefront & growth", "Storefront Analytics, Acquisition Funnel, Reorder Reminders, Fitter Prospects — where patients come from and convert."),
     ("Operations & delivery", "Operations, Integrations, Outbound Messages, Delivery Failures, Webhook Deliveries — the plumbing, at a glance."),
@@ -1779,10 +1994,13 @@ REPORTS_CATALOG = [
     ("All-financial", "One-click bundle: orders + refunds + payer receipts + patient payments, unioned chronologically."),
 ]
 REPORTS_NOTE = (
-    "Every report exports as CSV, printable PDF, or QuickBooks (Desktop "
+    "The legacy Reports catalog provides CSV, printable PDF, or QuickBooks (Desktop "
     ".iif and Online .qbo.csv). Date range defaults to the last 30 days "
     "(up to 90). PHI is minimized — storefront reports hash customer IDs "
-    "and the customer-activity report is counts only."
+    "and the customer-activity report is counts only. Owner overview is a "
+    "separate CSV report with up to 366 days and explicit source coverage; "
+    "Owner models has its own scenario CSV. Neither inherits the legacy "
+    "report dates, source definitions or accounting export formats."
 )
 BENCHMARKS_INTRO = (
     "CareMetric Breathe tracks the metrics a DME operation is judged on and "
@@ -1863,6 +2081,25 @@ PAYERS_NOTE = (
 
 # ── FAQ (by domain) ──────────────────────────────────────────────────
 FAQ = [
+    ("Pricing and owner models", [
+        ("Which model should I choose?", "Use pricing strategies for a selected item's unit amount; monthly break-even for required order counts; sensitivity for explicit cost/freight/collection changes; price and volume for user-entered demand cases; acquisition for finite repeat orders; working capital for a cash-funding estimate. Calculate cards separately from a reviewed scenario and read their assumptions and statuses."),
+        ("Do simulations publish prices or take patient payments?", "No. Owner models and internal self-pay calculations are planning only. They do not approve orders, change insurance reimbursement, add patient checkout or replace accounting net profit. Use the normal review and publication controls for operational changes."),
+        ("Why is markup different from margin?", "Markup divides profit by costs; margin divides it by revenue. Owner markup applies to all variable costs, including relevant fees, not merchandise alone. The shared calculation applies exact cents and policy boundaries; a rounded displayed percentage is not the approval test."),
+        ("Why does a supplier's low price still fail review?", "Pack minimums, freight, dropship/handling, payment costs or incomplete evidence may change delivered cost. Check destination/service coverage and inclusions. Blank cost is unknown, not zero. Availability, clinical suitability and prescription requirements also remain relevant."),
+        ("Can a CSR approve their own pricing exception?", "A complete verified within-policy review can save as approved automatically. A permitted exception needs management approval with evidence; a hard floor stays blocked. CSRs cannot verify authoritative supplier costs, publish prices, enter actual financial events or use management owner models under the standard role."),
+        ("Will changing one portfolio item remove other prices?", "No. The frozen preview retains other published contexts and validates them at their existing amounts. A retained context with stale evidence requires review. Concurrent changes to contexts or retained amounts block an outdated activation or schedule until a fresh preview is made."),
+        ("Can I resend an expired priced order to get more time?", "No. Resend is capped by the approved review deadline. Prepare a fresh review and request after expiry. A signed-order address change uses management delivery re-review at the accepted prices, not silent repricing."),
+        ("What if an actual-event save times out?", "Use unchanged Retry: the full body and occurrence date are preserved. Keep the source and economic-event references. If edited details conflict, refresh history and check whether the first event exists before documenting a correction. Do not create another reference for the same expense or payment."),
+        ("Are my model results saved forever?", "No. Assumptions survive tabs in the current workspace, but the model is not a durable planning record. Download scenario report before leaving. Editing assumptions or refreshing sources removes outdated results from the current report."),
+    ]),
+    ("Owner overview and financial dates", [
+        ("Why do changing dates not change every number?", "Activity uses the selected UTC period, stages use the current status of records created in that period, and current queues include all open work now. Lifetime completed-review contribution uses a different scope again. The labels distinguish these measures."),
+        ("Is claim paid-to-date the same as cash received in this period?", "No. It follows the claims-created cohort and includes later recorded payments. Pricing event activity uses the entered economic occurrence dates. Neither can be added to the other as a second receipt."),
+        ("Which date should I enter for an invoice or payment?", "Use Economic occurrence date and time (UTC) from the evidence, not today's entry time. The form accepts historical dates and rejects invalid or future manual dates. Missing, invalid or future imported dates are disclosed and excluded rather than replaced with record creation time."),
+        ("Does an unavailable section mean zero?", "No. Business and financial sources load independently, and a failed source is labeled unavailable in the screen and CSV. Retry if both fail. Even an available zero only describes recorded matching data; it does not prove every event has been entered."),
+        ("Can I sum negative amounts in the CSV?", "Yes. Refunds, credits and losses are numeric signed USD values, including negative amounts. Text is protected from spreadsheet formulas. Export represents the returned snapshot, not an unapplied date selection or a pending refresh."),
+        ("Why is a product with no threshold marked low stock?", "Tracked products use five units when no threshold is configured. A configured zero remains zero. Null stock is untracked and excluded from low-stock totals; the overview lists up to ten items but counts the full matching population."),
+    ]),
     ("Getting started & signing up", [
         ("How does a new practice sign up?", "Go to the public CareMetric Breathe site (/breathe) and choose Create your account. Enter your company name, work email, a 12-character password, and a plan; that provisions your workspace and your first Owner login. Verify the emailed link, then sign in at /admin/sign-in and finish setup."),
         ("Do my staff each sign up too?", "No — only the practice's first Owner self-signs-up. Everyone else is invited from the Team page and sets their own password from the invite link. Public self-signup is for patients creating their own account and for new tenants, not staff."),
@@ -1876,8 +2113,8 @@ FAQ = [
         ("What can the chatbot handle without a person?", "The CareMetric Assistant answers therapy, mask, resupply, and insurance questions 24/7, and for signed-in patients it covers order status, tracking, subscriptions, device info, and returns — handing off to a CSR for anything order-specific, clinical, or actionable."),
         ("How do we make sure a promise to a patient isn't forgotten?", "Use Episodes for dated service promises and Follow-ups for the callback queue; overdue items surface on the Home dashboard."),
         ("Can we run telehealth visits?", "Yes — Video Visits generate a secure join link sent by SMS or email for setups and mask troubleshooting."),
-        ("How do we message many patients at once?", "Bulk Campaigns — build an audience with filters, sanity-check the recipient count, and send a batch SMS or email. The Alert Library handles curated one-off alerts."),
-        ("How does a patient use the AI mask fitter?", "The fitter is invitation-only. Staff send the patient a signed link by text or email from Orders & Shop → Fitter Invites; the patient opens it, runs the camera-based fitting in their browser, and the completed result attaches back to their chart (or waits in a holding area for staff to attach). The public storefront's “get fitted” button routes to an invitation-required explainer rather than the fitter."),
+        ("How do we message many patients at once?", "For due supplies, use Resupply calendar and select up to 50 patients for email, SMS or automated calls. General Bulk Campaigns needs separate campaign-send permission. Always review the audience and the per-patient result."),
+        ("How does a patient use the AI mask fitter?", "The fitter is invitation-only. Staff send the patient a signed link by text or email from Orders & Leads → Fitter Invites; the patient opens it, runs the camera-based fitting in their browser, and the completed result attaches back to their chart (or waits in a holding area for staff to attach). The public storefront's “get fitted” button routes to an invitation-required explainer rather than the fitter."),
         ("Can patients buy anything from us directly?", "No. The platform is insurance-only: patients are supplied against their plan and are never charged a card, so there is no cart, no checkout, and no membership to buy. Whatever their plan leaves them owing appears on their billing page, and your billing team collects it. Cash-pay memberships and card-on-file were retired."),
         ("Do post-purchase review requests go out automatically?", "They can. The review request can always be sent on demand from the Reviews worklist (“Send due”), and once the automatic sweep is enabled it goes out on its own about two weeks after delivery — one request per order, only to customers who haven't opted out."),
         ("Can a returned item go back into inventory?", "Optionally. When you mark a return received you can choose to restock it, which adds the quantities back to tracked stock. It's off by default because most DME consumables (opened masks and supplies) aren't resaleable — so you opt in only for genuinely resaleable items."),
@@ -1892,7 +2129,7 @@ FAQ = [
         ("Can we bill on day one?", "Yes — the platform ships with 100+ fully-configured payer profiles (the whole Pennsylvania DME market plus the national carriers, Medicare, Medicaid, federal, and workers'-comp/auto programs), each with electronic IDs, claim format, timely-filing window, prior-auth rules, and claims address pre-filled. Adding a payer for another region takes a minute under Billing → Config → Payers."),
     ]),
     ("Reporting & analytics", [
-        ("What reports can I run?", "Revenue summary, orders, patient payments, insurance claims, refunds journal, returns, customer activity, and an all-financial bundle — over any date range up to 90 days."),
+        ("What reports can I run?", "The Reports catalog contains legacy operational and finance exports with its own date limits. Owner overview separately covers recorded business activity and pricing-review financial coverage over presets or custom UTC dates up to 366 days. Owner models exports explicit scenario assumptions and results. Check each report's definition before comparing totals."),
         ("Can I export to QuickBooks?", "Yes — CSV and printable PDF, plus QuickBooks Desktop (.iif) and QuickBooks Online (.qbo.csv)."),
         ("How do I know if I'm hitting my numbers?", "Set a target per KPI in Goals & Targets and let KPI Alerts flag any metric that crosses a threshold. Financial analytics (margin & COGS, payer profitability, LTV:CAC) show where money is made and lost."),
         ("Is patient PHI in the reports?", "PHI is minimized — storefront reports hash customer IDs and the customer-activity report is counts only."),
@@ -1905,9 +2142,11 @@ FAQ = [
     ]),
     ("Re-supply", [
         ("How and when do reorder reminders go out?", "An hourly job finds prescriptions due on their cadence — typically the 90- and 30-day windows, tuned per patient and by frequency rules — and sends SMS or email. The AI voice agent can call, too."),
-        ("How does the patient confirm a reorder?", "One tap. Email carries signed confirm / edit / stop links (no login needed) and SMS accepts a reply. A confirmed reorder flows straight to fulfillment and billing."),
+        ("How does the patient confirm a reorder?", "Use the configured reminder response links or patient reply, then complete the normal order review. Confirmation does not bypass prescription, pricing, consent or delivery requirements and is not proof of shipment."),
         ("Does it avoid pestering patients?", "Yes — a quiet-period guard skips anyone you've talked to in the last 48 hours, and only one reminder goes out per patient per cycle even if several items are due."),
-        ("Can patients set it and forget it?", "Yes — they subscribe once and auto-ship keeps supplies arriving on the cadence their insurance allows."),
+        ("Can I contact just one patient or a due group?", "Yes. Open Orders &amp; eligibility for one patient, or select up to 50 patients in Resupply calendar. Choose Email, SMS or Automated call, review names and Queue outreach. Read per-patient results and follow delivery/replies in Conversations."),
+        ("Does scheduled due mean eligible for all supplies?", "No. Check each item's replacement-rule interval and remaining quantity, prescription expiry and insurance coverage. Needs eligibility review is unresolved, not approved. Patients must still confirm their need."),
+        ("Is queued outreach already delivered?", "No. The worker still checks contact details, channel permissions, local contact hours and recent contact. Queued is processing acceptance. Review skipped/failed reasons and delivery evidence before retrying; do not switch channels to work around a guard."),
     ]),
     ("In-person / counter orders", [
         ("Someone walks in wanting a mask — what now?", "Create or open their patient record, verify the benefit from Billing → Verify insurance, and raise the order against their plan. There is no counter sale: everything is billed to insurance, so a walk-in follows the same path as any other patient, just faster."),
@@ -2498,6 +2737,11 @@ def make_story(toc_entries):
     # ---- Running the business (owner's playbook) ----
     story += h1("Running the Business — the Owner's Playbook")
     story.append(Paragraph(OWNER_PLAYBOOK_INTRO, S_LEAD))
+    story += shot(
+        "admin-owner-overview",
+        "Owner overview with illustrative sample data: select a period, "
+        "review priorities, and download the current report.",
+    )
     story.append(h2("What to watch, and when"))
     for cadence, items in OWNER_WATCH:
         story.append(Paragraph(cadence, S_GROUP))
@@ -2757,7 +3001,10 @@ def make_story(toc_entries):
                                           fontName="Helvetica")))
 
     story.append(h2("Glossary"))
-    story.append(feature_table(GLOSSARY))
+    # Keep each atomic feature table comfortably within a page.
+    for start in range(0, len(GLOSSARY), 8):
+        story.append(feature_table(GLOSSARY[start:start + 8]))
+        story.append(Spacer(1, 4))
     story.append(Spacer(1, 8))
     story.append(Paragraph(
         "<b>Need more?</b> Ask CareMetric Copilot in the app, or reach your "
@@ -2802,12 +3049,15 @@ def build():
     # offset-corrected entries.
     doc = _make_doc(ManualDoc, OUT_PATH)
     doc.build(make_story(entries))
+    os.makedirs(os.path.dirname(RUNTIME_OUT_PATH), exist_ok=True)
+    shutil.copy2(OUT_PATH, RUNTIME_OUT_PATH)
 
     try:
         os.remove(cap_path)
     except OSError:
         pass
     print("wrote %s (%d-page TOC)" % (OUT_PATH, toc_pages))
+    print("copied runtime asset to %s" % RUNTIME_OUT_PATH)
 
 
 if __name__ == "__main__":

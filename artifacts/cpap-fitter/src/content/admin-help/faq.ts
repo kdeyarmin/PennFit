@@ -828,4 +828,223 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
     seeAlso: "manage-backorders-and-substitutions",
     keywords: ["backorder", "substitution", "restock", "still", "out of stock"],
   },
+  {
+    id: "resupply-due-vs-eligible",
+    question:
+      "Does a date on the resupply calendar mean insurance will cover the supplies?",
+    category: "outreach",
+    answer: [
+      "No. The scheduled date is a worklist date. Eligible by replacement rule describes timing and quantity against recorded orders. Neither confirms payer coverage, required authorization, prescription validity at fulfillment, or that the patient wants supplies.",
+      "On Resupply calendar /admin/resupply-calendar, choose Orders & eligibility and read the item-level reason, quantity available, prescription dates, and prior orders before contacting the patient. Future patients can appear in Month calendar; use Due now & overdue for current outreach.",
+    ],
+    seeAlso: "review-resupply-and-contact-patients",
+    keywords: [
+      "eligible",
+      "due",
+      "calendar",
+      "replacement",
+      "quantity",
+      "insurance",
+    ],
+  },
+  {
+    id: "resupply-bulk-outcomes",
+    question: "I selected several patients. Why were fewer reminders queued?",
+    category: "outreach",
+    answer: [
+      "The calendar selects unique patients, not one recipient per supply line. A batch can contain up to 50 patients, and the confirmation lists their names. Changing calendar or search filters clears the selection.",
+      "Read the per-patient queued, skipped, and failed results. A patient may not yet be due, may have been contacted recently, may lack contact details or consent, or may be outside permitted contact hours. A channel also needs to be configured. Automated call is an automated resupply request, not a manual dialer. Queued only means accepted for processing; delivery and the patient's response still need review in Conversations /admin/conversations.",
+    ],
+    seeAlso: "review-resupply-and-contact-patients",
+    keywords: ["bulk", "queued", "skipped", "automated call", "SMS", "email"],
+  },
+  {
+    id: "pricing-permissions",
+    question:
+      "Why can I evaluate an item but not edit costs, publish prices, or open the owner overview?",
+    category: "system",
+    answer: [
+      "These are separate responsibilities. pricing.evaluate allows the CSR item-review workflow. Pricing management, approval, and publication require pricing.manage, pricing.approve, and pricing.publish respectively. Owner models is a manager tool; a CSR does not receive its tab or the management Follow-up view.",
+      "Owner overview /admin/analytics/owner requires both metrics.read and cost.read and the Analytics module. Cost access alone, including a billing-only role, is insufficient. Ask an administrator to check your assigned role if the work belongs to you.",
+    ],
+    seeAlso: "invite-your-team",
+    keywords: ["pricing", "permissions", "owner", "CEO", "CSR", "missing tab"],
+  },
+  {
+    id: "margin-markup-and-profit",
+    question:
+      "What is the difference between margin, markup, and contribution?",
+    category: "analytics",
+    answer: [
+      "Margin divides the applicable profit by revenue. Markup compares profit with cost. They are not interchangeable percentages: enter a margin target in Pricing policy, or use Pricing strategies in Owner models to compare the choices.",
+      "Product gross profit subtracts goods cost. Order contribution also accounts for the applicable delivery, processing, and other modeled costs. A policy using allocated overhead applies that additional deduction explicitly. Owner pricing goals use contribution before allocated overhead, while the actual policy can impose stricter limits. None of these automatically measures company net profit.",
+    ],
+    seeAlso: "compare-owner-profit-models",
+    keywords: [
+      "margin",
+      "markup",
+      "gross profit",
+      "contribution",
+      "overhead",
+      "net profit",
+    ],
+  },
+  {
+    id: "pricing-missing-costs",
+    question:
+      "Why is a review blocked when I entered the supplier's item price?",
+    category: "orders",
+    answer: [
+      "The item price may not cover packing requirements, freight, handling, processing, reserves, or other applicable costs. Unknown is not zero. Each fee has its own evidence status and expiry, and a verified supplier's name does not verify every fee.",
+      "Read the item-review issues on /admin/pricing. Confirm supplier delivery coverage and service, and avoid counting a fee twice when it is already included. Get shipping rates estimates warehouse stock delivery from the configured warehouse; it is not a dropship quote from a supplier. Missing or expired evidence and hard-floor failures must be corrected, not approved away.",
+    ],
+    seeAlso: "set-up-pricing-evidence",
+    keywords: [
+      "COGS",
+      "missing cost",
+      "freight",
+      "dropship",
+      "verified",
+      "estimated",
+      "blocked",
+    ],
+  },
+  {
+    id: "insurance-review-revenue",
+    question: "Should I enter billed charges as expected insurance revenue?",
+    category: "orders",
+    answer: [
+      "No. Billed charges, payer allowed amounts, and expected collectible revenue are different. Use current evidence for the amount expected to be collected, including the relevant insurer, secondary, patient, and adjustment assumptions. Managers can save verified Collection evidence for an exact patient and SKU quantities.",
+      "Self-pay scenarios in /admin/pricing are internal planning comparisons. They do not take patient card payments or authorize increasing an insurer's payment. Patient orders attach approved insurance reviews, not self-pay models.",
+    ],
+    seeAlso: "review-order-profitability",
+    keywords: [
+      "insurance",
+      "billed",
+      "allowed",
+      "collectible",
+      "self-pay",
+      "collections",
+    ],
+  },
+  {
+    id: "saved-review-not-order-approval",
+    question:
+      "Can I reuse a saved review after changing the patient, items, or delivery?",
+    category: "orders",
+    answer: [
+      "An approved review is tied to the exact patient, items, quantities, billed amounts, fulfillment methods, and source versions. Editing the order invalidates that attachment. An expired, already bound, cancelled, or mismatched review cannot simply be selected again for a new order.",
+      "Use Evaluate items or Choose approved review in the order or draft workflow. Oversized internal scenarios remain planning records: patient orders allow at most 20 lines and 1–99 units per line. For a signed priced order whose delivery changes, a manager uses Review delivery rather than changing the signed prices.",
+    ],
+    seeAlso: "review-order-profitability",
+    keywords: [
+      "quote",
+      "saved review",
+      "expired",
+      "cancelled",
+      "quantity limit",
+      "attach",
+      "approval",
+    ],
+  },
+  {
+    id: "bulk-pricing-retains-unselected",
+    question:
+      "Why does my filtered price preview include items I did not select?",
+    category: "orders",
+    answer: [
+      "The preview includes retained published contexts so changing one item does not remove prices for other items or bundles. It rechecks their current evidence while keeping their amounts. If a retained context needs review, its named SKU or bundle must be addressed before publishing.",
+      "The previous-price comparison is frozen at preview time under comparable current cost and delivery assumptions. It is not a live price or a historical margin from different costs. If another publication changes the active list, create a fresh preview for the new change; a restore action cannot silently remove newer prices.",
+    ],
+    seeAlso: "publish-bulk-prices",
+    keywords: [
+      "bulk",
+      "portfolio",
+      "retained",
+      "filtered",
+      "preview",
+      "schedule",
+      "price list",
+    ],
+  },
+  {
+    id: "owner-models-not-forecasts",
+    question:
+      "Does Calculated in Owner models mean that price or profit is approved?",
+    category: "analytics",
+    answer: [
+      "No. The models use your explicit assumptions about prices, costs, collections, volume, acquisition, and timing. They are not demand forecasts, accounting results, or an approval shortcut. Each card can calculate independently, so one can need inputs while another succeeds.",
+      "Changing inputs hides that card's prior result. A source change or expired evidence requires a fresh calculation before Download scenario report is available. The report records the resolved policy, supplier versions, expiry, and calculation time so the assumptions can be reviewed later.",
+    ],
+    seeAlso: "compare-owner-profit-models",
+    keywords: [
+      "owner models",
+      "forecast",
+      "break even",
+      "working capital",
+      "calculated",
+      "approval",
+    ],
+  },
+  {
+    id: "owner-overview-report-scopes",
+    question:
+      "Why do owner overview financial totals differ from claims and my accounting report?",
+    category: "analytics",
+    answer: [
+      "Recorded financial activity follows the events' economic occurrence dates within the selected UTC window. Claim amounts describe claims created in the period and their paid-to-date amounts. Current queues are today's backlog. Completed-review contribution is lifetime actual contribution only for bound orders with complete, validly dated records. These have different scopes and should not be added together as company profit.",
+      "Read Sources & definitions and the completed-review coverage. Missing or unavailable data is not zero. Download overview CSV includes successful sections with their dates and units; negative money remains a number so losses and refunds can be summed in a spreadsheet.",
+    ],
+    seeAlso: "read-owner-overview",
+    keywords: [
+      "owner overview",
+      "UTC",
+      "claims",
+      "profit",
+      "CSV",
+      "negative",
+      "refund",
+      "scope",
+      "coverage",
+    ],
+  },
+  {
+    id: "actual-event-uncertain-save",
+    question:
+      "A cost-event save failed. Should I create a new reference and try again?",
+    category: "analytics",
+    answer: [
+      "Keep the original reference and retry the unchanged event first. An uncertain response can occur after a save succeeded. A new reference can turn one invoice or payment into two recorded events.",
+      "If the page reports that the reference has different recorded details, choose Refresh actual event history and inspect the original before documenting a correction. Use the real historical time in Economic occurrence date and time (UTC); do not use today merely because that is when you entered the event. Invalid and future dates are rejected.",
+    ],
+    seeAlso: "reconcile-order-actuals",
+    keywords: [
+      "actuals",
+      "retry",
+      "duplicate",
+      "reference",
+      "invoice",
+      "occurred",
+      "historical",
+    ],
+  },
+  {
+    id: "delivery-hold-after-address-fix",
+    question:
+      "The address is corrected. Why is a signed priced order still held?",
+    category: "orders",
+    answer: [
+      "Resolving an address alert does not approve the new delivery economics. A manager must use Review delivery on Orders /admin/fitter/orders, compare the fixed-price forecast using current delivery evidence, and approve eligible work. The accepted items and customer amounts remain unchanged.",
+      "Update supplier costs and coverage if the new destination falls outside the original quote. A missing prescription can still prevent fulfillment after review; resolve it and use Retry fulfillment. Orders with a carrier label or work already in progress require shipping follow-up rather than this release action.",
+    ],
+    seeAlso: "review-delivery-change",
+    keywords: [
+      "delivery",
+      "address",
+      "hold",
+      "signed",
+      "retry fulfillment",
+      "prescription",
+    ],
+  },
 ] as const;

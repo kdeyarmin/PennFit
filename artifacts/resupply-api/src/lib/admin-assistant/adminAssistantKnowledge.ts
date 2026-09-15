@@ -389,31 +389,15 @@ SYSTEM (mostly admin / super-admin):
 // lists disagree in either direction (a renamed slug here would send
 // operators to a 404).
 const HELP_CENTER_SECTION = `
-STAFF HELP CENTER (/admin/resources) — the written procedures.
+STAFF HELP CENTER: /admin/resources
+Summarize covered tasks and link /admin/resources/how-to/<slug>; do not retype the procedure. Otherwise use the app knowledge below.
+Overview: /admin/resources/user-guide. Answers: /admin/resources/faq.
 
-Each how-to below lives at /admin/resources/how-to/<slug>. Write that
-full path verbatim and the app turns it into a one-click link, exactly
-like any /admin path.
-
-HOW TO USE THIS:
-  - If a guide below covers what the operator asked, give them the short
-    answer in a sentence or two AND the guide's path. The guide is
-    maintained and screenshot-accurate; your paraphrase of it is not.
-  - Do NOT retype a full multi-step procedure that a guide already
-    covers. Summarize and hand over.
-  - For anything NOT in this list, answer from the rest of your
-    knowledge as normal — most questions still work that way.
-  - Two other surfaces: /admin/resources/user-guide describes every area
-    of the console, and /admin/resources/faq holds short answers to
-    common questions.
-
-Guides (52):
-  Getting started:
+Guides (61):
     finish-workspace-setup — Finish setting up your workspace
     invite-your-team — Add a teammate and set their role
     navigate-the-console — Find your way around the console
     get-help-and-report-a-problem — Get help, report a problem, or suggest a feature
-  Patients & clinical:
     find-and-work-a-patient — Find a patient and work their record
     answer-a-patient-message — Answer an inbound patient message
     send-a-fitting-invite — Send someone a mask-fitting link
@@ -430,12 +414,15 @@ Guides (52):
     coach-a-struggling-patient — Run an adherence coaching plan
     manage-document-retention — Place a legal hold or destroy an expired document
     work-the-fit-requests-queue — Work the fit requests queue
-  Orders & shop:
     work-insurance-leads — Work the insurance-coverage lead queue
     recover-rental-equipment — Recover a rental device from a patient who stopped therapy
     manage-catalog-and-stock — Manage your catalog and stock levels
     manage-backorders-and-substitutions — Mark a SKU out of stock and set substitutions
-  Billing & claims:
+    set-up-pricing-evidence — Set up supplier costs and pricing policy
+    review-order-profitability — Review profitability before creating an order
+    publish-bulk-prices — Review and publish a bulk price change
+    propose-a-new-priced-item — Compare suppliers for a proposed new item
+    review-delivery-change — Review a delivery change on a signed order
     verify-a-patients-insurance — Verify a patient's insurance right now
     submit-a-claim — Take a claim from eligibility to submission
     work-the-denials-worklist — Work denials so the winnable ones get won
@@ -448,18 +435,19 @@ Guides (52):
     configure-billing-rules — Configure the rules that build your claims
     appeal-a-denial — Write and send a denial appeal
     check-capped-rental-modifiers — Check the modifiers on a capped-rental claim
-  Outreach & automation:
     send-a-bulk-campaign — Send a bulk SMS or email campaign
     set-up-resupply-reminders — Run the resupply reminder program
+    review-resupply-and-contact-patients — Review supplies due and contact patients
     build-an-automation-rule — Set reminder frequency rules and simulate them
     build-your-reply-library — Build the reply library your team actually uses
-  Analytics & reports:
     find-and-read-a-report — Find the right report and read it correctly
+    read-owner-overview — Read and export the owner overview
+    compare-owner-profit-models — Compare owner pricing and profit models
+    reconcile-order-actuals — Record actual costs and collections for an order
     track-team-performance — Track how the team is performing
     act-on-customer-feedback — Read your NPS and actually act on it
     read-inventory-turnover — Read the inventory turnover report
     read-storefront-analytics — Read storefront analytics
-  Settings & system:
     manage-modules-and-flags — Turn a feature or a whole section on or off
     brand-outbound-communications — Make patient messages come from your brand
     connect-an-integration — Connect a therapy-cloud, clearinghouse, or partner integration

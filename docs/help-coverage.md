@@ -87,7 +87,7 @@ uniqueness, that `related` and `seeAlso` cross-links resolve, that every
 category has at least one how-to, and that the routes are registered in
 the order wouter's `<Switch>` needs.
 
-Coverage today: **52 how-tos, 17 guide chapters, 57 FAQ entries.** A
+Coverage today: **61 how-tos, 20 guide chapters, 69 FAQ entries.** A
 how-to is written per _task_, not per page — many console pages are
 covered as a step inside the guide for the workflow they belong to
 (shipping labels inside "fulfill and ship", filing deadlines inside
@@ -109,7 +109,26 @@ rather than by every admin chat request failing in production.
 Regenerating the index after adding a guide is mechanical — the test
 names exactly which slugs are missing or stale.
 
-No staff-help gaps are currently tracked. Stock and catalog work is
+The current feature update adds these staff workflows:
+
+| Feature                                     | Written procedures and scope                                                                                                                                                                                                                                               |
+| ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Resupply calendar and patient supply review | `review-resupply-and-contact-patients`: month/day/due-now filters in practice time, paged history, replacement timing versus coverage, named individual or bulk recipients, and queued/skipped/failed outcomes.                                                            |
+| Owner overview                              | `read-owner-overview`: permissions, UTC presets and custom dates, current/period/lifetime distinctions, partial source failures, coverage, and fresh CSV downloads with numeric negative money.                                                                            |
+| Supplier and policy evidence                | `set-up-pricing-evidence`: canonical units, packs, independent fee evidence, delivery coverage, estimated imports, versioned policy publication, and patient-specific collection evidence.                                                                                 |
+| Exact patient order review                  | `review-order-profitability`: billed versus collectible amounts, stock shipping estimates versus supplier dropship costs, approvals and hard stops, exact insurance review attachment, internal versus patient quantity limits, and patient batch checks without outreach. |
+| Portfolio and bulk prices                   | `publish-bulk-prices`: item/category/supplier selection, frozen comparable economics, retained published contexts, explicit subsets, schedules, and re-preview after publication changes.                                                                                  |
+| Owner planning models                       | `compare-owner-profit-models`: all six independent models, explicit assumptions, source expiry and recovery, and reports carrying resolved evidence and calculation provenance.                                                                                            |
+| New-item sourcing                           | `propose-a-new-priced-item`: pack and minimum-order comparisons, surplus and delivered costs, provisional evidence, manager decisions, and catalog resolution.                                                                                                             |
+| Signed-order delivery changes               | `review-delivery-change`: fixed accepted amounts, verified updated delivery evidence, permitted decisions, address and prescription holds, and fulfillment retry.                                                                                                          |
+| Recorded actual results                     | `reconcile-order-actuals`: UTC occurrence dates, unchanged safe retry, conflicting-reference recovery, paged history with whole-history totals, and evidence-based completion.                                                                                             |
+
+The user guide adds descriptive resupply-calendar, pricing-profitability,
+and owner-overview chapters. Related FAQs explain common permission,
+scope, missing-evidence, and retry questions. These are internal staff
+features; self-pay planning does not reintroduce patient checkout.
+
+Stock and catalog work is
 covered by `manage-catalog-and-stock` (movements with a reason, and why a
 blank count means untracked rather than zero) and
 `manage-backorders-and-substitutions`; capped-rental modifiers are
