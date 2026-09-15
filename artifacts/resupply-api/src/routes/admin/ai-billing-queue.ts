@@ -137,7 +137,16 @@ router.get(
       db
         .from("claim_denial_analyses")
         .select(
-          "id, claim_id, recommendation, confidence, root_cause_summary, created_at, insurance_claims!inner(patient_id)",
+          // The FK name is REQUIRED, not decoration. Two foreign keys join
+          // these tables — `claim_denial_analyses.claim_id -> insurance_claims.id`
+          // (the one we want) and `insurance_claims.latest_denial_analysis_id ->
+          // claim_denial_analyses.id` — so a bare `insurance_claims!inner`
+          // embed is ambiguous and PostgREST refuses it with PGRST201 / HTTP
+          // 300 instead of guessing. The `r.error` rethrow below then turned
+          // that into a 500 on every request, and because
+          // `ai_billing.suggestions` is seeded ON (migration 0149) the whole
+          // AI billing queue was unreachable for every tenant.
+          "id, claim_id, recommendation, confidence, root_cause_summary, created_at, insurance_claims!claim_denial_analyses_claim_id_fkey!inner(patient_id)",
         )
         .eq("can_auto_resubmit", true)
         .eq("review_status", "pending")

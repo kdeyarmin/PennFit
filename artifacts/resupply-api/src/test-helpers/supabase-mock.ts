@@ -77,6 +77,16 @@ const filterCalls = new Map<string, CapturedFilterCall[]>();
 // exempted from scripts/check-tenant-isolation.sh have no CI guard left to
 // catch that, so they assert their scoping invariant through this.
 const filterCallsByInvocation = new Map<string, CapturedFilterCall[][]>();
+// Per-table log of the column string handed to `.select("...")`, one entry per
+// invocation, in order. Filters are not the only part of a PostgREST query that
+// can be wrong: the column string also carries EMBEDDED RESOURCES
+// (`other_table!fk_name!inner(cols)`), and when two foreign keys join the same
+// pair of tables a bare `other_table!inner(...)` embed is ambiguous —
+// PostgREST answers PGRST201 / HTTP 300 rather than guessing. That is invisible
+// to a staged-response mock, so a route can 500 in production while its unit
+// tests pass. Capturing the string lets a test assert the disambiguating FK
+// hint is present.
+const selectColumns = new Map<string, string[]>();
 
 // Separate FIFO queues for `supabase.schema(...).rpc(fnName, args)`
 // calls. Keyed by function name. Counters and arg-payload lists are
@@ -234,8 +244,13 @@ function makeTableBuilder(table: string): TableBuilder {
   };
 
   const builder: TableBuilder = {
-    select: () => {
+    select: (columns?: unknown) => {
       setOp("select");
+      if (typeof columns === "string") {
+        const list = selectColumns.get(table) ?? [];
+        list.push(columns);
+        selectColumns.set(table, list);
+      }
       return builder;
     },
     insert: (payload?: unknown) => {
@@ -430,6 +445,15 @@ export interface SupabaseMockHandle {
     op: SupabaseOp,
   ): CapturedFilterCall[][];
   /**
+   * The column string passed to each `.select("...")` on this table since the
+   * last `reset()`, in order. Use it to assert on EMBEDDED RESOURCES, which the
+   * staged-response mock cannot otherwise see: when two foreign keys join the
+   * same pair of tables, a bare `other!inner(cols)` embed is ambiguous and
+   * PostgREST rejects the request (PGRST201 / HTTP 300) instead of picking one,
+   * so the embed must name the FK — `other!fk_name!inner(cols)`.
+   */
+  selectColumns(table: string): string[];
+  /**
    * EVERY `(table, op)` pair invoked since the last `reset()`, as sorted
    * `"table.op"` strings — the complete set, not a lookup.
    *
@@ -465,6 +489,7 @@ export function installSupabaseMock(): SupabaseMockHandle {
       writePayloads.clear();
       filterCalls.clear();
       filterCallsByInvocation.clear();
+      selectColumns.clear();
       rpcQueues.clear();
       rpcCallCounts.clear();
       rpcCallArgs.clear();
@@ -483,6 +508,9 @@ export function installSupabaseMock(): SupabaseMockHandle {
     },
     filterCallsByInvocation(table, op) {
       return filterCallsByInvocation.get(key(table, op)) ?? [];
+    },
+    selectColumns(table) {
+      return selectColumns.get(table) ?? [];
     },
     touchedKeys() {
       return [...callCounts.keys()].sort();
@@ -510,6 +538,11 @@ export function getSupabaseWritePayloads(
   op: SupabaseOp,
 ): unknown[] {
   return writePayloads.get(key(table, op)) ?? [];
+}
+
+/** Standalone alias for `installSupabaseMock().selectColumns(...)`. */
+export function getSupabaseSelectColumns(table: string): string[] {
+  return selectColumns.get(table) ?? [];
 }
 
 /** Standalone alias for `installSupabaseMock().filterCalls(...)`. */
