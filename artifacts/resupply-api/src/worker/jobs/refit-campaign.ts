@@ -48,8 +48,6 @@
 import type PgBoss from "pg-boss";
 
 import {
-  type CommunicationPreferences,
-  DEFAULT_COMMUNICATION_PREFERENCES,
   getOrgScopedClient,
   type OrgScopedClient,
 } from "@workspace/resupply-db";
@@ -61,6 +59,7 @@ import {
   shouldSendEmail,
   shouldSendSms,
 } from "../../lib/comm-prefs.js";
+import { resolvePatientCommPrefs } from "../../lib/patient-comm-prefs.js";
 import { isFeatureEnabled } from "../../lib/feature-flags.js";
 import {
   sendRescanForInvite,
@@ -293,7 +292,11 @@ async function findReportedBadFits(
   };
   if (sessionErr) {
     logger.warn(
-      { event: "refit_campaign.order_patient_query_failed", orgId, err: sessionErr },
+      {
+        event: "refit_campaign.order_patient_query_failed",
+        orgId,
+        err: sessionErr,
+      },
       "refit campaign: could not resolve surveyed orders to patients",
     );
     return [];
@@ -414,21 +417,35 @@ async function offerRefit(
 ): Promise<OfferOutcome> {
   const { patientId, reason } = candidate;
 
-  const { data: patient } = (await supabase
+  const { data: patient, error: patientErr } = (await supabase
     .from("patients")
     .select(
-      "id, email, phone_e164, legal_first_name, legal_last_name, timezone",
+      "id, email, phone_e164, legal_first_name, legal_last_name, timezone, portal_auth_user_id",
     )
     .eq("id", patientId)
     .limit(1)
-    .maybeSingle()) as { data: Record<string, unknown> | null };
+    .maybeSingle()) as {
+    data: Record<string, unknown> | null;
+    error: unknown;
+  };
+  // A chart we could not READ is not a chart that says no. Skipping
+  // without claiming the cooldown lets the next scan try again.
+  if (patientErr) return "skipped";
   if (!patient) return "skipped";
 
   const email = (patient.email as string | null) ?? null;
   const phone = (patient.phone_e164 as string | null) ?? null;
   if (!email && !phone) return "skipped";
 
-  const prefs = await readPrefs(supabase, patientId);
+  const resolved = await resolvePatientCommPrefs(supabase, {
+    email,
+    portalAuthUserId: (patient.portal_auth_user_id as string | null) ?? null,
+  });
+  // Preferences we could not read might be a refusal. Nothing has been
+  // stamped yet, so declining costs only a re-evaluation next scan —
+  // whereas guessing costs a message to somebody who opted out.
+  if (resolved.unknown) return "skipped";
+  const prefs = resolved.prefs;
   const now = new Date();
 
   // SMS is preferred when we have a number and consent, because a re-fit
@@ -511,24 +528,6 @@ async function offerRefit(
     return await release(delivery.reason ?? "send_failed");
   }
   return "sent";
-}
-
-async function readPrefs(
-  supabase: OrgScopedClient,
-  patientId: string,
-): Promise<CommunicationPreferences> {
-  const { data } = (await supabase
-    .from("shop_customers")
-    .select("communication_preferences")
-    .eq("patient_id", patientId)
-    .limit(1)
-    .maybeSingle()) as { data: Record<string, unknown> | null };
-  const raw = data?.communication_preferences;
-  if (!raw || typeof raw !== "object") return DEFAULT_COMMUNICATION_PREFERENCES;
-  return {
-    ...DEFAULT_COMMUNICATION_PREFERENCES,
-    ...(raw as Partial<CommunicationPreferences>),
-  };
 }
 
 /**

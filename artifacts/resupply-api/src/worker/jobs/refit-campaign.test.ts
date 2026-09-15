@@ -60,7 +60,15 @@ const SAVED_ENV = { ...process.env };
 /** A patient who has told us their mask leaks and can be contacted. */
 function stageHappyPath(
   prefs?: Record<string, unknown>,
-  opts: { inviteInsertFails?: boolean } = {},
+  opts: {
+    inviteInsertFails?: boolean;
+    /**
+     * Replaces the whole staged `shop_customers` read. Staged responses
+     * are a FIFO queue, so a caller cannot override this one after the
+     * fact — it has to be substituted here.
+     */
+    prefsResponse?: Record<string, unknown>;
+  } = {},
 ) {
   stageSupabaseResponse("organizations", "select", { data: [{ id: ORG }] });
   stageSupabaseResponse("mask_fit_outcomes", "select", {
@@ -91,14 +99,18 @@ function stageHappyPath(
       timezone: "America/New_York",
     },
   });
-  stageSupabaseResponse("shop_customers", "select", {
-    data: {
-      communication_preferences: prefs ?? {
-        smsTransactional: true,
-        emailResupplyReminders: true,
+  stageSupabaseResponse(
+    "shop_customers",
+    "select",
+    opts.prefsResponse ?? {
+      data: {
+        communication_preferences: prefs ?? {
+          smsTransactional: true,
+          emailResupplyReminders: true,
+        },
       },
     },
-  });
+  );
   stageSupabaseResponse(
     "fitter_invites",
     "insert",
@@ -240,6 +252,54 @@ describe("runRefitCampaignScan — refusals", () => {
     await runRefitCampaignScan();
 
     expect(sendRescan).not.toHaveBeenCalled();
+  });
+});
+
+describe("runRefitCampaignScan — reading consent", () => {
+  it("looks consent up by the patient's portal link and email, not patient_id", async () => {
+    // Regression, and the worst-directioned bug found in this job: the
+    // consent read filtered `shop_customers.patient_id`, a column that
+    // table does not have. PostgREST answered 42703, the destructure took
+    // only `data` and dropped it, and the caller read the miss as "no
+    // stored preference" — which for email is the opted-IN default. So a
+    // patient who had explicitly turned re-fit email OFF was messaged
+    // anyway, silently. A column-blind mock cannot reproduce that, so the
+    // filter shape is asserted directly.
+    stageHappyPath();
+
+    await runRefitCampaignScan();
+
+    const joins = getSupabaseFilterCalls("shop_customers", "select")
+      .filter((f) => f.verb === "eq" && f.args[0] !== "org_id")
+      .map((f) => f.args[0]);
+    expect(joins).not.toContain("patient_id");
+    expect(joins).toContain("email_lower");
+  });
+
+  it("stays silent when consent cannot be read", async () => {
+    // Preferences we could not read might be a refusal. Nothing is
+    // stamped on this path, so the next scan re-evaluates for free —
+    // whereas guessing costs a message to somebody who opted out.
+    stageHappyPath(undefined, {
+      prefsResponse: { error: { message: "boom" } },
+    });
+
+    await runRefitCampaignScan();
+
+    expect(sendRescan).not.toHaveBeenCalled();
+    // And the 90-day cooldown must not have been burned on the skip.
+    expect(getSupabaseCallCount("fitter_invites", "insert")).toBe(0);
+  });
+
+  it("still offers a refit to a patient who has no storefront account", async () => {
+    // The common case: patients arrive through the insurance pipeline and
+    // never create a shop_customers row. "No row" is not a refusal, and
+    // failing closed on it would turn the whole campaign off.
+    stageHappyPath(undefined, { prefsResponse: { data: null } });
+
+    await runRefitCampaignScan();
+
+    expect(sendRescan).toHaveBeenCalledTimes(1);
   });
 });
 
