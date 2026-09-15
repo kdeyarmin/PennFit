@@ -11,6 +11,8 @@ import {
   installSupabaseMock,
   stageSupabaseResponse,
   getSupabaseWritePayloads,
+  getSupabaseCallCount,
+  getSupabaseFilterCalls,
 } from "../../test-helpers/supabase-mock";
 
 const supabaseMock = installSupabaseMock();
@@ -71,8 +73,11 @@ function stageHappyPath(
       },
     ],
   });
-  stageSupabaseResponse("shop_orders", "select", {
-    data: [{ id: ORDER, patient_id: PATIENT }],
+  // The surveyed order reaches a chart through fit_sessions, not shop_orders
+  // (which has no patient_id column at all — see the resolve in
+  // findReportedBadFits).
+  stageSupabaseResponse("fit_sessions", "select", {
+    data: [{ shop_order_id: ORDER, patient_id: PATIENT }],
   });
   // No discontinued models — keeps this candidate set to one reason.
   stageSupabaseResponse("mask_models", "select", { data: [] });
@@ -168,6 +173,54 @@ describe("runRefitCampaignScan — refusals", () => {
     expect(sendRescan).not.toHaveBeenCalled();
   });
 
+  // Regression: this resolve used to read `shop_orders.patient_id`. That
+  // column does not exist and shop_orders has no FK to patients at all, so
+  // PostgREST answered 42703 / HTTP 400 — and because the destructure took
+  // only `data` and dropped `error`, the failure was invisible. Every scan
+  // resolved zero patients, so a patient who reported a leaking or
+  // uncomfortable mask was never offered a re-fit, and nothing was logged.
+  // The staged mock does not validate column names, and the old tests staged
+  // a `shop_orders` row carrying a `patient_id`, so the suite agreed with the
+  // bug. Assert the table and join column instead.
+  it("resolves surveyed orders to charts through fit_sessions", async () => {
+    stageHappyPath();
+
+    await runRefitCampaignScan();
+
+    // shop_orders cannot answer this question and must not be asked.
+    expect(getSupabaseCallCount("shop_orders", "select")).toBe(0);
+
+    const filters = getSupabaseFilterCalls("fit_sessions", "select");
+    const byOrder = filters.find(
+      (f) => f.verb === "in" && f.args[0] === "shop_order_id",
+    );
+    expect(byOrder, "must join on fit_sessions.shop_order_id").toBeDefined();
+    expect(byOrder?.args[1]).toEqual([ORDER]);
+  });
+
+  it("gives up and logs when the chart resolve fails", async () => {
+    stageSupabaseResponse("organizations", "select", { data: [{ id: ORG }] });
+    stageSupabaseResponse("mask_fit_outcomes", "select", {
+      data: [
+        {
+          order_id: ORDER,
+          fit_outcome: "leaking",
+          status: "new",
+          created_at: "2026-05-01T00:00:00Z",
+        },
+      ],
+    });
+    // A broken resolve must not read as "nobody reported a bad fit".
+    stageSupabaseResponse("fit_sessions", "select", {
+      error: { message: "boom" },
+    });
+    stageSupabaseResponse("mask_models", "select", { data: [] });
+
+    await runRefitCampaignScan();
+
+    expect(sendRescan).not.toHaveBeenCalled();
+  });
+
   it("skips a survey answer that cannot be tied to a chart", async () => {
     stageSupabaseResponse("organizations", "select", { data: [{ id: ORG }] });
     stageSupabaseResponse("mask_fit_outcomes", "select", {
@@ -180,10 +233,8 @@ describe("runRefitCampaignScan — refusals", () => {
         },
       ],
     });
-    // The order exists but carries no patient — there is nobody to write to.
-    stageSupabaseResponse("shop_orders", "select", {
-      data: [{ id: ORDER, patient_id: null }],
-    });
+    // No fit session ties the order to a chart — there is nobody to write to.
+    stageSupabaseResponse("fit_sessions", "select", { data: [] });
     stageSupabaseResponse("mask_models", "select", { data: [] });
 
     await runRefitCampaignScan();
@@ -196,8 +247,8 @@ describe("runRefitCampaignScan — whose survey answer still counts", () => {
   function stageOutcomes(rows: Array<Record<string, unknown>>) {
     stageSupabaseResponse("organizations", "select", { data: [{ id: ORG }] });
     stageSupabaseResponse("mask_fit_outcomes", "select", { data: rows });
-    stageSupabaseResponse("shop_orders", "select", {
-      data: [{ id: ORDER, patient_id: PATIENT }],
+    stageSupabaseResponse("fit_sessions", "select", {
+      data: [{ shop_order_id: ORDER, patient_id: PATIENT }],
     });
     stageSupabaseResponse("mask_models", "select", { data: [] });
     stageSupabaseResponse("patients", "select", {
@@ -263,10 +314,10 @@ describe("runRefitCampaignScan — whose survey answer still counts", () => {
       ],
     });
     // Both orders belong to the same patient.
-    stageSupabaseResponse("shop_orders", "select", {
+    stageSupabaseResponse("fit_sessions", "select", {
       data: [
-        { id: ORDER, patient_id: PATIENT },
-        { id: OLD_ORDER, patient_id: PATIENT },
+        { shop_order_id: ORDER, patient_id: PATIENT },
+        { shop_order_id: OLD_ORDER, patient_id: PATIENT },
       ],
     });
     stageSupabaseResponse("mask_models", "select", { data: [] });
@@ -401,12 +452,16 @@ describe("runRefitCampaignScan — sending", () => {
         },
       ],
     });
-    stageSupabaseResponse("shop_orders", "select", {
-      data: [{ id: ORDER, patient_id: PATIENT }],
+    // Both resolves read fit_sessions now, in call order: first the
+    // surveyed-order → chart lookup, then the dispensed-mask scan.
+    stageSupabaseResponse("fit_sessions", "select", {
+      data: [{ shop_order_id: ORDER, patient_id: PATIENT }],
     });
     stageSupabaseResponse("mask_models", "select", { data: [{ id: "m1" }] });
+    // Carries the discontinued model, so the second trigger genuinely fires
+    // and the single-message assertion below is a real de-duplication.
     stageSupabaseResponse("fit_sessions", "select", {
-      data: [{ patient_id: PATIENT }],
+      data: [{ patient_id: PATIENT, ordered_mask_model_id: "m1" }],
     });
     stageSupabaseResponse("patients", "select", {
       data: {

@@ -273,25 +273,44 @@ async function findReportedBadFits(
   // "leaking" on an old order after the patient's replacement order came
   // back "good": the later good answer cancelled only its own order's
   // verdict, not the patient's.
-  const { data: orders } = (await supabase
-    .from("shop_orders")
-    .select("id, patient_id")
-    .in("id", [...latestByOrder.keys()])) as {
-    data: Array<{ id: string; patient_id: string | null }> | null;
+  //
+  // `fit_sessions` is the bridge, not `shop_orders`: shop_orders carries no
+  // patient_id and no FK to patients, so there is nothing to read there.
+  // fit_sessions.shop_order_id is a real FK to the same order the survey
+  // references and sits beside the patient_id, which is also how
+  // findDiscontinuedMasks below reaches a chart.
+  const { data: sessions, error: sessionErr } = (await supabase
+    .from("fit_sessions")
+    .select("shop_order_id, patient_id")
+    .in("shop_order_id", [...latestByOrder.keys()])
+    .not("patient_id", "is", null)
+    .limit(CANDIDATE_SCAN_LIMIT)) as {
+    data: Array<{
+      shop_order_id: string | null;
+      patient_id: string | null;
+    }> | null;
+    error: { message: string } | null;
   };
+  if (sessionErr) {
+    logger.warn(
+      { event: "refit_campaign.order_patient_query_failed", orgId, err: sessionErr },
+      "refit campaign: could not resolve surveyed orders to patients",
+    );
+    return [];
+  }
 
   const latestByPatient = new Map<
     string,
     { verdict: string; status: string; createdAt: string }
   >();
-  for (const o of orders ?? []) {
+  for (const s of sessions ?? []) {
     // A survey answer we cannot tie to a chart has nobody to contact.
-    if (!o.patient_id) continue;
-    const v = latestByOrder.get(o.id);
+    if (!s.patient_id || !s.shop_order_id) continue;
+    const v = latestByOrder.get(s.shop_order_id);
     if (!v) continue;
-    const existing = latestByPatient.get(o.patient_id);
+    const existing = latestByPatient.get(s.patient_id);
     if (!existing || v.createdAt > existing.createdAt) {
-      latestByPatient.set(o.patient_id, v);
+      latestByPatient.set(s.patient_id, v);
     }
   }
 
