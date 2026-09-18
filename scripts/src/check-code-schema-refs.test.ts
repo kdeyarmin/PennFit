@@ -95,6 +95,15 @@ describe("stripComments", () => {
     expect(tablesOf(src)).toEqual(["real"]);
   });
 
+  it("treats a slash after return as a regex literal", () => {
+    const src = [
+      'const f = () => { return /["\']+/.test(v); };',
+      "// keep stripping comments after the regex",
+      'db.from("real");',
+    ].join("\n");
+    expect(tablesOf(src)).toEqual(["real"]);
+  });
+
   it("does not read a .from inside a regex literal as a table", () => {
     const src = 'const re = /\\.from\\("ghost"\\)/g;';
     expect(tablesOf(src)).toEqual([]);
@@ -454,6 +463,13 @@ describe("extractReferences — chain bounding (false-positive guards)", () => {
   it("skips a select built from an interpolated template", () => {
     const cols = columnsOf('await db.from("t").select(`id, ${extra}`);');
     expect(cols).toEqual([]);
+  });
+
+  it("keeps parsing top-level select columns when embeds contain parentheses", () => {
+    const cols = columnsOf(
+      'await db.from("organizations").select("id, billing_plans(product_scope)");',
+    );
+    expect(cols).toContain("organizations.id");
   });
 
   it("attributes the correct line number to a column on a later line", () => {

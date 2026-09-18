@@ -93,7 +93,7 @@ async function readBy(
   supabase: OrgScopedClient,
   column: "auth_user_id" | "email_lower",
   value: string,
-): Promise<{ raw: unknown; failed: boolean }> {
+): Promise<{ raw: unknown; failed: boolean; found: boolean }> {
   const { data, error } = (await supabase
     .from("shop_customers")
     .select("communication_preferences")
@@ -103,8 +103,12 @@ async function readBy(
     data: Record<string, unknown> | null;
     error: unknown;
   };
-  if (error) return { raw: null, failed: true };
-  return { raw: data?.communication_preferences ?? null, failed: false };
+  if (error) return { raw: null, failed: true, found: false };
+  return {
+    raw: data?.communication_preferences ?? null,
+    failed: false,
+    found: data !== null,
+  };
 }
 
 /**
@@ -125,16 +129,18 @@ export async function resolvePatientCommPrefs(
 
   try {
     let raw: unknown = null;
+    let foundByAuth = false;
     if (authUserId) {
       const byAuth = await readBy(supabase, "auth_user_id", authUserId);
       if (byAuth.failed) return UNKNOWN;
       raw = byAuth.raw;
+      foundByAuth = byAuth.found;
     }
     // Only when the strong link found nothing — an existing portal row
     // that stores no preferences is still that patient's row, and
     // falling through to a shared/stale email match could read someone
     // else's answers.
-    if (!raw && email) {
+    if (!raw && !foundByAuth && email) {
       const byEmail = await readBy(
         supabase,
         "email_lower",

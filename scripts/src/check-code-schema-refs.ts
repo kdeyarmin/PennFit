@@ -158,9 +158,6 @@ export function stripComments(source: string): string {
   let inLine = false;
   let inBlock = false;
   let quote: string | null = null;
-  // Last significant (non-whitespace, non-comment) character emitted, used
-  // only to tell a regex literal from a division.
-  let prev: string | null = null;
 
   while (i < source.length) {
     const c = source[i];
@@ -199,7 +196,6 @@ export function stripComments(source: string): string {
     if (c === '"' || c === "'" || c === "`") {
       quote = c;
       out += c;
-      prev = c;
       i += 1;
       continue;
     }
@@ -218,13 +214,11 @@ export function stripComments(source: string): string {
     // classes (`[^"'\`]`). Treating those as string delimiters desynchronises
     // the scanner: everything after is read as one long string literal, which
     // both invents references and silently swallows real ones.
-    if (c === "/" && startsRegex(prev)) {
+    if (c === "/" && startsRegex(out)) {
       i = skipRegex(source, i);
-      prev = "/";
       continue;
     }
     out += c;
-    if (!/\s/.test(c)) prev = c;
     i += 1;
   }
   return out;
@@ -235,9 +229,51 @@ export function stripComments(source: string): string {
  * Division can only follow a value, so anything that cannot end an
  * expression means a regex starts here.
  */
-function startsRegex(prev: string | null): boolean {
-  if (prev === null) return true;
-  return !/[A-Za-z0-9_$)\]]/.test(prev);
+const REGEX_PREFIX_KEYWORDS = new Set([
+  "await",
+  "case",
+  "delete",
+  "do",
+  "else",
+  "in",
+  "instanceof",
+  "new",
+  "return",
+  "throw",
+  "typeof",
+  "void",
+  "yield",
+]);
+
+function startsRegex(processedSource: string): boolean {
+  let i = processedSource.length - 1;
+  while (i >= 0 && /\s/.test(processedSource[i])) i -= 1;
+  if (i < 0) return true;
+
+  if (
+    i >= 1 &&
+    ((processedSource[i] === "+" && processedSource[i - 1] === "+") ||
+      (processedSource[i] === "-" && processedSource[i - 1] === "-"))
+  ) {
+    return false;
+  }
+
+  const c = processedSource[i];
+  if (c === ")" || c === "]" || c === "}" || c === '"' || c === "'" || c === "`") {
+    return false;
+  }
+  if (/[0-9]/.test(c)) return false;
+
+  if (/[A-Za-z_$]/.test(c)) {
+    let start = i;
+    while (start >= 0 && /[A-Za-z0-9_$]/.test(processedSource[start])) {
+      start -= 1;
+    }
+    const token = processedSource.slice(start + 1, i + 1);
+    return REGEX_PREFIX_KEYWORDS.has(token);
+  }
+
+  return true;
 }
 
 /**
@@ -533,10 +569,13 @@ export function extractReferences(
 
     const body = source.slice(start + m[0].length, chainEnd(source, start));
 
-    for (const s of body.matchAll(/\.select\(\s*([\s\S]*?)\)/g)) {
+    for (const s of body.matchAll(/\.select\(/g)) {
+      const argStart = s.index! + s[0].length - 1;
+      const close = matchingClose(body, argStart);
+      if (close < 0) continue;
       // Only a fully literal argument is safe to parse; a template with
       // `${...}` or a concatenated variable is not.
-      const literal = joinStringLiteral(s[1]);
+      const literal = joinStringLiteral(body.slice(argStart + 1, close));
       if (literal === null) continue;
       const { columns } = parseSelect(literal);
       const line = tableLine + countNewlines(body.slice(0, s.index!));

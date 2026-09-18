@@ -90,7 +90,7 @@ describe("resolvePatientCommPrefs", () => {
     expect(byAuth?.args[1]).toBe("auth-1");
   });
 
-  it("falls back to email when the portal row stores nothing", async () => {
+  it("falls back to email when the portal lookup finds no row", async () => {
     stageSupabaseResponse("shop_customers", "select", { data: null });
     stageSupabaseResponse("shop_customers", "select", {
       data: { communication_preferences: { smsTransactional: true } },
@@ -104,6 +104,22 @@ describe("resolvePatientCommPrefs", () => {
     expect(res.explicit).toBe(true);
     expect(res.prefs.smsTransactional).toBe(true);
     expect(joinColumns()).toEqual(["auth_user_id", "email_lower"]);
+  });
+
+  it("does not fall back to email when the portal row exists with null preferences", async () => {
+    stageSupabaseResponse("shop_customers", "select", {
+      data: { communication_preferences: null },
+    });
+
+    const res = await resolvePatientCommPrefs(client(), {
+      email: "p@example.com",
+      portalAuthUserId: "auth-1",
+    });
+
+    expect(res.unknown).toBe(false);
+    expect(res.explicit).toBe(false);
+    expect(getSupabaseCallCount("shop_customers", "select")).toBe(1);
+    expect(joinColumns()).toEqual(["auth_user_id"]);
   });
 
   it("reports unknown — not defaults — when the read fails", async () => {
