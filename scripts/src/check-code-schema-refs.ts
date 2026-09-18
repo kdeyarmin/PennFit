@@ -259,7 +259,14 @@ function startsRegex(processedSource: string): boolean {
   }
 
   const c = processedSource[i];
-  if (c === ")" || c === "]" || c === "}" || c === '"' || c === "'" || c === "`") {
+  if (
+    c === ")" ||
+    c === "]" ||
+    c === "}" ||
+    c === '"' ||
+    c === "'" ||
+    c === "`"
+  ) {
     return false;
   }
   if (/[0-9]/.test(c)) return false;

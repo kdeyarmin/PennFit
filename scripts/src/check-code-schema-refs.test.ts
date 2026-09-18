@@ -97,7 +97,7 @@ describe("stripComments", () => {
 
   it("treats a slash after return as a regex literal", () => {
     const src = [
-      'const f = () => { return /["\']+/.test(v); };',
+      "const f = () => { return /[\"']+/.test(v); };",
       "// keep stripping comments after the regex",
       'db.from("real");',
     ].join("\n");
