@@ -1,8 +1,24 @@
 // /admin/product-hcpcs-map — SKU → HCPCS catalog admin.
 //
-//   GET   /admin/product-hcpcs-map?lookupKind=item_sku&q=...
-//   POST  /admin/product-hcpcs-map        admin-only
-//   PATCH /admin/product-hcpcs-map/:id    admin-only
+//   GET   /admin/product-hcpcs-map?lookupKind=item_sku&q=...  reports.read
+//   POST  /admin/product-hcpcs-map        platform admin only
+//   PATCH /admin/product-hcpcs-map/:id    platform admin only
+//
+// `resupply.product_hcpcs_map` is platform-GLOBAL: it has no `org_id`, and its
+// uniqueness key is `(lookup_kind, lookup_value)` with no tenant in it. So the
+// rows here are shared reference data, and the writes are gated one level above
+// tenant admin (see requirePlatformAdminForGlobalWrite).
+//
+// Leaving the writes on `requireAdminOnly` made them cross-tenant in two ways
+// that both reach real 837P claims, since claim-builder reads `hcpcs_code` and
+// `default_billed_cents` off these rows:
+//   * a second tenant mapping a SKU the first already mapped got a duplicate-key
+//     failure — the global unique index left it no row of its own to create; and
+//   * PATCH is only `.eq("id", …)`, which the org-scoped client cannot narrow on
+//     a table with no `org_id`, so editing "your" mapping rewrote the HCPCS code
+//     and billed amount every other tenant bills with.
+// Tenant-specific money already has an org-scoped home in
+// `resupply.payer_fee_schedules` (allowed amounts per payer per tenant).
 
 import { Router, type IRouter } from "express";
 import { z } from "zod";
@@ -17,6 +33,7 @@ import {
   requireAdminOnly,
   requirePermission,
 } from "../../middlewares/requireAdmin";
+import { requirePlatformAdminForGlobalWrite } from "../../middlewares/requirePlatformAdmin";
 
 const router: IRouter = Router();
 
@@ -120,6 +137,7 @@ router.get(
 router.post(
   "/admin/product-hcpcs-map",
   requireAdminOnly,
+  requirePlatformAdminForGlobalWrite,
   adminRateLimit({ name: "product_hcpcs_map.create", preset: "sensitive" }),
   async (req, res) => {
     const parsed = upsertBody.safeParse(req.body);
@@ -188,6 +206,7 @@ router.post(
 router.patch(
   "/admin/product-hcpcs-map/:id",
   requireAdminOnly,
+  requirePlatformAdminForGlobalWrite,
   adminRateLimit({ name: "product_hcpcs_map.update", preset: "mutation" }),
   async (req, res) => {
     const idParsed = idParam.safeParse(req.params);

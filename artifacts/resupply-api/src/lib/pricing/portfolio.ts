@@ -176,11 +176,16 @@ export class PortfolioReviewError extends PricingError {
     super(code);
   }
 }
-/** A selected change always previews the complete future price list. */
+/** A selected change always previews the complete future price list.
+ * Every entry resolves against ONE instant: a batch of up to 100 contexts spans
+ * many round trips, and a per-entry clock would let evidence lapse mid-batch and
+ * hand neighbouring entries different validity windows.
+ */
 export async function preparePortfolioBatch(
   scoped: OrgScopedClient,
   scenarios: Scenario[],
   mayVerify: boolean,
+  now = new Date(),
 ) {
   const previous = await getActivePrices(scoped, undefined, true);
   const previousKeys =
@@ -210,7 +215,10 @@ export async function preparePortfolioBatch(
     }
   > = [];
   for (const scenario of scenarios) {
-    const resolved = await resolveScenario(scoped, scenario, { mayVerify });
+    const resolved = await resolveScenario(scoped, scenario, {
+      mayVerify,
+      now,
+    });
     entries.push({
       ...resolved,
       approvalClass: approvalClass(resolved),
@@ -221,7 +229,11 @@ export async function preparePortfolioBatch(
   const failures: Array<{ path: string; message: string }> = [];
   for (const entry of retained) {
     try {
-      const resolved = await refreshPortfolioScenario(scoped, entry.scenario);
+      const resolved = await refreshPortfolioScenario(
+        scoped,
+        entry.scenario,
+        now,
+      );
       if (approvalClass(resolved) !== "firm")
         throw new PricingError("retained_price_no_longer_meets_policy");
       entries.push({

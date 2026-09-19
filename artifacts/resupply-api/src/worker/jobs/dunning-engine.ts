@@ -31,10 +31,10 @@ import {
   applyTenantStatementIdentity,
   pickStatementChannel,
   readStatementMessagingConfig,
-  readStatementPrefs,
   sendStatementMessage,
 } from "../../lib/billing/statement-send";
 import { practiceTodayIso } from "../../lib/billing-date";
+import { resolvePatientCommPrefs } from "../../lib/patient-comm-prefs";
 import { isFeatureEnabled } from "../../lib/feature-flags";
 import { logger } from "../../lib/logger";
 import { forEachActiveOrg } from "../lib/for-each-active-org";
@@ -271,18 +271,37 @@ export async function runDunningTickForOrg(
     }
 
     // decision.type === "send" — choose a consent-safe channel and deliver.
+    //
+    // `communication_preferences` is NOT on this table — it lives on
+    // `shop_customers`, reached via the two-hop join in
+    // `resolvePatientCommPrefs`. Selecting it here returned 42703, which
+    // the `throw` below turned into a dead tick for the whole org: every
+    // patient with a balance stalled at whichever step they were on.
     const { data: patient, error: patientErr } = await supabase
       .from("patients")
-      .select("email, phone_e164, communication_preferences")
+      .select("email, phone_e164, portal_auth_user_id")
       .eq("id", run.patient_id)
       .limit(1)
       .maybeSingle();
     // Don't let a transient read error masquerade as "patient has no contact
     // info" (which would wrongly skip the dunning send). Fail the tick.
     if (patientErr) throw patientErr;
-    const prefs = readStatementPrefs(
-      (patient?.communication_preferences ?? null) as never,
-    );
+    const resolved = await resolvePatientCommPrefs(supabase, {
+      email: patient?.email ?? null,
+      portalAuthUserId: (patient?.portal_auth_user_id as string | null) ?? null,
+    });
+    // Same reasoning as the read error above, and the same remedy: leave
+    // the run's `next_action_at` alone so the next tick retries, rather
+    // than advancing the ladder on a consent record we could not read.
+    if (resolved.unknown) {
+      stats.skipped += 1;
+      await logEvent(supabase, run.id, run.current_step, "none", "skipped", {
+        balance,
+        detail: "consent_unavailable",
+      });
+      continue;
+    }
+    const prefs = resolved.prefs;
     const pick = pickStatementChannel(
       prefs,
       { hasEmail: !!patient?.email, hasPhone: !!patient?.phone_e164 },

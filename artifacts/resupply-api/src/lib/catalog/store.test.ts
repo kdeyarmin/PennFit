@@ -6,10 +6,18 @@
 // count trains operators to ignore the badge; silently treating NULL as 0
 // would flag every consumable a tenant deliberately left untracked.
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, beforeEach } from "vitest";
+
+import {
+  installSupabaseMock,
+  stageSupabaseResponse,
+  getSupabaseFilterCalls,
+} from "../../test-helpers/supabase-mock";
+
+const supabaseMock = installSupabaseMock();
 
 import { DEFAULT_LOW_STOCK_THRESHOLD } from "./categories";
-import { projectProduct, type ProductRow } from "./store";
+import { listProducts, projectProduct, type ProductRow } from "./store";
 
 function row(over: Partial<ProductRow> = {}): ProductRow {
   return {
@@ -96,5 +104,44 @@ describe("projectProduct — low-stock semantics", () => {
     expect(p.modelNumber).toBe("63052");
     expect(p.description).toBe("d");
     expect(p.unitOfMeasure).toBe("each");
+  });
+});
+
+describe("listProducts — search escaping", () => {
+  beforeEach(() => {
+    supabaseMock.reset();
+  });
+
+  /** The `or=` filter string the read applied, or null if it applied none. */
+  async function searchFilter(search: string): Promise<string | null> {
+    stageSupabaseResponse("products", "select", { data: [], count: 0 });
+    await listProducts("00000000-0000-4000-8000-000000000001", { search });
+    const or = getSupabaseFilterCalls("products", "select").find(
+      (f) => f.verb === "or",
+    );
+    return or ? String(or.args[0]) : null;
+  }
+
+  it("keeps the searched-for string intact through a comma", async () => {
+    // Regression: delimiters were REPLACED WITH SPACES to keep the `.or()`
+    // logic tree parseable, which quietly changed what was being searched
+    // for — "N30i, small" went looking for the literal "N30i  small" and
+    // matched nothing, on a catalog where the row was right there. Quoting
+    // is what makes the search match; stripping only made it parse.
+    expect(await searchFilter("N30i, small")).toBe(
+      'sku.ilike."*N30i, small*",name.ilike."*N30i, small*"',
+    );
+  });
+
+  it("escapes LIKE wildcards instead of leaving them live", async () => {
+    // `%` and `_` were passed straight through, so a search for "50%"
+    // matched every SKU containing "50" — and one for "A_B" matched "AxB".
+    expect(await searchFilter("50%")).toBe(
+      "sku.ilike.*50\\%*,name.ilike.*50\\%*",
+    );
+  });
+
+  it("applies no filter for a whitespace-only search", async () => {
+    expect(await searchFilter("   ")).toBeNull();
   });
 });

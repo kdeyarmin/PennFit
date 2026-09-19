@@ -276,10 +276,63 @@ describe("runLowStockAlerts: delivery guards", () => {
     listTrackedMock.mockResolvedValue([product("CUSH-P10", "Cushion", 1, 5)]);
     stageSupabaseResponse("low_stock_alert_state", "update", { data: [] });
     stageSupabaseResponse("low_stock_alert_state", "select", { data: [] });
+    stageSupabaseResponse("low_stock_alert_state", "upsert", { data: null });
 
     const stats = await runLowStockAlerts();
     expect(stats.emailSent).toBe(false);
     expect(sendEmailMock).not.toHaveBeenCalled();
+  });
+
+  it("still records state when email is unconfigured, because Slack already fired", async () => {
+    // The Slack ops digest is dispatched before the recipient and SendGrid
+    // checks, deliberately — it goes out "independent of email config". So an
+    // unconfigured SendGrid is NOT a no-delivery run, and returning without
+    // upserting left the cooldown unstarted: the same alertable set was
+    // recomputed and the identical digest re-posted on every tick for as long
+    // as the SKU stayed down. The sibling no-recipients case above always got
+    // this right; this path did not.
+    sendgridShouldThrow.current = true;
+    listTrackedMock.mockResolvedValue([product("CUSH-P10", "Cushion", 1, 5)]);
+    stageSupabaseResponse("low_stock_alert_state", "update", { data: [] });
+    stageSupabaseResponse("low_stock_alert_state", "select", { data: [] });
+    stageSupabaseResponse("low_stock_alert_state", "upsert", { data: null });
+
+    await runLowStockAlerts();
+
+    expect(
+      getSupabaseCallCount("low_stock_alert_state", "upsert"),
+    ).toBeGreaterThan(0);
+    const rows = getSupabaseWritePayloads(
+      "low_stock_alert_state",
+      "upsert",
+    ).flat() as Array<{ product_id: string; last_alerted_at: string | null }>;
+    expect(rows.map((r) => r.product_id)).toEqual(["CUSH-P10"]);
+    // The cooldown only starts if last_alerted_at is actually stamped.
+    expect(rows[0]?.last_alerted_at).toBeTruthy();
+  });
+
+  it("re-alerts on the next tick if the unconfigured-email run had NOT recorded state", async () => {
+    // Guards the mechanism the fix relies on: a stamped last_alerted_at inside
+    // the cooldown suppresses the repeat. If the upsert above regresses, this
+    // is what the tenant's Slack channel experiences instead.
+    sendgridShouldThrow.current = true;
+    listTrackedMock.mockResolvedValue([product("CUSH-P10", "Cushion", 1, 5)]);
+    stageSupabaseResponse("low_stock_alert_state", "update", { data: [] });
+    stageSupabaseResponse("low_stock_alert_state", "select", {
+      data: [
+        {
+          product_id: "CUSH-P10",
+          last_alerted_at: new Date().toISOString(),
+          last_resolved_at: null,
+        },
+      ],
+    });
+
+    const stats = await runLowStockAlerts();
+
+    // Within cooldown → nothing alertable → no repeat digest, no state churn.
+    expect(stats.newAlerts).toBe(0);
+    expect(getSupabaseCallCount("low_stock_alert_state", "upsert")).toBe(0);
   });
 });
 

@@ -131,6 +131,52 @@ describe("resolveTenantProductScope", () => {
     expect(await resolveTenantProductScope("org-pw4")).toBe("full");
   });
 
+  it("reuses a resolved `locked` scope when a later read fails", async () => {
+    // Regression: a failed read resolved to "full", which handed the entire
+    // admin console — every operational module, PHI included — back to a
+    // tenant the previous read had resolved as unpaid, for as long as the
+    // failure lasted. "We cannot read the scope" is not "this tenant is
+    // unrestricted"; the last answer we actually got is the better guess.
+    vi.useFakeTimers();
+    try {
+      process.env.BILLING_PAYWALL_ENFORCED = "1";
+      state.orgResult = { data: { billing_required: true }, error: null };
+      expect(await resolveTenantProductScope("org-stale1")).toBe("locked");
+
+      // Past the cache TTL, so the next call re-reads — and the read fails.
+      vi.advanceTimersByTime(10_000);
+      state.throwOnQuery = true;
+      expect(await resolveTenantProductScope("org-stale1")).toBe("locked");
+
+      // Recovery is picked up on the next expiry, not held for the process
+      // lifetime: the tenant paid, the flag cleared, the read succeeds.
+      vi.advanceTimersByTime(10_000);
+      state.throwOnQuery = false;
+      state.orgResult = { data: { billing_required: false }, error: null };
+      state.result = { data: null, error: null };
+      expect(await resolveTenantProductScope("org-stale1")).toBe("full");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("reuses a resolved `mask_fitter` scope when a later read errors", async () => {
+    vi.useFakeTimers();
+    try {
+      state.result = {
+        data: { billing_plans: { product_scope: "mask_fitter" } },
+        error: null,
+      };
+      expect(await resolveTenantProductScope("org-stale2")).toBe("mask_fitter");
+
+      vi.advanceTimersByTime(10_000);
+      state.result = { data: null, error: { message: "boom" } };
+      expect(await resolveTenantProductScope("org-stale2")).toBe("mask_fitter");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("caches the resolved scope within the TTL", async () => {
     state.result = {
       data: { billing_plans: { product_scope: "mask_fitter" } },

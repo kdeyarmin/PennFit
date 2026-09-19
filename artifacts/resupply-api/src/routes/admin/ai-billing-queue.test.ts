@@ -19,6 +19,7 @@ import {
   type MockAdminCtx,
 } from "../../test-helpers/auth-mocks";
 import {
+  getSupabaseSelectColumns,
   installSupabaseMock,
   stageSupabaseResponse,
 } from "../../test-helpers/supabase-mock";
@@ -179,5 +180,29 @@ describe("GET /admin/billing/ai-queue — normal path", () => {
     const res = await request(makeApp()).get("/admin/billing/ai-queue");
 
     expect(res.body.generatedAt).toBeDefined();
+  });
+
+  // Regression: `claim_denial_analyses` and `insurance_claims` are joined by TWO
+  // foreign keys — `claim_denial_analyses.claim_id -> insurance_claims.id` and
+  // `insurance_claims.latest_denial_analysis_id -> claim_denial_analyses.id`.
+  // A bare `insurance_claims!inner(...)` embed is therefore ambiguous, and
+  // PostgREST refuses it with PGRST201 / HTTP 300 rather than choosing a side.
+  // The route rethrows any query error, so the bare embed made this endpoint
+  // 500 on every request — and since `ai_billing.suggestions` is seeded ON
+  // (migration 0149), the AI billing queue was dead for every tenant. Staged
+  // mock responses cannot reproduce that, so assert the FK hint directly.
+  it("names the FK on the insurance_claims embed so PostgREST can resolve it", async () => {
+    stubAdmin();
+    stageSupabaseResponse("insurance_claims", "select", { data: [] });
+    stageSupabaseResponse("insurance_claims", "select", { data: [] });
+    stageSupabaseResponse("insurance_claims", "select", { data: [] });
+    stageSupabaseResponse("claim_denial_analyses", "select", { data: [] });
+
+    await request(makeApp()).get("/admin/billing/ai-queue");
+
+    const [columns] = getSupabaseSelectColumns("claim_denial_analyses");
+    expect(columns).toContain(
+      "insurance_claims!claim_denial_analyses_claim_id_fkey!inner(patient_id)",
+    );
   });
 });

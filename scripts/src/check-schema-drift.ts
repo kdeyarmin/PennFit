@@ -139,8 +139,10 @@ export function parseMigrationsFromText(
 
   const reAlter =
     /ALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?("?\w+"?\s*\.\s*"?\w+"?)(.*?);/gis;
+  // The IF NOT EXISTS marker is captured, not skipped: it decides whether a
+  // re-create's inline column list may be trusted (see below).
   const reCreate =
-    /CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?("?\w+"?\s*\.\s*"?\w+"?)\s*\(/gi;
+    /CREATE\s+TABLE\s+(IF\s+NOT\s+EXISTS\s+)?("?\w+"?\s*\.\s*"?\w+"?)\s*\(/gi;
   const reDropTable =
     /DROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?("?\w+"?\s*\.\s*"?\w+"?)/gi;
   const reAddCol =
@@ -154,13 +156,25 @@ export function parseMigrationsFromText(
     const sql = stripComments(file.sql);
 
     for (const m of sql.matchAll(reCreate)) {
-      const loc = normTable(m[1]);
+      const ifNotExists = Boolean(m[1]);
+      const loc = normTable(m[2]);
       if (!loc) continue;
       const k = key(loc.schema, loc.table);
+      // A defensive `CREATE TABLE IF NOT EXISTS` for a table an earlier
+      // migration already created is a NO-OP on every real database, so its
+      // inline column list is not authoritative — and it is routinely a stale
+      // copy of the original definition. Merging it anyway resurrects columns
+      // a later migration dropped: 0090 re-declares admin_users from 0020,
+      // including the two Clerk columns 0023 removed, which made the daily
+      // drift job report two phantom missing columns against a correct
+      // production database.
+      const alreadyKnown = expectedTables.has(k) && !droppedTables.has(k);
+      const isNoop = ifNotExists && alreadyKnown;
       expectedTables.add(k);
       droppedTables.delete(k);
       const set = expectedColumns.get(k) ?? new Set<string>();
       expectedColumns.set(k, set);
+      if (isNoop) continue;
       for (const column of extractCreateTableColumns(sql, m)) {
         set.add(column);
       }

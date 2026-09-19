@@ -18,6 +18,7 @@ import { z } from "zod";
 import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { respondInvalidBody } from "../../lib/http-validation";
+import { logger } from "../../lib/logger";
 import {
   adminRateLimit,
   adminReadRateLimiter,
@@ -89,19 +90,34 @@ router.get(
     }
     const rows = (data ?? []) as MaskFitRow[];
 
-    // Resolve patient ids from the orders (single batched lookup).
+    // Resolve patient ids from the orders (single batched lookup) through
+    // `fit_sessions`. `shop_orders` has no patient_id and no FK to patients,
+    // so reading one there returned nothing and every row rendered with a
+    // null patientId — a clinician saw a leaking-mask report with no chart
+    // to open. fit_sessions.shop_order_id is a real FK to the surveyed order
+    // and sits beside patient_id.
     const orderIds = [...new Set(rows.map((r) => r.order_id))];
     const patientByOrder = new Map<string, string>();
     if (orderIds.length > 0) {
-      const { data: orders } = await supabase
-        .from("shop_orders")
-        .select("id, patient_id")
-        .in("id", orderIds);
-      for (const o of (orders ?? []) as Array<{
-        id: string;
+      const { data: sessions, error: sessionErr } = await supabase
+        .from("fit_sessions")
+        .select("shop_order_id, patient_id")
+        .in("shop_order_id", orderIds)
+        .not("patient_id", "is", null);
+      // The worklist itself is still actionable without the chart link, so a
+      // failure here degrades the rows rather than failing the request.
+      if (sessionErr) {
+        logger.warn(
+          { event: "mask_fit_worklist.patient_lookup_failed", err: sessionErr },
+          "mask-fit worklist: could not resolve orders to patients",
+        );
+      }
+      for (const s of (sessions ?? []) as Array<{
+        shop_order_id: string | null;
         patient_id: string | null;
       }>) {
-        if (o.patient_id) patientByOrder.set(o.id, o.patient_id);
+        if (s.shop_order_id && s.patient_id)
+          patientByOrder.set(s.shop_order_id, s.patient_id);
       }
     }
 

@@ -23,9 +23,16 @@ import { logger } from "../lib/logger";
  * Logging:
  *   The pino-http logger already emits one line per request with
  *   method/url/status. We add ONE additional line per 5xx with the
- *   error class + message + the response's request id so an
- *   operator can grep both lines as a pair. Stack traces only
- *   appear in the log, never in the response.
+ *   error class + whatever diagnostic fields survive redaction + the
+ *   response's request id, so an operator can grep both lines as a
+ *   pair. Everything is nested under `err` because pino's redaction
+ *   allowlist (`lib/logger.ts`) is keyed on `err.*`: `err.message`,
+ *   `err.details`, `err.hint`, and `err.stack` are masked there
+ *   because they can echo the offending row's column values, while
+ *   `err.code` passes through. So the actionable signal on a data-layer
+ *   500 is the CODE (`PGRST201`, `23505`, `42501`, …). Assigning any of
+ *   those fields at the top level instead would bypass redaction —
+ *   don't. Stack traces never appear in the response.
  *
  * Headers-already-sent:
  *   If the route handler started streaming a response before
@@ -57,7 +64,16 @@ export function errorHandler(
     {
       event: "unhandled_route_error",
       errName,
-      ...(err instanceof Error ? { err } : {}),
+      // Any non-null object, not just `Error`. supabase-js/PostgREST and
+      // node-postgres reject with PLAIN OBJECTS (`{ code, message, details,
+      // hint }`), and Supabase is this app's only data path — so plain-object
+      // rejections are the most common cause of a 5xx here. The old
+      // `err instanceof Error` guard dropped them whole, leaving the operator
+      // with `errName: "object"` and nothing to act on. pino's default `err`
+      // serializer handles a plain object fine and the redaction allowlist
+      // still masks the PHI-bearing text fields, so this surfaces `err.code`
+      // without widening what gets logged.
+      ...(typeof err === "object" && err !== null ? { err } : {}),
       requestId,
     },
     "unhandled error in route handler",

@@ -188,8 +188,11 @@ async function provisionFeatureFlags(
  * every catalog mask is dispensable — so this changes nothing about what
  * gets recommended. It only makes the provenance real.
  *
- * `formularies` has a partial UNIQUE (org_id) WHERE is_default, so a
- * re-run is a no-op rather than a duplicate.
+ * `formularies` has a partial UNIQUE (org_id) WHERE status = 'active'
+ * (`formularies_org_single_active_idx`, migration 0482), so a re-run is a
+ * no-op rather than a duplicate. 'active' is also how every reader finds the
+ * row — see `catalog-store.ts` and the /admin/formulary routes; there is no
+ * separate default-marking column.
  */
 async function provisionDefaultFormulary(
   raw: RawClient,
@@ -213,7 +216,6 @@ async function provisionDefaultFormulary(
       name: "Default formulary",
       status: "active",
       default_posture: "open",
-      is_default: true,
       version: 1,
       notes:
         "Created automatically when this workspace was provisioned. Open " +

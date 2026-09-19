@@ -52,6 +52,12 @@ const DEFAULT_STALE_MS = 30 * 60 * 1000;
 /** Cap per-tenant releases per tick so a mass incident finishes over ticks. */
 const MAX_RELEASE_PER_ORG = 500;
 
+/**
+ * Cap on the transmission-evidence page. Hitting it is treated as "cannot
+ * prove", not as "no evidence" — see the overlap query below.
+ */
+const EVIDENCE_SCAN_LIMIT = 500;
+
 const TRANSMITTED_SUBMISSION_STATUSES = ["uploaded", "queued"] as const;
 
 export interface ClaimsSubmittingWatchdogStats {
@@ -111,9 +117,20 @@ export async function runClaimsSubmittingWatchdogForOrg(
     stuck.filter((r) => r.office_ally_submission_id).map((r) => r.id),
   );
 
-  // Also refuse to release anything listed on a recent uploaded/queued
-  // submission (covers the "upload ok, claim status update failed" path
-  // where office_ally_submission_id was never stamped on the claim).
+  // Also refuse to release anything listed on an uploaded/queued submission
+  // (covers the "upload ok, claim status update failed" path where
+  // office_ally_submission_id was never stamped on the claim).
+  //
+  // Match on the CANDIDATE IDS, not on a time window. A claim only becomes a
+  // candidate once it has been locked LONGER than staleMs, so the submission
+  // that transmitted it is by construction OLDER than `cutoffIso` — any
+  // `submitted_at >= cutoffIso` filter excludes exactly the evidence being
+  // looked for, and a missing match here releases a claim that Office Ally
+  // already has, producing a second transmission of the same claim. There is
+  // no safe lookback constant either: the window would have to exceed the
+  // oldest lock, which is unbounded. `status in (uploaded, queued)` is a
+  // transient set served by office_ally_submissions_status_idx, so the array
+  // overlap runs over few rows.
   const candidateIds = stuck
     .map((r) => r.id)
     .filter((id) => !alreadyLinked.has(id));
@@ -124,17 +141,24 @@ export async function runClaimsSubmittingWatchdogForOrg(
       .from("office_ally_submissions")
       .select("id, attempted_claim_ids, status")
       .in("status", [...TRANSMITTED_SUBMISSION_STATUSES])
-      .gte("created_at", cutoffIso)
-      .order("created_at", { ascending: false })
-      .limit(200);
+      .overlaps("attempted_claim_ids", candidateIds)
+      .limit(EVIDENCE_SCAN_LIMIT);
     if (subErr) throw subErr;
-    const candidateSet = new Set(candidateIds);
-    for (const sub of (subs ?? []) as Array<{
+    const rows = (subs ?? []) as Array<{
       attempted_claim_ids: string[] | null;
       status: string;
-    }>) {
-      for (const id of sub.attempted_claim_ids ?? []) {
-        if (candidateSet.has(id)) transmittedIds.add(id);
+    }>;
+    if (rows.length >= EVIDENCE_SCAN_LIMIT) {
+      // Truncated: absence of a match no longer proves a claim was not
+      // transmitted, so hold every candidate for manual review rather than
+      // risk double-billing the ones whose evidence fell outside the page.
+      for (const id of candidateIds) transmittedIds.add(id);
+    } else {
+      const candidateSet = new Set(candidateIds);
+      for (const sub of rows) {
+        for (const id of sub.attempted_claim_ids ?? []) {
+          if (candidateSet.has(id)) transmittedIds.add(id);
+        }
       }
     }
   }

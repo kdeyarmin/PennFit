@@ -104,12 +104,16 @@ describe("runOutreachPlaybookSweep — multi-tenant fan-out", () => {
         },
       ],
     });
+    // No `communication_preferences` here: that column is on
+    // shop_customers, not patients. Selecting it used to 42703 and skip
+    // every run — see outreach-playbook-tick.consent.test.ts.
     stageSupabaseResponse("patients", "select", {
       data: {
         id: "pat-1",
         status: "active",
         legal_first_name: "Sam",
-        communication_preferences: null,
+        email: null,
+        portal_auth_user_id: null,
         timezone: null,
         address: null,
       },

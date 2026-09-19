@@ -1297,10 +1297,26 @@ async function sweepStaleRequests(
   // ones were worked — the worklist would quietly be incomplete for
   // exactly the tenant most in need of it.
   for (let page = 0; page < MAX_PAGES; page += 1) {
+    // The chart comes from the fit session, not from the request.
+    //
+    // `fitter_fit_requests` has NO `patient_id` column — a request is
+    // filed by somebody who may not have a chart yet (that is the point
+    // of lead capture), and it reaches one only through
+    // `fit_session_id`. Selecting `patient_id` here returned PostgREST
+    // 42703, which the `throw` below turned into a dead sweep: the
+    // "nobody has worked this request" alert never fired for any tenant,
+    // so a patient who asked to be contacted could sit in the queue
+    // indefinitely with no escalation. Since `fitter.lead_capture_only`
+    // is seeded ON for every tenant, this queue is the primary path.
+    //
+    // The FK is named explicitly so a second `fit_sessions` reference
+    // added later turns into a compile-visible edit here rather than a
+    // silent PGRST201 ambiguity at runtime.
     const { data, error } = await ctx.supabase
       .from("fitter_fit_requests")
       .select(
-        "id, status, patient_id, fit_session_id, request_type, created_at",
+        "id, status, fit_session_id, request_type, created_at, " +
+          "fit_sessions!fitter_fit_requests_fit_session_id_fkey(patient_id)",
       )
       .eq("status", "new")
       .lte("created_at", staleBefore)
@@ -1309,10 +1325,10 @@ async function sweepStaleRequests(
     if (error) throw error;
     const rows = (data ?? []) as unknown as Array<{
       id: string;
-      patient_id: string | null;
       fit_session_id: string | null;
       request_type: string;
       created_at: string;
+      fit_sessions: { patient_id: string | null } | null;
     }>;
     if (rows.length === 0) break;
 
@@ -1329,7 +1345,11 @@ async function sweepStaleRequests(
           status: "open",
           fit_request_id: request.id,
           fit_session_id: request.fit_session_id,
-          patient_id: request.patient_id,
+          // Nullable on the alert table, and legitimately null for a
+          // request filed before any chart exists. The alert is about the
+          // REQUEST going unworked, so it must still be raised without
+          // one; staff work it from the request itself.
+          patient_id: request.fit_sessions?.patient_id ?? null,
           detail: {
             request_type: request.request_type,
             // Raise-time record. The page shows the LIVE wait computed

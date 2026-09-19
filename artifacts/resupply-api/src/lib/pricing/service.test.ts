@@ -812,7 +812,7 @@ describe("explicit portfolio refresh", () => {
     ];
     const selected = structuredClone(old);
     selected.lines[0].unitAmountCents = 11000;
-    const result = await preparePortfolioBatch(scoped, [selected], true);
+    const result = await preparePortfolioBatch(scoped, [selected], true, now);
     expect(result.expectedActivePriceListId).toBe(id(12));
     expect(result.entries).toHaveLength(2);
     expect(result.entries.map((entry) => entry.changeKind)).toEqual([
@@ -847,7 +847,7 @@ describe("explicit portfolio refresh", () => {
       { id: id(12), entries: [{ scenario: selected }, { scenario: retained }] },
     ];
     await expect(
-      preparePortfolioBatch(scoped, [selected], true),
+      preparePortfolioBatch(scoped, [selected], true, now),
     ).rejects.toMatchObject({
       code: "retained_context_requires_review",
       issues: [{ path: "insurance:MASK:2", message: "stale_dependencies" }],

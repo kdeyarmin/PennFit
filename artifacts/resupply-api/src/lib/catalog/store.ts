@@ -11,7 +11,11 @@
 // atomic, serialized unit. A plain UPDATE from here would lose a
 // concurrent decrement and leave the ledger disagreeing with the balance.
 
-import { getOrgScopedClient, type Database } from "@workspace/resupply-db";
+import {
+  escapePostgRESTContainsPattern,
+  getOrgScopedClient,
+  type Database,
+} from "@workspace/resupply-db";
 
 import { autoClearBackorderForSku } from "../backorder/auto-clear-on-restock";
 import { autoDispatchBackInStockOnRestock } from "../back-in-stock/auto-dispatch-on-restock";
@@ -92,10 +96,20 @@ export async function listProducts(
   if (!opts.includeInactive) q = q.eq("active", true);
   if (opts.category) q = q.eq("category", opts.category);
   if (opts.search) {
-    // Escape PostgREST's `or` filter metacharacters so a search for
-    // "N30i,mask" can't smuggle an extra condition into the expression.
-    const safe = opts.search.replace(/[(),*]/g, " ").trim();
-    if (safe) q = q.or(`sku.ilike.*${safe}*,name.ilike.*${safe}*`);
+    // Escape via the shared helper rather than by DELETING the characters
+    // that would break the `.or()` logic tree. Stripping them kept the
+    // filter parseable but made the search wrong in both directions: a
+    // comma became a space, so "N30i, small" searched for the literal
+    // "N30i  small" and matched nothing a staff member could see in the
+    // list beside it; and `%` / `_` were left in place as LIKE wildcards,
+    // so "50%" matched every SKU containing "50". The helper escapes the
+    // wildcards and quotes the delimiters, which is what makes both cases
+    // match the way the box reads.
+    const search = opts.search.trim();
+    if (search) {
+      const pattern = escapePostgRESTContainsPattern(search);
+      q = q.or(`sku.ilike.${pattern},name.ilike.${pattern}`);
+    }
   }
 
   const limit = Math.min(Math.max(opts.limit ?? 50, 1), 200);

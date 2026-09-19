@@ -16,7 +16,10 @@ import { Router, type IRouter, type Request, type Response } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import {
+  escapePostgRESTContainsPattern,
+  getSupabaseServiceRoleClient,
+} from "@workspace/resupply-db";
 
 import { redactDbErr } from "../../lib/redact-db-err";
 import { logger } from "../../lib/logger";
@@ -97,10 +100,16 @@ router.get(
       .order("created_at", { ascending: false })
       .limit(1000);
     if (search) {
-      // PostgREST OR filter across email + name + company.
-      const safe = search.replace(/[%,()]/g, " ");
+      // PostgREST OR filter across email + name + company. Escape through
+      // the shared helper instead of DELETING the characters that would
+      // break the logic tree: replacing them with spaces kept the filter
+      // parseable but searched for the wrong string, so looking up the
+      // contact saved as "Acme, Inc." (or any name with a comma or parens)
+      // returned nothing at all. The helper quotes those instead, and
+      // escapes the `%`/`_` wildcards this previously left in place.
+      const pattern = escapePostgRESTContainsPattern(search);
       query = query.or(
-        `email.ilike.%${safe}%,name.ilike.%${safe}%,company.ilike.%${safe}%`,
+        `email.ilike.${pattern},name.ilike.${pattern},company.ilike.${pattern}`,
       );
     }
     if (tag) query = query.contains("tags", [tag]);

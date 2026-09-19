@@ -38,11 +38,7 @@
 
 import type PgBoss from "pg-boss";
 
-import {
-  DEFAULT_COMMUNICATION_PREFERENCES,
-  getOrgScopedClient,
-  type CommunicationPreferences,
-} from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 import {
   sendReminderEmail,
   sendReminderSms,
@@ -59,6 +55,7 @@ import {
   shouldSendEmail,
   shouldSendSms,
 } from "../../lib/comm-prefs.js";
+import { resolvePatientCommPrefs } from "../../lib/patient-comm-prefs.js";
 import { getCompanyInfo } from "../../lib/company-info.js";
 import { isFeatureEnabled } from "../../lib/feature-flags.js";
 import {
@@ -163,16 +160,6 @@ function readMessagingConfig(env: NodeJS.ProcessEnv = process.env): {
   }
 
   return { sms, email, hmacKeyReady: hasLinkHmacKey(env) };
-}
-
-function parsePrefs(raw: unknown): CommunicationPreferences {
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
-    return DEFAULT_COMMUNICATION_PREFERENCES;
-  }
-  return {
-    ...DEFAULT_COMMUNICATION_PREFERENCES,
-    ...(raw as Partial<CommunicationPreferences>),
-  };
 }
 
 /** Best-effort step-log write. The UNIQUE (run_id, step_index)
@@ -344,10 +331,16 @@ async function outreachPlaybookSweepForOrg(
     }
 
     // Patient gate: must still exist and be active.
+    //
+    // `communication_preferences` is NOT on this table — it lives on
+    // `shop_customers`, reached via the two-hop join in
+    // `resolvePatientCommPrefs` below. Selecting it here returned 42703,
+    // which landed in `patientErr` and `continue`d, so EVERY run was
+    // skipped on every tick and no playbook ever advanced a step.
     const { data: patient, error: patientErr } = await supabase
       .from("patients")
       .select(
-        "id, status, legal_first_name, communication_preferences, timezone, address",
+        "id, status, legal_first_name, email, portal_auth_user_id, timezone, address",
       )
       .eq("id", run.patient_id)
       .maybeSingle();
@@ -362,7 +355,8 @@ async function outreachPlaybookSweepForOrg(
     const patientRow = patient as {
       status: string;
       legal_first_name: string | null;
-      communication_preferences?: unknown;
+      email?: string | null;
+      portal_auth_user_id?: string | null;
       timezone?: string | null;
       address?: { zip?: string } | null;
     } | null;
@@ -394,7 +388,22 @@ async function outreachPlaybookSweepForOrg(
       continue;
     }
 
-    const prefs = parsePrefs(patientRow.communication_preferences);
+    const resolved = await resolvePatientCommPrefs(supabase, {
+      email: patientRow.email ?? null,
+      portalAuthUserId: patientRow.portal_auth_user_id ?? null,
+    });
+    // Preferences we could not read might be a refusal, so nothing goes
+    // out on an unknown. Leaving the run untouched costs one tick (5
+    // minutes) and consumes no step.
+    if (resolved.unknown) {
+      stats.errors += 1;
+      logger.warn(
+        { runId: run.id },
+        "outreach-playbooks: consent lookup failed; holding the touch",
+      );
+      continue;
+    }
+    const prefs = resolved.prefs;
 
     // DND defer — push the touch out without consuming the step.
     // Call tasks are exempt: they're staff-initiated later, and

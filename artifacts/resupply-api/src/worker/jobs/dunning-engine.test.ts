@@ -15,7 +15,11 @@ vi.mock("../../lib/feature-flags", () => ({
 
 const listActiveOrgIdsMock = vi.hoisted(() => vi.fn());
 const getOrgScopedClientMock = vi.hoisted(() => vi.fn());
-vi.mock("@workspace/resupply-db", () => ({
+vi.mock("@workspace/resupply-db", async (importOriginal) => ({
+  // Partial: `lib/patient-comm-prefs` reads DEFAULT_COMMUNICATION_PREFERENCES
+  // at module load, and stubbing that constant to `{}` would silently make
+  // every consent check read as opted-out.
+  ...(await importOriginal<typeof import("@workspace/resupply-db")>()),
   listActiveOrgIds: listActiveOrgIdsMock,
   resolveSeedOrgId: vi.fn(),
   getOrgScopedClient: getOrgScopedClientMock,

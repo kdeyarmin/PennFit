@@ -29,7 +29,11 @@ const {
   const state: {
     responses: Record<string, { data?: unknown; error?: unknown }>;
     calls: string[];
-  } = { responses: {}, calls: [] };
+    // Write payloads, keyed `table:op`. Recorded because a mock that only
+    // notes THAT a write happened cannot see a write naming a column the
+    // table does not have — which is how `formularies.is_default` shipped.
+    payloads: Record<string, unknown[]>;
+  } = { responses: {}, calls: [], payloads: {} };
 
   function resolveRoute(s: { table: string | null; op: string | null }): {
     data: unknown;
@@ -42,21 +46,26 @@ const {
   }
 
   function makeChain(cs: { table: string | null; op: string | null }) {
+    const record = (op: string, payload: unknown) => {
+      cs.op = op;
+      const key = `${cs.table}:${op}`;
+      (state.payloads[key] ??= []).push(payload);
+    };
     const chain: Record<string, unknown> = {
       from(t: string) {
         cs.table = t;
         return chain;
       },
-      insert() {
-        cs.op = "insert";
+      insert(payload: unknown) {
+        record("insert", payload);
         return chain;
       },
-      update() {
-        cs.op = "update";
+      update(payload: unknown) {
+        record("update", payload);
         return chain;
       },
-      upsert() {
-        cs.op = "upsert";
+      upsert(payload: unknown) {
+        record("upsert", payload);
         return chain;
       },
       select() {
@@ -180,6 +189,7 @@ beforeEach(() => {
   insertUser.mockResolvedValue({ id: "new-user-id" });
   findUserByEmail.mockResolvedValue(null);
   routeState.calls.length = 0;
+  routeState.payloads = {};
   routeState.responses = {
     "organizations:insert": {
       data: { id: "org-new", slug: "acme-home-medical" },
@@ -237,6 +247,42 @@ describe("createSelfServeTenant", () => {
     expect(audit).toHaveBeenCalledWith(
       expect.objectContaining({ action: "auth.tenant_self_signup" }),
     );
+  });
+
+  it("provisions the default formulary using only columns formularies has", async () => {
+    // The insert used to carry `is_default: true`, a column no migration ever
+    // created. PostgREST answered 42703, the best-effort catch swallowed it,
+    // and so EVERY self-serve tenant was created with no formulary at all —
+    // the exact outcome provisionDefaultFormulary exists to prevent. The
+    // failure was invisible because signup still returned ok.
+    await createSelfServeTenant(baseInput());
+
+    const [payload] = routeState.payloads["formularies:insert"] ?? [];
+    expect(payload).toBeDefined();
+
+    // Migration 0482's column list. Anything outside it fails the insert.
+    const FORMULARY_COLUMNS = new Set([
+      "id",
+      "org_id",
+      "name",
+      "status",
+      "default_posture",
+      "version",
+      "published_at",
+      "published_by_email",
+      "notes",
+      "created_at",
+      "updated_at",
+    ]);
+    const written = Object.keys(payload as Record<string, unknown>);
+    expect(written.filter((c) => !FORMULARY_COLUMNS.has(c))).toEqual([]);
+
+    // 'active' is what every reader selects on, so it must be set — that is
+    // what makes the row findable at all.
+    expect(payload).toMatchObject({
+      status: "active",
+      default_posture: "open",
+    });
   });
 
   it("assigns the chosen self-serve plan as the new tenant's subscription", async () => {

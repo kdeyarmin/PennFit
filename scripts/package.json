@@ -16,6 +16,7 @@
     "preflight:prod": "tsx ./src/preflight-prod-env.ts",
     "verify:deploy": "tsx ./src/verify-deploy.ts",
     "check:schema-drift": "tsx ./src/check-schema-drift.ts",
+    "check:code-schema-refs": "tsx ./src/check-code-schema-refs.ts",
     "test": "vitest run --passWithNoTests",
     "test:coverage": "vitest run --passWithNoTests --coverage",
     "typecheck": "tsc -p tsconfig.json --noEmit",

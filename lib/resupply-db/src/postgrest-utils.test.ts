@@ -41,6 +41,21 @@ describe("escapePostgRESTFilterValue", () => {
     // step1 (LIKE): a%b, c → a\%b, c ; step2 (quote, re-escape \): "a\\%b, c"
     expect(escapePostgRESTFilterValue("a%b, c")).toBe('"a\\\\%b, c"');
   });
+
+  it("neutralises `*`, PostgREST's own wildcard spelling", () => {
+    // `%` and `_` were escaped here from the start, but `*` — which
+    // PostgREST rewrites to `%` on its way into the LIKE pattern — was
+    // not, so it stayed a wildcard on a WHOLE-VALUE lookup. Measured
+    // against PostgREST 12: `name=ilike.A*B` matched `AxxxB`, `A_B`,
+    // `A%B` and `A*B`; `name=ilike.A\*B` matched none of them.
+    //
+    // The escape does not produce a literal asterisk (the rewrite runs
+    // after the escape character, so Postgres receives `\%` — a literal
+    // percent sign). That is deliberate: for callers asking "which row IS
+    // this value", no row is a safer answer than another person's row.
+    expect(escapePostgRESTFilterValue("a*b@x.com")).toBe("a\\*b@x.com");
+    expect(escapePostgRESTFilterValue("*")).toBe("\\*");
+  });
 });
 
 describe("escapePostgRESTContainsPattern", () => {
@@ -64,6 +79,15 @@ describe("escapePostgRESTContainsPattern", () => {
     );
     expect(escapePostgRESTContainsPattern("(albert)")).toBe('"*(albert)*"');
     expect(escapePostgRESTContainsPattern('say "hi"')).toBe('"*say \\"hi\\"*"');
+  });
+
+  it("leaves a typed `*` alone, unlike the whole-value escaper", () => {
+    // A search box, not an identity lookup: a `*` here reads as the
+    // wildcard it already is in every other console search, and a literal
+    // `*` is not expressible through ilike at all. Escaping it would turn
+    // the character into "match nothing" — a silently empty result for
+    // something someone typed.
+    expect(escapePostgRESTContainsPattern("a*b")).toBe("*a*b*");
   });
 
   it("never emits a quote that is not the first character", () => {
