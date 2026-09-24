@@ -234,10 +234,22 @@ function fixture(nativeId = NATIVE_ID) {
     if (table === "sales_leads") {
       expect(url.searchParams.get("source")).toBe("eq.voice_sales_agent");
       expect(url.searchParams.get("select")).toBe(
-        "id,contact_name,company_name,phone_e164,email,message,status,metadata,created_at",
+        "id,contact_name,company_name,phone_e164,email,message,status,metadata,created_at,twilio_call_sid",
       );
       expect(url.searchParams.get("order")).toBe("created_at.desc,id.desc");
       data = state.phoneMessages;
+    } else if (table === "shared_phone_sms") {
+      expect(url.searchParams.get("twilio_call_sid")).toBe(
+        `in.(CA${"a".repeat(32)})`,
+      );
+      data = [
+        {
+          twilio_call_sid: `CA${"a".repeat(32)}`,
+          delivery_status: "delivered",
+          resources: ["advisors"],
+          error_code: null,
+        },
+      ];
     } else if (table === "organizations") {
       expect(url.searchParams.get("select")).toBe(
         "id,name,slug,status,created_at",
@@ -715,6 +727,24 @@ describe("central Hub to Breathe native adapter", () => {
 
 describe("shared phone inbox authorization", () => {
   const operation = { operation: "phone.messages.list", limit: 20, offset: 0 };
+  it("joins delivery evidence only for messages in the authorized page", async () => {
+    const f = fixture();
+    f.state.phoneMessages[0]!.twilio_call_sid = `CA${"a".repeat(32)}`;
+    const result = await f.read(operation);
+    expect(result.status).toBe(200);
+    expect(result.payload.data).toMatchObject({
+      items: [
+        {
+          sms: {
+            status: "delivered",
+            resources: ["advisors"],
+            errorCode: null,
+          },
+        },
+      ],
+    });
+    expect(JSON.stringify(result.payload)).not.toContain(`CA${"a".repeat(32)}`);
+  });
   it("returns only the reviewed business message fields", async () => {
     const f = fixture();
     const result = await f.read(operation);

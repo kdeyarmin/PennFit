@@ -88,6 +88,7 @@ import {
 } from "./post-call-summary";
 import { createVoiceToolDispatcher } from "./tools-impl";
 import { readVoiceConfigOrThrow, type VoiceConfig } from "./voice-config";
+import { readCareMetricSmsConfig } from "./caremetric-phone-sms";
 import { getCompanyInfo } from "../company-info";
 
 const OUTBOUND_DEFAULT_CALL_CONTEXT =
@@ -1413,15 +1414,24 @@ export async function handleBreatheSalesWsConnection(
         {
           practiceName: PLATFORM_NAME,
           callerKind: "breathe_prospect",
-          callContext:
+          callContext: [
             pending.callContext ?? BREATHE_SALES_DEFAULT_CALL_CONTEXT,
+            readCareMetricSmsConfig()
+              ? "Requested text follow-ups are available through send_info_sms, with confirmed mobile number and explicit permission."
+              : "Texting is currently unavailable on this line. Do not offer texts, collect SMS consent, or promise a text. Continue phone support and message-taking.",
+          ].join("\n"),
           ...(pending.greeting ? { greeting: pending.greeting } : {}),
         },
         BREATHE_SALES_DEFAULT_CALL_CONTEXT,
         pending.conversationId,
       ),
       tools: OPENAI_TOOL_DESCRIPTORS,
-      allowedToolNames: new Set(BREATHE_SALES_TOOL_NAMES),
+      allowedToolNames: new Set(
+        BREATHE_SALES_TOOL_NAMES.filter(
+          (name) =>
+            name !== "send_info_sms" || readCareMetricSmsConfig() !== null,
+        ),
+      ),
     });
   } catch (err) {
     releaseCallSlot();

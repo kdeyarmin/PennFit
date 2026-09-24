@@ -43,6 +43,7 @@ export const TOOL_NAMES = [
   // sign-up. None gate on patient identity.
   "identify_call_reason",
   "send_info_email",
+  "send_info_sms",
   "capture_sales_lead",
   "start_breathe_signup",
 ] as const;
@@ -81,6 +82,7 @@ export const SHOP_TOOL_NAMES = [
 export const BREATHE_SALES_TOOL_NAMES = [
   "identify_call_reason",
   "send_info_email",
+  "send_info_sms",
   "capture_sales_lead",
   "start_breathe_signup",
   "request_human_handoff",
@@ -200,6 +202,28 @@ export const identifyCallReasonArgs = z
 // (the caller's stated address, read back and confirmed first), a topic that
 // selects a fixed server-side template, and a short optional note. The model
 // never authors the body — that closes the open-relay/spam surface.
+export const CAREMETRIC_SMS_RESOURCE_KEYS = [
+  "support",
+  "software",
+  "advisors",
+  "account_access",
+  "troubleshooting",
+  "breathe",
+] as const;
+export const sendInfoSmsArgs = z
+  .object({
+    mobile: z
+      .string()
+      .regex(
+        /^\+1[2-9][0-9]{9}$/,
+        "Confirmed US/Canada mobile number in E.164 format required.",
+      ),
+    resources: z.array(z.enum(CAREMETRIC_SMS_RESOURCE_KEYS)).min(1).max(3),
+    mobile_confirmed: z.literal(true),
+    sms_consent: z.literal(true),
+  })
+  .strict();
+
 export const sendInfoEmailArgs = z
   .object({
     email: z.string().trim().email("Expected a valid email address."),
@@ -293,6 +317,7 @@ export const TOOL_ARG_SCHEMAS = {
   end_call: endCallArgs,
   identify_call_reason: identifyCallReasonArgs,
   send_info_email: sendInfoEmailArgs,
+  send_info_sms: sendInfoSmsArgs,
   capture_sales_lead: captureSalesLeadArgs,
   start_breathe_signup: startBreatheSignupArgs,
 } as const satisfies Record<ToolName, z.ZodTypeAny>;
@@ -396,6 +421,13 @@ export interface IdentifyCallReasonResult {
     | "other";
 }
 
+export interface SendInfoSmsResult {
+  ok: boolean;
+  status: "not_sent" | "submitted" | "delivered" | "failed" | "unknown";
+  reason?: string;
+  already_requested?: boolean;
+}
+
 export interface SendInfoEmailResult {
   ok: boolean;
   /** Whether the email actually went out (false when email is unconfigured). */
@@ -439,6 +471,7 @@ export interface ToolResultByName {
   end_call: EndCallResult;
   identify_call_reason: IdentifyCallReasonResult;
   send_info_email: SendInfoEmailResult;
+  send_info_sms: SendInfoSmsResult;
   capture_sales_lead: CaptureSalesLeadResult;
   start_breathe_signup: StartBreatheSignupResult;
 }
@@ -675,6 +708,33 @@ export const OPENAI_TOOL_DESCRIPTORS: readonly OpenAiToolDescriptor[] = [
   },
   {
     type: "function",
+    name: "send_info_sms",
+    description:
+      "Send one bundled CareMetric text with up to three approved public resources requested on this call. Available for software support, customer service, software information, and Advisors. First collect a US/Canada mobile number belonging to the caller, read it back, explain the one-time SMS consent disclosure, and WAIT for the caller to confirm both number and permission in a later turn. Never assume caller ID or a callback number is SMS consent. Only one text per call: gather all requested resources before sending. No free-form text, patient information, private account links, or third-party numbers. Say submitted only on status submitted; say delivered only on delivered. Never retry unknown/failed sends or bypass STOP. If unavailable, explain texting is unavailable and continue helping/taking a message.",
+    parameters: {
+      type: "object",
+      properties: {
+        mobile: {
+          type: "string",
+          pattern: "^\\+1[2-9][0-9]{9}$",
+          description:
+            "Caller-owned mobile number, read back and confirmed; e.g. +12125550123.",
+        },
+        resources: {
+          type: "array",
+          items: { type: "string", enum: [...CAREMETRIC_SMS_RESOURCE_KEYS] },
+          minItems: 1,
+          maxItems: 3,
+        },
+        mobile_confirmed: { type: "boolean", const: true },
+        sms_consent: { type: "boolean", const: true },
+      },
+      required: ["mobile", "resources", "mobile_confirmed", "sms_consent"],
+      additionalProperties: false,
+    },
+  },
+  {
+    type: "function",
     name: "send_info_email",
     description:
       "Email the caller information about CareMetric Breathe. ALWAYS spell the email address back letter by letter and wait for the caller to confirm it before calling — never call this in the same turn you spell it back; pause for their reply first. The body is a fixed template chosen by 'topic' — you do not write it; 'overview' explains the platform, 'pricing' sends the plans, 'signup_link' sends a link to create an account, 'custom' is a general follow-up. Only send to the address the caller gave you on this call.",
@@ -888,6 +948,13 @@ export function summarizeToolArgsForAudit(
       return {
         name,
         reason: typeof a.reason === "string" ? a.reason : null,
+      };
+    case "send_info_sms":
+      return {
+        name,
+        resource_count: Array.isArray(a.resources) ? a.resources.length : 0,
+        mobile_confirmed: a.mobile_confirmed === true,
+        sms_consent: a.sms_consent === true,
       };
     case "send_info_email":
       // Never echo the recipient address — record only that one was supplied
