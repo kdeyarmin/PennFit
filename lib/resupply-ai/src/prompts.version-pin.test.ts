@@ -58,6 +58,9 @@ const CANONICAL_INPUT = {
  * version ships, ADD a new key; never edit an existing one.
  */
 const PROMPT_VERSION_HASHES: Readonly<Record<string, string>> = {
+  // v27 expands the business line; patient and shop instructions are unchanged.
+  "2026-09-24.v27":
+    "23b0bc863cc0debd35a018c1a907cc217a5baf717f28f4d90178710f3a0ce38e",
   "2026-05-22.v2":
     "92ccc9744b4fa0354054ad636116d2cc2ae30b593fe20932421e9591d4f9b975",
   "2026-05-26.v3":
@@ -260,7 +263,7 @@ const SHOP_PROMPT_HASH =
  * the spoken sales blocks (hash moves again while PROMPT_VERSION stays v25).
  */
 const BREATHE_SALES_PROMPT_HASH =
-  "e5a53e411a135b499027cd9a9f58adfba9cb3e60fb1278f272350a07b87579fe";
+  "0a3fc3734f9e7375a66285d189c1d16cf34e2c21b0c0a53cdad3064ff8f06890";
 
 describe("PROMPT_VERSION drift detector", () => {
   it("has a recorded hash for the currently-shipped PROMPT_VERSION", () => {

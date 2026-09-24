@@ -146,6 +146,11 @@ describe("breathe sales — send_info_email", () => {
       ...SALES_DEPS,
       sendPlatformEmail,
     });
+    await dispatcher.dispatch({
+      callId: "route",
+      name: "identify_call_reason",
+      args: { reason: "sales", product: "breathe" },
+    });
     const r = await dispatcher.dispatch({
       callId: "c1",
       name: "send_info_email",
@@ -164,6 +169,11 @@ describe("breathe sales — send_info_email", () => {
     const dispatcher = createVoiceToolDispatcher({
       ...SALES_DEPS,
       sendPlatformEmail,
+    });
+    await dispatcher.dispatch({
+      callId: "route",
+      name: "identify_call_reason",
+      args: { reason: "sales", product: "breathe" },
     });
     const send = (n: number) =>
       dispatcher.dispatch({
@@ -190,6 +200,11 @@ describe("breathe sales — send_info_email", () => {
       ...SALES_DEPS,
       sendPlatformEmail,
     });
+    await dispatcher.dispatch({
+      callId: "route",
+      name: "identify_call_reason",
+      args: { reason: "sales", product: "breathe" },
+    });
     const r = await dispatcher.dispatch({
       callId: "c1",
       name: "send_info_email",
@@ -214,6 +229,11 @@ describe("breathe sales — start_breathe_signup", () => {
     const dispatcher = createVoiceToolDispatcher({
       ...SALES_DEPS,
       createTenant: createTenant as never,
+    });
+    await dispatcher.dispatch({
+      callId: "route",
+      name: "identify_call_reason",
+      args: { reason: "sales", product: "breathe" },
     });
 
     const r = await dispatcher.dispatch({
@@ -286,6 +306,11 @@ describe("breathe sales — start_breathe_signup", () => {
         ...SALES_DEPS,
         createTenant: createTenant as never,
       });
+      await dispatcher.dispatch({
+        callId: "route",
+        name: "identify_call_reason",
+        args: { reason: "sales", product: "breathe" },
+      });
       const r = await dispatcher.dispatch({
         callId: "c1",
         name: "start_breathe_signup",
@@ -302,6 +327,11 @@ describe("breathe sales — start_breathe_signup", () => {
     const dispatcher = createVoiceToolDispatcher({
       ...SALES_DEPS,
       createTenant: createTenant as never,
+    });
+    await dispatcher.dispatch({
+      callId: "route",
+      name: "identify_call_reason",
+      args: { reason: "sales", product: "breathe" },
     });
     const r = await dispatcher.dispatch({
       callId: "c1",
@@ -336,5 +366,102 @@ describe("breathe sales — handoff + tool isolation", () => {
     // Benign refusal shape — never a thrown error, never a patient read.
     expect(r.result).toMatchObject({ matched: false });
     expect(supabaseMock.callCount("patients", "select")).toBe(0);
+  });
+});
+
+describe("shared CareMetric line", () => {
+  it.each([
+    undefined,
+    { reason: "healthcare_advisors", product: "advisors" },
+    { reason: "tech_support", product: "breathe" },
+    { reason: "sales", product: "intel" },
+  ] as const)(
+    "refuses Breathe sales actions outside explicit Breathe sales: %j",
+    async (route) => {
+      const { sendPlatformEmail } = makeEmailSpy();
+      const createTenant = vi.fn();
+      const dispatcher = createVoiceToolDispatcher({
+        ...SALES_DEPS,
+        sendPlatformEmail,
+        createTenant,
+      });
+      if (route)
+        await dispatcher.dispatch({
+          callId: "route",
+          name: "identify_call_reason",
+          args: route,
+        });
+      expect(
+        (
+          await dispatcher.dispatch({
+            callId: "email",
+            name: "send_info_email",
+            args: { email: "fixture@example.test", topic: "overview" },
+          })
+        ).result,
+      ).toMatchObject({ ok: false, sent: false });
+      expect(
+        (
+          await dispatcher.dispatch({
+            callId: "signup",
+            name: "start_breathe_signup",
+            args: {
+              org_name: "Fixture",
+              admin_email: "fixture@example.test",
+              plan: "launch",
+            },
+          })
+        ).result,
+      ).toMatchObject({ ok: false });
+      expect(sendPlatformEmail).not.toHaveBeenCalled();
+      expect(createTenant).not.toHaveBeenCalled();
+    },
+  );
+  it("persists advisor routing and confirmed callback details for the central inbox", async () => {
+    stageSupabaseResponse("sales_leads", "insert", {
+      data: { id: "advisor-message" },
+    });
+    stageSupabaseResponse("admin_users", "select", { data: [] });
+    const dispatcher = createVoiceToolDispatcher(SALES_DEPS);
+    await dispatcher.dispatch({
+      callId: "route",
+      name: "identify_call_reason",
+      args: { reason: "healthcare_advisors", product: "advisors" },
+    });
+    const result = await dispatcher.dispatch({
+      callId: "save",
+      name: "capture_sales_lead",
+      args: {
+        contact_name: "Fixture Caller",
+        phone: "+12025550111",
+        message:
+          "Existing client; callback tomorrow afternoon Eastern, voicemail allowed. Wants to discuss operations review.",
+      },
+    });
+    expect(result.result).toEqual({ ok: true, lead_id: "advisor-message" });
+    expect(
+      supabaseMock.writePayloads("sales_leads", "insert")[0],
+    ).toMatchObject({
+      metadata: {
+        product: "advisors",
+        request_type: "healthcare_advisors",
+        shared_caremetric_line: true,
+      },
+      phone_e164: "+12025550111",
+    });
+    await flush();
+  });
+  it("does not acknowledge a save without a persisted message identifier", async () => {
+    stageSupabaseResponse("sales_leads", "insert", { data: null });
+    const dispatcher = createVoiceToolDispatcher(SALES_DEPS);
+    expect(
+      (
+        await dispatcher.dispatch({
+          callId: "save",
+          name: "capture_sales_lead",
+          args: { message: "Fixture" },
+        })
+      ).result,
+    ).toEqual({ ok: false, reason: "persist_failed" });
   });
 });

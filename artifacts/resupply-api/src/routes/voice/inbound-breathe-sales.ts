@@ -1,7 +1,8 @@
 // POST /voice/inbound-breathe-sales
 //
-// AI-powered inbound SALES line for the CareMetric Breathe *platform* (the
-// B2B SaaS), distinct from the patient "Reorder Line" (inbound-reorder.ts).
+// Shared CareMetric software/support and Healthcare Advisors business line.
+// The legacy URL and caller kind preserve the existing Twilio configuration.
+// Patient reorder handling remains in inbound-reorder.ts.
 // A prospective DME business dials the dedicated platform sales number; Twilio
 // routes the call here. We:
 //
@@ -41,14 +42,12 @@ import {
 } from "../../lib/voice/voice-config";
 
 const BREATHE_SALES_GREETING =
-  "Hi, thanks for calling CareMetric Breathe! I can walk you through the " +
-  "platform, talk through pricing, or help you get set up — what brings you " +
-  "in today?";
+  "Thanks for calling CareMetric. I'm your AI assistant for CareMetric software " +
+  "and Healthcare Advisors. How can I help you today?";
 
 const BREATHE_SALES_CALL_CONTEXT =
-  "Inbound sales call to the CareMetric Breathe platform line. The caller is " +
-  "a prospective DME business. Identify why they called, then pitch, help, or " +
-  "take a message accordingly.";
+  "Shared CareMetric software support, customer service, and Healthcare Advisors line. " +
+  "Identify the product and reason. Help with software; for Advisors, gather contact details and take a message only.";
 
 const router: IRouter = Router();
 
@@ -139,7 +138,7 @@ router.post(
         .type("text/xml")
         .send(
           buildHangupTwiml(
-            "Thanks for calling CareMetric Breathe. Our line isn't taking calls right now — please try again later.",
+            "Thanks for calling CareMetric. Our line isn't taking calls right now — please try again later.",
           ),
         );
       return;
@@ -179,7 +178,7 @@ router.post(
         .type("text/xml")
         .send(
           buildHangupTwiml(
-            "Thanks for calling CareMetric Breathe. We're having a brief " +
+            "Thanks for calling CareMetric. We're having a brief " +
               "technical issue — please try again in a few minutes.",
           ),
         );

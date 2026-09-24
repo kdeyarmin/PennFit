@@ -185,7 +185,14 @@ export const endCallArgs = z
 // take a message and hand off to a human.
 export const identifyCallReasonArgs = z
   .object({
-    reason: z.enum(["sales", "customer_service", "tech_support", "other"]),
+    reason: z.enum([
+      "sales",
+      "customer_service",
+      "tech_support",
+      "healthcare_advisors",
+      "other",
+    ]),
+    product: z.string().trim().min(1).max(80).optional(),
   })
   .strict();
 
@@ -205,6 +212,16 @@ export const sendInfoEmailArgs = z
 // optional except the message — a caller may decline to share everything.
 export const captureSalesLeadArgs = z
   .object({
+    product: z.string().trim().min(1).max(80).optional(),
+    request_type: z
+      .enum([
+        "sales",
+        "customer_service",
+        "tech_support",
+        "healthcare_advisors",
+        "other",
+      ])
+      .optional(),
     contact_name: z.string().trim().min(1).max(160).optional(),
     company_name: z.string().trim().min(1).max(200).optional(),
     phone: z.string().trim().min(1).max(40).optional(),
@@ -371,7 +388,12 @@ export interface EndCallResult {
 
 export interface IdentifyCallReasonResult {
   ok: true;
-  reason: "sales" | "customer_service" | "tech_support" | "other";
+  reason:
+    | "sales"
+    | "customer_service"
+    | "tech_support"
+    | "healthcare_advisors"
+    | "other";
 }
 
 export interface SendInfoEmailResult {
@@ -626,13 +648,25 @@ export const OPENAI_TOOL_DESCRIPTORS: readonly OpenAiToolDescriptor[] = [
     type: "function",
     name: "identify_call_reason",
     description:
-      "Record why the caller phoned the CareMetric Breathe platform line so you can route into the right skill. Call this once, early, after you understand their intent. 'sales' = evaluating or buying the platform (your main job); 'customer_service' = an existing customer with an account/billing question; 'tech_support' = a technical problem. For customer_service and tech_support, take a message with capture_sales_lead and hand off.",
+      "Record why the caller phoned the shared CareMetric line and which product/service they need. Use healthcare_advisors with product advisors for receptionist-only messages. For software support/customer service, help safely and record the outcome; sales tools are only for explicitly identified Breathe sales.",
     parameters: {
       type: "object",
       properties: {
+        product: {
+          type: "string",
+          maxLength: 80,
+          description:
+            "Product key: breathe, pennsync, intel, caremetric-emr, carebase, caremetric-go, docstudio, demo-studio, app-studio, auditflow, support-hub, advisors, or unknown.",
+        },
         reason: {
           type: "string",
-          enum: ["sales", "customer_service", "tech_support", "other"],
+          enum: [
+            "sales",
+            "customer_service",
+            "tech_support",
+            "healthcare_advisors",
+            "other",
+          ],
         },
       },
       required: ["reason"],
@@ -671,14 +705,29 @@ export const OPENAI_TOOL_DESCRIPTORS: readonly OpenAiToolDescriptor[] = [
     type: "function",
     name: "capture_sales_lead",
     description:
-      "Record a sales lead or take a message for the team to follow up. Use this whenever the caller is interested but not signing up now, asks for a human, or has a customer-service/tech-support need you can't resolve. Capture whatever they're willing to share; only 'message' is required.",
+      "Save a shared CareMetric support outcome, customer-service request, advisor message, or software sales inquiry for the team to review in the Support Hub. Use this whenever the caller is interested but not signing up now, asks for a human, or has a customer-service/tech-support need you can't resolve. Capture whatever they're willing to share; only 'message' is required.",
     parameters: {
       type: "object",
       properties: {
+        product: {
+          type: "string",
+          maxLength: 80,
+          description: "The actual CareMetric product, advisors, or unknown.",
+        },
+        request_type: {
+          type: "string",
+          enum: [
+            "sales",
+            "customer_service",
+            "tech_support",
+            "healthcare_advisors",
+            "other",
+          ],
+        },
         contact_name: { type: "string", description: "The caller's name." },
         company_name: {
           type: "string",
-          description: "Their business / DME company name.",
+          description: "Their organization name.",
         },
         phone: {
           type: "string",
@@ -695,7 +744,7 @@ export const OPENAI_TOOL_DESCRIPTORS: readonly OpenAiToolDescriptor[] = [
           type: "string",
           maxLength: 2000,
           description:
-            "A genuine summary of the CALL — written so whoever follows up can pick up the phone or email already knowing the context, not just a contact card. In a few sentences capture: who they are and what kind of operation (DME / HME / sleep lab), roughly how many active patients, how they run resupply today and what's frustrating them, what they're looking for or interested in (which plan, if any came up), and the agreed next step. Plain prose in your own words — never just 'wants pricing'.",
+            "A complete call summary: product/service, need, urgency/deadline, outcome, and agreed next step. Support: issue, impact, steps tried and results. Advisors: role, care setting, location, requested advisor, new/existing client, message, callback window/time zone and voicemail permission. No patient details or secrets; label missing or declined information.",
         },
       },
       required: ["message"],
