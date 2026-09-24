@@ -142,7 +142,7 @@ import { BREATHE_SALES_KNOWLEDGE } from "./breathe-sales-knowledge";
  * v25 rewrites shop_customer identity off card-on-file onto email (insurance-
  * only; cash-pay verify is gone).
  */
-export const PROMPT_VERSION = "2026-09-24.v27" as const;
+export const PROMPT_VERSION = "2026-09-24.v28" as const;
 
 /**
  * Caller-facing greeting phrase. Exposed so callers can A/B without
@@ -350,7 +350,10 @@ export function buildSystemPrompt(input: BuildSystemPromptInput): string {
   if (callerKind === "breathe_prospect") {
     return [
       CAREMETRIC_PHONE_PROMPT,
-      howToSpeak,
+      howToSpeak.replace(
+        'If a tool result includes a URL, say "I\'ll text you a link after we hang up" instead.',
+        "If a tool result includes a URL, describe its purpose. This line cannot text links; never promise a text. Only confirm an email after an authorized email tool succeeds.",
+      ),
       `Breathe-only product knowledge, for callers explicitly asking about Breathe:\n${BREATHE_SALES_KNOWLEDGE}`,
       hangup,
       contextClause,

@@ -58,6 +58,9 @@ const CANONICAL_INPUT = {
  * version ships, ADD a new key; never edit an existing one.
  */
 const PROMPT_VERSION_HASHES: Readonly<Record<string, string>> = {
+  // v28 removes an unsupported SMS promise from the shared business line.
+  "2026-09-24.v28":
+    "23b0bc863cc0debd35a018c1a907cc217a5baf717f28f4d90178710f3a0ce38e",
   // v27 expands the business line; patient and shop instructions are unchanged.
   "2026-09-24.v27":
     "23b0bc863cc0debd35a018c1a907cc217a5baf717f28f4d90178710f3a0ce38e",
@@ -263,7 +266,7 @@ const SHOP_PROMPT_HASH =
  * the spoken sales blocks (hash moves again while PROMPT_VERSION stays v25).
  */
 const BREATHE_SALES_PROMPT_HASH =
-  "0a3fc3734f9e7375a66285d189c1d16cf34e2c21b0c0a53cdad3064ff8f06890";
+  "d48e9c2c7395d6aa09d27d50f430a24c4b8b9bac1f8721c08563ea041ee1b96f";
 
 describe("PROMPT_VERSION drift detector", () => {
   it("has a recorded hash for the currently-shipped PROMPT_VERSION", () => {
