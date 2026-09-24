@@ -108,6 +108,29 @@ describe("createTwilioSmsClient", () => {
     });
   });
 
+  it("pins an explicit sender within a service when requested", async () => {
+    const create = vi.fn().mockResolvedValue({ sid: "SMabc" });
+    const client = createTwilioSmsClient({
+      accountSid: "AC123",
+      authToken: "tok",
+      from: "+18775212890",
+      messagingServiceSid: "MGcaremetric",
+      pinFrom: true,
+      retry: { maxAttempts: 1 },
+      sdkFactory: () => fakeSdk(create),
+    });
+    await client.sendSms({
+      to: "+12125550123",
+      body: "CareMetric requested information",
+    });
+    expect(create).toHaveBeenCalledWith({
+      to: "+12125550123",
+      body: "CareMetric requested information",
+      from: "+18775212890",
+      messagingServiceSid: "MGcaremetric",
+    });
+  });
+
   it("includes statusCallbackUrl when provided", async () => {
     process.env.TWILIO_ACCOUNT_SID = "AC123";
     process.env.TWILIO_AUTH_TOKEN = "tok";

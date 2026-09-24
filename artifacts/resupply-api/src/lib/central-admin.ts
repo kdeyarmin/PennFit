@@ -229,6 +229,7 @@ function exactCount(result: { error: unknown; count: number | null }): number {
 const text = (max: number) => z.string().max(max);
 const phoneMessageRow = z.object({
   id: uuid,
+  twilio_call_sid: text(100).nullable().optional(),
   contact_name: text(160).nullable(),
   company_name: text(200).nullable(),
   phone_e164: text(40).nullable(),
@@ -549,7 +550,7 @@ export function createCentralAdminHandler({
           .schema("resupply")
           .from("sales_leads")
           .select(
-            "id,contact_name,company_name,phone_e164,email,message,status,metadata,created_at",
+            "id,contact_name,company_name,phone_e164,email,message,status,metadata,created_at,twilio_call_sid",
             { count: "exact" },
           )
           .eq("source", "voice_sales_agent");
@@ -560,8 +561,41 @@ export function createCentralAdminHandler({
           .order("id", { ascending: false })
           .range(operation.offset, operation.offset + operation.limit - 1)
           .abortSignal(signal);
+        const messages = rows(phoneMessageRow, result, operation.limit);
+        const callSids = messages
+          .map((row) => row.twilio_call_sid)
+          .filter(
+            (sid): sid is string =>
+              typeof sid === "string" && /^CA[0-9a-f]{32}$/i.test(sid),
+          );
+        const smsRow = z.object({
+          twilio_call_sid: text(100),
+          delivery_status: z.enum([
+            "submitting",
+            "accepted",
+            "delivered",
+            "failed",
+            "undelivered",
+            "unknown",
+          ]),
+          resources: z.array(text(80)).max(3),
+          error_code: text(20).nullable(),
+        });
+        const texts = callSids.length
+          ? rows(
+              smsRow,
+              await raw
+                .schema("resupply")
+                .from("shared_phone_sms")
+                .select("twilio_call_sid,delivery_status,resources,error_code")
+                .in("twilio_call_sid", callSids)
+                .limit(operation.limit)
+                .abortSignal(signal),
+              operation.limit,
+            )
+          : [];
         data = {
-          items: rows(phoneMessageRow, result, operation.limit).map((row) => ({
+          items: messages.map((row) => ({
             id: row.id,
             contactName: row.contact_name,
             companyName: row.company_name,
@@ -572,6 +606,18 @@ export function createCentralAdminHandler({
             createdAt: row.created_at,
             product: row.metadata?.product ?? "breathe",
             requestType: row.metadata?.request_type ?? "sales",
+            sms: (() => {
+              const sms = texts.find(
+                (item) => item.twilio_call_sid === row.twilio_call_sid,
+              );
+              return sms
+                ? {
+                    status: sms.delivery_status,
+                    resources: sms.resources,
+                    errorCode: sms.error_code,
+                  }
+                : null;
+            })(),
           })),
           total: exactCount(result),
           limit: operation.limit,

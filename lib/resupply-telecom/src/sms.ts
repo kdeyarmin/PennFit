@@ -148,6 +148,8 @@ export interface CreateTwilioSmsClientOptions {
    * {@link DEFAULT_SMS_RETRY_POLICY} (3 attempts). Set
    * `{ maxAttempts: 1 }` to disable; `sleep` is a test seam.
    */
+  /** Pin the configured from-number within the selected service; other senders cannot be substituted. */
+  pinFrom?: boolean;
   retry?: Partial<RetryPolicy> & { sleep?: (ms: number) => Promise<void> };
 }
 
@@ -266,6 +268,7 @@ export function createTwilioSmsClient(
       // for production (opt-out handling, sticky sender, etc).
       if (msid) {
         params.messagingServiceSid = msid;
+        if (opts.pinFrom && fromNumber) params.from = fromNumber;
       } else if (fromNumber) {
         params.from = fromNumber;
       }

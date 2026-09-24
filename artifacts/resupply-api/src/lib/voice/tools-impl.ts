@@ -46,6 +46,7 @@ import {
 } from "@workspace/resupply-email";
 
 import { logger } from "../logger";
+import { sendCareMetricPhoneSms } from "./caremetric-phone-sms";
 import { resolveSuperAdminRecipients } from "../admin-assistant/adminAssistantTools";
 import { closeEpisode } from "../episodes/close-episode";
 import { reopenCycleAfterDecline } from "../episodes/reopen-after-decline";
@@ -145,6 +146,12 @@ function identityRequiredResultFor<K extends ToolName>(
         ok: true,
         reason: "other",
       } as unknown as DispatchToolResult<K>["result"];
+    case "send_info_sms":
+      return {
+        ok: false,
+        status: "not_sent",
+        reason: "shared_business_line_only",
+      } as DispatchToolResult<K>["result"];
     case "send_info_email":
       return {
         ok: false,
@@ -250,6 +257,7 @@ export interface VoiceToolDispatcherDeps {
    * {@link defaultSendPlatformEmail} (platform default From, cmbreathe.com).
    */
   sendPlatformEmail?: SendPlatformEmail;
+  sendPhoneSms?: typeof sendCareMetricPhoneSms;
   /**
    * Seam for provisioning a CareMetric Breathe tenant (the no-spoken-password
    * sign-up). Tests inject a stub; production callers leave it unset and get
@@ -1064,6 +1072,21 @@ class Impl implements VoiceToolDispatcher {
         return (await this.identifyCallReason(
           call as DispatchToolCall<"identify_call_reason">,
         )) as DispatchToolResult<K>;
+      case "send_info_sms": {
+        const result = await (this.deps.sendPhoneSms ?? sendCareMetricPhoneSms)(
+          (call as DispatchToolCall<"send_info_sms">).args,
+          {
+            orgId: this.deps.orgId,
+            twilioCallSid: this.deps.twilioCallSid,
+            supabase: this.deps.supabase,
+          },
+        );
+        return {
+          callId: call.callId,
+          name: call.name,
+          result,
+        } as DispatchToolResult<K>;
+      }
       case "send_info_email":
         return (await this.sendInfoEmail(
           call as DispatchToolCall<"send_info_email">,

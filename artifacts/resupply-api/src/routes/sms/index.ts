@@ -9,10 +9,12 @@ import { Router, type IRouter } from "express";
 import inboundRouter from "./inbound";
 import sendReminderRouter from "./send-reminder";
 import statusCallbackRouter from "./status-callback";
+import caremetricRouter from "./caremetric";
 
 const router: IRouter = Router();
 router.use(sendReminderRouter);
 router.use(inboundRouter);
 router.use(statusCallbackRouter);
+router.use(caremetricRouter);
 
 export default router;

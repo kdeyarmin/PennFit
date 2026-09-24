@@ -31,6 +31,12 @@ const EXAMPLES: Record<ToolName, Record<string, unknown>> = {
   request_human_handoff: { reason: "patient_distress" },
   end_call: { outcome: "completed" },
   identify_call_reason: { reason: "sales" },
+  send_info_sms: {
+    mobile: "+12125550123",
+    resources: ["support"],
+    mobile_confirmed: true,
+    sms_consent: true,
+  },
   send_info_email: { email: "owner@acme-dme.example", topic: "pricing" },
   capture_sales_lead: {
     contact_name: "Pat Owner",
