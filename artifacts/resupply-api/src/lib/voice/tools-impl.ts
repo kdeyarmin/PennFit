@@ -273,6 +273,7 @@ class Impl implements VoiceToolDispatcher {
   private verifyAttempts = 0;
   /** Platform-info emails sent so far this call (sales line cap). */
   private infoEmailsSent = 0;
+  private callReason: ToolArgsByName["identify_call_reason"] | null = null;
   /** Injected raw client (test seam); undefined in production. */
   private readonly injectedClient?: ResupplySupabaseClient;
   /** Memoized org-scoped facade, resolved on first DB use. */
@@ -1090,7 +1091,8 @@ class Impl implements VoiceToolDispatcher {
   private async identifyCallReason(
     call: DispatchToolCall<"identify_call_reason">,
   ): Promise<DispatchToolResult<"identify_call_reason">> {
-    // No side effect — committing to a skill is enough for the model to
+    this.callReason = call.args;
+    // No external side effect — committing to a skill is enough for the model to
     // route. The durable record of a service/support reason is the lead the
     // model captures next; the bridge audits this invocation either way.
     logger.info(
@@ -1107,6 +1109,16 @@ class Impl implements VoiceToolDispatcher {
   private async sendInfoEmail(
     call: DispatchToolCall<"send_info_email">,
   ): Promise<DispatchToolResult<"send_info_email">> {
+    if (
+      this.callReason?.reason !== "sales" ||
+      this.callReason.product?.toLowerCase() !== "breathe"
+    ) {
+      return {
+        callId: call.callId,
+        name: call.name,
+        result: { ok: false, sent: false, reason: "breathe_sales_only" },
+      };
+    }
     if (this.infoEmailsSent >= MAX_INFO_EMAILS_PER_CALL) {
       return {
         callId: call.callId,
@@ -1150,6 +1162,11 @@ class Impl implements VoiceToolDispatcher {
           email: a.email ?? null,
           interest_tier: a.interest_tier ?? null,
           message: a.message,
+          metadata: {
+            product: a.product ?? this.callReason?.product ?? "unknown",
+            request_type: a.request_type ?? this.callReason?.reason ?? "other",
+            shared_caremetric_line: true,
+          },
           twilio_call_sid: this.deps.twilioCallSid ?? null,
           source: "voice_sales_agent",
           status: "new",
@@ -1159,6 +1176,8 @@ class Impl implements VoiceToolDispatcher {
         .maybeSingle();
       if (error) throw error;
       leadId = (data as { id?: string } | null)?.id ?? null;
+      if (!leadId)
+        throw new Error("Message persistence returned no identifier");
     } catch (err) {
       logger.warn(
         { event: "voice_breathe_sales.lead_insert_failed", err: errShape(err) },
@@ -1214,6 +1233,16 @@ class Impl implements VoiceToolDispatcher {
   private async startBreatheSignup(
     call: DispatchToolCall<"start_breathe_signup">,
   ): Promise<DispatchToolResult<"start_breathe_signup">> {
+    if (
+      this.callReason?.reason !== "sales" ||
+      this.callReason.product?.toLowerCase() !== "breathe"
+    ) {
+      return {
+        callId: call.callId,
+        name: call.name,
+        result: { ok: false, status: "unavailable" },
+      };
+    }
     const { org_name, admin_email, plan, estimated_active_patients } =
       call.args;
     // NO spoken password: generate a strong throwaway the caller never learns
@@ -1531,8 +1560,11 @@ function buildSalesLeadNotificationEmail(
 ): { subject: string; text: string; html: string } {
   const company =
     sanitizeEmailSubjectValue(args.company_name ?? "") || "a prospect";
-  const subject = `New CareMetric Breathe sales lead: ${company}`;
+  const subject = `New CareMetric phone message: ${company}`;
   const rows: Array<[string, string]> = [
+    ["Product/service", args.product ?? "(see call summary)"],
+    ["Request type", args.request_type ?? "(see call summary)"],
+    ["Inbox", "https://support-hub-web-production.up.railway.app/phone"],
     ["Contact", args.contact_name ?? "(not given)"],
     ["Company", args.company_name ?? "(not given)"],
     ["Phone", args.phone ?? "(not given)"],
@@ -1542,19 +1574,19 @@ function buildSalesLeadNotificationEmail(
   ];
 
   const text = [
-    "A new sales lead was captured by the CareMetric Breathe phone agent.",
+    "A new CareMetric phone message is available in the Support Hub.",
     "",
     ...rows.map(([k, v]) => `${k}: ${v}`),
     "",
     "Call summary — what they're looking for:",
     args.message,
     "",
-    "— Captured by the CareMetric Breathe sales line.",
+    "— Captured by the shared CareMetric phone line.",
   ].join("\n");
 
   const html = [
     `<div style="font-family:system-ui,Segoe UI,Helvetica,Arial,sans-serif;color:#0f172a;line-height:1.5">`,
-    `<p>A new sales lead was captured by the CareMetric Breathe phone agent.</p>`,
+    `<p>A new CareMetric phone message is available in the Support Hub.</p>`,
     `<table style="border-collapse:collapse;margin:12px 0">`,
     ...rows.map(
       ([k, v]) =>
@@ -1564,7 +1596,7 @@ function buildSalesLeadNotificationEmail(
     `<p style="margin:12px 0 4px;color:#64748b">Call summary — what they're looking for:</p>`,
     `<p style="white-space:pre-wrap;margin:0 0 12px">${escapeHtml(args.message)}</p>`,
     `<hr style="border:none;border-top:1px solid #e2e8f0;margin:16px 0"/>`,
-    `<p style="color:#94a3b8;font-size:12px;margin:0">Captured by the CareMetric Breathe sales line.</p>`,
+    `<p style="color:#94a3b8;font-size:12px;margin:0">Captured by the shared CareMetric phone line.</p>`,
     `</div>`,
   ].join("");
 

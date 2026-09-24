@@ -66,6 +66,24 @@ function fixture(nativeId = NATIVE_ID) {
       },
     ],
     supportAccounts: [{ id: ORG_ID, status: "active", updated_at: NOW }],
+    phoneMessages: [
+      {
+        id: SUB_ID,
+        contact_name: "Fixture caller",
+        company_name: "Fixture organization",
+        phone_e164: "+12025550111",
+        email: null,
+        message: "Please return my call about training.",
+        status: "new",
+        created_at: NOW,
+        metadata: {
+          product: "advisors",
+          request_type: "healthcare_advisors",
+          private: "MUST_NOT_LEAK",
+        },
+        twilio_call_sid: "MUST_NOT_LEAK",
+      },
+    ],
     organizations: [
       {
         id: ORG_ID,
@@ -213,7 +231,14 @@ function fixture(nativeId = NATIVE_ID) {
       });
     }
     let data: unknown[];
-    if (table === "organizations") {
+    if (table === "sales_leads") {
+      expect(url.searchParams.get("source")).toBe("eq.voice_sales_agent");
+      expect(url.searchParams.get("select")).toBe(
+        "id,contact_name,company_name,phone_e164,email,message,status,metadata,created_at",
+      );
+      expect(url.searchParams.get("order")).toBe("created_at.desc,id.desc");
+      data = state.phoneMessages;
+    } else if (table === "organizations") {
       expect(url.searchParams.get("select")).toBe(
         "id,name,slug,status,created_at",
       );
@@ -458,6 +483,7 @@ describe("central Hub to Breathe native adapter", () => {
           "billing.overview",
           "billing.subscriptions.list",
           "support.identity.resolve",
+          "phone.messages.list",
         ],
         sourceRevision: "a".repeat(40),
       },
@@ -684,5 +710,53 @@ describe("central Hub to Breathe native adapter", () => {
       ).toBe(status);
       expect(f.fetcher).not.toHaveBeenCalled();
     }
+  });
+});
+
+describe("shared phone inbox authorization", () => {
+  const operation = { operation: "phone.messages.list", limit: 20, offset: 0 };
+  it("returns only the reviewed business message fields", async () => {
+    const f = fixture();
+    const result = await f.read(operation);
+    expect(result.status).toBe(200);
+    expect(result.payload.data).toMatchObject({
+      total: 1,
+      limit: 20,
+      offset: 0,
+      items: [
+        {
+          product: "advisors",
+          requestType: "healthcare_advisors",
+          contactName: "Fixture caller",
+        },
+      ],
+    });
+  });
+  it("rejects callers without native platform-admin membership before reading messages", async () => {
+    const f = fixture();
+    f.state.membership = null;
+    expect((await f.read(operation)).status).toBe(403);
+    expect(
+      f.calls.some((call) => call.url.pathname.endsWith("/sales_leads")),
+    ).toBe(false);
+  });
+  it("requires exact one-time SMS capability scope", async () => {
+    const f = fixture();
+    f.state.actor = {
+      user_id: HUB_ID,
+      role: "platform_admin",
+      method: "sms",
+      operation: { operation: "overview" },
+    };
+    expect(
+      (
+        await f.read(operation, {
+          headers: {
+            Authorization: "Bearer cmh_" + "a".repeat(43),
+            "Content-Type": "application/json",
+          },
+        })
+      ).status,
+    ).toBe(403);
   });
 });

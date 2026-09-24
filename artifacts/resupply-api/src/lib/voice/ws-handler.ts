@@ -119,9 +119,8 @@ function voiceMaxConcurrentCalls(): number {
 const DIAGNOSTIC_DEFAULT_CALL_CONTEXT = "Voice connection diagnostic.";
 
 const BREATHE_SALES_DEFAULT_CALL_CONTEXT =
-  "Inbound sales call to the CareMetric Breathe platform line. The caller is " +
-  "a prospective DME business. Identify why they called, then pitch, help, or " +
-  "take a message accordingly.";
+  "Shared CareMetric software support, customer service, and Healthcare Advisors line. " +
+  "Identify the product and reason. Help with software; for Advisors, gather contact details and take a message only.";
 
 /**
  * Build the system prompt, degrading to the flow's stock framing when the

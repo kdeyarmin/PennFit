@@ -22,6 +22,7 @@ const operations = [
   "billing.overview",
   "billing.subscriptions.list",
   "support.identity.resolve",
+  "phone.messages.list",
 ] as const;
 const uuid = z.string().uuid();
 // In-house auth IDs are TEXT, including legacy IDs. Preserve native case.
@@ -49,6 +50,13 @@ const page = {
   offset: z.number().int().min(0).max(10000).default(0),
 };
 const operationSchema = z.discriminatedUnion("operation", [
+  z
+    .object({
+      operation: z.literal("phone.messages.list"),
+      ...page,
+      search: search.optional(),
+    })
+    .strict(),
   z
     .object({
       operation: z.literal("support.identity.resolve"),
@@ -219,6 +227,19 @@ function exactCount(result: { error: unknown; count: number | null }): number {
 }
 
 const text = (max: number) => z.string().max(max);
+const phoneMessageRow = z.object({
+  id: uuid,
+  contact_name: text(160).nullable(),
+  company_name: text(200).nullable(),
+  phone_e164: text(40).nullable(),
+  email: text(500).nullable(),
+  message: text(2000),
+  status: text(100),
+  created_at: text(100),
+  metadata: z
+    .object({ product: text(80).optional(), request_type: text(80).optional() })
+    .nullable(),
+});
 const organizationRow = z.object({
   id: uuid,
   name: text(1000).nullable(),
@@ -521,6 +542,40 @@ export function createCentralAdminHandler({
           accountKind: "organization",
           relationship: "organization_member",
           revision,
+        };
+      } else if (operation.operation === "phone.messages.list") {
+        // Only the shared business line's saved messages; never tenant/patient records.
+        let query = raw
+          .schema("resupply")
+          .from("sales_leads")
+          .select(
+            "id,contact_name,company_name,phone_e164,email,message,status,metadata,created_at",
+            { count: "exact" },
+          )
+          .eq("source", "voice_sales_agent");
+        if (operation.search)
+          query = query.ilike("message", contains(operation.search));
+        const result = await query
+          .order("created_at", { ascending: false })
+          .order("id", { ascending: false })
+          .range(operation.offset, operation.offset + operation.limit - 1)
+          .abortSignal(signal);
+        data = {
+          items: rows(phoneMessageRow, result, operation.limit).map((row) => ({
+            id: row.id,
+            contactName: row.contact_name,
+            companyName: row.company_name,
+            phone: row.phone_e164,
+            email: row.email,
+            message: row.message,
+            status: row.status,
+            createdAt: row.created_at,
+            product: row.metadata?.product ?? "breathe",
+            requestType: row.metadata?.request_type ?? "sales",
+          })),
+          total: exactCount(result),
+          limit: operation.limit,
+          offset: operation.offset,
         };
       } else if (operation.operation === "overview") {
         const [orgs, users, subs] = await Promise.all([
