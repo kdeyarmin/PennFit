@@ -129,7 +129,8 @@ router.post("/voice/inbound-reorder", signatureMiddleware, async (req, res) => {
   // "voice": this is an inbound CALL, so ask who owns the number for
   // VOICE. A kind-blind lookup checked the SMS column first, so a DID
   // another tenant had registered for texting would have won.
-  const calledOrgId = await resolveOrgIdByCalledNumber(calledNumber, "voice");
+  const calledOrgId =
+    req.orgId ?? (await resolveOrgIdByCalledNumber(calledNumber, "voice"));
   const normalizedCaller = normalizeE164(callerRaw);
   // The caller fallback reports WHY it failed. The call site cannot infer
   // that — "a caller number was supplied" says nothing about whether the

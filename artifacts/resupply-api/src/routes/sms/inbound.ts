@@ -92,6 +92,22 @@ import { requireTenantTwilioSignature } from "../../lib/messaging/tenant-twilio-
 
 const router: IRouter = Router();
 
+// Every inline SMS path, including early errors, obeys the same approval gate.
+function sendInboundSmsResponse(
+  res: import("express").Response,
+  xml: string,
+  status = 200,
+) {
+  return res
+    .status(status)
+    .type("text/xml")
+    .send(
+      res.locals.tenantTwilioAccount?.smsApproved === false
+        ? "<Response/>"
+        : xml,
+    );
+}
+
 // Test seam — route tests inject a deterministic adapter so they don't
 // have to mock out global fetch.
 let _aiAdapterOverride: AiFallbackAdapter | null = null;
@@ -175,12 +191,11 @@ router.post(
     if (!cfg) {
       // Vendor-only path; respond 503 in TwiML so Twilio surfaces a
       // sane error in their dashboard.
-      res
-        .status(503)
-        .type("text/xml")
-        .send(
-          "<Response><Message>Service temporarily unavailable. Please try again later.</Message></Response>",
-        );
+      sendInboundSmsResponse(
+        res,
+        "<Response><Message>Service temporarily unavailable. Please try again later.</Message></Response>",
+        503,
+      );
       return;
     }
 
@@ -193,7 +208,7 @@ router.post(
         "sms.inbound: invalid body",
       );
       // Twilio doesn't retry 200s. Don't audit malformed events.
-      res.status(200).type("text/xml").send("<Response/>");
+      sendInboundSmsResponse(res, "<Response/>");
       return;
     }
 
@@ -262,16 +277,14 @@ router.post(
         const earlyPracticeName = earlyOrgId
           ? (await getCompanyInfo(earlyOrgId)).name
           : PLATFORM_NAME;
-        res
-          .status(200)
-          .type("text/xml")
-          .send(
-            twimlMessage(
-              earlyRouted.intent === "stop"
-                ? `Done. You will not get any more texts from ${earlyPracticeName}. Reply START if you want them back on.`
-                : `This is ${earlyPracticeName}. We text you when your CPAP supplies are due. Reply YES to ship. NO to skip. EDIT to fix your address. STOP to opt out. Message and data rates may apply.`,
-            ),
-          );
+        sendInboundSmsResponse(
+          res,
+          twimlMessage(
+            earlyRouted.intent === "stop"
+              ? `Done. You will not get any more texts from ${earlyPracticeName}. Reply START if you want them back on.`
+              : `This is ${earlyPracticeName}. We text you when your CPAP supplies are due. Reply YES to ship. NO to skip. EDIT to fix your address. STOP to opt out. Message and data rates may apply.`,
+          ),
+        );
         return;
       }
       await safeAudit({
@@ -288,7 +301,7 @@ router.post(
         ip: req.ip ?? null,
         userAgent: req.get("user-agent") ?? null,
       });
-      res.status(200).type("text/xml").send("<Response/>");
+      sendInboundSmsResponse(res, "<Response/>");
       return;
     }
     // Webhook: no req.orgId. Resolve the owning tenant:
@@ -302,7 +315,8 @@ router.post(
     //   * Never invent the seed org for an unknown phone: that would park
     //     STOP/HELP audits and unknown-number PHI under Penn. CTIA STOP/HELP
     //     still get a platform-branded reply with no DB write.
-    const calledOrgId = await resolveOrgIdByCalledNumber(parsed.To, "sms");
+    const calledOrgId =
+      req.orgId ?? (await resolveOrgIdByCalledNumber(parsed.To, "sms"));
     // The caller fallback reports WHY it failed, so the drop below can be
     // recorded against the reason that actually applies rather than a
     // guess made from what happens to be in scope here.
@@ -329,16 +343,14 @@ router.post(
           ip: req.ip ?? null,
           userAgent: req.get("user-agent") ?? null,
         });
-        res
-          .status(200)
-          .type("text/xml")
-          .send(
-            twimlMessage(
-              earlyRouted.intent === "stop"
-                ? `Done. You will not get any more texts from ${PLATFORM_NAME}. Reply START if you want them back on.`
-                : `This is ${PLATFORM_NAME}. We text you when your CPAP supplies are due. Reply YES to ship. NO to skip. EDIT to fix your address. STOP to opt out. Message and data rates may apply.`,
-            ),
-          );
+        sendInboundSmsResponse(
+          res,
+          twimlMessage(
+            earlyRouted.intent === "stop"
+              ? `Done. You will not get any more texts from ${PLATFORM_NAME}. Reply START if you want them back on.`
+              : `This is ${PLATFORM_NAME}. We text you when your CPAP supplies are due. Reply YES to ship. NO to skip. EDIT to fix your address. STOP to opt out. Message and data rates may apply.`,
+          ),
+        );
         return;
       }
       // Count the drop. Dropping is correct — filing a stranger's text
@@ -373,7 +385,7 @@ router.post(
         ip: req.ip ?? null,
         userAgent: req.get("user-agent") ?? null,
       });
-      res.status(200).type("text/xml").send("<Response/>");
+      sendInboundSmsResponse(res, "<Response/>");
       return;
     }
     const supabase = getOrgScopedClient(orgId);
@@ -410,14 +422,12 @@ router.post(
         ip: req.ip ?? null,
         userAgent: req.get("user-agent") ?? null,
       });
-      res
-        .status(200)
-        .type("text/xml")
-        .send(
-          "<Response><Message>This number is on multiple accounts. " +
-            "Please contact your provider directly so we can route your message correctly. " +
-            "Reply STOP to opt out.</Message></Response>",
-        );
+      sendInboundSmsResponse(
+        res,
+        "<Response><Message>This number is on multiple accounts. " +
+          "Please contact your provider directly so we can route your message correctly. " +
+          "Reply STOP to opt out.</Message></Response>",
+      );
       return;
     }
     const patientId = lookupMatches[0]?.id;
@@ -452,10 +462,10 @@ router.post(
             ip: req.ip ?? null,
             userAgent: req.get("user-agent") ?? null,
           });
-          res
-            .status(200)
-            .type("text/xml")
-            .send(twimlMessage(activeClosure.autoReplyMessage));
+          sendInboundSmsResponse(
+            res,
+            twimlMessage(activeClosure.autoReplyMessage),
+          );
           return;
         }
       } catch (err) {
@@ -497,16 +507,14 @@ router.post(
           ip: req.ip ?? null,
           userAgent: req.get("user-agent") ?? null,
         });
-        res
-          .status(200)
-          .type("text/xml")
-          .send(
-            twimlMessage(
-              earlyRouted.intent === "stop"
-                ? `Done. You will not get any more texts from ${inboundPracticeName}. Reply START if you want them back on.`
-                : `This is ${inboundPracticeName}. We text you when your CPAP supplies are due. Reply YES to ship. NO to skip. EDIT to fix your address. STOP to opt out. Message and data rates may apply.`,
-            ),
-          );
+        sendInboundSmsResponse(
+          res,
+          twimlMessage(
+            earlyRouted.intent === "stop"
+              ? `Done. You will not get any more texts from ${inboundPracticeName}. Reply START if you want them back on.`
+              : `This is ${inboundPracticeName}. We text you when your CPAP supplies are due. Reply YES to ship. NO to skip. EDIT to fix your address. STOP to opt out. Message and data rates may apply.`,
+          ),
+        );
         return;
       }
       await safeAudit({
@@ -523,14 +531,12 @@ router.post(
         ip: req.ip ?? null,
         userAgent: req.get("user-agent") ?? null,
       });
-      res
-        .status(200)
-        .type("text/xml")
-        .send(
-          "<Response><Message>This number isn't set up to receive replies. " +
-            "If you meant to contact your CPAP supplier, please call your provider directly. " +
-            "Reply STOP to opt out.</Message></Response>",
-        );
+      sendInboundSmsResponse(
+        res,
+        "<Response><Message>This number isn't set up to receive replies. " +
+          "If you meant to contact your CPAP supplier, please call your provider directly. " +
+          "Reply STOP to opt out.</Message></Response>",
+      );
       return;
     }
 
@@ -565,7 +571,7 @@ router.post(
         },
         "sms.inbound: duplicate MessageSid, replayed webhook discarded",
       );
-      res.status(200).type("text/xml").send("<Response/>");
+      sendInboundSmsResponse(res, "<Response/>");
       return;
     }
 
@@ -621,14 +627,12 @@ router.post(
           ip: req.ip ?? null,
           userAgent: req.get("user-agent") ?? null,
         });
-        res
-          .status(200)
-          .type("text/xml")
-          .send(
-            "<Response><Message>Thanks. You have nothing due right now, so there is nothing " +
-              "for you to do. We will text you when your next refill is ready. " +
-              "Reply STOP to opt out.</Message></Response>",
-          );
+        sendInboundSmsResponse(
+          res,
+          "<Response><Message>Thanks. You have nothing due right now, so there is nothing " +
+            "for you to do. We will text you when your next refill is ready. " +
+            "Reply STOP to opt out.</Message></Response>",
+        );
         return;
       }
       const inboundIso = new Date().toISOString();
@@ -648,7 +652,7 @@ router.post(
       conversationId = insertedConv?.id ?? null;
     }
     if (!conversationId) {
-      res.status(200).type("text/xml").send("<Response/>");
+      sendInboundSmsResponse(res, "<Response/>");
       return;
     }
 
@@ -684,7 +688,7 @@ router.post(
           { event: "sms_inbound_duplicate_sid" },
           "sms.inbound: duplicate MessageSid at insert, replayed webhook discarded",
         );
-        res.status(200).type("text/xml").send("<Response/>");
+        sendInboundSmsResponse(res, "<Response/>");
         return;
       }
       throw insertMsgErr;
@@ -933,6 +937,13 @@ router.post(
         "Thanks. We have passed your message to a team member. Someone will get back to you.";
     }
 
+    // Preserve inbound processing (including STOP), but neither send nor
+    // record an outbound reply until the tenant's texting approval is set.
+    if (res.locals.tenantTwilioAccount?.smsApproved === false) {
+      sendInboundSmsResponse(res, "<Response/>");
+      return;
+    }
+
     // Persist the outbound reply we're about to send. The persist
     // itself is best-effort: if the insert errors, we MUST still send
     // the TwiML — otherwise Twilio retries the webhook, our MessageSid
@@ -991,7 +1002,7 @@ router.post(
       req.log,
     );
 
-    res.status(200).type("text/xml").send(twimlMessage(twimlBody));
+    sendInboundSmsResponse(res, twimlMessage(twimlBody));
   },
 );
 

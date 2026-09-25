@@ -69,6 +69,30 @@ it("authenticates and binds a tenant's inbound number", async () => {
   expect(result.status).toBe(200);
   expect(result.body.orgId).toBe(account.orgId);
 });
+it("uses the voice Called field consistently for parent and child authorization", async () => {
+  const child = await post("/voice/inbound-reorder", {
+    AccountSid: account.accountSid,
+    Called: account.numbers[0]!,
+  });
+  expect(child.status).toBe(200);
+  expect(child.body.orgId).toBe(account.orgId);
+  const parent = await post(
+    "/voice/inbound-reorder",
+    {
+      AccountSid: account.parentAccountSid,
+      Called: account.numbers[0]!,
+      To: "+12125550102",
+    },
+    "parent-token",
+  );
+  expect(parent.status).toBe(403);
+  const wrongDestination = await post("/voice/inbound-reorder", {
+    AccountSid: account.accountSid,
+    Called: "+12125550102",
+    To: account.numbers[0]!,
+  });
+  expect(wrongDestination.status).toBe(403);
+});
 it("rejects another tenant's number even with a valid account signature", async () => {
   expect(
     (

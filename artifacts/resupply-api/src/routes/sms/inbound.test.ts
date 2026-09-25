@@ -96,9 +96,15 @@ const PATIENT_ID = "11111111-1111-4111-8111-111111111111";
 const EPISODE_ID = "22222222-2222-4222-8222-222222222222";
 const CONVERSATION_ID = "33333333-3333-4333-8333-333333333333";
 
-function makeApp(): Express {
+function makeApp(tenant?: { orgId: string; smsApproved: boolean }): Express {
   const app = express();
   app.use(express.urlencoded({ extended: false }));
+  if (tenant)
+    app.use((req, res, next) => {
+      req.orgId = tenant.orgId;
+      res.locals.tenantTwilioAccount = tenant;
+      next();
+    });
   app.use("/resupply-api", inboundRouter);
   return app;
 }
@@ -458,6 +464,50 @@ describe("POST /sms/inbound", () => {
     expect(blockedAudit).toBeDefined();
     expect(blockedAudit?.metadata.coverage_reason).toBe("prior_auth_required");
     expect(blockedAudit?.metadata.eligibility_check_id).toBe("elig-9");
+  });
+
+  it("uses the authenticated tenant and honors STOP without an unapproved text reply", async () => {
+    setMessagingEnv();
+    stageKnownPatientFlow();
+    const orgId = "99999999-9999-4999-8999-999999999999";
+    resolveOrgIdByCalledNumberMock.mockResolvedValue("different-tenant");
+    const res = await request(makeApp({ orgId, smsApproved: false }))
+      .post("/resupply-api/sms/inbound")
+      .type("form")
+      .send({
+        From: FROM_PHONE,
+        To: "+12158675309",
+        Body: "STOP",
+        MessageSid: "SM_pending_stop",
+        NumMedia: "0",
+      });
+    expect(res.status).toBe(200);
+    expect(res.text).toBe("<Response/>");
+    expect(resolveOrgIdByCalledNumberMock).not.toHaveBeenCalled();
+    expect(resolveOrgIdByPatientPhoneMock).not.toHaveBeenCalled();
+    expect(pausePatientMock).toHaveBeenCalledWith(PATIENT_ID, orgId);
+    expect(
+      supabaseMock
+        .writePayloads("messages", "insert")
+        .every(
+          (value) => (value as { direction?: string }).direction !== "outbound",
+        ),
+    ).toBe(true);
+  });
+
+  it("suppresses early replies while the tenant is awaiting texting approval", async () => {
+    setMessagingEnv();
+    const res = await request(makeApp({ orgId: SEED_ORG, smsApproved: false }))
+      .post("/resupply-api/sms/inbound")
+      .type("form")
+      .send({
+        From: "invalid",
+        To: "+12158675309",
+        Body: "HELP",
+        MessageSid: "SM_pending_help",
+      });
+    expect(res.status).toBe(200);
+    expect(res.text).toBe("<Response/>");
   });
 
   it("STOP keyword pauses patient + closes regardless of conversation context", async () => {

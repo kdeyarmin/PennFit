@@ -1,5 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
+import { TwilioConfigError } from "./config-error";
 
 // Operator-managed secrets, never returned to a browser or persisted in tenant
 // settings. Staging a connection does not move a number or enable traffic.
@@ -63,7 +64,7 @@ export function readTenantTwilioAccounts(
     return accounts;
   } catch {
     // Zod / JSON errors can include credential values. Never propagate them.
-    throw new Error(
+    throw new TwilioConfigError(
       "Tenant Twilio configuration is invalid; contact the platform administrator.",
     );
   }
@@ -94,7 +95,7 @@ export function tenantTwilioAccountForSender(
     (fromAccount && service && fromAccount !== serviceAccount) ||
     (serviceAccount && from && fromAccount !== serviceAccount)
   ) {
-    throw new Error(
+    throw new TwilioConfigError(
       "Twilio sender and messaging service belong to different accounts.",
     );
   }
@@ -109,7 +110,7 @@ export function assertTenantTwilioReady(
     account.state !== "active" ||
     (channel === "sms" && !account.smsApproved)
   ) {
-    throw new Error(
+    throw new TwilioConfigError(
       "Tenant phone connection is awaiting activation or texting approval.",
     );
   }

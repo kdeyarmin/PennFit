@@ -162,6 +162,29 @@ afterEach(() => {
 });
 
 describe("GET /admin/organization/phone-settings", () => {
+  it("blocks newly assigned parent resources but preserves unchanged legacy tenant bindings", async () => {
+    mockAdmin.current!.orgId = "11111111-1111-4111-8111-111111111111";
+    for (const value of [
+      { voiceNumber: "+12155550111" },
+      { smsNumber: "+12155550111" },
+      { messagingServiceSid: "MG" + "2".repeat(32) },
+    ]) {
+      const result = await request(makeApp())
+        .patch("/admin/organization/phone-settings")
+        .send(value);
+      expect(result.status).toBe(409);
+      expect(state.lastUpdate).toBeNull();
+    }
+    state.orgRow.voice_from_number = "+12155550111";
+    const preserved = await request(makeApp())
+      .patch("/admin/organization/phone-settings")
+      .send({ voiceNumber: "+12155550111" });
+    expect(preserved.status).toBe(200);
+    const cleared = await request(makeApp())
+      .patch("/admin/organization/phone-settings")
+      .send({ voiceNumber: null });
+    expect(cleared.status).toBe(200);
+  });
   it("requires dedicated account setup before a new tenant can buy a number", async () => {
     mockAdmin.current!.orgId = "11111111-1111-4111-8111-111111111111";
     const current = await request(makeApp()).get(

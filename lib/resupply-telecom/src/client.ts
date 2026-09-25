@@ -12,6 +12,8 @@
 //      without monkey-patching `require()` cache.
 
 import twilioPkg from "twilio";
+import { TwilioConfigError } from "./config-error";
+export { TwilioConfigError } from "./config-error";
 import {
   tenantTwilioAccountForSender,
   assertTenantTwilioReady,
@@ -74,13 +76,6 @@ export interface PlaceCallResult {
  * `name` to distinguish unrecoverable misconfig (`TwilioConfigError`)
  * from transient upstream failures (`TwilioApiError`).
  */
-export class TwilioConfigError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "TwilioConfigError";
-  }
-}
-
 export class TwilioApiError extends Error {
   readonly status?: number;
   readonly code?: number | string;

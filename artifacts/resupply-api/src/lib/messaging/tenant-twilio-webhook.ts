@@ -20,18 +20,22 @@ export function requireTenantTwilioSignature(
       if (!accounts.length)
         return requireTwilioSignature(options)(req, res, next);
       const accountSid = req.body?.AccountSid;
+      const inbound = /\/(sms\/inbound|voice\/inbound-reorder)$/.test(req.path);
+      const isVoice = req.path.endsWith("/voice/inbound-reorder");
+      // Match the route's Called/To precedence; never validate one number
+      // and then route using another field.
+      const destination = isVoice
+        ? (req.body?.Called ?? req.body?.To)
+        : req.body?.To;
       const tenant = accounts.find(
         (account) => account.accountSid === accountSid,
       );
       if (!tenant) {
         if (accountSid !== process.env.TWILIO_ACCOUNT_SID) return deny();
         // The parent must not accidentally accept a tenant's inbound number.
-        const inbound = /\/(sms\/inbound|voice\/inbound-reorder)$/.test(
-          req.path,
-        );
         if (
           inbound &&
-          accounts.some((account) => account.numbers.includes(req.body?.To))
+          accounts.some((account) => account.numbers.includes(destination))
         )
           return deny();
         return requireTwilioSignature(options)(req, res, next);
@@ -46,16 +50,15 @@ export function requireTenantTwilioSignature(
         valid = true;
       });
       if (!valid) return deny();
-      const inbound = /\/(sms\/inbound|voice\/inbound-reorder)$/.test(req.path);
       if (inbound) {
         if (
-          typeof req.body?.To !== "string" ||
-          !tenant.numbers.includes(req.body.To)
+          typeof destination !== "string" ||
+          !tenant.numbers.includes(destination)
         )
           return deny();
         const channel = req.path.endsWith("/sms/inbound") ? "sms" : "voice";
         if (
-          (await resolveOrgIdByCalledNumber(req.body.To, channel)) !==
+          (await resolveOrgIdByCalledNumber(destination, channel)) !==
           tenant.orgId
         )
           return deny();

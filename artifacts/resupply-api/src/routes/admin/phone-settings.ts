@@ -372,6 +372,24 @@ router.patch(
       return;
     }
     const connection = tenantTwilioAccountForOrg(orgId);
+    const isSeed = orgId === (await resolveSeedOrgId());
+    const current = isSeed ? null : await loadOrgPhone(orgId);
+    // Preserve an unchanged legacy binding during rollout, but a tenant
+    // cannot claim a new parent-account sender through manual settings.
+    for (const [value, oldValue, allowed] of [
+      [voiceNumber, current?.voice_from_number, connection?.numbers],
+      [smsNumber, current?.sms_from_number, connection?.numbers],
+      [
+        messagingServiceSid,
+        current?.twilio_messaging_service_sid,
+        connection?.messagingServiceSids,
+      ],
+    ] as const) {
+      if (!isSeed && value && value !== oldValue && !allowed?.includes(value)) {
+        res.status(409).json({ error: "tenant_phone_account_setup_required" });
+        return;
+      }
+    }
     for (const number of [voiceNumber, smsNumber]) {
       const assigned = number
         ? tenantTwilioAccountForSender(number)

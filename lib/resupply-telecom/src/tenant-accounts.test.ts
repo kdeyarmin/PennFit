@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createTwilioClient } from "./client";
+import { createTwilioClient, TwilioConfigError } from "./client";
 import { createTwilioSmsClient, type RawTwilioMessagingSdk } from "./sms";
 import {
   readTenantTwilioAccounts,
+  assertTenantTwilioReady,
   tenantTwilioAccountSummary,
   signTenantTwilioCallback,
   verifyTenantTwilioCallback,
@@ -39,6 +40,14 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllEnvs());
 
 describe("tenant Twilio account boundaries", () => {
+  it("reports staged and unapproved connections as configuration errors", () => {
+    expect(() =>
+      assertTenantTwilioReady({ ...account, state: "staged" }, "voice"),
+    ).toThrow(TwilioConfigError);
+    expect(() =>
+      assertTenantTwilioReady({ ...account, smsApproved: false }, "sms"),
+    ).toThrow(TwilioConfigError);
+  });
   it("uses the tenant API key/account and signs voice callbacks", async () => {
     const create = vi.fn().mockResolvedValue({ sid: "CAcall" });
     const factory = vi.fn(() => ({ calls: { create } }));
