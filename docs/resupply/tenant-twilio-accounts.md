@@ -2,7 +2,7 @@
 
 CareMetric operates the parent Twilio account. Each independent Breathe business uses a dedicated subaccount with its own business identity, numbers and Messaging Services. The shared CareMetric support / Healthcare Advisors number, **+18775212890**, stays outside tenant mappings.
 
-This release supports dedicated account routing. It does **not** create provider accounts, transfer numbers, submit business registrations, or infer carrier approval. Existing mapped numbers keep their legacy routing until operations completes their migration. A non-seed tenant without a sending identity is blocked from using the platform default.
+This release supports dedicated account routing. It does **not** create provider accounts, transfer numbers, submit business registrations, or infer carrier approval. Existing tenants keep their legacy sending behavior until operations completes their migration. New tenants must complete dedicated-account setup before operations enables their outreach; self-service purchases in the parent account are blocked for non-seed tenants.
 
 ## Configure a connection
 

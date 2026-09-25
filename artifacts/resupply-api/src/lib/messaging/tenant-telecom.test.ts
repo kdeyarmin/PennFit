@@ -83,16 +83,16 @@ describe("resolveTenantSmsFrom", () => {
     });
   });
 
-  it("keeps platform fallback only for the legacy seed tenant", async () => {
+  it("preserves the existing sender fallback before a tenant migrates", async () => {
     state.responses = [row()];
     expect(await resolveTenantSmsFrom(SEED_ORG)).toEqual({});
     state.responses = [row()];
-    await expect(resolveTenantSmsFrom(ORG)).rejects.toThrow("requires its own");
+    expect(await resolveTenantSmsFrom(ORG)).toEqual({});
   });
 
-  it("blocks non-seed sending on a lookup error", async () => {
+  it("preserves legacy fallback on a lookup error before migration", async () => {
     state.responses = [{ data: null, error: { message: "boom" } }];
-    await expect(resolveTenantSmsFrom(ORG)).rejects.toThrow("requires its own");
+    expect(await resolveTenantSmsFrom(ORG)).toEqual({});
   });
 
   it("caches the row (no second query within the TTL)", async () => {

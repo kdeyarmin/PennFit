@@ -11,7 +11,7 @@ import {
 // Two directions:
 //   * OUTBOUND — `resolveTenantSmsFrom(orgId)` / `resolveTenantVoiceFrom(orgId)`
 //     return the tenant's sender override, or `{}` / `null` (platform
-//     default) only for the legacy seed tenant when it has none.
+//     default) for legacy tenants that have not migrated yet.
 //   * INBOUND — `resolveOrgIdByCalledNumber(toNumber)` reverse-maps an
 //     inbound webhook's `To` (the called number) back to its owning
 //     tenant so a tenant's SMS / call lands in the right `org_id`.
@@ -19,7 +19,7 @@ import {
 // The `organizations` directory is GLOBAL, so it's read via the `.raw()`
 // escape hatch. Results are cached briefly; `invalidateTenantTelecomCache()`
 // drops the cache after an operator changes a tenant's numbers. Failed reads
-// cannot fall back to platform senders for a dedicated or non-seed tenant.
+// cannot fall back to platform senders for an active dedicated account.
 
 import { normalizeE164 } from "@workspace/resupply-domain";
 import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
@@ -154,7 +154,7 @@ export async function resolveTenantSmsFrom(
   const tenantOrgId = orgId?.trim();
   if (!tenantOrgId) return {};
   const row = await loadTelecomRow(tenantOrgId);
-  await assertAccountBinding(
+  assertAccountBinding(
     tenantOrgId,
     row.smsFromNumber,
     row.messagingServiceSid,
@@ -261,7 +261,7 @@ export async function resolveTenantVoiceFrom(
   const tenantOrgId = orgId?.trim();
   if (!tenantOrgId) return null;
   const row = await loadTelecomRow(tenantOrgId);
-  await assertAccountBinding(tenantOrgId, row.voiceFromNumber, null, "voice");
+  assertAccountBinding(tenantOrgId, row.voiceFromNumber, null, "voice");
   return row.voiceFromNumber;
 }
 
@@ -546,16 +546,13 @@ export async function resolveOrgIdByCalledNumber(
   return value;
 }
 
-async function assertAccountBinding(
+function assertAccountBinding(
   orgId: string,
   number: string | null,
   service: string | null,
   channel: "voice" | "sms",
 ) {
   const connection = tenantTwilioAccountForOrg(orgId);
-  if (!number && !service && orgId !== (await resolveSeedOrgId())) {
-    throw new Error(`Tenant ${channel} requires its own sending identity.`);
-  }
   const actual = tenantTwilioAccountForSender(
     service ? undefined : (number ?? undefined),
     service ?? undefined,
