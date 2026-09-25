@@ -8,18 +8,18 @@ This release supports dedicated account routing. It does **not** create provider
 
 Store `TWILIO_TENANT_ACCOUNTS_JSON` only as a server deployment secret. It is a JSON array with these fields per connection:
 
-| Field | Meaning |
-| --- | --- |
-| `orgId` | Existing Breathe organization UUID |
-| `businessName` | Tenant's verified business / trading name |
-| `accountSid` | Tenant subaccount SID (`AC…`) |
-| `parentAccountSid` | Must match server `TWILIO_ACCOUNT_SID` |
-| `apiKeySid`, `apiKeySecret` | API key created inside that subaccount |
-| `authToken` | Subaccount Auth Token for validating Twilio callbacks |
-| `numbers` | Nonempty list of E.164 numbers actually assigned to that account |
-| `messagingServiceSids` | List of its Messaging Service SIDs (`MG…`), possibly empty |
-| `state` | `staged` or `active` |
-| `smsApproved` | `true` only after all configured SMS senders and use cases have the required provider approval |
+| Field                       | Meaning                                                                                        |
+| --------------------------- | ---------------------------------------------------------------------------------------------- |
+| `orgId`                     | Existing Breathe organization UUID                                                             |
+| `businessName`              | Tenant's verified business / trading name                                                      |
+| `accountSid`                | Tenant subaccount SID (`AC…`)                                                                  |
+| `parentAccountSid`          | Must match server `TWILIO_ACCOUNT_SID`                                                         |
+| `apiKeySid`, `apiKeySecret` | API key created inside that subaccount                                                         |
+| `authToken`                 | Subaccount Auth Token for validating Twilio callbacks                                          |
+| `numbers`                   | Nonempty list of E.164 numbers actually assigned to that account                               |
+| `messagingServiceSids`      | List of its Messaging Service SIDs (`MG…`), possibly empty                                     |
+| `state`                     | `staged` or `active`                                                                           |
+| `smsApproved`               | `true` only after all configured SMS senders and use cases have the required provider approval |
 
 Set `TWILIO_TENANT_CALLBACK_KEY` to a securely generated secret of at least 32 characters before activating any connection. Keep it stable while calls and delivery callbacks are in flight. It binds each outbound callback URL and its record identifiers to the platform; the tenant Auth Token alone is not sufficient authorization.
 
