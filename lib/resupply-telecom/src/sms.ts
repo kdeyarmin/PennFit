@@ -25,6 +25,11 @@
 
 import { z } from "zod";
 import twilioPkg from "twilio";
+import {
+  tenantTwilioAccountForSender,
+  assertTenantTwilioReady,
+  signTenantTwilioCallback,
+} from "./tenant-accounts";
 
 import { TwilioApiError, TwilioConfigError } from "./client";
 import {
@@ -141,7 +146,11 @@ export interface CreateTwilioSmsClientOptions {
   /** Default messaging service SID; takes precedence over `from`. */
   messagingServiceSid?: string;
   /** Test-only seam. Production callers leave undefined. */
-  sdkFactory?: (accountSid: string, authToken: string) => RawTwilioMessagingSdk;
+  sdkFactory?: (
+    accountSid: string,
+    authToken: string,
+    options?: { accountSid: string },
+  ) => RawTwilioMessagingSdk;
   /**
    * Override the bounded in-process retry on transient Twilio failures
    * (HTTP 429 / 5xx / network). Defaults to
@@ -242,9 +251,22 @@ export function createTwilioSmsClient(
     );
   }
 
-  const sdk: RawTwilioMessagingSdk = opts.sdkFactory
-    ? opts.sdkFactory(accountSid, authToken)
-    : (Twilio(accountSid, authToken) as unknown as RawTwilioMessagingSdk);
+  const tenant = tenantTwilioAccountForSender(
+    defaultMsid && !opts.pinFrom ? undefined : defaultFrom,
+    defaultMsid,
+  );
+  if (tenant) assertTenantTwilioReady(tenant, "sms");
+  const sdk: RawTwilioMessagingSdk = tenant
+    ? opts.sdkFactory
+      ? opts.sdkFactory(tenant.apiKeySid, tenant.apiKeySecret, {
+          accountSid: tenant.accountSid,
+        })
+      : (Twilio(tenant.apiKeySid, tenant.apiKeySecret, {
+          accountSid: tenant.accountSid,
+        }) as unknown as RawTwilioMessagingSdk)
+    : opts.sdkFactory
+      ? opts.sdkFactory(accountSid, authToken)
+      : (Twilio(accountSid, authToken) as unknown as RawTwilioMessagingSdk);
 
   const retryPolicy: RetryPolicy = {
     maxAttempts:
@@ -259,6 +281,14 @@ export function createTwilioSmsClient(
     async sendSms(input) {
       const fromNumber = input.from ?? defaultFrom;
       const msid = input.messagingServiceSid ?? defaultMsid;
+      const effectiveTenant = tenantTwilioAccountForSender(
+        msid && !opts.pinFrom ? undefined : fromNumber,
+        msid,
+      );
+      if (effectiveTenant?.accountSid !== tenant?.accountSid)
+        throw new TwilioConfigError(
+          "Cannot change Twilio accounts through a message sender override.",
+        );
       const params: Parameters<RawTwilioMessagingSdk["messages"]["create"]>[0] =
         {
           to: input.to,
@@ -273,7 +303,9 @@ export function createTwilioSmsClient(
         params.from = fromNumber;
       }
       if (input.statusCallbackUrl) {
-        params.statusCallback = input.statusCallbackUrl;
+        params.statusCallback = tenant
+          ? signTenantTwilioCallback(input.statusCallbackUrl, tenant)
+          : input.statusCallbackUrl;
       }
 
       // A single send attempt. Transient Twilio failures (429 / 5xx /

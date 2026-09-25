@@ -36,7 +36,6 @@ import {
 import {
   buildConnectStreamTwiml,
   buildHangupTwiml,
-  requireTwilioSignature,
 } from "@workspace/resupply-telecom";
 
 import { getCompanyInfo } from "../../lib/company-info";
@@ -74,6 +73,8 @@ const INBOUND_GREETING =
   "Hi there, thanks for calling your CPAP resupply line! I can help you " +
   "reorder your supplies today.";
 
+import { requireTenantTwilioSignature } from "../../lib/messaging/tenant-twilio-webhook";
+
 const router: IRouter = Router();
 
 const inboundBody = z.object({
@@ -86,7 +87,7 @@ const inboundBody = z.object({
   Called: z.string().trim().optional(),
 });
 
-const signatureMiddleware = requireTwilioSignature({
+const signatureMiddleware = requireTenantTwilioSignature({
   // Use token-only reader so inbound webhooks authenticate even when
   // OPENAI_API_KEY is unset. The public base URL also must be
   // sourced independently of the full voice config — otherwise the

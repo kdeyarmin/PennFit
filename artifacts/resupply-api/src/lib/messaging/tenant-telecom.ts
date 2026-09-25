@@ -1,25 +1,25 @@
+import {
+  tenantTwilioAccountForOrg,
+  tenantTwilioAccountForSender,
+} from "@workspace/resupply-telecom";
 // Per-tenant Twilio sending identity resolution (G7).
 //
-// Phase 2 lets each tenant send SMS / place calls under THEIR OWN Twilio
-// number (or Messaging Service) while inbound webhooks route to the tenant
-// the called number belongs to. The platform `TWILIO_ACCOUNT_SID` /
-// `TWILIO_AUTH_TOKEN` stay the API credential; the per-tenant
-// `organizations.sms_from_number` / `voice_from_number` /
-// `twilio_messaging_service_sid` (migration 0364) select the sender.
+// Organizations select their own sending numbers / Messaging Services.
+// Operator-configured subaccounts use tenant credentials in the telecom
+// clients. Existing numbers remain on their current account until migrated.
 //
 // Two directions:
 //   * OUTBOUND — `resolveTenantSmsFrom(orgId)` / `resolveTenantVoiceFrom(orgId)`
 //     return the tenant's sender override, or `{}` / `null` (platform
-//     default) when it has none. NULL → current single-tenant behavior.
+//     default) only for the legacy seed tenant when it has none.
 //   * INBOUND — `resolveOrgIdByCalledNumber(toNumber)` reverse-maps an
 //     inbound webhook's `To` (the called number) back to its owning
 //     tenant so a tenant's SMS / call lands in the right `org_id`.
 //
 // The `organizations` directory is GLOBAL, so it's read via the `.raw()`
 // escape hatch. Results are cached briefly; `invalidateTenantTelecomCache()`
-// drops the cache after an operator changes a tenant's numbers. All reads
-// fail soft (→ platform default / null) so a DB blip never blocks a send
-// and never routes to the WRONG tenant.
+// drops the cache after an operator changes a tenant's numbers. Failed reads
+// cannot fall back to platform senders for a dedicated or non-seed tenant.
 
 import { normalizeE164 } from "@workspace/resupply-domain";
 import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
@@ -117,7 +117,7 @@ async function loadTelecomRow(orgId: string): Promise<TelecomRow> {
   } catch (err) {
     logger.warn(
       { event: "tenant_telecom_lookup_failed", err, orgId },
-      "tenant-telecom: lookup failed; using platform default sender",
+      "tenant-telecom: lookup failed; validating sender fallback",
     );
     value = EMPTY_ROW;
   }
@@ -154,6 +154,12 @@ export async function resolveTenantSmsFrom(
   const tenantOrgId = orgId?.trim();
   if (!tenantOrgId) return {};
   const row = await loadTelecomRow(tenantOrgId);
+  await assertAccountBinding(
+    tenantOrgId,
+    row.smsFromNumber,
+    row.messagingServiceSid,
+    "sms",
+  );
   const out: TenantSmsFrom = {};
   if (row.smsFromNumber) out.from = row.smsFromNumber;
   if (row.messagingServiceSid)
@@ -255,6 +261,7 @@ export async function resolveTenantVoiceFrom(
   const tenantOrgId = orgId?.trim();
   if (!tenantOrgId) return null;
   const row = await loadTelecomRow(tenantOrgId);
+  await assertAccountBinding(tenantOrgId, row.voiceFromNumber, null, "voice");
   return row.voiceFromNumber;
 }
 
@@ -537,4 +544,29 @@ export async function resolveOrgIdByCalledNumber(
 
   byNumber.set(cacheKey, { value, expiresAt: now + CACHE_TTL_MS });
   return value;
+}
+
+async function assertAccountBinding(
+  orgId: string,
+  number: string | null,
+  service: string | null,
+  channel: "voice" | "sms",
+) {
+  const connection = tenantTwilioAccountForOrg(orgId);
+  if (!number && !service && orgId !== (await resolveSeedOrgId())) {
+    throw new Error(`Tenant ${channel} requires its own sending identity.`);
+  }
+  const actual = tenantTwilioAccountForSender(
+    service ? undefined : (number ?? undefined),
+    service ?? undefined,
+  );
+  if (
+    (actual && actual.orgId !== orgId) ||
+    (connection?.state === "active" &&
+      (actual?.accountSid !== connection.accountSid || (!number && !service)))
+  ) {
+    throw new Error(
+      `Tenant ${channel} sender is not bound to its own Twilio account.`,
+    );
+  }
 }

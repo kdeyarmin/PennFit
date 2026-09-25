@@ -129,6 +129,47 @@ export function AdminPhoneSettingsPage() {
         </p>
       </header>
 
+      <Card title="Practice phone account">
+        <p className="text-sm">
+          CareMetric manages the phone service centrally. Patient calls and
+          texts use your practice’s business identity. CareMetric software
+          support and Healthcare Advisors use (877) 521-2890.
+        </p>
+        {data.phoneAccount?.mode === "subaccount" ? (
+          <dl className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+            <NumberStat
+              label="Business"
+              value={data.phoneAccount.businessName ?? null}
+            />
+            <NumberStat
+              label="Account"
+              value={data.phoneAccount.accountSid ?? null}
+            />
+            <NumberStat
+              label="Connection"
+              value={
+                data.phoneAccount.state === "active"
+                  ? "Active"
+                  : "Prepared — activation pending"
+              }
+            />
+            <NumberStat
+              label="Texting"
+              value={
+                data.phoneAccount.smsApproved
+                  ? "Approval recorded"
+                  : "Awaiting approval"
+              }
+            />
+          </dl>
+        ) : (
+          <p className="mt-3 text-sm">
+            Existing shared connection. A dedicated practice account has not
+            been connected yet. Contact CareMetric to arrange setup.
+          </p>
+        )}
+      </Card>
+
       <Card title="Current numbers">
         {hasAnyNumber ? (
           <dl className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">

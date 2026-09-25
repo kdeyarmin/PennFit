@@ -1,3 +1,4 @@
+import { signTenantTwilioCallback } from "@workspace/resupply-telecom";
 // /voice/checkin-twiml + /voice/checkin-press — TwiML webhook +
 // DTMF callback for the automated onboarding check-in calls placed
 // by the multi-channel dispatcher.
@@ -27,7 +28,6 @@ import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
 import { getOrgScopedClient } from "@workspace/resupply-db";
-import { requireTwilioSignature } from "@workspace/resupply-telecom";
 
 import { resolveOrgIdForSignedRecord } from "../../lib/storefront/signed-link-org";
 import { resolveBrandingByOrgId } from "../../lib/tenant-branding";
@@ -41,9 +41,11 @@ import {
 } from "../../lib/voice/voice-config";
 import type { OnboardingDayLabel } from "@workspace/resupply-db";
 
+import { requireTenantTwilioSignature } from "../../lib/messaging/tenant-twilio-webhook";
+
 const router: IRouter = Router();
 
-const signatureMiddleware = requireTwilioSignature({
+const signatureMiddleware = requireTenantTwilioSignature({
   // Read Twilio token + public base URL independently of the full
   // voice config — inbound webhooks must authenticate even when
   // OPENAI_API_KEY is unset (inbound-only deployment, transient
@@ -104,13 +106,20 @@ router.post(
     // the action URL is more robust against Twilio dropping query
     // parameters on the callback POST.
     const base = cfg?.publicBaseUrl ?? "";
-    const pressActionUrl =
+    const unsignedPressActionUrl =
       `${base}/resupply-api/voice/checkin-press?` +
       [
         `patientId=${encodeURIComponent(patientId)}`,
         `journeyId=${encodeURIComponent(journeyId)}`,
         `day=${encodeURIComponent(day)}`,
       ].join("&");
+
+    const pressActionUrl = res.locals.tenantTwilioAccount
+      ? signTenantTwilioCallback(
+          unsignedPressActionUrl,
+          res.locals.tenantTwilioAccount,
+        )
+      : unsignedPressActionUrl;
 
     res
       .status(200)

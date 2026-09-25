@@ -13,11 +13,7 @@
 import { Router, type IRouter } from "express";
 
 import { getOrgScopedClient } from "@workspace/resupply-db";
-import {
-  buildDialTwiml,
-  buildHangupTwiml,
-  requireTwilioSignature,
-} from "@workspace/resupply-telecom";
+import { buildDialTwiml, buildHangupTwiml } from "@workspace/resupply-telecom";
 
 import { logger } from "../../lib/logger";
 import { resolveTenantVoiceFrom } from "../../lib/messaging/tenant-telecom";
@@ -28,9 +24,11 @@ import {
   readVoicePublicBaseUrlOrNull,
 } from "../../lib/voice/voice-config";
 
+import { requireTenantTwilioSignature } from "../../lib/messaging/tenant-twilio-webhook";
+
 const router: IRouter = Router();
 
-const signatureMiddleware = requireTwilioSignature({
+const signatureMiddleware = requireTenantTwilioSignature({
   getAuthToken: () => readTwilioWebhookAuthTokenOrNull() ?? undefined,
   buildPublicUrl: (req) => {
     const base = readVoicePublicBaseUrlOrNull() ?? "";

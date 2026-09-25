@@ -53,7 +53,7 @@ vi.mock("../../middlewares/admin-rate-limit", () => {
 });
 
 vi.mock("@workspace/resupply-db", () => ({
-  resolveSeedOrgId: async () => "org",
+  resolveSeedOrgId: async () => "00000000-0000-4000-8000-000000000001",
   getOrgScopedClient: () => ({
     raw: () => ({
       schema: () => ({
@@ -92,7 +92,10 @@ vi.mock("@workspace/resupply-db", () => ({
   }),
 }));
 
-vi.mock("@workspace/resupply-telecom", () => ({
+vi.mock("@workspace/resupply-telecom", async () => ({
+  ...(await vi.importActual<typeof import("@workspace/resupply-telecom")>(
+    "@workspace/resupply-telecom",
+  )),
   TwilioConfigError,
   TwilioApiError,
   createTwilioNumberClient: () => ({
@@ -159,6 +162,20 @@ afterEach(() => {
 });
 
 describe("GET /admin/organization/phone-settings", () => {
+  it("requires dedicated account setup before a new tenant can buy a number", async () => {
+    mockAdmin.current!.orgId = "11111111-1111-4111-8111-111111111111";
+    const current = await request(makeApp()).get(
+      "/admin/organization/phone-settings",
+    );
+    expect(current.body.canProvision).toBe(false);
+    const result = await request(makeApp())
+      .post("/admin/organization/phone-settings/provision")
+      .send({});
+    expect(result.status).toBe(409);
+    expect(result.body.error).toBe("tenant_phone_account_setup_required");
+    expect(state.lastUpdate).toBeNull();
+  });
+
   it("401s when unauthenticated", async () => {
     mockAdmin.current = null;
     const res = await request(makeApp()).get(
@@ -178,6 +195,7 @@ describe("GET /admin/organization/phone-settings", () => {
       smsNumber: null,
       messagingServiceSid: null,
       canProvision: true,
+      phoneAccount: { mode: "shared", state: "legacy", smsApproved: false },
     });
   });
 

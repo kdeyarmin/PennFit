@@ -52,10 +52,7 @@ import {
   type Json,
   type OrgScopedClient,
 } from "@workspace/resupply-db";
-import {
-  parseInboundSmsParams,
-  requireTwilioSignature,
-} from "@workspace/resupply-telecom";
+import { parseInboundSmsParams } from "@workspace/resupply-telecom";
 import {
   parseSmsIntent,
   toGsm7,
@@ -90,6 +87,8 @@ import {
 import { findActiveClosure } from "../../lib/office-closure/active";
 import { safeAudit } from "../../lib/messaging/safe-audit";
 import { notifyConversationNeedsHuman } from "../../lib/slack/notify";
+
+import { requireTenantTwilioSignature } from "../../lib/messaging/tenant-twilio-webhook";
 
 const router: IRouter = Router();
 
@@ -158,7 +157,7 @@ const smsPhoneLimiter: import("express").RequestHandler = (req, res, next) => {
   smsPhoneLimiterRaw(req, res, next);
 };
 
-const signatureMiddleware = requireTwilioSignature({
+const signatureMiddleware = requireTenantTwilioSignature({
   getAuthToken: () => readSmsConfigOrNull()?.twilioAuthToken,
   buildPublicUrl: (req) => {
     const base = readSmsConfigOrNull()?.publicBaseUrl ?? "";
@@ -720,8 +719,12 @@ router.post(
             messageId: inboundMessageId,
             rawWebhookBody: req.body as Record<string, unknown>,
             numMedia,
-            twilioAccountSid: cfg.sms.twilioAccountSid,
-            twilioAuthToken: cfg.sms.twilioAuthToken,
+            twilioAccountSid:
+              res.locals.tenantTwilioAccount?.accountSid ??
+              cfg.sms.twilioAccountSid,
+            twilioAuthToken:
+              res.locals.tenantTwilioAccount?.authToken ??
+              cfg.sms.twilioAuthToken,
             orgId,
           },
           req.log,

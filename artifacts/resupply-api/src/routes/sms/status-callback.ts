@@ -25,16 +25,15 @@ import {
   getOrgScopedClient,
   resolveSeedOrgId,
 } from "@workspace/resupply-db";
-import {
-  parseSmsStatusCallbackParams,
-  requireTwilioSignature,
-} from "@workspace/resupply-telecom";
+import { parseSmsStatusCallbackParams } from "@workspace/resupply-telecom";
 
 import { logger } from "../../lib/logger";
 import { readSmsConfigOrNull } from "../../lib/messaging/messaging-config";
 import { safeAudit } from "../../lib/messaging/safe-audit";
 
 type MessagesUpdate = Database["resupply"]["Tables"]["messages"]["Update"];
+
+import { requireTenantTwilioSignature } from "../../lib/messaging/tenant-twilio-webhook";
 
 const router: IRouter = Router();
 
@@ -46,7 +45,7 @@ const TERMINAL_STATUSES = new Set([
 ]);
 const FAILURE_STATUSES = new Set(["undelivered", "failed"]);
 
-const signatureMiddleware = requireTwilioSignature({
+const signatureMiddleware = requireTenantTwilioSignature({
   getAuthToken: () => readSmsConfigOrNull()?.twilioAuthToken,
   buildPublicUrl: (req) => {
     const base = readSmsConfigOrNull()?.publicBaseUrl ?? "";
@@ -97,7 +96,8 @@ router.post("/sms/status-callback", signatureMiddleware, async (req, res) => {
   // Webhook: no req.orgId. Resolve the seed tenant; on miss, ACK 200 so
   // Twilio stops retrying (the row stamp degrades, same posture as the
   // per-helper catch blocks below).
-  const orgId = await resolveSeedOrgId();
+  const orgId = req.orgId ?? (await resolveSeedOrgId());
+  const accountBound = Boolean(res.locals.tenantTwilioAccount);
   if (!orgId) {
     res.status(200).type("text/xml").send("<Response/>");
     return;
@@ -110,6 +110,7 @@ router.post("/sms/status-callback", signatureMiddleware, async (req, res) => {
       messageSid,
       status,
       parsed.ErrorCode ?? null,
+      accountBound,
     );
   } else if (videoVisitId) {
     await updateVideoVisitInviteDelivery(
@@ -118,6 +119,7 @@ router.post("/sms/status-callback", signatureMiddleware, async (req, res) => {
       messageSid,
       status,
       parsed.ErrorCode ?? null,
+      accountBound,
     );
   } else {
     await updateMessageDelivery(
@@ -125,6 +127,7 @@ router.post("/sms/status-callback", signatureMiddleware, async (req, res) => {
       messageSid,
       status,
       parsed.ErrorCode ?? null,
+      accountBound,
     );
   }
 
@@ -147,6 +150,7 @@ router.post("/sms/status-callback", signatureMiddleware, async (req, res) => {
         twilio_message_sid: messageSid,
         status,
         error_code: parsed.ErrorCode ?? null,
+        accountBound,
       },
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
@@ -167,6 +171,7 @@ async function updateMessageDelivery(
   messageSid: string,
   status: string,
   errorCode: string | null,
+  accountBound = false,
 ): Promise<void> {
   try {
     const supabase = getOrgScopedClient(orgId);
@@ -193,6 +198,7 @@ async function updateMessageDelivery(
       .from("messages")
       .update(update)
       .filter("vendor_metadata->>twilio_message_sid", "eq", messageSid);
+    if (accountBound) updateQuery = updateQuery.eq("org_id", orgId);
     if (status === "sent") {
       // `sent` (carrier-accepted) is NOT a final state — `delivered`,
       // `undelivered`, and `failed` are. Twilio status callbacks are not
@@ -234,6 +240,7 @@ async function updateRecallNotificationDelivery(
   messageSid: string,
   status: string,
   errorCode: string | null,
+  accountBound = false,
 ): Promise<void> {
   try {
     const supabase = getOrgScopedClient(orgId);
@@ -252,6 +259,7 @@ async function updateRecallNotificationDelivery(
         updated_at: new Date().toISOString(),
       })
       .eq("id", recallNotificationId);
+    if (accountBound) updateQuery = updateQuery.eq("org_id", orgId);
     if (status === "sent") {
       // Same no-regress rule as the messages path: callbacks are
       // unordered and re-POSTed, so a late `sent` must never downgrade
@@ -290,6 +298,7 @@ async function updateVideoVisitInviteDelivery(
   messageSid: string,
   status: string,
   errorCode: string | null,
+  accountBound = false,
 ): Promise<void> {
   try {
     const supabase = getOrgScopedClient(orgId);
@@ -324,6 +333,7 @@ async function updateVideoVisitInviteDelivery(
           messageSid,
         )}`,
       );
+    if (accountBound) updateQuery = updateQuery.eq("org_id", orgId);
     if (status === "sent") {
       // Same no-regress rule as the paths above: callbacks are
       // unordered and re-POSTed, so a late `sent` must never downgrade

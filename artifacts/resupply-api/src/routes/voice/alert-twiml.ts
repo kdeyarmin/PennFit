@@ -27,17 +27,17 @@
 
 import { Router, type IRouter, type Request } from "express";
 
-import { requireTwilioSignature } from "@workspace/resupply-telecom";
-
 import { getAlertVoiceScripts } from "../../lib/alerts/voice-scripts";
 import {
   readTwilioWebhookAuthTokenOrNull,
   readVoicePublicBaseUrlOrNull,
 } from "../../lib/voice/voice-config";
 
+import { requireTenantTwilioSignature } from "../../lib/messaging/tenant-twilio-webhook";
+
 const router: IRouter = Router();
 
-const signatureMiddleware = requireTwilioSignature({
+const signatureMiddleware = requireTenantTwilioSignature({
   getAuthToken: () => readTwilioWebhookAuthTokenOrNull() ?? undefined,
   buildPublicUrl: (req) => {
     const base = readVoicePublicBaseUrlOrNull() ?? "";
