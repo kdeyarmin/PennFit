@@ -33,11 +33,14 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getOrgScopedClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 import {
   createTwilioNumberClient,
   TwilioApiError,
   TwilioConfigError,
+  tenantTwilioAccountForOrg,
+  tenantTwilioAccountForSender,
+  tenantTwilioAccountSummary,
 } from "@workspace/resupply-telecom";
 
 import { logger } from "../../lib/logger.js";
@@ -140,12 +143,16 @@ async function loadOrgPhone(orgId: string): Promise<OrgPhoneRow | null> {
   return (data as OrgPhoneRow | null) ?? null;
 }
 
-function viewOf(row: OrgPhoneRow | null) {
+async function viewOf(row: OrgPhoneRow | null, orgId: string) {
   return {
     voiceNumber: row?.voice_from_number ?? null,
     smsNumber: row?.sms_from_number ?? null,
     messagingServiceSid: row?.twilio_messaging_service_sid ?? null,
-    canProvision: canProvisionPhone(),
+    canProvision:
+      canProvisionPhone() &&
+      orgId === (await resolveSeedOrgId()) &&
+      !tenantTwilioAccountForOrg(orgId),
+    phoneAccount: tenantTwilioAccountSummary(orgId),
   };
 }
 
@@ -162,7 +169,7 @@ router.get(
       res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
-    res.json(viewOf(await loadOrgPhone(orgId)));
+    res.json(await viewOf(await loadOrgPhone(orgId), orgId));
   },
 );
 
@@ -200,6 +207,20 @@ router.post(
     }
     if (!canProvisionPhone()) {
       res.status(503).json({ error: "phone_provisioning_not_configured" });
+      return;
+    }
+
+    // New tenants are provisioned in their dedicated account by platform
+    // operations. Never silently purchase their number in the parent account.
+    if (
+      orgId !== (await resolveSeedOrgId()) ||
+      tenantTwilioAccountForOrg(orgId)
+    ) {
+      res.status(409).json({
+        error: "tenant_phone_account_setup_required",
+        message:
+          "CareMetric must provision and verify this practice's dedicated phone account first.",
+      });
       return;
     }
 
@@ -314,7 +335,7 @@ router.post(
     });
 
     res.status(201).json({
-      ...viewOf(await loadOrgPhone(orgId)),
+      ...(await viewOf(await loadOrgPhone(orgId), orgId)),
       provisioned: result.phoneNumber,
     });
   },
@@ -346,6 +367,55 @@ router.patch(
     }
 
     const { voiceNumber, smsNumber, messagingServiceSid } = parsed.data;
+    if ([voiceNumber, smsNumber].includes("+18775212890")) {
+      res.status(409).json({ error: "platform_support_number_reserved" });
+      return;
+    }
+    const connection = tenantTwilioAccountForOrg(orgId);
+    const isSeed = orgId === (await resolveSeedOrgId());
+    const current = isSeed ? null : await loadOrgPhone(orgId);
+    // Preserve an unchanged legacy binding during rollout, but a tenant
+    // cannot claim a new parent-account sender through manual settings.
+    for (const [value, oldValue, allowed] of [
+      [voiceNumber, current?.voice_from_number, connection?.numbers],
+      [smsNumber, current?.sms_from_number, connection?.numbers],
+      [
+        messagingServiceSid,
+        current?.twilio_messaging_service_sid,
+        connection?.messagingServiceSids,
+      ],
+    ] as const) {
+      if (!isSeed && value && value !== oldValue && !allowed?.includes(value)) {
+        res.status(409).json({ error: "tenant_phone_account_setup_required" });
+        return;
+      }
+    }
+    for (const number of [voiceNumber, smsNumber]) {
+      const assigned = number
+        ? tenantTwilioAccountForSender(number)
+        : undefined;
+      if (
+        (assigned && assigned.orgId !== orgId) ||
+        (number &&
+          connection?.state === "active" &&
+          !connection.numbers.includes(number))
+      ) {
+        res.status(409).json({ error: "phone_account_mismatch" });
+        return;
+      }
+    }
+    const serviceAccount = messagingServiceSid
+      ? tenantTwilioAccountForSender(undefined, messagingServiceSid)
+      : undefined;
+    if (
+      (serviceAccount && serviceAccount.orgId !== orgId) ||
+      (messagingServiceSid &&
+        connection?.state === "active" &&
+        !connection.messagingServiceSids.includes(messagingServiceSid))
+    ) {
+      res.status(409).json({ error: "phone_account_mismatch" });
+      return;
+    }
     const update: Record<string, string | null> = {};
     if (voiceNumber !== undefined) update.voice_from_number = voiceNumber;
     if (smsNumber !== undefined) update.sms_from_number = smsNumber;
@@ -435,7 +505,7 @@ router.patch(
       );
     });
 
-    res.json(viewOf(await loadOrgPhone(orgId)));
+    res.json(await viewOf(await loadOrgPhone(orgId), orgId));
   },
 );
 

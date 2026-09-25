@@ -56,7 +56,8 @@ vi.mock("@workspace/resupply-email", async (importOriginal) => ({
   EmailConfigError: class EmailConfigError extends Error {},
 }));
 
-vi.mock("@workspace/resupply-telecom", () => ({
+vi.mock("@workspace/resupply-telecom", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@workspace/resupply-telecom")>()),
   createTwilioSmsClient: () => ({ sendSms }),
   createTwilioClient: () => ({ placeCall: vi.fn() }),
   TwilioApiError: class TwilioApiError extends Error {},

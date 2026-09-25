@@ -1,6 +1,6 @@
 // Per-tenant Twilio sending identity resolver (G7).
 
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const SEED_ORG = "00000000-0000-4000-8000-000000000000";
 
@@ -62,6 +62,7 @@ beforeEach(() => {
   state.calls = 0;
   invalidateTenantTelecomCache();
 });
+afterEach(() => vi.unstubAllEnvs());
 
 describe("resolveTenantSmsFrom", () => {
   it("returns {} for an undefined / blank orgId without querying", async () => {
@@ -82,12 +83,14 @@ describe("resolveTenantSmsFrom", () => {
     });
   });
 
-  it("returns {} (platform default) when the tenant has no SMS sender", async () => {
+  it("preserves the existing sender fallback before a tenant migrates", async () => {
+    state.responses = [row()];
+    expect(await resolveTenantSmsFrom(SEED_ORG)).toEqual({});
     state.responses = [row()];
     expect(await resolveTenantSmsFrom(ORG)).toEqual({});
   });
 
-  it("fails soft to {} on a lookup error", async () => {
+  it("preserves legacy fallback on a lookup error before migration", async () => {
     state.responses = [{ data: null, error: { message: "boom" } }];
     expect(await resolveTenantSmsFrom(ORG)).toEqual({});
   });
@@ -101,6 +104,55 @@ describe("resolveTenantSmsFrom", () => {
 });
 
 describe("resolveTenantVoiceFrom", () => {
+  it("blocks an active subaccount from falling back even for the legacy tenant", async () => {
+    vi.stubEnv("TWILIO_ACCOUNT_SID", "AC" + "0".repeat(32));
+    vi.stubEnv("TWILIO_TENANT_CALLBACK_KEY", "key".repeat(16));
+    vi.stubEnv(
+      "TWILIO_TENANT_ACCOUNTS_JSON",
+      JSON.stringify([
+        {
+          orgId: SEED_ORG,
+          businessName: "Example Medical",
+          accountSid: "AC" + "1".repeat(32),
+          parentAccountSid: "AC" + "0".repeat(32),
+          apiKeySid: "SK" + "2".repeat(32),
+          apiKeySecret: "secret".repeat(8),
+          authToken: "token".repeat(8),
+          numbers: ["+12125550101"],
+          messagingServiceSids: [],
+          state: "active",
+          smsApproved: true,
+        },
+      ]),
+    );
+    state.responses = [{ data: null, error: { message: "unavailable" } }];
+    await expect(resolveTenantVoiceFrom(SEED_ORG)).rejects.toThrow("not bound");
+  });
+
+  it("does not send a different organization's number through a subaccount", async () => {
+    vi.stubEnv("TWILIO_ACCOUNT_SID", "AC" + "0".repeat(32));
+    vi.stubEnv(
+      "TWILIO_TENANT_ACCOUNTS_JSON",
+      JSON.stringify([
+        {
+          orgId: SEED_ORG,
+          businessName: "Example Medical",
+          accountSid: "AC" + "1".repeat(32),
+          parentAccountSid: "AC" + "0".repeat(32),
+          apiKeySid: "SK" + "2".repeat(32),
+          apiKeySecret: "secret".repeat(8),
+          authToken: "token".repeat(8),
+          numbers: ["+12125550101"],
+          messagingServiceSids: [],
+          state: "staged",
+          smsApproved: false,
+        },
+      ]),
+    );
+    state.responses = [row({ voice_from_number: "+12125550101" })];
+    await expect(resolveTenantVoiceFrom(ORG)).rejects.toThrow("not bound");
+  });
+
   it("returns the voice caller-id when set", async () => {
     state.responses = [row({ voice_from_number: "+15559998888" })];
     expect(await resolveTenantVoiceFrom(ORG)).toBe("+15559998888");
@@ -108,7 +160,7 @@ describe("resolveTenantVoiceFrom", () => {
 
   it("returns null (platform default) when unset", async () => {
     state.responses = [row()];
-    expect(await resolveTenantVoiceFrom(ORG)).toBeNull();
+    expect(await resolveTenantVoiceFrom(SEED_ORG)).toBeNull();
   });
 
   it("returns null for an undefined orgId without querying", async () => {

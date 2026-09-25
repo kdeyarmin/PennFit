@@ -386,7 +386,8 @@ export async function dispatchAlert(
       to: normalized,
       from: callerId,
       url: `${base}/resupply-api/voice/alert-twiml?ref=${encodeURIComponent(ref)}`,
-      statusCallbackUrl: `${base}/resupply-api/voice/status-callback?conversationId=${encodeURIComponent(ref)}`,
+      // This ref identifies an in-memory script, not a conversation row.
+      // Conversation delivery callbacks cannot correlate it.
     });
     return { status: "ok", channel, vendorRef: r.sid };
   } catch (err) {

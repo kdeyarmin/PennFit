@@ -36,7 +36,6 @@ import {
 import {
   buildConnectStreamTwiml,
   buildHangupTwiml,
-  requireTwilioSignature,
 } from "@workspace/resupply-telecom";
 
 import { getCompanyInfo } from "../../lib/company-info";
@@ -74,6 +73,8 @@ const INBOUND_GREETING =
   "Hi there, thanks for calling your CPAP resupply line! I can help you " +
   "reorder your supplies today.";
 
+import { requireTenantTwilioSignature } from "../../lib/messaging/tenant-twilio-webhook";
+
 const router: IRouter = Router();
 
 const inboundBody = z.object({
@@ -86,7 +87,7 @@ const inboundBody = z.object({
   Called: z.string().trim().optional(),
 });
 
-const signatureMiddleware = requireTwilioSignature({
+const signatureMiddleware = requireTenantTwilioSignature({
   // Use token-only reader so inbound webhooks authenticate even when
   // OPENAI_API_KEY is unset. The public base URL also must be
   // sourced independently of the full voice config — otherwise the
@@ -128,7 +129,8 @@ router.post("/voice/inbound-reorder", signatureMiddleware, async (req, res) => {
   // "voice": this is an inbound CALL, so ask who owns the number for
   // VOICE. A kind-blind lookup checked the SMS column first, so a DID
   // another tenant had registered for texting would have won.
-  const calledOrgId = await resolveOrgIdByCalledNumber(calledNumber, "voice");
+  const calledOrgId =
+    req.orgId ?? (await resolveOrgIdByCalledNumber(calledNumber, "voice"));
   const normalizedCaller = normalizeE164(callerRaw);
   // The caller fallback reports WHY it failed. The call site cannot infer
   // that — "a caller number was supplied" says nothing about whether the

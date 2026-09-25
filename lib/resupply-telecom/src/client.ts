@@ -12,6 +12,13 @@
 //      without monkey-patching `require()` cache.
 
 import twilioPkg from "twilio";
+import { TwilioConfigError } from "./config-error";
+export { TwilioConfigError } from "./config-error";
+import {
+  tenantTwilioAccountForSender,
+  assertTenantTwilioReady,
+  signTenantTwilioCallback,
+} from "./tenant-accounts";
 
 const Twilio = twilioPkg;
 
@@ -69,13 +76,6 @@ export interface PlaceCallResult {
  * `name` to distinguish unrecoverable misconfig (`TwilioConfigError`)
  * from transient upstream failures (`TwilioApiError`).
  */
-export class TwilioConfigError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "TwilioConfigError";
-  }
-}
-
 export class TwilioApiError extends Error {
   readonly status?: number;
   readonly code?: number | string;
@@ -133,7 +133,11 @@ export interface CreateTwilioClientOptions {
   accountSid?: string;
   authToken?: string;
   /** Test-only seam. Production callers should leave this undefined. */
-  sdkFactory?: (accountSid: string, authToken: string) => RawTwilioSdk;
+  sdkFactory?: (
+    accountSid: string,
+    authToken: string,
+    options?: { accountSid: string },
+  ) => RawTwilioSdk;
 }
 
 const DEFAULT_TIME_LIMIT_SECONDS = 600;
@@ -170,13 +174,27 @@ export function createTwilioClient(
 
   return {
     async placeCall(input) {
+      const tenant = tenantTwilioAccountForSender(input.from);
+      if (tenant) assertTenantTwilioReady(tenant, "voice");
+      const callSdk = tenant
+        ? opts.sdkFactory
+          ? opts.sdkFactory(tenant.apiKeySid, tenant.apiKeySecret, {
+              accountSid: tenant.accountSid,
+            })
+          : (Twilio(tenant.apiKeySid, tenant.apiKeySecret, {
+              accountSid: tenant.accountSid,
+            }) as unknown as RawTwilioSdk)
+        : sdk;
       try {
-        const res = await sdk.calls.create({
+        const res = await callSdk.calls.create({
           to: input.to,
           from: input.from,
-          url: input.url,
+          url: tenant ? signTenantTwilioCallback(input.url, tenant) : input.url,
           method: "POST",
-          statusCallback: input.statusCallbackUrl,
+          statusCallback:
+            tenant && input.statusCallbackUrl
+              ? signTenantTwilioCallback(input.statusCallbackUrl, tenant)
+              : input.statusCallbackUrl,
           // Subscribe to the full call lifecycle. Twilio defaults to
           // just `completed`, but we want `initiated`/`ringing`/
           // `answered` for the admin dashboard timeline.

@@ -19,7 +19,6 @@ import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
 import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
-import { requireTwilioSignature } from "@workspace/resupply-telecom";
 
 import { logger } from "../../lib/logger";
 import { recordTenantUsage } from "../../lib/metering/usage";
@@ -32,6 +31,8 @@ import {
   readVoicePublicBaseUrlOrNull,
 } from "../../lib/voice/voice-config";
 
+import { requireTenantTwilioSignature } from "../../lib/messaging/tenant-twilio-webhook";
+
 const router: IRouter = Router();
 
 const TERMINAL_STATUSES = new Set([
@@ -42,7 +43,7 @@ const TERMINAL_STATUSES = new Set([
   "canceled",
 ]);
 
-const signatureMiddleware = requireTwilioSignature({
+const signatureMiddleware = requireTenantTwilioSignature({
   // Use token-only reader so status callbacks authenticate even when
   // OPENAI_API_KEY is unset (status callbacks fire after a real
   // outbound call too, but ALSO for missed inbound — must not fail).
@@ -145,6 +146,11 @@ router.post("/voice/status-callback", signatureMiddleware, async (req, res) => {
       },
       "status-callback: could not resolve the call's tenant",
     );
+  }
+
+  if (res.locals.tenantTwilioAccount && callOrgId !== req.orgId) {
+    res.status(403).type("text/plain").send("Forbidden");
+    return;
   }
 
   if (TERMINAL_STATUSES.has(callStatus)) {

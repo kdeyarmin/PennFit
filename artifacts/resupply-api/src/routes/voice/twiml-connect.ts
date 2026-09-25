@@ -19,7 +19,6 @@ import { Router, type IRouter } from "express";
 import {
   buildConnectStreamTwiml,
   buildHangupTwiml,
-  requireTwilioSignature,
 } from "@workspace/resupply-telecom";
 
 import { isFeatureEnabled } from "../../lib/feature-flags";
@@ -35,9 +34,11 @@ import {
   readVoicePublicBaseUrlOrNull,
 } from "../../lib/voice/voice-config";
 
+import { requireTenantTwilioSignature } from "../../lib/messaging/tenant-twilio-webhook";
+
 const router: IRouter = Router();
 
-const signatureMiddleware = requireTwilioSignature({
+const signatureMiddleware = requireTenantTwilioSignature({
   // Read the token at request time so secret rotation does not require
   // a process restart. Use the token-only reader (not the full voice
   // config) so signature validation works on inbound webhooks even

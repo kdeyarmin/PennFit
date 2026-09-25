@@ -41,9 +41,15 @@ const VIDEO_VISIT_ID = "77777777-7777-4777-8777-777777777777";
 const CONVERSATION_ID = "33333333-3333-4333-8333-333333333333";
 const MESSAGE_SID = "SM_test_sid";
 
-function makeApp(): Express {
+function makeApp(tenantOrgId?: string): Express {
   const app = express();
   app.use(express.urlencoded({ extended: false }));
+  if (tenantOrgId)
+    app.use((req, res, next) => {
+      req.orgId = tenantOrgId;
+      res.locals.tenantTwilioAccount = { orgId: tenantOrgId };
+      next();
+    });
   app.use("/resupply-api", statusCallbackRouter);
   return app;
 }
@@ -51,6 +57,28 @@ function makeApp(): Express {
 beforeEach(() => {
   supabaseMock.reset();
   safeAuditMock.mockClear();
+});
+
+describe("verified tenant callbacks", () => {
+  it.each([
+    ["messages", ""],
+    ["recall_notifications", `?recallNotificationId=${RECALL_NOTIFICATION_ID}`],
+    ["video_visits", `?videoVisitId=${VIDEO_VISIT_ID}`],
+  ])(
+    "scopes %s delivery updates to the authenticated account's organization",
+    async (table, query) => {
+      const orgId = "99999999-9999-4999-8999-999999999999";
+      const response = await request(makeApp(orgId))
+        .post(`/resupply-api/sms/status-callback${query}`)
+        .type("form")
+        .send({ MessageSid: MESSAGE_SID, MessageStatus: "delivered" });
+      expect(response.status).toBe(200);
+      expect(supabaseMock.filterCalls(table, "update")).toContainEqual({
+        verb: "eq",
+        args: ["org_id", orgId],
+      });
+    },
+  );
 });
 
 describe("POST /sms/status-callback (recall notifications)", () => {

@@ -16,10 +16,7 @@
 
 import { Router, type IRouter } from "express";
 
-import {
-  buildHangupTwiml,
-  requireTwilioSignature,
-} from "@workspace/resupply-telecom";
+import { buildHangupTwiml } from "@workspace/resupply-telecom";
 
 import { TEST_VOICE_MESSAGE } from "../../lib/connection-tests/runners";
 import {
@@ -27,9 +24,11 @@ import {
   readVoicePublicBaseUrlOrNull,
 } from "../../lib/voice/voice-config";
 
+import { requireTenantTwilioSignature } from "../../lib/messaging/tenant-twilio-webhook";
+
 const router: IRouter = Router();
 
-const signatureMiddleware = requireTwilioSignature({
+const signatureMiddleware = requireTenantTwilioSignature({
   getAuthToken: () => readTwilioWebhookAuthTokenOrNull() ?? undefined,
   buildPublicUrl: (req) => {
     const base = readVoicePublicBaseUrlOrNull() ?? "";

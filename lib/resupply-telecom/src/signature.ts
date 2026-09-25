@@ -101,7 +101,7 @@ export interface RequireTwilioSignatureOptions {
    * time, so secrets rotation does not require a process restart and
    * tests can mutate the env between requests.
    */
-  getAuthToken: () => string | undefined;
+  getAuthToken: (req: SignatureRequestLike) => string | undefined;
   /**
    * Build the URL(s) Twilio may have signed. Caller owns this so the
    * middleware doesn't have to know how the public origin is configured.
@@ -143,7 +143,7 @@ export function requireTwilioSignature(
   next: SignatureNextFunction,
 ) => void {
   return (req, res, next) => {
-    const token = opts.getAuthToken();
+    const token = opts.getAuthToken(req);
     if (!token) {
       reject(req, res, opts, "auth_token_unset");
       return;

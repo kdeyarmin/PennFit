@@ -22,6 +22,14 @@ export interface PhoneSettings {
   messagingServiceSid: string | null;
   /** Whether the platform can auto-buy a number (Twilio creds present). */
   canProvision: boolean;
+  phoneAccount?: {
+    mode: "shared" | "subaccount";
+    state: "legacy" | "staged" | "active";
+    businessName?: string;
+    accountSid?: string;
+    parentAccountSid?: string;
+    smsApproved: boolean;
+  };
 }
 
 export type PhoneSlot = "voice" | "sms";
