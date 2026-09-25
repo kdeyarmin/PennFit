@@ -296,6 +296,10 @@ jobs:
     # unit-only `test` job above. This is the harness that was previously
     # removed; it works once the Supabase platform roles exist (see the
     # "Create Supabase platform roles" step).
+    #
+    # It also hosts check:code-schema-refs, which is not a migration test but
+    # needs the one thing only this job has: a schema built from nothing but
+    # the checked-in migrations. See that step for why it lives here.
 
     services:
       postgres:
@@ -344,6 +348,22 @@ jobs:
       # for the from-scratch path.
       - name: Apply migrations (from scratch)
         run: node lib/resupply-db/scripts/migrate.mjs
+
+      # Does application code read a table/column/function no migration ever
+      # created? This is the only job with a schema to ask, and that schema
+      # was built purely from the checked-in migrations a moment ago — so a
+      # failure here is always a real code/migration mismatch, never this
+      # environment having drifted. Runs before the heavier steps so the
+      # cheap answer comes first.
+      #
+      # This is the opposite direction from check:schema-drift, which asks
+      # "has a live DB fallen behind the migrations?" and therefore needs
+      # production credentials (scheduled, in schema-drift.yml). A DB in
+      # perfect sync with every migration still 42703s on a column no
+      # migration wrote, so that detector reports OK while the feature is
+      # broken. This one needs no secrets, so it can gate every PR.
+      - name: Code-vs-schema reference check
+        run: pnpm --filter @workspace/scripts check:code-schema-refs
 
       # The lifecycle writer is gated through the real service-role HTTP path,
       # in addition to transaction/concurrency/privilege tests below.
