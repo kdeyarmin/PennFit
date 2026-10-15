@@ -145,7 +145,11 @@ Component notes:
   `pg-connection-string` version; plain `sslmode=require` is a coin flip
   (older versions don't enable SSL at all; newer ones enable it _with_ CA
   verification, which fails on the pooler's cert chain). The connection
-  stays encrypted in transit either way.
+  stays encrypted in transit either way. Since 2026-10 the detector itself
+  reads a `require`/`prefer` URL the libpq way (it appends
+  `uselibpqcompat=true`; see `withLibpqSslSemantics` in
+  `scripts/src/check-schema-drift.ts`) and says so on stderr, so a secret
+  written that way no longer fails — `no-verify` is still the form to store.
 - A `!` (or other RFC-3986 sub-delimiter) in the password is URL-safe
   unencoded; `@ : / ? # %` would need percent-encoding.
 
@@ -211,8 +215,10 @@ self-no-ops once the secret is gone, so order doesn't matter.)
   can't egress to `:5432`, or the pool's 2 s `connectionTimeoutMillis`
   (`pool.ts`) was exceeded on a cold connect. Re-run; if persistent,
   re-copy the host.
-- **TLS / self-signed cert error** — the URL lost `?sslmode=no-verify`
-  (or it was changed to `require`). Restore `no-verify`.
+- **TLS / self-signed cert error** — the URL lost `?sslmode=no-verify`,
+  or names `verify-ca`/`verify-full` without a CA the runner trusts. (A
+  `require`/`prefer` URL is read the libpq way by the detector itself since
+  2026-10 and no longer fails this way.) Restore `no-verify`.
 - **Auth failures (`password authentication failed`)** — password in the
   secret drifted from the role; re-`ALTER ROLE … PASSWORD` and re-store
   the matching secret, or the username dropped its `.<ref>` suffix.

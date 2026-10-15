@@ -1,13 +1,17 @@
 // Unit tests for the schema-drift parser (the pure function).
 //
-// Only `parseMigrationsFromText` is exercised here: it holds the real
-// parsing logic and is the part most likely to regress. The DB-touching
-// `run()` path is covered by the live `.github/workflows/schema-drift.yml`
-// workflow, not by unit tests (it needs a real DATABASE_URL).
+// `parseMigrationsFromText` holds the real parsing logic and is the part
+// most likely to regress; `withLibpqSslSemantics` decides how the live
+// job's DATABASE_URL is read. The DB-touching `run()` path is covered by
+// the live `.github/workflows/schema-drift.yml` workflow, not by unit tests
+// (it needs a real DATABASE_URL).
 
 import { describe, expect, it } from "vitest";
 
-import { parseMigrationsFromText } from "./check-schema-drift.js";
+import {
+  parseMigrationsFromText,
+  withLibpqSslSemantics,
+} from "./check-schema-drift.js";
 
 describe("parseMigrationsFromText", () => {
   it("tracks CREATE TABLE in the resupply schema", () => {
@@ -177,5 +181,70 @@ describe("parseMigrationsFromText", () => {
       { name: "0003.sql", sql: "-- noop" },
     ]);
     expect(r.filesParsed).toBe(3);
+  });
+});
+
+describe("withLibpqSslSemantics", () => {
+  const base =
+    "postgresql://drift_ro.ref:p%40ss@aws-0.pooler.supabase.com:5432/postgres";
+
+  it("gives sslmode=require its libpq reading", () => {
+    expect(withLibpqSslSemantics(`${base}?sslmode=require`)).toEqual({
+      url: `${base}?sslmode=require&uselibpqcompat=true`,
+      rewritten: true,
+    });
+  });
+
+  it("gives sslmode=prefer its libpq reading too", () => {
+    expect(withLibpqSslSemantics(`${base}?sslmode=prefer`)).toEqual({
+      url: `${base}?sslmode=prefer&uselibpqcompat=true`,
+      rewritten: true,
+    });
+  });
+
+  it("keeps the other query parameters exactly as written", () => {
+    const url = `${base}?application_name=drift&sslmode=require&connect_timeout=5`;
+    expect(withLibpqSslSemantics(url)).toEqual({
+      url: `${url}&uselibpqcompat=true`,
+      rewritten: true,
+    });
+  });
+
+  it("leaves no-verify alone, which libpq mode would turn into verification", () => {
+    const url = `${base}?sslmode=no-verify`;
+    expect(withLibpqSslSemantics(url)).toEqual({ url, rewritten: false });
+  });
+
+  it.each(["verify-ca", "verify-full", "disable"])(
+    "leaves sslmode=%s alone",
+    (mode) => {
+      const url = `${base}?sslmode=${mode}`;
+      expect(withLibpqSslSemantics(url)).toEqual({ url, rewritten: false });
+    },
+  );
+
+  it.each(["true", "false"])(
+    "honors an explicit uselibpqcompat=%s",
+    (choice) => {
+      const url = `${base}?sslmode=require&uselibpqcompat=${choice}`;
+      expect(withLibpqSslSemantics(url)).toEqual({ url, rewritten: false });
+    },
+  );
+
+  it("leaves a URL that names a CA alone, where require means verify against it", () => {
+    const url = `${base}?sslmode=require&sslrootcert=/etc/ssl/supabase.crt`;
+    expect(withLibpqSslSemantics(url)).toEqual({ url, rewritten: false });
+  });
+
+  it("leaves a URL with no query, or no sslmode, alone", () => {
+    expect(withLibpqSslSemantics(base)).toEqual({
+      url: base,
+      rewritten: false,
+    });
+    const noMode = `${base}?application_name=drift`;
+    expect(withLibpqSslSemantics(noMode)).toEqual({
+      url: noMode,
+      rewritten: false,
+    });
   });
 });

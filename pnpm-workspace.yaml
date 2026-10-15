@@ -135,8 +135,10 @@ overrides:
   "brace-expansion@<1.1.13": ^1.1.13
   "brace-expansion@>=2.0.0 <2.0.3": ^2.0.3
   # brace-expansion picked up a v5 line (via the newer glob/minimatch chain);
-  # <5.0.9 carries the same ReDoS advisory the 1.x/2.x pins above cover.
-  "brace-expansion@>=5.0.0 <5.0.9": ^5.0.9
+  # <5.0.9 carries the same ReDoS advisory the 1.x/2.x pins above cover, and
+  # <5.0.12 the two stack-exhaustion follow-ups (GHSA-6j4f-fj2g-mc7p,
+  # GHSA-qhr7-859c-m2p7).
+  "brace-expansion@>=5.0.0 <5.0.12": ^5.0.12
   uuid: ^14.0.0
   # postcss <=8.5.17: path traversal via sourceMappingURL auto-loading leads to
   # arbitrary .map file disclosure (GHSA-r28c-9q8g-f849). Reached only through
@@ -164,9 +166,14 @@ overrides:
   # dependency ever pulls an XML parser with an advisory.)
   qs: ">=6.15.2"
   # axios <1.18.0 carries the Proxy-Authorization header-injection chain
-  # (prototype pollution, plus the follow-up patch bypasses). Pin the
-  # @sendgrid/client transitive to the patched version.
-  "axios@<1.18.0": ^1.18.0
+  # (prototype pollution, plus the follow-up patch bypasses), and <1.20.0 the
+  # 2026-09 batch: data: URL and proxy-bypass ReDoS, toFormData and HTTP
+  # adapter prototype-pollution gadgets, HTTP/2 DNS/proxy bypass and
+  # unhandled-error DoS, fetch-adapter redirect SSRF (GHSA-c29m-xwm3-cm6r,
+  # GHSA-mghh-pgcx-3jjj, GHSA-x97p-jq2g-jp4f, GHSA-m8m8-qj5v-23w3,
+  # GHSA-3pq3-5fj3-cg6v, GHSA-542g-h47m-68v8, GHSA-r4gj-5m52-g5wh). Pin the
+  # twilio and @sendgrid/client transitives to the patched version.
+  "axios@<1.20.0": ^1.20.0
   # @babel/core <=7.29.0 is vulnerable to arbitrary file read via
   # sourceMappingURL comment (GHSA). Pin the eslint-plugin-react-hooks
   # transitive to the patched version.
@@ -178,9 +185,24 @@ overrides:
   browserslist: ^4.28.7
   # undici >=7.23.0 <7.28.0 is vulnerable to TLS certificate validation
   # bypass via dropped requestTls in the SOCKS5 ProxyAgent
-  # (GHSA-vmh5-mc38-953g) and <7.29.0 the follow-up advisory. undici is a
+  # (GHSA-vmh5-mc38-953g), <7.29.0 the follow-up advisory, and <7.29.1 the
+  # BalancedPool TLS-validation bypass plus the unrequested-WebSocket-
+  # subprotocol DoS (GHSA-w293-vg96-wgc3, GHSA-rfgv-xxqx-mfg5). undici is a
   # direct (production) dependency of artifacts/resupply-api — kept in step at
-  # ^7.29.0 in its manifest —
+  # ^7.29.1 in its manifest —
   # AND is pulled transitively via jsdom/vitest; this range override
   # forces every remaining transitive copy onto the patched version too.
-  "undici@>=7.23.0 <7.29.0": ^7.29.0
+  "undici@>=7.23.0 <7.29.1": ^7.29.1
+  # proxy-addr <2.0.8 matches an IPv4-mapped IPv6 client address against an
+  # IPv4 trust subnet, so a caller could spoof its IP past `trust proxy`
+  # (critical, GHSA-jqcg-44mw-7w3h). Reached through express and
+  # express-rate-limit; express's own ~2.0.7 range admits the fix.
+  "proxy-addr@<2.0.8": ^2.0.8
+  # compression <1.8.2 leaks memory when a response is closed before it is
+  # finished (GHSA-vc2v-76pw-4v95). A direct dependency of
+  # artifacts/resupply-api, kept in step at ^1.8.2 in its manifest.
+  "compression@<1.8.2": ^1.8.2
+  # source-map-js <1.2.2 can be made to spin the event loop on indexed
+  # source-map section offsets (GHSA-68fv-2mgg-jv7q). Build-time only, via
+  # postcss and magicast, but the audit gate is repo-wide.
+  "source-map-js@<1.2.2": ^1.2.2
