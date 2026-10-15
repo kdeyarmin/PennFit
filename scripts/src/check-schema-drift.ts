@@ -28,6 +28,9 @@
 //     tamper columns whose feature was retired by 0156 — the columns
 //     themselves were never dropped) so the signal stays actionable
 //     instead of perpetually red.
+//   * Reads a `sslmode=require` (or `prefer`) DATABASE_URL the libpq way:
+//     encrypted, certificate unverified, which is the posture the runbook
+//     prescribes for this probe (`no-verify`). See withLibpqSslSemantics.
 //
 // USAGE
 //   DATABASE_URL=postgres://… pnpm --filter @workspace/scripts check:schema-drift
@@ -79,6 +82,43 @@ const INTENTIONAL_ABSENCES: Record<string, string> = {
 interface Loc {
   schema: string;
   table: string;
+}
+
+// The sslmode values libpq reads as "encrypt, but do not verify the
+// certificate". pg-connection-string >= 2.9 reads both as `verify-full`
+// unless the URL opts into libpq semantics with `uselibpqcompat=true`.
+const LIBPQ_UNVERIFIED_SSL_MODES = new Set(["require", "prefer"]);
+
+// The scheduled job connects through the Supabase session pooler, whose
+// certificate chain is not in Node's trust store, so the runbook has the
+// secret carry `sslmode=no-verify`: encrypted, unverified, which is all a
+// read-only information_schema probe needs. A secret written the libpq way
+// (`sslmode=require`) used to mean the same thing, but pg-connection-string
+// now reads `require` and `prefer` as `verify-full`, so such a URL fails with
+// "self-signed certificate in certificate chain" before the first query —
+// which is what the scheduled job has been failing with (run 135,
+// 2026-10-11). This gives a `require`/`prefer` URL its libpq reading by
+// appending `uselibpqcompat=true`, the opt-in pg itself suggests in its
+// warning. Everything else is the operator's own choice and is returned
+// exactly as written: `no-verify` (which libpq mode does not know and would
+// turn INTO verification), `verify-ca`, `verify-full`, `disable`, a URL that
+// already states `uselibpqcompat`, or one that names a CA (`sslrootcert`),
+// where `require` legitimately means "verify against it".
+export function withLibpqSslSemantics(databaseUrl: string): {
+  url: string;
+  rewritten: boolean;
+} {
+  const asWritten = { url: databaseUrl, rewritten: false };
+  const q = databaseUrl.indexOf("?");
+  if (q === -1) return asWritten;
+  const query = databaseUrl.slice(q + 1);
+  const params = new URLSearchParams(query);
+  const sslmode = params.get("sslmode");
+  if (!sslmode || !LIBPQ_UNVERIFIED_SSL_MODES.has(sslmode)) return asWritten;
+  if (params.has("uselibpqcompat") || params.has("sslrootcert")) {
+    return asWritten;
+  }
+  return { url: `${databaseUrl}&uselibpqcompat=true`, rewritten: true };
 }
 
 function stripComments(sql: string): string {
@@ -363,6 +403,21 @@ async function run(): Promise<DriftReport> {
     process.exit(2);
   }
   const parsed = parseMigrations(MIGRATIONS_DIR);
+
+  // getDbPool() reads DATABASE_URL itself (and deliberately passes no ssl
+  // object, so the URL is the only place TLS is configured), hence the env
+  // is what gets the libpq reading.
+  const ssl = withLibpqSslSemantics(process.env.DATABASE_URL ?? "");
+  if (ssl.rewritten) {
+    process.env.DATABASE_URL = ssl.url;
+    process.stderr.write(
+      "[check-schema-drift] DATABASE_URL asks for sslmode=require/prefer; " +
+        "reading it the libpq way (encrypted, certificate not verified), " +
+        "the posture docs/runbooks/schema-drift-detector.md prescribes for " +
+        "this read-only probe. Set sslmode=no-verify or verify-full to say " +
+        "so explicitly.\n",
+    );
+  }
 
   const pool = getDbPool();
   const client = await pool.connect();
