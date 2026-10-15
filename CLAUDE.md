@@ -830,3 +830,12 @@ Wiring & conventions:
   [`docs/git-state-2026-05-01.md`](./docs/git-state-2026-05-01.md)
   explains _why_; follow the start-of-session checklist above to comply.
 - For threat-model questions, see [`threat_model.md`](./threat_model.md).
+
+## Workflow rules
+
+- Run `git pull` (or `git fetch origin && git rebase origin/main` on a branch) before starting any task.
+- Never commit to `main`. Never push directly to `main`.
+- One branch per task, named for the task.
+- Run the build and tests before pushing: `pnpm build` and `pnpm test` (also `pnpm lint:resupply` and `pnpm format:check` for code changes).
+- Open a pull request for every change. Let CI pass (the "CI" workflow) before merging.
+- Never deploy manually. Railway auto-deploys from `main`; do not use `railway up` or manual deploy triggers.
