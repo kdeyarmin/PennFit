@@ -118,6 +118,10 @@ vi.mock("../../lib/integrations/registry", () => ({
 
 import patientTherapySyncRouter from "./patient-therapy-sync";
 
+// Snapshot at import time: adminRateLimit() is called while the router above
+// is imported, and vitest clears mock call history before every test.
+const rateLimitRegistrations = adminRateLimitSpy.mock.calls.slice();
+
 const PATIENT_ID = "11111111-1111-4111-8111-111111111111";
 const ADMIN: MockAdminCtx = {
   userId: "u_admin",
@@ -142,10 +146,11 @@ beforeEach(() => {
 
 describe("POST /admin/patients/:id/therapy-nights/sync — middleware wiring", () => {
   it("registers adminRateLimit with the mutation preset", () => {
-    expect(adminRateLimitSpy).toHaveBeenCalledWith({
-      name: "patient_therapy.sync",
-      preset: "mutation",
-    });
+    const call = rateLimitRegistrations.find(
+      ([opts]) => opts.name === "patient_therapy.sync",
+    );
+    expect(call).toBeDefined();
+    expect(call![0].preset).toBe("mutation");
   });
 });
 

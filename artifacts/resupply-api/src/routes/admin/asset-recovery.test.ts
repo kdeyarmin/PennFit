@@ -64,6 +64,10 @@ vi.mock("../../middlewares/admin-rate-limit", () => ({
 
 import assetRecoveryRouter from "./asset-recovery";
 
+// Snapshot at import time: adminRateLimit() is called while the router above
+// is imported, and vitest clears mock call history before every test.
+const rateLimitRegistrations = adminRateLimitSpy.mock.calls.slice();
+
 const CASE_ID = "11111111-1111-4111-8111-111111111111";
 const PATIENT_ID = "22222222-2222-4222-8222-222222222222";
 
@@ -175,7 +179,7 @@ describe("POST /admin/asset-recovery", () => {
   });
 
   it("wires adminRateLimit name='asset_recovery.create' preset='mutation'", () => {
-    const call = adminRateLimitSpy.mock.calls.find(
+    const call = rateLimitRegistrations.find(
       ([opts]) => opts.name === "asset_recovery.create",
     );
     expect(call).toBeDefined();
@@ -287,7 +291,7 @@ describe("POST /admin/asset-recovery/:id/label", () => {
   });
 
   it("wires adminRateLimit name='asset_recovery.label' preset='mutation'", () => {
-    const call = adminRateLimitSpy.mock.calls.find(
+    const call = rateLimitRegistrations.find(
       ([opts]) => opts.name === "asset_recovery.label",
     );
     expect(call).toBeDefined();

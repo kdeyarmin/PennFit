@@ -74,6 +74,10 @@ vi.mock("../../middlewares/admin-rate-limit", () => ({
 
 import csrMacrosRouter from "./csr-macros";
 
+// Snapshot at import time: adminRateLimit() is called while the router above
+// is imported, and vitest clears mock call history before every test.
+const rateLimitRegistrations = adminRateLimitSpy.mock.calls.slice();
+
 const MACRO_ID = "macro-id-abc123";
 
 function makeApp(): Express {
@@ -144,7 +148,7 @@ describe("POST /admin/csr-macros — adminRateLimit integration", () => {
   });
 
   it("calls adminRateLimit with name='csr_macros.create' and preset='mutation'", () => {
-    const call = adminRateLimitSpy.mock.calls.find(
+    const call = rateLimitRegistrations.find(
       ([opts]) => opts.name === "csr_macros.create",
     );
     expect(call).toBeDefined();
@@ -196,7 +200,7 @@ describe("PATCH /admin/csr-macros/:id — adminRateLimit integration", () => {
   });
 
   it("calls adminRateLimit with name='csr_macros.update' and preset='mutation'", () => {
-    const call = adminRateLimitSpy.mock.calls.find(
+    const call = rateLimitRegistrations.find(
       ([opts]) => opts.name === "csr_macros.update",
     );
     expect(call).toBeDefined();
@@ -238,7 +242,7 @@ describe("DELETE /admin/csr-macros/:id — adminRateLimit integration (destroy p
   });
 
   it("calls adminRateLimit with name='csr_macros.delete' and preset='destroy'", () => {
-    const call = adminRateLimitSpy.mock.calls.find(
+    const call = rateLimitRegistrations.find(
       ([opts]) => opts.name === "csr_macros.delete",
     );
     expect(call).toBeDefined();
@@ -259,10 +263,10 @@ describe("DELETE /admin/csr-macros/:id — adminRateLimit integration (destroy p
   });
 
   it("uses a more conservative preset than create/update (destroy vs mutation)", () => {
-    const deleteCall = adminRateLimitSpy.mock.calls.find(
+    const deleteCall = rateLimitRegistrations.find(
       ([opts]) => opts.name === "csr_macros.delete",
     );
-    const createCall = adminRateLimitSpy.mock.calls.find(
+    const createCall = rateLimitRegistrations.find(
       ([opts]) => opts.name === "csr_macros.create",
     );
     // DELETE (destroy) is more conservative than POST (mutation).

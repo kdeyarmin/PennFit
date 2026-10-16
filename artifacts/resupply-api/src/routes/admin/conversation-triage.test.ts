@@ -73,6 +73,10 @@ vi.mock("@workspace/resupply-audit", () => ({
 
 import triageRouter from "./conversation-triage";
 
+// Snapshot at import time: adminRateLimit() is called while the router above
+// is imported, and vitest clears mock call history before every test.
+const rateLimitRegistrations = adminRateLimitSpy.mock.calls.slice();
+
 const CONV_UUID = "aaaabbbb-0000-4000-8000-000000000001";
 const ADMIN_USER_ID = "u_admin_42";
 
@@ -119,7 +123,7 @@ describe("PATCH /admin/conversations/:id/snooze — adminRateLimit integration",
   });
 
   it("calls adminRateLimit with name='conversation_triage.snooze' and preset='mutation'", () => {
-    const call = adminRateLimitSpy.mock.calls.find(
+    const call = rateLimitRegistrations.find(
       ([opts]) => opts.name === "conversation_triage.snooze",
     );
     expect(call).toBeDefined();
@@ -203,7 +207,7 @@ describe("PATCH /admin/conversations/:id/tags — adminRateLimit integration", (
   });
 
   it("calls adminRateLimit with name='conversation_triage.tags' and preset='mutation'", () => {
-    const call = adminRateLimitSpy.mock.calls.find(
+    const call = rateLimitRegistrations.find(
       ([opts]) => opts.name === "conversation_triage.tags",
     );
     expect(call).toBeDefined();
@@ -246,7 +250,7 @@ describe("POST /admin/conversations/:id/claim — adminRateLimit integration", (
   });
 
   it("calls adminRateLimit with name='conversation_triage.claim' and preset='mutation'", () => {
-    const call = adminRateLimitSpy.mock.calls.find(
+    const call = rateLimitRegistrations.find(
       ([opts]) => opts.name === "conversation_triage.claim",
     );
     expect(call).toBeDefined();
