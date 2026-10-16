@@ -779,6 +779,11 @@ const FitterOrdersPage = lazyWithRetry(() =>
     default: m.AdminOrders,
   })),
 );
+const AdminSetupsPage = lazyWithRetry(() =>
+  import("@/pages/admin/admin-setups").then((m) => ({
+    default: m.AdminSetupsPage,
+  })),
+);
 const FitterOrderDetailPage = lazyWithRetry(() =>
   import("@/pages/admin/fitter-order-detail").then((m) => ({
     default: m.AdminOrderDetail,
@@ -1415,6 +1420,7 @@ function AdminConsole() {
               component={AdminBackordersPage}
             />
             <Route path="/admin/fitter/orders" component={FitterOrdersPage} />
+            <Route path="/admin/setups" component={AdminSetupsPage} />
             <Route
               path="/admin/fitter/orders/:id"
               component={FitterOrderDetailPage}

@@ -77,11 +77,12 @@ export function AdminOrders() {
             className="text-display text-3xl font-bold tracking-tight"
             data-testid="admin-page-title"
           >
-            Orders
+            Signature orders
           </h1>
           <p className="text-muted-foreground mt-1 text-sm">
-            All orders submitted through your storefront. Click a row to view
-            full patient details.
+            Insurance signature orders. A signed order queues a fulfillment when
+            it is tied to a patient and an approved pricing review with catalog
+            SKUs. Click a row to view it.
           </p>
         </div>
       </div>

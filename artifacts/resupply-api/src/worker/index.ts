@@ -48,6 +48,7 @@ import { registerReferralReviewExtractJob } from "./jobs/referral-review-extract
 import { registerRecallNotificationSendJob } from "./jobs/recall-notifications-send.js";
 import { registerMaintenanceNudgeJob } from "./jobs/maintenance-nudges.js";
 import { registerVideoVisitReminderJob } from "./jobs/video-visit-reminders.js";
+import { registerSetupChaseJob } from "./jobs/setup-chase.js";
 import { registerFitterLeadReengageJob } from "./jobs/fitter-lead-reengage.js";
 import { registerFitterLeadFirstDayNudgeJob } from "./jobs/fitter-lead-first-day-nudge.js";
 import { registerDemoDripJob } from "./jobs/demo-drip.js";
@@ -563,6 +564,16 @@ async function doStartWorker(): Promise<void> {
       "video-visits.reminder-sweep",
       ["video_visits"],
       registerVideoVisitReminderJob,
+    ),
+  );
+  // New-CPAP signature reminders and the "last blocker cleared" ping.
+  // Hourly. Gated by setups.chase. The board is built either way.
+  await safeRegister("setups.chase", registrationFailures, () =>
+    registerIfProvisioned(
+      boss,
+      "setups.chase",
+      ["patient_setups"],
+      registerSetupChaseJob,
     ),
   );
   // Abandoned-fitter re-engagement — daily 09:37 UTC. Scans

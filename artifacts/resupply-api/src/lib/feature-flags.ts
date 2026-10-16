@@ -168,6 +168,10 @@ export const FEATURE_FLAG_KEYS = [
   // cohort B looks back 30 days). Gates the PATIENT messages only —
   // the staff worklist is built either way.
   "fitter.followup_nudges",
+  // Signature reminders and the "last blocker cleared" ping for a new
+  // CPAP setup (migration 0562). Seeded ON. The New setups board is
+  // built with the flag either way; this only gates the chase messages.
+  "setups.chase",
 ] as const;
 
 export type FeatureFlagKey = (typeof FEATURE_FLAG_KEYS)[number];

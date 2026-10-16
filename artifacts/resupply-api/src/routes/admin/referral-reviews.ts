@@ -44,6 +44,7 @@ import {
 import { normalizeE164, timezoneForUsState } from "@workspace/resupply-domain";
 
 import { redactDbErr } from "../../lib/redact-db-err";
+import { kickoffAcceptedReferral } from "../../lib/setups/kickoff";
 import { logger } from "../../lib/logger";
 import { ObjectAlreadyOwnedError } from "../../lib/object-storage/objectAcl";
 import {
@@ -1203,6 +1204,17 @@ router.post(
         "referral_review.accept audit failed",
       );
     });
+
+    if (orgId) {
+      await kickoffAcceptedReferral({
+        orgId,
+        patientId,
+        sourceId: review.id,
+        ownerUserId: req.adminUserId ?? null,
+        actorEmail: req.adminEmail ?? null,
+        warnings,
+      });
+    }
 
     res.status(201).json({ patientId, documentIds, warnings });
   },

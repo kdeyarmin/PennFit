@@ -57,6 +57,7 @@ import { z } from "zod";
 import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { openPatientSetup } from "../../lib/setups/open-setup";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import {
   requireAdmin,
@@ -732,6 +733,14 @@ router.post(
         actorKind: "staff",
         actorEmail: req.adminEmail ?? null,
         detail: {},
+      });
+      await openPatientSetup({
+        orgId,
+        patientId: body.data.patientId,
+        source: "provider_referral",
+        sourceId: id.data,
+        ownerUserId: req.adminUserId ?? null,
+        ownerEmail: req.adminEmail ?? null,
       });
     }
     if (body.data.note) {

@@ -10,7 +10,7 @@
 // Backend: /resupply-api/admin/csr-order-requests* (returns.manage);
 // public twin: /order-sign (token-gated).
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { PricingOrderReview } from "./pricing/PricingOrderReview";
 import {
   PricingDeliveryReview,
@@ -105,6 +105,36 @@ interface DraftItem {
 
 const EMPTY_ITEM: DraftItem = { description: "", quantity: "1", price: "" };
 
+interface KitPrefill {
+  name: string;
+  email: string;
+  phone: string;
+  mask: string;
+}
+
+function readKitPrefill(): KitPrefill | null {
+  if (typeof window === "undefined") return null;
+  const params = new URLSearchParams(window.location.search);
+  if (params.get("kit") !== "new-cpap") return null;
+  return {
+    name: params.get("name") ?? "",
+    email: params.get("email") ?? "",
+    phone: params.get("phone") ?? "",
+    mask: params.get("mask") ?? "",
+  };
+}
+
+function newCpapKitLines(mask: string): DraftItem[] {
+  const maskLine = mask.trim() ? `Mask: ${mask.trim()}` : "Mask from the fit";
+  return [
+    { description: "CPAP device (E0601)", quantity: "1", price: "" },
+    { description: "Heated humidifier (E0562)", quantity: "1", price: "" },
+    { description: "Tubing (A7037)", quantity: "1", price: "" },
+    { description: "Disposable filter (A7038)", quantity: "1", price: "" },
+    { description: maskLine, quantity: "1", price: "" },
+  ];
+}
+
 function parsePriceToCents(price: string): number | null {
   const n = Number.parseFloat(price);
   if (!Number.isFinite(n) || n < 0) return null;
@@ -115,7 +145,8 @@ export function CsrOrderRequestsPanel() {
   const { toast } = useToast();
   const [confirm, ConfirmDialogEl] = useConfirmDialog();
   const queryClient = useQueryClient();
-  const [showCreate, setShowCreate] = useState(false);
+  const [kit] = useState(readKitPrefill);
+  const [showCreate, setShowCreate] = useState(kit !== null);
   const [deliveryOrder, setDeliveryOrder] =
     useState<CsrOrderRequestSummary | null>(null);
   const [page, setPage] = useState(1);
@@ -127,6 +158,16 @@ export function CsrOrderRequestsPanel() {
   );
   const resend = useResendCsrOrderRequest();
   const cancel = useCancelCsrOrderRequest();
+
+  useEffect(() => {
+    if (!kit) return;
+    const url = new URL(window.location.href);
+    for (const key of ["kit", "mask", "name", "email", "phone"]) {
+      url.searchParams.delete(key);
+    }
+    const next = url.pathname + (url.search ? url.search : "");
+    window.history.replaceState({}, "", next);
+  }, [kit]);
   const queueFulfillment = useMutation({
     mutationFn: (id: string) =>
       adminJsonFetch<{ fulfillmentIds: string[]; skipped: unknown }>(
@@ -419,6 +460,7 @@ export function CsrOrderRequestsPanel() {
 
         {showCreate && (
           <CreateCsrOrderModal
+            kit={kit}
             onClose={() => setShowCreate(false)}
             onCreated={() => {
               setPage(1);
@@ -442,9 +484,11 @@ export function CsrOrderRequestsPanel() {
 }
 
 function CreateCsrOrderModal({
+  kit,
   onClose,
   onCreated,
 }: {
+  kit: KitPrefill | null;
   onClose: () => void;
   onCreated: () => void;
 }) {
@@ -452,10 +496,12 @@ function CreateCsrOrderModal({
   const create = useCreateCsrOrderRequest();
   const templates = usePatientPacketTemplates();
 
-  const [customerName, setCustomerName] = useState("");
-  const [customerEmail, setCustomerEmail] = useState("");
-  const [customerPhone, setCustomerPhone] = useState("");
-  const [items, setItems] = useState<DraftItem[]>([{ ...EMPTY_ITEM }]);
+  const [customerName, setCustomerName] = useState(kit?.name ?? "");
+  const [customerEmail, setCustomerEmail] = useState(kit?.email ?? "");
+  const [customerPhone, setCustomerPhone] = useState(kit?.phone ?? "");
+  const [items, setItems] = useState<DraftItem[]>(
+    kit ? newCpapKitLines(kit.mask) : [{ ...EMPTY_ITEM }],
+  );
   const [note, setNote] = useState("");
   const [pricingQuote, setPricingQuote] = useState<Quote | null>(null);
   const [pricingRequired, setPricingRequired] = useState<boolean | null>(null);
@@ -697,6 +743,13 @@ function CreateCsrOrderModal({
         {/* Line items */}
         <div className="space-y-2">
           <div className="text-sm font-medium">Line items</div>
+          {kit && (
+            <p className="text-xs text-muted-foreground">
+              New CPAP kit. An approved pricing review with catalog SKUs is what
+              queues the fulfillment. The fit request stays in progress until
+              the patient has the mask.
+            </p>
+          )}
           {items.map((it, i) => (
             <div key={i} className="flex gap-2 items-start">
               <Input

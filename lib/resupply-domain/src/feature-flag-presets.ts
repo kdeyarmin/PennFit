@@ -80,6 +80,11 @@ const FITTER = [
   // the flag either way — so the flag is really "may we write to them
   // as well as tell you", and the plan answer is yes.
   "fitter.followup_nudges",
+  // Signature reminders and the owner ping when a new CPAP setup's
+  // last blocker clears (migration 0562). Travels with the fitter:
+  // a plan that sells the funnel also chases the signature that
+  // turns the fit into a machine. The board itself is not gated.
+  "setups.chase",
 ] as const;
 
 /** Resupply reminders — the Launch-tier core. */

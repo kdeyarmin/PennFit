@@ -569,7 +569,7 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
     blocks: [
       {
         kind: "para",
-        text: "Patients do not buy supplies with a card — everything is billed to their plan. An order therefore starts either from an approved fitter recommendation or from the resupply engine, and the claim is what collects the money. Fitter requests is the subset that came from a fitting, which often needs a clinical approval before it ships.",
+        text: "Patients do not buy supplies with a card. Everything is billed to their plan. An order starts from a signature order a person builds, or from the resupply engine, and the claim is what collects the money. Signature orders are the ones a patient signs. Fit requests are the people still waiting for that order to be built.",
       },
       {
         kind: "para",

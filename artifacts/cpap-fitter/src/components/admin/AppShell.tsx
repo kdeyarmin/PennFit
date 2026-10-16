@@ -642,14 +642,22 @@ export const NAV_GROUPS: ReadonlyArray<NavGroup> = [
       {
         label: "Orders",
         icon: ShoppingBag,
-        hint: "Fulfillment — fitter requests and shipping labels",
+        hint: "Fulfillment — new setups, signature orders, and shipping labels",
         tabs: [
           {
+            href: "/admin/setups",
+            label: "New setups",
+            icon: ListChecks,
+            matchPrefix: "/admin/setups",
+            hint: "One row per new CPAP setup until the first-night checklist is done",
+            requiredPermission: "patients.read",
+          },
+          {
             href: "/admin/fitter/orders",
-            label: "Fitter requests",
+            label: "Signature orders",
             icon: ScanFace,
             matchPrefix: "/admin/fitter/orders",
-            hint: "AI mask-fitter order requests — read-only log of submitted fittings",
+            hint: "Insurance orders a patient signs. An approved pricing review with catalog SKUs is what queues the fulfillment.",
           },
           {
             href: "/admin/shipping",

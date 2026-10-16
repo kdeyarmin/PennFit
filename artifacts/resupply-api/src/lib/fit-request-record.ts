@@ -18,6 +18,7 @@ import { getOrgScopedClient } from "@workspace/resupply-db";
 import { logger } from "./logger";
 import { redactDbErr } from "./redact-db-err";
 import { createLegacyFitSessionForRequest } from "./fitting/legacy-fit-session";
+import { openSetupForFitRequest } from "./setups/open-setup";
 
 export interface RecordFitRequestInput {
   /** Tenant the fitting belonged to, resolved from the invite. */
@@ -364,6 +365,13 @@ export async function recordFitRequest(
         // dispense. Clinical assess already supplies fitSessionId.
         if (id && !input.fitSessionId) {
           await attachLegacyFitSession(input.orgId, id, input);
+        }
+        if (id) {
+          await openSetupForFitRequest({
+            orgId: input.orgId,
+            requestId: id,
+            email: input.email,
+          });
         }
         return { id };
       }

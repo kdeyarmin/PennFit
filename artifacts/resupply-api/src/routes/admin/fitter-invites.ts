@@ -190,6 +190,118 @@ async function deliverInvite(opts: {
   }
 }
 
+/**
+ * Send a fitter link for a chart the referral accept just created.
+ * SMS when a phone is on file, otherwise email. Returns delivered:false
+ * when there is nothing to send to or the vendor declines; never throws.
+ */
+export async function issueFitterInviteForPatient(input: {
+  orgId: string;
+  patientId: string;
+  invitedByUserId: string | null;
+  invitedByEmail: string | null;
+}): Promise<{ ok: true; delivered: boolean } | { ok: false; reason: string }> {
+  try {
+    const supabase = getOrgScopedClient(input.orgId);
+    const { data: patient, error } = await supabase
+      .from("patients")
+      .select("id, email, phone_e164, legal_first_name, legal_last_name")
+      .eq("id", input.patientId)
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
+    if (!patient) return { ok: false, reason: "patient_not_found" };
+
+    const email = patient.email?.trim().toLowerCase() || null;
+    const phone = patient.phone_e164?.trim() || null;
+    const channel: "sms" | "email" | null = phone
+      ? "sms"
+      : email
+        ? "email"
+        : null;
+    if (!channel) return { ok: false, reason: "no_contact" };
+
+    const linkBase = await resolveTenantLinkBaseUrl(
+      input.orgId,
+      publicBaseUrl(),
+    ).catch(() => null);
+    if (!linkBase) return { ok: false, reason: "tenant_domain_required" };
+
+    const name =
+      [patient.legal_first_name, patient.legal_last_name]
+        .filter(Boolean)
+        .join(" ")
+        .trim() || null;
+    const nowIso = new Date().toISOString();
+    const expiresIso = new Date(
+      Date.now() + FITTER_INVITE_TTL_MS,
+    ).toISOString();
+    const insert: FitterInvitesInsert = {
+      patient_id: patient.id,
+      recipient_email: email,
+      recipient_phone_e164: phone,
+      recipient_name: name,
+      channel,
+      status: "sent",
+      invited_by_user_id: input.invitedByUserId,
+      invited_by_email: input.invitedByEmail,
+      sent_at: nowIso,
+      expires_at: expiresIso,
+    };
+    const { data: row, error: insertErr } = await supabase
+      .from("fitter_invites")
+      .insert(insert)
+      .select("id")
+      .limit(1)
+      .maybeSingle();
+    if (insertErr) throw insertErr;
+    if (!row) return { ok: false, reason: "insert_failed" };
+
+    const token = signFitterInviteToken(
+      row.id,
+      new Date(),
+      FITTER_INVITE_TTL_MS,
+    );
+    const link = `${linkBase}/fitter-invite?t=${encodeURIComponent(token)}`;
+    const delivery = await deliverInvite({
+      channel,
+      orgId: input.orgId,
+      email,
+      phone,
+      name,
+      link,
+    });
+    await logAudit({
+      action: "fitter.invite.sent",
+      adminEmail: input.invitedByEmail,
+      adminUserId: input.invitedByUserId,
+      targetTable: "fitter_invites",
+      targetId: row.id,
+      metadata: {
+        channel,
+        patient_id: patient.id,
+        delivered: delivery.delivered,
+        prospect: false,
+        source: "setup_kickoff",
+      },
+      ip: null,
+      userAgent: null,
+    }).catch((err) => {
+      logger.warn(
+        { err: redactDbErr(err) },
+        "fitter.invite.sent audit write failed",
+      );
+    });
+    return { ok: true, delivered: delivery.delivered };
+  } catch (err) {
+    logger.warn(
+      { err: redactDbErr(err) },
+      "fitter-invite: setup kickoff send failed",
+    );
+    return { ok: false, reason: "send_failed" };
+  }
+}
+
 function renderInviteEmailHtml(
   greeting: string,
   link: string,

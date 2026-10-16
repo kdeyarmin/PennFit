@@ -55,6 +55,7 @@ import { closeEpisode } from "../episodes/close-episode";
 import { openOutreachEpisode } from "../episodes/open-outreach-episode";
 import { reanchorEpisodeDueAt } from "../episodes/reanchor-due-at";
 import { logger } from "../logger";
+import { offerSetupAfterShipment } from "../setups/shipment-offer";
 
 /** Where the evidence came from. Recorded in `shipment_metadata` so a
  *  later audit can tell a scanned confirmation from a CSR's judgement. */
@@ -248,6 +249,25 @@ export async function recordShipmentEvidence(
       },
       "resupply: next-cycle open failed after recording shipment",
     );
+  }
+
+  if (!alreadyRecorded && fulfillment.patient_id) {
+    try {
+      await offerSetupAfterShipment({
+        orgId: input.orgId,
+        patientId: fulfillment.patient_id,
+        shippedAt: effectiveShippedAt,
+      });
+    } catch (err) {
+      logger.warn(
+        {
+          event: "resupply.ship_evidence_setup_offer_failed",
+          fulfillmentId: input.fulfillmentId,
+          errName: err instanceof Error ? err.name : "unknown",
+        },
+        "resupply: setup offer failed after recording shipment",
+      );
+    }
   }
 
   return { ...base, status: alreadyRecorded ? "already_recorded" : "applied" };
