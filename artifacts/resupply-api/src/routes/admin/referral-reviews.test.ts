@@ -427,7 +427,11 @@ describe("POST /admin/referral-reviews/:id/accept", () => {
     expect(res.status).toBe(201);
     expect(res.body.patientId).toBe(PATIENT_ID);
     expect(res.body.documentIds).toHaveLength(2);
-    expect(res.body.warnings).toEqual([]);
+    expect(res.body.warnings).toEqual([
+      "setup_not_opened",
+      "packet_not_sent",
+      "fitter_invite_not_sent",
+    ]);
 
     const patientInsert = getSupabaseWritePayloads(
       "patients",

@@ -17,6 +17,7 @@
 //     with no fitting behind it.
 
 import { useMemo, useState } from "react";
+import { useLocation } from "wouter";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
@@ -339,6 +340,7 @@ function RequestRow({
   onPatch: (patch: UpdateFitRequestInput) => void;
   nowMs: number;
 }) {
+  const [, setLocation] = useLocation();
   const [noteDraft, setNoteDraft] = useState(row.csrNote ?? "");
   /** Staged close: the row holds still and asks how it turned out. */
   const [closing, setClosing] = useState(false);
@@ -490,6 +492,28 @@ function RequestRow({
               </option>
             ))}
           </select>
+          {row.status !== "closed" && (
+            <button
+              type="button"
+              className="text-xs underline mt-1 block text-left"
+              disabled={pending}
+              onClick={() => {
+                if (row.status === "new" || row.status === "contacted") {
+                  onPatch({ status: "in_progress" });
+                }
+                const params = new URLSearchParams({
+                  kit: "new-cpap",
+                  mask: row.recommendedMaskName ?? "",
+                  name: row.fullName,
+                  email: row.email,
+                  phone: row.phone ?? "",
+                });
+                setLocation(`/admin/fitter/orders?${params.toString()}`);
+              }}
+            >
+              Build signature order
+            </button>
+          )}
 
           {(closing || row.status === "closed") && (
             <>

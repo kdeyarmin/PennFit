@@ -489,7 +489,7 @@ export const HOW_TO_GUIDES: readonly HowToGuide[] = [
       },
       {
         title: "Turn it into an order",
-        body: "A patient who finishes a fitting lands in Fit Requests /admin/fitter-requests, where a person places the order — the patient never files their own. Orders that came out of a fitting are listed under Fitter requests /admin/fitter/orders. Track how these turn out in Fitter outcomes /admin/analytics/fitter-outcomes — ordered, kept, or exchanged.",
+        body: "A patient who finishes a fitting lands in Fit Requests /admin/fitter-requests, where a person places the order. The patient never files their own. Build that order under Signature orders /admin/fitter/orders. The New setups board /admin/setups keeps one row until the first-night checklist is done. Track how fittings turn out in Fitter outcomes /admin/analytics/fitter-outcomes.",
       },
     ],
     related: ["send-a-fitting-invite", "manage-the-mask-formulary"],

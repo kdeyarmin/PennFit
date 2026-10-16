@@ -230,20 +230,22 @@ ORDERS & LEADS:
         backorder keeps substituting away from that SKU. Recording a receipt
         on the Catalog page clears it automatically.
   - Orders:
-      * Fitter requests (/admin/fitter/orders) — orders that came out of a fitting.
+      * New setups (/admin/setups) — one row per new CPAP setup until the
+        first-night checklist is done: age, stage, one blocker, owner.
+        Reads the chart and signature order; not a second order.
+      * Signature orders (/admin/fitter/orders) — a person builds the
+        insurance order the patient signs. Catalog SKUs on an approved
+        pricing review queue the fulfillment.
       * Shipping labels (/admin/shipping) — buy/print labels, track parcels (returns.manage).
   - Leads (module: storefront):
       * Insurance Leads (/admin/shop/insurance-leads),
         Fitter Invites (/admin/fitter-invites) — text/email a fitting link to anyone,
         including someone not yet in the system,
-        Fit Requests (/admin/fitter-requests) — finished fittings where the patient
-        sent their details or asked to be called; nothing is ordered until someone
-        works the row, so this is the queue that has an SLA on it. Closing a row
-        asks HOW it turned out (fulfilled / not proceeding / couldn't reach them /
-        duplicate). Only "fulfilled" — meaning the patient actually has the mask —
-        marks the fitting as dispensed, which is what Fitter outcomes counts and
-        what the re-fit campaign reads; the others just close the row. A duplicate
-        submission from the same patient does not create a second row,
+        Fit Requests (/admin/fitter-requests) — people waiting after a fitting;
+        nothing is ordered until staff work the row (this queue has an SLA).
+        Only "fulfilled" (the patient has the mask) marks it dispensed for
+        Fitter outcomes and the re-fit campaign. Other close reasons just
+        close the row. A duplicate does not open a second row,
         Fitter Follow-ups (/admin/fitter-followups) — everyone whose fitting went
         quiet: a link nobody opened, a fitting nobody finished, a finished fitting
         that never became a request, and requests we have not worked past one

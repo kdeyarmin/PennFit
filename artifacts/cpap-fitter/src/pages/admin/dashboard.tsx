@@ -12,6 +12,7 @@ import { FitterInviteQuickSend } from "@/components/admin/FitterInviteQuickSend"
 import { fetchTenantSetup } from "@/lib/admin/tenant-setup-api";
 import { shouldRedirectToSetup } from "@/lib/admin/onboarding-redirect";
 import { TodayWorklistSection } from "@/pages/admin/admin-today";
+import { NewSetupsSection } from "@/components/admin/NewSetupsSection";
 
 const ONBOARDING_REDIRECT_KEY = "cmb-onboarding-redirected";
 
@@ -272,6 +273,8 @@ export function DashboardPage() {
           </Link>
         ))}
       </div>
+
+      <NewSetupsSection />
 
       <TodayWorklistSection />
 

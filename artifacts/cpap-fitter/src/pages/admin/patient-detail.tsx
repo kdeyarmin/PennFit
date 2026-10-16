@@ -62,6 +62,7 @@ import { ConversationsTab } from "@/pages/admin/patient-detail/ConversationsTab"
 import { FulfillmentsTab } from "@/pages/admin/patient-detail/FulfillmentsTab";
 import { FollowupsTab } from "@/pages/admin/patient-detail/FollowupsTab";
 import { OnboardingTab } from "@/pages/admin/patient-detail/OnboardingTab";
+import { SetupTab } from "@/pages/admin/patient-detail/SetupTab";
 import { FaxOutreachTab } from "@/pages/admin/patient-detail/FaxOutreachTab";
 import { FormAcksTab } from "@/pages/admin/patient-detail/FormAcksTab";
 import { IntegrationSourceCard } from "@/pages/admin/patient-detail/IntegrationSourceCard";
@@ -79,6 +80,7 @@ const PATIENT_TABS = [
   "notes",
   "followups",
   "onboarding",
+  "setup",
   "fax-outreach",
   "documents",
   "portal",
@@ -118,6 +120,7 @@ const TAB_LABELS: Record<Tab, string> = {
   notes: "Notes",
   followups: "Follow-ups",
   onboarding: "Onboarding",
+  setup: "Setup",
   "fax-outreach": "Fax outreach",
   documents: "Documents",
   portal: "Portal",
@@ -143,7 +146,7 @@ export const PATIENT_TAB_GROUPS: ReadonlyArray<{
 }> = [
   {
     label: "Overview",
-    tabs: ["timeline", "activity", "address", "onboarding"],
+    tabs: ["timeline", "activity", "address", "onboarding", "setup"],
   },
   {
     label: "Comms",
@@ -457,6 +460,7 @@ export function PatientDetailPage({ id }: { id: string }) {
         {tab === "notes" && <NotesTab patientId={id} />}
         {tab === "followups" && <FollowupsTab patientId={id} />}
         {tab === "onboarding" && <OnboardingTab patientId={id} />}
+        {tab === "setup" && <SetupTab patientId={id} />}
         {tab === "fax-outreach" && (
           <FaxOutreachTab patientId={id} prescriptions={data.prescriptions} />
         )}

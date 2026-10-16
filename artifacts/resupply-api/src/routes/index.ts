@@ -150,6 +150,7 @@ import fitterLeadsAdminRouter from "./admin/fitter-leads.js";
 import fitterInvitesAdminRouter from "./admin/fitter-invites.js";
 import fitterRequestsAdminRouter from "./admin/fitter-requests.js";
 import fitterFollowupAlertsAdminRouter from "./admin/fitter-followup-alerts.js";
+import setupsAdminRouter from "./admin/setups.js";
 import payerProfilesRouter from "./admin/payer-profiles.js";
 import officeAllySubmissionsRouter from "./admin/office-ally-submissions.js";
 import officeAllyUploadAckRouter from "./admin/office-ally-upload-ack.js";
@@ -428,6 +429,10 @@ router.use(fitterRequestsAdminRouter);
 // worked. Raised by the hourly `fitter-followup.scan` sweep (migration
 // 0536), which also sends the patient-facing follow-ups.
 router.use(fitterFollowupAlertsAdminRouter);
+// /admin/setups — one row per new CPAP setup until the first-night
+// checklist is done. Reads the chart, the fit request, and the
+// signature order. It does not create an order.
+router.use(setupsAdminRouter);
 // /admin/payer-profiles/* — Pennsylvania payer catalog (migration
 // 0128). Read by every admin; write restricted to requireAdminOnly.
 // Drives 837P NM1*PR loop population on Office Ally submissions.

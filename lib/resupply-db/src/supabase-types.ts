@@ -363,6 +363,41 @@ export interface Database {
         >;
         Relationships: [];
       };
+      // New CPAP setup worklist (migration 0562). One open row per
+      // patient. Not an order: stage and blocker are read from the
+      // chart, the fit request, and the signature order.
+      patient_setups: {
+        Row: {
+          org_id: string;
+          id: string;
+          patient_id: string;
+          source: "referral" | "fit_request" | "provider_referral" | "manual";
+          source_id: string | null;
+          status: "open" | "completed" | "cancelled";
+          owner_user_id: string | null;
+          owner_email: string | null;
+          opened_at: string;
+          completed_at: string | null;
+          blocker_cleared_notified_at: string | null;
+          signature_reminder_24_at: string | null;
+          signature_reminder_48_at: string | null;
+          reminder_order_id: string | null;
+          reminder_link_version: number | null;
+          csr_order_request_id: string | null;
+          followup_created_at: string | null;
+          onboarding_enrolled_at: string | null;
+          setup_visit_offered_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["patient_setups"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["patient_setups"]["Row"]
+        >;
+        Relationships: [];
+      };
       // Migration 0171: canonical HCPCS reference catalog for PAP
       // resupply. min_interval_days + (max_quantity_per_period /
       // period_days) express the Medicare LCD L33718 replacement

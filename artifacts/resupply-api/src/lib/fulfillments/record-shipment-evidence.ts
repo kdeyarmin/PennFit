@@ -55,6 +55,7 @@ import { closeEpisode } from "../episodes/close-episode";
 import { openOutreachEpisode } from "../episodes/open-outreach-episode";
 import { reanchorEpisodeDueAt } from "../episodes/reanchor-due-at";
 import { logger } from "../logger";
+import { offerSetupAfterShipment } from "../setups/shipment-offer";
 
 /** Where the evidence came from. Recorded in `shipment_metadata` so a
  *  later audit can tell a scanned confirmation from a CSR's judgement. */
@@ -107,6 +108,7 @@ interface FulfillmentRow {
   status: string | null;
   shipped_at: string | null;
   pacware_order_ref: string | null;
+  csr_order_request_id: string | null;
 }
 
 export async function recordShipmentEvidence(
@@ -127,7 +129,7 @@ export async function recordShipmentEvidence(
   const { data: row, error: readErr } = await supabase
     .from("fulfillments")
     .select(
-      "id, episode_id, patient_id, item_sku, status, shipped_at, pacware_order_ref",
+      "id, episode_id, patient_id, item_sku, status, shipped_at, pacware_order_ref, csr_order_request_id",
     )
     .eq("id", input.fulfillmentId)
     .limit(1)
@@ -248,6 +250,28 @@ export async function recordShipmentEvidence(
       },
       "resupply: next-cycle open failed after recording shipment",
     );
+  }
+
+  if (fulfillment.patient_id) {
+    try {
+      await offerSetupAfterShipment({
+        orgId: input.orgId,
+        patientId: fulfillment.patient_id,
+        shippedAt: effectiveShippedAt,
+        fulfillmentId: input.fulfillmentId,
+        csrOrderRequestId: fulfillment.csr_order_request_id,
+        itemSku: fulfillment.item_sku,
+      });
+    } catch (err) {
+      logger.warn(
+        {
+          event: "resupply.ship_evidence_setup_offer_failed",
+          fulfillmentId: input.fulfillmentId,
+          errName: err instanceof Error ? err.name : "unknown",
+        },
+        "resupply: setup offer failed after recording shipment",
+      );
+    }
   }
 
   return { ...base, status: alreadyRecorded ? "already_recorded" : "applied" };
