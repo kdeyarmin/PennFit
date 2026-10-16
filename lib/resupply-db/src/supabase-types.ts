@@ -381,6 +381,11 @@ export interface Database {
           blocker_cleared_notified_at: string | null;
           signature_reminder_24_at: string | null;
           signature_reminder_48_at: string | null;
+          reminder_order_id: string | null;
+          reminder_link_version: number | null;
+          csr_order_request_id: string | null;
+          followup_created_at: string | null;
+          onboarding_enrolled_at: string | null;
           setup_visit_offered_at: string | null;
           created_at: string;
           updated_at: string;

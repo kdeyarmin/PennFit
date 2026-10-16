@@ -11,7 +11,9 @@ import { logger } from "../logger";
 import { createAndSendPatientPacket } from "../patient-packet/send";
 import { redactDbErr } from "../redact-db-err";
 import { issueFitterInviteForPatient } from "../../routes/admin/fitter-invites";
+import { escapeIlikeExact } from "./email-match";
 import { openPatientSetup } from "./open-setup";
+import { e0601PriorAuthRequired } from "./prior-auth";
 
 export async function kickoffAcceptedReferral(input: {
   orgId: string;
@@ -41,7 +43,9 @@ export async function kickoffAcceptedReferral(input: {
         title: "New patient packet",
         createdByEmail: actor,
       });
-      if (!packet.ok) input.warnings.push("packet_not_sent");
+      if (!packet.ok || (!packet.emailSent && !packet.smsSent)) {
+        input.warnings.push("packet_not_sent");
+      }
     } catch (err) {
       logger.warn(
         { err: redactDbErr(err) },
@@ -62,13 +66,14 @@ export async function kickoffAcceptedReferral(input: {
     const memberId = coverage?.member_id?.trim() ?? "";
     if (coverage?.id && memberId) {
       try {
-        await verifyEligibility({
+        const eligibility = await verifyEligibility({
           insuranceCoverageId: coverage.id,
           patientId: input.patientId,
           hcpcsCode: "E0601",
           requestedByEmail: actor,
           orgId: input.orgId,
         });
+        if (!eligibility.uploadOk) input.warnings.push("eligibility_not_run");
       } catch (err) {
         logger.warn(
           { err: redactDbErr(err) },
@@ -103,15 +108,11 @@ export async function kickoffAcceptedReferral(input: {
       }
     }
 
-    if (/medicare/i.test(coverage?.payer_name ?? "")) {
-      const drafted = await draftE0601PriorAuth({
-        orgId: input.orgId,
-        patientId: input.patientId,
-        payerName: coverage?.payer_name?.trim() || "Medicare",
-        coverageId: coverage?.id ?? null,
-      });
-      if (!drafted) input.warnings.push("prior_auth_not_drafted");
-    }
+    const drafted = await ensureE0601PriorAuthDraft({
+      orgId: input.orgId,
+      patientId: input.patientId,
+    });
+    if (drafted === "failed") input.warnings.push("prior_auth_not_drafted");
   } catch (err) {
     logger.warn({ err: redactDbErr(err) }, "setup kickoff failed");
     if (!input.warnings.includes("setup_not_opened")) {
@@ -120,14 +121,63 @@ export async function kickoffAcceptedReferral(input: {
   }
 }
 
-async function draftE0601PriorAuth(input: {
+export async function ensureE0601PriorAuthDraft(input: {
   orgId: string;
   patientId: string;
-  payerName: string;
-  coverageId: string | null;
-}): Promise<boolean> {
+}): Promise<"not_required" | "ready" | "failed"> {
   try {
     const supabase = getOrgScopedClient(input.orgId);
+    const { data: coverage, error: coverageErr } = await supabase
+      .from("insurance_coverages")
+      .select("id, payer_name")
+      .eq("patient_id", input.patientId)
+      .eq("rank", "primary")
+      .limit(1)
+      .maybeSingle();
+    if (coverageErr) throw coverageErr;
+    if (!coverage?.id) return "not_required";
+
+    const payerName = coverage.payer_name?.trim() ?? "";
+    let payerRequires: boolean | null = null;
+    if (payerName) {
+      const { data: profiles, error: payerErr } = await supabase
+        .from("payer_profiles")
+        .select("display_name, requires_prior_auth_dme")
+        .eq("is_active", true)
+        .ilike("display_name", escapeIlikeExact(payerName))
+        .limit(5);
+      if (payerErr) throw payerErr;
+      const exact = (
+        (profiles ?? []) as Array<{
+          display_name: string | null;
+          requires_prior_auth_dme: boolean | null;
+        }>
+      ).find(
+        (row) =>
+          row.display_name?.trim().toLowerCase() === payerName.toLowerCase(),
+      );
+      payerRequires = exact ? exact.requires_prior_auth_dme === true : null;
+    }
+
+    const { data: check, error: checkErr } = await supabase
+      .from("eligibility_checks")
+      .select("requires_prior_auth")
+      .eq("insurance_coverage_id", coverage.id)
+      .eq("service_hcpcs", "E0601")
+      .order("requested_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (checkErr) throw checkErr;
+
+    if (
+      !e0601PriorAuthRequired({
+        payerRequiresPriorAuthDme: payerRequires,
+        eligibilityRequiresPriorAuth: check?.requires_prior_auth ?? null,
+      })
+    ) {
+      return "not_required";
+    }
+
     const { data: existing, error: readErr } = await supabase
       .from("prior_authorizations")
       .select("id")
@@ -137,26 +187,27 @@ async function draftE0601PriorAuth(input: {
       .limit(1)
       .maybeSingle();
     if (readErr) throw readErr;
-    if (existing?.id) return true;
+    if (existing?.id) return "ready";
+
     const nowIso = new Date().toISOString();
     const { error } = await supabase.from("prior_authorizations").insert({
       patient_id: input.patientId,
-      insurance_coverage_id: input.coverageId,
+      insurance_coverage_id: coverage.id,
       hcpcs_code: "E0601",
-      payer_name: input.payerName,
+      payer_name: payerName || "Payer",
       status: "draft",
       notes:
-        "Drafted when the referral was accepted. A person sends this. It is not submitted to the payer.",
+        "Drafted for this new CPAP setup. A person sends this. It is not submitted to the payer.",
       created_at: nowIso,
       updated_at: nowIso,
     });
     if (error) throw error;
-    return true;
+    return "ready";
   } catch (err) {
     logger.warn(
       { err: redactDbErr(err) },
       "setup kickoff: draft prior auth failed",
     );
-    return false;
+    return "failed";
   }
 }

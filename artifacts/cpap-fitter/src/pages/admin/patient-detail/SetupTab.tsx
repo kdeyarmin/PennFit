@@ -1,6 +1,7 @@
-// Setup tab on the patient chart. Dispense readiness for E0601 and
-// the manual Medicare same-or-similar record. HETS is not called from
-// here: a person records what the portal showed.
+// Setup tab on the patient chart. The first-night checklist is what
+// finishes a new CPAP setup. Dispense readiness for E0601 and the
+// manual Medicare same-or-similar record sit under it. HETS is not
+// called from here: a person records what the portal showed.
 
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -11,10 +12,100 @@ import { formatDateTime } from "@/lib/admin/format";
 import {
   fetchDispenseReviews,
   fetchSameOrSimilar,
+  fetchSetupChecklist,
+  putSetupChecklistStep,
   recordSameOrSimilar,
   runDispenseReadiness,
   type SameOrSimilarCheck,
+  type SetupChecklistStep,
 } from "@/lib/admin/patient-setup-chart-api";
+
+const CHECKLIST_STATUSES: SetupChecklistStep["status"][] = [
+  "pending",
+  "done",
+  "na",
+];
+
+function FirstNightChecklist({ patientId }: { patientId: string }) {
+  const queryClient = useQueryClient();
+  const checklistKey = [
+    "admin",
+    "patients",
+    patientId,
+    "setup-checklist",
+  ] as const;
+  const checklist = useQuery({
+    queryKey: checklistKey,
+    queryFn: () => fetchSetupChecklist(patientId),
+  });
+  const save = useMutation({
+    mutationFn: (input: {
+      stepKey: string;
+      status: SetupChecklistStep["status"];
+    }) => putSetupChecklistStep(patientId, input.stepKey, input.status),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: checklistKey });
+      void queryClient.invalidateQueries({ queryKey: ["admin", "setups"] });
+    },
+  });
+
+  return (
+    <section className="space-y-3">
+      <div>
+        <h3 className="text-sm font-semibold">First night</h3>
+        <p className="text-xs text-muted-foreground mt-1">
+          The setup stays open until the machine has shipped and every step here
+          is done or not applicable.
+        </p>
+      </div>
+      {checklist.isPending ? (
+        <Spinner label="Loading checklist…" />
+      ) : checklist.isError ? (
+        <p className="text-sm text-destructive">
+          Could not load the checklist.
+        </p>
+      ) : (
+        <ul className="space-y-2">
+          {(checklist.data ?? []).map((step) => (
+            <li
+              key={step.stepKey}
+              className="flex items-center justify-between gap-3"
+            >
+              <span className="text-sm">{step.label}</span>
+              <select
+                aria-label={step.label}
+                className="text-sm border rounded px-2 py-1"
+                value={
+                  CHECKLIST_STATUSES.includes(step.status)
+                    ? step.status
+                    : "pending"
+                }
+                disabled={save.isPending}
+                onChange={(event) =>
+                  save.mutate({
+                    stepKey: step.stepKey,
+                    status: event.target.value as SetupChecklistStep["status"],
+                  })
+                }
+              >
+                <option value="pending">Pending</option>
+                <option value="done">Done</option>
+                <option value="na">Not applicable</option>
+              </select>
+            </li>
+          ))}
+        </ul>
+      )}
+      {save.isError && (
+        <p className="text-sm text-destructive">
+          {save.error instanceof Error
+            ? save.error.message
+            : "Could not save the step."}
+        </p>
+      )}
+    </section>
+  );
+}
 
 const STATUSES: SameOrSimilarCheck["status"][] = [
   "clear",
@@ -78,6 +169,7 @@ export function SetupTab({ patientId }: { patientId: string }) {
 
   return (
     <div className="space-y-6">
+      <FirstNightChecklist patientId={patientId} />
       <section className="space-y-3">
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div>

@@ -7,7 +7,10 @@
 //
 //   GET   /admin/setups          — open rows + morning queue counts
 //   POST  /admin/setups          — open a row for a chart by hand
-//   PATCH /admin/setups/:id      — claim, release, complete, cancel
+//   PATCH /admin/setups/:id      — claim, release, cancel
+//
+// Completion is the chase job, once the machine has shipped and the
+// first-night checklist is done. A manual complete is not a control.
 
 import { Router, type IRouter } from "express";
 import { z } from "zod";
@@ -35,7 +38,7 @@ const openBody = z
 
 const patchBody = z
   .object({
-    action: z.enum(["claim", "release", "complete", "cancel"]),
+    action: z.enum(["claim", "release", "cancel"]),
   })
   .strict();
 
@@ -139,17 +142,11 @@ router.patch(
               owner_email: null,
               updated_at: nowIso,
             }
-          : body.data.action === "complete"
-            ? {
-                status: "completed" as const,
-                completed_at: nowIso,
-                updated_at: nowIso,
-              }
-            : {
-                status: "cancelled" as const,
-                completed_at: nowIso,
-                updated_at: nowIso,
-              };
+          : {
+              status: "cancelled" as const,
+              completed_at: nowIso,
+              updated_at: nowIso,
+            };
     const { data, error } = await supabase
       .from("patient_setups")
       .update(patch)

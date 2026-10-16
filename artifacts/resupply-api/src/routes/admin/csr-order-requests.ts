@@ -52,6 +52,7 @@ import {
   orderPricingFailure,
 } from "../../lib/csr-order/pricing";
 import { dispenseSignedCsrOrder } from "../../lib/csr-order/dispense-on-sign";
+import { linkOpenSetupToE0601Order } from "../../lib/setups/open-setup";
 
 const router: IRouter = Router();
 
@@ -452,7 +453,10 @@ router.post(
     } else {
       const { data, error: insertErr } = await supabase
         .from("csr_order_requests")
-        .insert(orderPayload)
+        .insert({
+          ...orderPayload,
+          patient_id: b.patientId ?? null,
+        })
         .select("id, order_reference, link_version")
         .single();
       if (insertErr) {
@@ -464,6 +468,16 @@ router.post(
         throw insertErr;
       }
       created = data;
+    }
+
+    const linkedPatientId = pricing.quote?.patientId ?? b.patientId ?? null;
+    if (linkedPatientId) {
+      await linkOpenSetupToE0601Order({
+        orgId,
+        patientId: linkedPatientId,
+        orderId: created.id,
+        items: b.items,
+      });
     }
 
     const signingLink = await buildCsrOrderSigningLink(

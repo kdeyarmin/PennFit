@@ -108,6 +108,7 @@ interface FulfillmentRow {
   status: string | null;
   shipped_at: string | null;
   pacware_order_ref: string | null;
+  csr_order_request_id: string | null;
 }
 
 export async function recordShipmentEvidence(
@@ -128,7 +129,7 @@ export async function recordShipmentEvidence(
   const { data: row, error: readErr } = await supabase
     .from("fulfillments")
     .select(
-      "id, episode_id, patient_id, item_sku, status, shipped_at, pacware_order_ref",
+      "id, episode_id, patient_id, item_sku, status, shipped_at, pacware_order_ref, csr_order_request_id",
     )
     .eq("id", input.fulfillmentId)
     .limit(1)
@@ -251,12 +252,15 @@ export async function recordShipmentEvidence(
     );
   }
 
-  if (!alreadyRecorded && fulfillment.patient_id) {
+  if (fulfillment.patient_id) {
     try {
       await offerSetupAfterShipment({
         orgId: input.orgId,
         patientId: fulfillment.patient_id,
         shippedAt: effectiveShippedAt,
+        fulfillmentId: input.fulfillmentId,
+        csrOrderRequestId: fulfillment.csr_order_request_id,
+        itemSku: fulfillment.item_sku,
       });
     } catch (err) {
       logger.warn(

@@ -7,6 +7,8 @@ import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../logger";
 import { redactDbErr } from "../redact-db-err";
+import { escapeIlikeExact, uniquePatientIdsByEmail } from "./email-match";
+import { orderHasE0601 } from "./machine-order";
 
 export type SetupSource =
   | "referral"
@@ -89,17 +91,12 @@ export async function openSetupForFitRequest(input: {
   if (!email) return;
   try {
     const supabase = getOrgScopedClient(input.orgId);
-    const { data, error } = await supabase
-      .from("patients")
-      .select("id")
-      .ilike("email", email)
-      .limit(2);
-    if (error) throw error;
-    const rows = Array.isArray(data) ? data : [];
-    if (rows.length !== 1 || !rows[0]?.id) return;
+    const matched = await matchUniquePatientsByEmail(supabase, [email]);
+    const patientId = matched.get(email);
+    if (!patientId) return;
     await openPatientSetup({
       orgId: input.orgId,
-      patientId: rows[0].id,
+      patientId,
       source: "fit_request",
       sourceId: input.requestId,
     });
@@ -108,5 +105,68 @@ export async function openSetupForFitRequest(input: {
       { err: redactDbErr(err) },
       "patient setup: fit-request match failed",
     );
+  }
+}
+
+type OrgClient = ReturnType<typeof getOrgScopedClient>;
+
+/**
+ * Exact case-insensitive matches only. An email that hits two charts
+ * is omitted so the caller cannot pick one of them.
+ */
+export async function matchUniquePatientsByEmail(
+  supabase: OrgClient,
+  emails: string[],
+): Promise<Map<string, string>> {
+  const wanted = [
+    ...new Set(
+      emails.map((value) => value.trim().toLowerCase()).filter(Boolean),
+    ),
+  ];
+  const rows: Array<{ id: string; email: string | null }> = [];
+  for (let index = 0; index < wanted.length; index += 15) {
+    const chunk = wanted.slice(index, index + 15);
+    const found = await Promise.all(
+      chunk.map(async (address) => {
+        const { data, error } = await supabase
+          .from("patients")
+          .select("id, email")
+          .ilike("email", escapeIlikeExact(address))
+          .limit(5);
+        if (error) throw error;
+        const list = Array.isArray(data) ? data : [];
+        return list.filter(
+          (row) => row.email?.trim().toLowerCase() === address,
+        );
+      }),
+    );
+    for (const list of found) rows.push(...list);
+  }
+  return uniquePatientIdsByEmail(rows);
+}
+
+/** Point the open setup at this E0601 signature order. A later order
+ *  does not replace one that is already linked. */
+export async function linkOpenSetupToE0601Order(input: {
+  orgId: string;
+  patientId: string;
+  orderId: string;
+  items: unknown;
+}): Promise<void> {
+  if (!orderHasE0601(input.items)) return;
+  try {
+    const supabase = getOrgScopedClient(input.orgId);
+    const { error } = await supabase
+      .from("patient_setups")
+      .update({
+        csr_order_request_id: input.orderId,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("patient_id", input.patientId)
+      .eq("status", "open")
+      .is("csr_order_request_id", null);
+    if (error) throw error;
+  } catch (err) {
+    logger.warn({ err: redactDbErr(err) }, "patient setup: order link failed");
   }
 }

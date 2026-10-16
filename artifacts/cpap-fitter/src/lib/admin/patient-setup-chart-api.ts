@@ -31,6 +31,12 @@ export interface DispenseRunResult {
   }>;
 }
 
+export interface SetupChecklistStep {
+  stepKey: string;
+  label: string;
+  status: "pending" | "done" | "na";
+}
+
 export interface SameOrSimilarCheck {
   id: string;
   hcpcs_code: string;
@@ -52,6 +58,44 @@ async function readError(
     // body not JSON
   }
   return new ApiError(res, data, { method, url });
+}
+
+export async function fetchSetupChecklist(
+  patientId: string,
+): Promise<SetupChecklistStep[]> {
+  const url = "/resupply-api/admin/patients/setup-checklist/query";
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+      ...csrfHeader(),
+    },
+    credentials: "include",
+    body: JSON.stringify({ patientId }),
+  });
+  if (!res.ok) throw await readError(res, "POST", url);
+  const body = (await res.json()) as { steps?: SetupChecklistStep[] };
+  return body.steps ?? [];
+}
+
+export async function putSetupChecklistStep(
+  patientId: string,
+  stepKey: string,
+  status: SetupChecklistStep["status"],
+): Promise<void> {
+  const url = `/resupply-api/admin/patients/${encodeURIComponent(patientId)}/setup-checklist/${encodeURIComponent(stepKey)}`;
+  const res = await fetch(url, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+      ...csrfHeader(),
+    },
+    credentials: "include",
+    body: JSON.stringify({ status }),
+  });
+  if (!res.ok) throw await readError(res, "PUT", url);
 }
 
 export async function fetchDispenseReviews(

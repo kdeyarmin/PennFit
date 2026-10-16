@@ -69,7 +69,7 @@ export async function fetchSetupBoard(limit = 50): Promise<SetupBoard> {
 
 export async function patchSetup(
   id: string,
-  action: "claim" | "release" | "complete" | "cancel",
+  action: "claim" | "release" | "cancel",
 ): Promise<void> {
   const url = `${BASE}/${encodeURIComponent(id)}`;
   const res = await fetch(url, {

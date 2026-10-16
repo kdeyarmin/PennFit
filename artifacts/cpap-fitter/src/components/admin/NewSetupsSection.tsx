@@ -60,11 +60,16 @@ export function NewSetupsSection({ limit = 8 }: { limit?: number }) {
         <Spinner label="Loading setups…" />
       ) : isError ? (
         <p className="text-sm text-destructive">Could not load new setups.</p>
-      ) : !data || data.rows.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No open setups.</p>
-      ) : (
-        <SetupTable rows={data.rows} canClaim={false} />
-      )}
+      ) : data ? (
+        <div className="space-y-4">
+          <MorningQueueStrip morning={data.morning} />
+          {data.rows.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No open setups.</p>
+          ) : (
+            <SetupTable rows={data.rows} canClaim={false} />
+          )}
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -80,7 +85,7 @@ export function SetupTable({
   const patch = useMutation({
     mutationFn: (input: {
       id: string;
-      action: "claim" | "release" | "complete" | "cancel";
+      action: "claim" | "release" | "cancel";
     }) => patchSetup(input.id, input.action),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["admin", "setups"] });

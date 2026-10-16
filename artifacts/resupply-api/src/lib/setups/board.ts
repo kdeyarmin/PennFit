@@ -14,6 +14,9 @@ import {
   type SetupStage,
 } from "./blocker";
 import { olderThanOneBusinessDay } from "./business-day";
+import { matchUniquePatientsByEmail } from "./open-setup";
+import { chooseSetupOrder, isMachineFulfillment } from "./machine-order";
+import { e0601PriorAuthRequired } from "./prior-auth";
 
 const BOARD_CAP = 50;
 const BATCH_CAP = 500;
@@ -50,14 +53,18 @@ export interface SignatureTarget {
   orderReference: string;
   hasDocuments: boolean;
   timezone: string | null;
+  expiresAt: string | null;
 }
 
 export interface SetupWorkItem extends SetupBoardRow {
   blockerClearedNotifiedAt: string | null;
   signatureReminder24At: string | null;
   signatureReminder48At: string | null;
+  reminderOrderId: string | null;
+  reminderLinkVersion: number | null;
   checklistComplete: boolean;
   order: SetupSignals["order"];
+  priorAuth: SetupSignals["priorAuth"];
   signatureTarget: SignatureTarget | null;
 }
 
@@ -77,6 +84,9 @@ interface SetupRow {
   blocker_cleared_notified_at: string | null;
   signature_reminder_24_at: string | null;
   signature_reminder_48_at: string | null;
+  reminder_order_id: string | null;
+  reminder_link_version: number | null;
+  csr_order_request_id: string | null;
 }
 
 interface PatientRow {
@@ -88,6 +98,7 @@ interface PatientRow {
 }
 
 interface CoverageRow {
+  id: string;
   patient_id: string;
   payer_name: string | null;
   member_id: string | null;
@@ -95,6 +106,8 @@ interface CoverageRow {
 
 interface EligibilityRow {
   patient_id: string;
+  insurance_coverage_id: string | null;
+  service_hcpcs: string | null;
   status: string;
   is_active: boolean | null;
   requires_prior_auth: boolean | null;
@@ -125,12 +138,17 @@ interface OrderRow {
   customer_name: string;
   order_reference: string;
   documents: unknown;
+  items: unknown;
+  expires_at: string | null;
+  created_at: string;
 }
 
 interface FulfillmentRow {
   patient_id: string;
   status: string;
   shipped_at: string | null;
+  csr_order_request_id: string | null;
+  item_sku: string | null;
 }
 
 interface PriorAuthRow {
@@ -205,6 +223,12 @@ function eligibilityState(
   return "pending";
 }
 
+const SETUP_COLUMNS =
+  "id, patient_id, source, opened_at, owner_user_id, owner_email, blocker_cleared_notified_at, signature_reminder_24_at, signature_reminder_48_at, reminder_order_id, reminder_link_version, csr_order_request_id";
+
+const ORDER_COLUMNS =
+  "id, patient_id, status, signed_at, sent_at, link_version, customer_email, customer_phone, customer_name, order_reference, documents, items, expires_at, created_at";
+
 export async function loadSetupBoard(
   orgId: string,
   opts: { limit?: number; now?: Date } = {},
@@ -216,9 +240,7 @@ export async function loadSetupBoard(
   const [setupRes, fitRes, morning] = await Promise.all([
     supabase
       .from("patient_setups")
-      .select(
-        "id, patient_id, source, opened_at, owner_user_id, owner_email, blocker_cleared_notified_at, signature_reminder_24_at, signature_reminder_48_at",
-      )
+      .select(SETUP_COLUMNS)
       .eq("status", "open")
       .order("opened_at", { ascending: true })
       .limit(limit),
@@ -235,42 +257,13 @@ export async function loadSetupBoard(
 
   const setups = asRows<SetupRow>(setupRes.data);
   const fitRequests = asRows<FitRequestRow>(fitRes.data);
-  const patientIds = [...new Set(setups.map((row) => row.patient_id))];
+  const work = await assembleWork(orgId, setups, fitRequests, now);
 
-  const signals = await loadSignals(orgId, patientIds);
-  const setupPatientIds = new Set(patientIds);
-  const emailToPatient = signals.emailToPatient;
-
-  const work: SetupWorkItem[] = setups.map((row) => {
-    const patient = signals.patients.get(row.patient_id);
-    const classified = classifyPatient(
-      row.patient_id,
-      patient,
-      fitRequests,
-      signals,
-    );
-    return {
-      id: row.id,
-      kind: "setup",
-      patientId: row.patient_id,
-      displayName: displayName(patient),
-      source: row.source,
-      openedAt: row.opened_at,
-      ageHours: ageHours(row.opened_at, now),
-      stage: classified.classification.stage,
-      blocker: classified.classification.blocker,
-      href: classified.classification.href,
-      ownerUserId: row.owner_user_id,
-      ownerEmail: row.owner_email,
-      blockerClearedNotifiedAt: row.blocker_cleared_notified_at,
-      signatureReminder24At: row.signature_reminder_24_at,
-      signatureReminder48At: row.signature_reminder_48_at,
-      checklistComplete: classified.signals.checklistComplete,
-      order: classified.signals.order,
-      signatureTarget: classified.signatureTarget,
-    };
-  });
-
+  const emailToPatient = await matchUniquePatientsByEmail(
+    supabase,
+    fitRequests.map((row) => row.email),
+  );
+  const setupPatientIds = new Set(setups.map((row) => row.patient_id));
   const synthetic: SetupBoardRow[] = [];
   for (const request of fitRequests) {
     const email = request.email.trim().toLowerCase();
@@ -288,7 +281,7 @@ export async function loadSetupBoard(
       stage: "fit",
       blocker: patientId
         ? "Fit request is waiting. Open a setup on the chart to assign an owner."
-        : "Fit request is waiting. No chart matches this email yet.",
+        : "Fit request is waiting. Match it to one chart before opening a setup.",
       href: "/admin/fitter-requests",
       ownerUserId: null,
       ownerEmail: null,
@@ -300,6 +293,166 @@ export async function loadSetupBoard(
     .slice(0, limit);
 
   return { rows, morning, work };
+}
+
+export interface SetupWorkPage {
+  work: SetupWorkItem[];
+  next: { openedAt: string; id: string } | null;
+}
+
+/** One page of open setups for the chase. The cursor is independent
+ *  of the board's display cap, so a blocked first page cannot hide
+ *  the rest. */
+export async function loadSetupWorkPage(
+  orgId: string,
+  opts: {
+    limit: number;
+    after?: { openedAt: string; id: string } | null;
+    now?: Date;
+  },
+): Promise<SetupWorkPage> {
+  const now = opts.now ?? new Date();
+  const limit = Math.min(Math.max(opts.limit, 1), 100);
+  const supabase = getOrgScopedClient(orgId);
+  let query = supabase
+    .from("patient_setups")
+    .select(SETUP_COLUMNS)
+    .eq("status", "open")
+    .order("opened_at", { ascending: true })
+    .order("id", { ascending: true })
+    .limit(limit + 1);
+  if (opts.after) {
+    query = query.or(
+      `opened_at.gt.${opts.after.openedAt},and(opened_at.eq.${opts.after.openedAt},id.gt.${opts.after.id})`,
+    );
+  }
+  const [setupRes, fitRes] = await Promise.all([
+    query,
+    supabase
+      .from("fitter_fit_requests")
+      .select("id, email, full_name, status, recommended_mask_name, created_at")
+      .neq("status", "closed")
+      .order("created_at", { ascending: true })
+      .limit(BATCH_CAP),
+  ]);
+  if (setupRes.error) throw setupRes.error;
+  if (fitRes.error) throw fitRes.error;
+  const fetched = asRows<SetupRow>(setupRes.data);
+  const page = fetched.slice(0, limit);
+  const work = await assembleWork(
+    orgId,
+    page,
+    asRows<FitRequestRow>(fitRes.data),
+    now,
+  );
+  const tail = page[page.length - 1];
+  return {
+    work,
+    next:
+      fetched.length > limit && tail
+        ? { openedAt: tail.opened_at, id: tail.id }
+        : null,
+  };
+}
+
+async function assembleWork(
+  orgId: string,
+  setups: SetupRow[],
+  fitRequests: FitRequestRow[],
+  now: Date,
+): Promise<SetupWorkItem[]> {
+  const patientIds = [...new Set(setups.map((row) => row.patient_id))];
+  const signals = await loadSignals(
+    orgId,
+    patientIds,
+    setups
+      .map((row) => row.csr_order_request_id)
+      .filter((id): id is string => Boolean(id)),
+  );
+  const emailIndex = await matchUniquePatientsByEmail(
+    getOrgScopedClient(orgId),
+    [
+      ...fitRequests.map((row) => row.email),
+      ...[...signals.patients.values()].flatMap((row) =>
+        row.email ? [row.email] : [],
+      ),
+    ],
+  );
+  const links: Array<{
+    id: string;
+    stored: string | null;
+    next: string | null;
+  }> = [];
+  const work = setups.map((row) => {
+    const patient = signals.patients.get(row.patient_id);
+    const classified = classifyPatient(
+      row,
+      patient,
+      fitRequests,
+      signals,
+      emailIndex,
+    );
+    links.push({
+      id: row.id,
+      stored: row.csr_order_request_id,
+      next: classified.orderId,
+    });
+    return {
+      id: row.id,
+      kind: "setup" as const,
+      patientId: row.patient_id,
+      displayName: displayName(patient),
+      source: row.source,
+      openedAt: row.opened_at,
+      ageHours: ageHours(row.opened_at, now),
+      stage: classified.classification.stage,
+      blocker: classified.classification.blocker,
+      href: classified.classification.href,
+      ownerUserId: row.owner_user_id,
+      ownerEmail: row.owner_email,
+      blockerClearedNotifiedAt: row.blocker_cleared_notified_at,
+      signatureReminder24At: row.signature_reminder_24_at,
+      signatureReminder48At: row.signature_reminder_48_at,
+      reminderOrderId: row.reminder_order_id,
+      reminderLinkVersion: row.reminder_link_version,
+      checklistComplete: classified.signals.checklistComplete,
+      order: classified.signals.order,
+      priorAuth: classified.signals.priorAuth,
+      signatureTarget: classified.signatureTarget,
+    };
+  });
+  await persistOrderLinks(orgId, links);
+  return work;
+}
+
+async function persistOrderLinks(
+  orgId: string,
+  links: Array<{ id: string; stored: string | null; next: string | null }>,
+): Promise<void> {
+  const supabase = getOrgScopedClient(orgId);
+  await Promise.all(
+    links.map(async (row) => {
+      if (!row.next || row.next === row.stored) return;
+      let query = supabase
+        .from("patient_setups")
+        .update({
+          csr_order_request_id: row.next,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", row.id)
+        .eq("status", "open");
+      query = row.stored
+        ? query.eq("csr_order_request_id", row.stored)
+        : query.is("csr_order_request_id", null);
+      const { error } = await query;
+      if (error) {
+        logger.warn(
+          { err: redactDbErr(error) },
+          "patient setup: order link persist failed",
+        );
+      }
+    }),
+  );
 }
 
 async function loadMorningCounts(
@@ -363,50 +516,40 @@ async function loadMorningCounts(
 
 interface SignalBundle {
   patients: Map<string, PatientRow>;
-  emailToPatient: Map<string, string>;
   coverage: Map<string, CoverageRow>;
   eligibility: Map<string, EligibilityRow>;
   sameOrSimilar: Map<string, SameOrSimilarRow>;
   forms: Map<string, Set<string>>;
   orders: Map<string, OrderRow[]>;
-  shipped: Set<string>;
-  queued: Set<string>;
+  ordersById: Map<string, OrderRow>;
+  fulfillments: FulfillmentRow[];
+  payerRequires: Map<string, boolean | null>;
   priorAuths: Map<string, PriorAuthRow[]>;
   checklist: Map<string, Set<string>>;
 }
 
-async function loadSignals(
-  orgId: string,
-  patientIds: string[],
-): Promise<SignalBundle> {
-  const empty: SignalBundle = {
+function emptySignals(): SignalBundle {
+  return {
     patients: new Map(),
-    emailToPatient: new Map(),
     coverage: new Map(),
     eligibility: new Map(),
     sameOrSimilar: new Map(),
     forms: new Map(),
     orders: new Map(),
-    shipped: new Set(),
-    queued: new Set(),
+    ordersById: new Map(),
+    fulfillments: [],
+    payerRequires: new Map(),
     priorAuths: new Map(),
     checklist: new Map(),
   };
-  if (patientIds.length === 0) {
-    const supabase = getOrgScopedClient(orgId);
-    const { data, error } = await supabase
-      .from("patients")
-      .select("id, email")
-      .limit(BATCH_CAP);
-    if (error) throw error;
-    for (const row of asRows<{ id: string; email: string | null }>(data)) {
-      const email = row.email?.trim().toLowerCase();
-      if (email && !empty.emailToPatient.has(email)) {
-        empty.emailToPatient.set(email, row.id);
-      }
-    }
-    return empty;
-  }
+}
+
+async function loadSignals(
+  orgId: string,
+  patientIds: string[],
+  linkedOrderIds: string[],
+): Promise<SignalBundle> {
+  if (patientIds.length === 0) return emptySignals();
 
   const supabase = getOrgScopedClient(orgId);
   const [
@@ -419,7 +562,7 @@ async function loadSignals(
     fulfillments,
     priorAuths,
     checklist,
-    emailPatients,
+    payers,
   ] = await Promise.all([
     supabase
       .from("patients")
@@ -427,16 +570,17 @@ async function loadSignals(
       .in("id", patientIds),
     supabase
       .from("insurance_coverages")
-      .select("patient_id, payer_name, member_id")
+      .select("id, patient_id, payer_name, member_id")
       .in("patient_id", patientIds)
       .eq("rank", "primary")
       .limit(BATCH_CAP),
     supabase
       .from("eligibility_checks")
       .select(
-        "patient_id, status, is_active, requires_prior_auth, requested_at",
+        "patient_id, insurance_coverage_id, service_hcpcs, status, is_active, requires_prior_auth, requested_at",
       )
       .in("patient_id", patientIds)
+      .eq("service_hcpcs", "E0601")
       .order("requested_at", { ascending: false })
       .limit(BATCH_CAP),
     supabase
@@ -453,15 +597,13 @@ async function loadSignals(
       .limit(BATCH_CAP),
     supabase
       .from("csr_order_requests")
-      .select(
-        "id, patient_id, status, signed_at, sent_at, link_version, customer_email, customer_phone, customer_name, order_reference, documents",
-      )
+      .select(ORDER_COLUMNS)
       .in("patient_id", patientIds)
       .order("sent_at", { ascending: false })
       .limit(BATCH_CAP),
     supabase
       .from("fulfillments")
-      .select("patient_id, status, shipped_at")
+      .select("patient_id, status, shipped_at, csr_order_request_id, item_sku")
       .in("patient_id", patientIds)
       .limit(BATCH_CAP),
     supabase
@@ -475,7 +617,11 @@ async function loadSignals(
       .select("patient_id, step_key, status")
       .in("patient_id", patientIds)
       .limit(BATCH_CAP),
-    supabase.from("patients").select("id, email").limit(BATCH_CAP),
+    supabase
+      .from("payer_profiles")
+      .select("display_name, requires_prior_auth_dme")
+      .eq("is_active", true)
+      .limit(BATCH_CAP),
   ]);
   for (const res of [
     patients,
@@ -487,31 +633,29 @@ async function loadSignals(
     fulfillments,
     priorAuths,
     checklist,
-    emailPatients,
+    payers,
   ]) {
     if (res.error) throw res.error;
   }
 
-  const bundle = empty;
+  const bundle = emptySignals();
   for (const row of asRows<PatientRow>(patients.data)) {
     bundle.patients.set(row.id, row);
-    const email = row.email?.trim().toLowerCase();
-    if (email) bundle.emailToPatient.set(email, row.id);
-  }
-  for (const row of asRows<{ id: string; email: string | null }>(
-    emailPatients.data,
-  )) {
-    const email = row.email?.trim().toLowerCase();
-    if (email && !bundle.emailToPatient.has(email)) {
-      bundle.emailToPatient.set(email, row.id);
-    }
   }
   bundle.coverage = latestBy(
     asRows<CoverageRow>(coverages.data),
     (row) => row.patient_id,
   );
+  const primaryCoverageId = new Map<string, string>();
+  for (const [patientId, coverage] of bundle.coverage) {
+    primaryCoverageId.set(patientId, coverage.id);
+  }
   bundle.eligibility = latestBy(
-    asRows<EligibilityRow>(eligibility.data),
+    asRows<EligibilityRow>(eligibility.data).filter(
+      (row) =>
+        row.service_hcpcs === "E0601" &&
+        row.insurance_coverage_id === primaryCoverageId.get(row.patient_id),
+    ),
     (row) => row.patient_id,
   );
   bundle.sameOrSimilar = latestBy(
@@ -523,16 +667,27 @@ async function loadSignals(
     set.add(row.form_kind);
     bundle.forms.set(row.patient_id, set);
   }
-  for (const row of asRows<OrderRow>(orders.data)) {
-    if (!row.patient_id) continue;
+  const rememberOrder = (row: OrderRow) => {
+    bundle.ordersById.set(row.id, row);
+    if (!row.patient_id) return;
     const list = bundle.orders.get(row.patient_id) ?? [];
+    if (list.some((order) => order.id === row.id)) return;
     list.push(row);
     bundle.orders.set(row.patient_id, list);
+  };
+  for (const row of asRows<OrderRow>(orders.data)) rememberOrder(row);
+  const missingOrderIds = [...new Set(linkedOrderIds)].filter(
+    (id) => !bundle.ordersById.has(id),
+  );
+  if (missingOrderIds.length > 0) {
+    const { data, error } = await supabase
+      .from("csr_order_requests")
+      .select(ORDER_COLUMNS)
+      .in("id", missingOrderIds);
+    if (error) throw error;
+    for (const row of asRows<OrderRow>(data)) rememberOrder(row);
   }
-  for (const row of asRows<FulfillmentRow>(fulfillments.data)) {
-    if (row.shipped_at) bundle.shipped.add(row.patient_id);
-    else if (row.status === "queued") bundle.queued.add(row.patient_id);
-  }
+  bundle.fulfillments = asRows<FulfillmentRow>(fulfillments.data);
   for (const row of asRows<PriorAuthRow>(priorAuths.data)) {
     const list = bundle.priorAuths.get(row.patient_id) ?? [];
     list.push(row);
@@ -544,54 +699,106 @@ async function loadSignals(
     set.add(row.step_key);
     bundle.checklist.set(row.patient_id, set);
   }
+  for (const row of asRows<{
+    display_name: string | null;
+    requires_prior_auth_dme: boolean | null;
+  }>(payers.data)) {
+    const key = row.display_name?.trim().toLowerCase();
+    if (!key) continue;
+    const value = row.requires_prior_auth_dme === true;
+    const current = bundle.payerRequires.get(key);
+    if (current === undefined) bundle.payerRequires.set(key, value);
+    else if (current !== value) bundle.payerRequires.set(key, null);
+  }
   return bundle;
 }
 
+function payerRequiresFlag(
+  payerName: string | null | undefined,
+  flags: Map<string, boolean | null>,
+): boolean | null {
+  const key = payerName?.trim().toLowerCase() ?? "";
+  if (!key || !flags.has(key)) return null;
+  return flags.get(key) ?? null;
+}
+
 function classifyPatient(
-  patientId: string,
+  row: SetupRow,
   patient: PatientRow | undefined,
   fitRequests: FitRequestRow[],
   signals: SignalBundle,
+  emailIndex: Map<string, string>,
 ): {
   signals: SetupSignals;
   classification: ReturnType<typeof classifySetup>;
   signatureTarget: SignatureTarget | null;
+  orderId: string | null;
 } {
+  const patientId = row.patient_id;
   const email = patient?.email?.trim().toLowerCase() ?? "";
-  const mine = email
-    ? fitRequests.filter((row) => row.email.trim().toLowerCase() === email)
+  const ownsEmail = Boolean(email) && emailIndex.get(email) === patientId;
+  const mine = ownsEmail
+    ? fitRequests.filter(
+        (request) => request.email.trim().toLowerCase() === email,
+      )
     : [];
   const coverage = signals.coverage.get(patientId);
   const eligibility = signals.eligibility.get(patientId);
   const same = signals.sameOrSimilar.get(patientId);
   const acknowledged = signals.forms.get(patientId) ?? new Set<string>();
   const doneSteps = signals.checklist.get(patientId) ?? new Set<string>();
-  const liveOrders = (signals.orders.get(patientId) ?? []).filter(
-    (row) => row.status !== "canceled",
-  );
-  const signed = liveOrders.find((row) => row.signed_at);
-  const awaiting = liveOrders
-    .filter(
-      (row) =>
-        !row.signed_at && (row.status === "sent" || row.status === "viewed"),
-    )
-    .sort((a, b) => Date.parse(a.sent_at ?? "") - Date.parse(b.sent_at ?? ""));
+  const patientOrders = signals.orders.get(patientId) ?? [];
+  const linked = row.csr_order_request_id
+    ? signals.ordersById.get(row.csr_order_request_id)
+    : undefined;
+  const pool =
+    linked && !patientOrders.some((order) => order.id === linked.id)
+      ? [...patientOrders, linked]
+      : patientOrders;
+  const orderId = chooseSetupOrder({
+    linkedOrderId: row.csr_order_request_id,
+    openedAt: row.opened_at,
+    orders: pool,
+  });
+  const chosen = orderId ? signals.ordersById.get(orderId) : undefined;
+  const machineRows = chosen
+    ? signals.fulfillments.filter(
+        (fulfillment) =>
+          fulfillment.csr_order_request_id === chosen.id &&
+          isMachineFulfillment(fulfillment.item_sku, chosen.items),
+      )
+    : [];
 
   let order: SetupSignals["order"] = "none";
-  if (signals.shipped.has(patientId)) order = "shipped";
-  else if (signals.queued.has(patientId)) order = "queued";
-  else if (signed) order = "signed_needs_followup";
-  else if (awaiting.length > 0) order = "awaiting_signature";
+  if (machineRows.some((fulfillment) => fulfillment.shipped_at)) {
+    order = "shipped";
+  } else if (
+    machineRows.some((fulfillment) => fulfillment.status === "queued")
+  ) {
+    order = "queued";
+  } else if (chosen?.signed_at || chosen?.status === "signed") {
+    order = "signed_needs_followup";
+  } else if (
+    chosen &&
+    (chosen.status === "sent" || chosen.status === "viewed")
+  ) {
+    order = "awaiting_signature";
+  }
 
   const medicare = /medicare/i.test(coverage?.payer_name ?? "");
   const authRecorded = priorAuthState(signals.priorAuths.get(patientId) ?? []);
-  const priorAuth: SetupSignals["priorAuth"] =
-    medicare || eligibility?.requires_prior_auth === true
-      ? authRecorded
-      : "not_required";
+  const priorAuth: SetupSignals["priorAuth"] = e0601PriorAuthRequired({
+    payerRequiresPriorAuthDme: payerRequiresFlag(
+      coverage?.payer_name,
+      signals.payerRequires,
+    ),
+    eligibilityRequiresPriorAuth: eligibility?.requires_prior_auth ?? null,
+  })
+    ? authRecorded
+    : "not_required";
 
   const hasMaskChoice =
-    mine.some((row) => Boolean(row.recommended_mask_name?.trim())) ||
+    mine.some((request) => Boolean(request.recommended_mask_name?.trim())) ||
     order !== "none";
 
   const built: SetupSignals = {
@@ -607,20 +814,20 @@ function classifyPatient(
     checklistComplete: FIRST_NIGHT_STEP_KEYS.every((key) => doneSteps.has(key)),
   };
 
-  const target = awaiting[0];
   const signatureTarget: SignatureTarget | null =
-    order === "awaiting_signature" && target?.sent_at
+    order === "awaiting_signature" && chosen?.sent_at
       ? {
-          id: target.id,
-          linkVersion: target.link_version,
-          sentAt: target.sent_at,
-          email: target.customer_email,
-          phone: target.customer_phone,
-          customerName: target.customer_name,
-          orderReference: target.order_reference,
+          id: chosen.id,
+          linkVersion: chosen.link_version,
+          sentAt: chosen.sent_at,
+          email: chosen.customer_email,
+          phone: chosen.customer_phone,
+          customerName: chosen.customer_name,
+          orderReference: chosen.order_reference,
           hasDocuments:
-            Array.isArray(target.documents) && target.documents.length > 0,
+            Array.isArray(chosen.documents) && chosen.documents.length > 0,
           timezone: patient?.timezone ?? null,
+          expiresAt: chosen.expires_at,
         }
       : null;
 
@@ -628,6 +835,7 @@ function classifyPatient(
     signals: built,
     classification: classifySetup(built, patientId),
     signatureTarget,
+    orderId,
   };
 }
 
