@@ -72,6 +72,10 @@ vi.mock("@workspace/resupply-audit", () => ({
 
 import payerFeeSchedulesRouter from "./payer-fee-schedules";
 
+// Snapshot at import time: adminRateLimit() is called while the router above
+// is imported, and vitest clears mock call history before every test.
+const rateLimitRegistrations = adminRateLimitSpy.mock.calls.slice();
+
 const FEE_SCHEDULE_UUID = "44444444-dddd-4000-8000-000000000001";
 const PAYER_PROFILE_UUID = "55555555-eeee-4000-8000-000000000001";
 
@@ -142,7 +146,7 @@ describe("POST /admin/payer-fee-schedules — adminRateLimit integration (sensit
   });
 
   it("calls adminRateLimit with name='payer_fee_schedules.create' and preset='sensitive'", () => {
-    const call = adminRateLimitSpy.mock.calls.find(
+    const call = rateLimitRegistrations.find(
       ([opts]) => opts.name === "payer_fee_schedules.create",
     );
     expect(call).toBeDefined();
@@ -233,7 +237,7 @@ describe("PATCH /admin/payer-fee-schedules/:id — adminRateLimit integration (s
   });
 
   it("calls adminRateLimit with name='payer_fee_schedules.update' and preset='sensitive'", () => {
-    const call = adminRateLimitSpy.mock.calls.find(
+    const call = rateLimitRegistrations.find(
       ([opts]) => opts.name === "payer_fee_schedules.update",
     );
     expect(call).toBeDefined();
@@ -266,10 +270,10 @@ describe("PATCH /admin/payer-fee-schedules/:id — adminRateLimit integration (s
   });
 
   it("both POST and PATCH use the 'sensitive' preset (financial parity)", () => {
-    const postCall = adminRateLimitSpy.mock.calls.find(
+    const postCall = rateLimitRegistrations.find(
       ([opts]) => opts.name === "payer_fee_schedules.create",
     );
-    const patchCall = adminRateLimitSpy.mock.calls.find(
+    const patchCall = rateLimitRegistrations.find(
       ([opts]) => opts.name === "payer_fee_schedules.update",
     );
     expect(postCall![0].preset).toBe("sensitive");

@@ -83,6 +83,10 @@ vi.mock("../../lib/billing/capped-rental-advancer", () => ({
 
 import cappedRentalCyclesRouter from "./capped-rental-cycles";
 
+// Snapshot at import time: adminRateLimit() is called while the router above
+// is imported, and vitest clears mock call history before every test.
+const rateLimitRegistrations = adminRateLimitSpy.mock.calls.slice();
+
 const CYCLE_ID = "00000000-0000-4000-8000-000000000001";
 const PATIENT_ID = "00000000-0000-4000-8000-000000000002";
 
@@ -187,7 +191,7 @@ describe("POST /admin/capped-rental-cycles — auth gate", () => {
 
   it("calls adminRateLimit with name='capped_rental_cycles.create' and preset='mutation'", async () => {
     await request(makeApp()).post("/admin/capped-rental-cycles");
-    const call = adminRateLimitSpy.mock.calls.find(
+    const call = rateLimitRegistrations.find(
       ([opts]) => opts.name === "capped_rental_cycles.create",
     );
     expect(call).toBeDefined();
@@ -298,7 +302,7 @@ describe("PATCH /admin/capped-rental-cycles/:id — auth gate", () => {
 
   it("calls adminRateLimit with name='capped_rental_cycles.update' and preset='mutation'", async () => {
     await request(makeApp()).patch(`/admin/capped-rental-cycles/${CYCLE_ID}`);
-    const call = adminRateLimitSpy.mock.calls.find(
+    const call = rateLimitRegistrations.find(
       ([opts]) => opts.name === "capped_rental_cycles.update",
     );
     expect(call).toBeDefined();

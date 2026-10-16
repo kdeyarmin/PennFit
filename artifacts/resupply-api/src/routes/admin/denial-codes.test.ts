@@ -103,6 +103,10 @@ vi.mock("@workspace/resupply-audit", () => ({
 
 import denialCodesRouter from "./denial-codes";
 
+// Snapshot at import time: adminRateLimit() is called while the router above
+// is imported, and vitest clears mock call history before every test.
+const rateLimitRegistrations = adminRateLimitSpy.mock.calls.slice();
+
 const CODE_ID = "11111111-aaaa-4000-8000-000000000001";
 
 function makeApp(): Express {
@@ -228,7 +232,7 @@ describe("POST /admin/denial-codes — adminRateLimit integration (sensitive pre
   });
 
   it("calls adminRateLimit with name='denial_codes.create' and preset='sensitive'", () => {
-    const call = adminRateLimitSpy.mock.calls.find(
+    const call = rateLimitRegistrations.find(
       ([opts]) => opts.name === "denial_codes.create",
     );
     expect(call).toBeDefined();
@@ -258,10 +262,10 @@ describe("POST /admin/denial-codes — adminRateLimit integration (sensitive pre
   });
 
   it("uses more conservative 'sensitive' preset vs PATCH 'mutation'", () => {
-    const postCall = adminRateLimitSpy.mock.calls.find(
+    const postCall = rateLimitRegistrations.find(
       ([opts]) => opts.name === "denial_codes.create",
     );
-    const patchCall = adminRateLimitSpy.mock.calls.find(
+    const patchCall = rateLimitRegistrations.find(
       ([opts]) => opts.name === "denial_codes.update",
     );
     expect(postCall![0].preset).toBe("sensitive");
@@ -301,7 +305,7 @@ describe("PATCH /admin/denial-codes/:id — adminRateLimit integration (mutation
   });
 
   it("calls adminRateLimit with name='denial_codes.update' and preset='mutation'", () => {
-    const call = adminRateLimitSpy.mock.calls.find(
+    const call = rateLimitRegistrations.find(
       ([opts]) => opts.name === "denial_codes.update",
     );
     expect(call).toBeDefined();

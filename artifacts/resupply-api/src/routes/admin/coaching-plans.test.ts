@@ -73,6 +73,10 @@ vi.mock("@workspace/resupply-audit", () => ({
 
 import coachingRouter from "./coaching-plans";
 
+// Snapshot at import time: adminRateLimit() is called while the router above
+// is imported, and vitest clears mock call history before every test.
+const rateLimitRegistrations = adminRateLimitSpy.mock.calls.slice();
+
 const CONV_ID = "00000000-0000-4000-8000-000000000001";
 const PLAN_ID = "00000000-0000-4000-8000-000000000002";
 const PATIENT_ID = "00000000-0000-4000-8000-000000000003";
@@ -134,7 +138,7 @@ describe("POST /admin/coaching-plans — adminRateLimit integration", () => {
   it("calls adminRateLimit with name='coaching_plans.create' and preset='mutation'", async () => {
     // Just force a 401 so the route doesn't need a DB stage.
     await request(makeApp()).post("/admin/coaching-plans");
-    const call = adminRateLimitSpy.mock.calls.find(
+    const call = rateLimitRegistrations.find(
       ([opts]) => opts.name === "coaching_plans.create",
     );
     expect(call).toBeDefined();
@@ -190,7 +194,7 @@ describe("PATCH /admin/coaching-plans/:id — adminRateLimit integration", () =>
 
   it("calls adminRateLimit with name='coaching_plans.update' and preset='mutation'", async () => {
     await request(makeApp()).patch(`/admin/coaching-plans/${CONV_ID}`);
-    const call = adminRateLimitSpy.mock.calls.find(
+    const call = rateLimitRegistrations.find(
       ([opts]) => opts.name === "coaching_plans.update",
     );
     expect(call).toBeDefined();

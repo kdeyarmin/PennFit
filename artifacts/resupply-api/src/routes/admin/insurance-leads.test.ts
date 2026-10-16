@@ -65,6 +65,10 @@ vi.mock("../../middlewares/admin-rate-limit", () => ({
 
 import insuranceLeadsRouter from "./insurance-leads";
 
+// Snapshot at import time: adminRateLimit() is called while the router above
+// is imported, and vitest clears mock call history before every test.
+const rateLimitRegistrations = adminRateLimitSpy.mock.calls.slice();
+
 // The route validates :id against a UUID regex (ID_RE in the source).
 const LEAD_ID = "aabbccdd-1122-4000-8000-000000000099";
 
@@ -125,7 +129,7 @@ describe("PATCH /admin/shop/insurance-leads/:id — adminRateLimit integration",
   });
 
   it("calls adminRateLimit with name='insurance_leads.update' and preset='mutation'", () => {
-    const call = adminRateLimitSpy.mock.calls.find(
+    const call = rateLimitRegistrations.find(
       ([opts]) => opts.name === "insurance_leads.update",
     );
     expect(call).toBeDefined();

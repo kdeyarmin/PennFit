@@ -96,6 +96,10 @@ vi.mock("../../lib/routing/skill-score", () => ({
 
 import routingRouter from "./conversation-routing";
 
+// Snapshot at import time: adminRateLimit() is called while the router above
+// is imported, and vitest clears mock call history before every test.
+const rateLimitRegistrations = adminRateLimitSpy.mock.calls.slice();
+
 const CONV_UUID = "ccccdddd-0000-4000-8000-000000000001";
 const TEAM_ID = "team-member-id-1";
 
@@ -164,7 +168,7 @@ describe("PATCH /admin/team/:id/skills — adminRateLimit integration", () => {
   });
 
   it("calls adminRateLimit with name='conversation_routing.set_skills' and preset='mutation'", () => {
-    const call = adminRateLimitSpy.mock.calls.find(
+    const call = rateLimitRegistrations.find(
       ([opts]) => opts.name === "conversation_routing.set_skills",
     );
     expect(call).toBeDefined();
@@ -224,7 +228,7 @@ describe("PATCH /admin/conversations/:id/required-skills — adminRateLimit inte
   });
 
   it("calls adminRateLimit with name='conversation_routing.set_required_skills' and preset='mutation'", () => {
-    const call = adminRateLimitSpy.mock.calls.find(
+    const call = rateLimitRegistrations.find(
       ([opts]) => opts.name === "conversation_routing.set_required_skills",
     );
     expect(call).toBeDefined();
@@ -276,7 +280,7 @@ describe("POST /admin/conversations/:id/auto-assign — adminRateLimit integrati
   });
 
   it("calls adminRateLimit with name='conversation_routing.auto_assign' and preset='mutation'", () => {
-    const call = adminRateLimitSpy.mock.calls.find(
+    const call = rateLimitRegistrations.find(
       ([opts]) => opts.name === "conversation_routing.auto_assign",
     );
     expect(call).toBeDefined();
